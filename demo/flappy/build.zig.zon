@@ -1,0 +1,14 @@
+.{
+    .name = .panic,
+    .version = "0.0.0",
+    .fingerprint = 0x9ea781920f7542f6,
+    .minimum_zig_version = "0.14.1",
+    .dependencies = .{
+        .zitrus = .{ .path = "../../" },
+    },
+    .paths = .{
+        "src",
+        "build.zig",
+        "build.zig.zon",
+    },
+}
