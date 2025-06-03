@@ -1,12 +1,13 @@
 .{
-    .name = .panic,
+    .name = .flappy,
     .version = "0.0.0",
-    .fingerprint = 0x9ea781920f7542f6,
+    .fingerprint = 0xe2209ff0a7324652,
     .minimum_zig_version = "0.14.1",
     .dependencies = .{
         .zitrus = .{ .path = "../../" },
     },
     .paths = .{
+        "assets",
         "src",
         "build.zig",
         "build.zig.zon",

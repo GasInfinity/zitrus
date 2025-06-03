@@ -1,5 +1,5 @@
 .{
-    .name = .testing3ds,
+    .name = .zitrus,
     .version = "0.0.0",
     .fingerprint = 0x719c66dc8a1b9445, // Changing this has security and trust implications.
     .minimum_zig_version = "0.14.0",
