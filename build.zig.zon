@@ -10,8 +10,8 @@
             .hash = "clap-0.10.0-oBajB7jkAQAZ4cKLlzkeV9mDu2yGZvtN2QuOyfAfjBij",
         },
         .zalloc = .{
-            .url = "git+https://github.com/GasInfinity/zalloc/#7cbf93616bf15e7dc87a1dfe226784862f30bf96",
-            .hash = "zalloc-0.0.0-xJbxwVwmAAD097Q1vKK_LRfbxC2u2jmJ4m-frHH50y78",
+            .url = "git+https://github.com/GasInfinity/zalloc/#677973e252dc39f07b8b5407d8ae5e609f81f94b",
+            .hash = "zalloc-0.0.0-xJbxwYgmAACabsNLWfjierZN9784iOJ6PgMarP11jlDQ",
         },
     },
     .paths = .{

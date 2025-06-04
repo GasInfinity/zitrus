@@ -205,7 +205,7 @@ thread_index: u32 = 0,
 shared_memory: ?MemoryBlock = null,
 shared_memory_data: ?[]align(horizon.page_size_min) u8 = null,
 
-pub fn init(srv: ServiceManager, shm_allocator: *SharedMemoryAddressPageAllocator) (SharedMemoryAddressPageAllocator.Error || Session.ConnectionError || Event.CreationError || MemoryBlock.MapError || Error)!GspGpu {
+pub fn init(srv: ServiceManager, shm_allocator: *SharedMemoryAddressAllocator) (error{OutOfMemory} || Session.ConnectionError || Event.CreationError || MemoryBlock.MapError || Error)!GspGpu {
     const gsp_handle = try srv.getService(service_name, true);
 
     var gpu = GspGpu{ .session = gsp_handle };
@@ -225,17 +225,17 @@ pub fn init(srv: ServiceManager, shm_allocator: *SharedMemoryAddressPageAllocato
 
     gpu.thread_index = queue_result.thread_index;
     gpu.shared_memory = queue_result.shared_memory;
-    gpu.shared_memory_data = try shm_allocator.allocateAddress(4096);
+    gpu.shared_memory_data = try shm_allocator.alloc(4096, .fromByteUnits(4096));
 
     try gpu.shared_memory.?.map(gpu.shared_memory_data.?.ptr, .rw, .dont_care);
     return gpu;
 }
 
-pub fn deinit(gpu: *GspGpu, shm_alloc: *horizon.SharedMemoryAddressPageAllocator) void {
+pub fn deinit(gpu: *GspGpu, shm_alloc: *SharedMemoryAddressAllocator) void {
     if (gpu.shared_memory) |*shm_handle| {
         if (gpu.shared_memory_data) |*shm| {
             shm_handle.unmap(shm.ptr);
-            shm_alloc.freeAddress(shm.*);
+            shm_alloc.free(shm.*);
         }
 
         shm_handle.deinit();
@@ -909,4 +909,4 @@ const MemoryBlock = horizon.MemoryBlock;
 const Session = horizon.Session;
 const ServiceManager = zitrus.horizon.ServiceManager;
 
-const SharedMemoryAddressPageAllocator = horizon.SharedMemoryAddressPageAllocator;
+const SharedMemoryAddressAllocator = horizon.SharedMemoryAddressAllocator;

@@ -2,7 +2,7 @@ const top_screen_bitmap = @embedFile("top-screen");
 const bottom_screen_bitmap = @embedFile("bottom-screen");
 
 pub fn main() !void {
-    var shm_alloc = horizon.SharedMemoryAddressPageAllocator.init();
+    var shm_alloc = horizon.sharedMemoryAddressAllocator();
 
     var srv = try ServiceManager.init("srv:");
     defer srv.deinit();

@@ -1,4 +1,7 @@
 pub fn build(b: *std.Build) void {
+    const zalloc = b.dependency("zalloc", .{});
+    const zalloc_mod = zalloc.module("zalloc");
+
     const zitrus_tooling = b.addModule("zitrus-tooling", .{ .root_source_file = b.path("src/tooling/zitrus.zig") });
 
     const zitrus = b.addModule("zitrus", .{
@@ -14,6 +17,7 @@ pub fn build(b: *std.Build) void {
     // Yes, zitrus uses zitrus, thanks zig for not being c
     zitrus.addImport("zitrus", zitrus);
     zitrus.addImport("zitrus-tooling", zitrus_tooling);
+    zitrus.addImport("zalloc", zalloc_mod);
 }
 
 pub const ExecutableOptions = struct {

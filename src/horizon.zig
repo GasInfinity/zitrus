@@ -339,17 +339,9 @@ pub const Session = extern struct {
 
 pub const page_size_min: usize = 4096;
 
-pub const SharedMemoryAddressPageAllocator = page_allocators.SharedMemoryAddressPageAllocator;
+pub const SharedMemoryAddressAllocator = page_allocators.SharedMemoryAddressAllocator;
+pub const sharedMemoryAddressAllocator = page_allocators.sharedMemoryAddressAllocator;
 pub const linear_page_allocator = page_allocators.linear_page_allocator;
-
-// https://www.3dbrew.org/wiki/Memory_layout#ARM11%20User-land%20memory%20regions
-pub const executable_memory_begin: usize = 0x00100000;
-pub const heap_memory_begin: usize = 0x08000000;
-pub const heap_memory_end: usize = 0x10000000;
-pub const shared_memory_begin: usize = heap_memory_end;
-pub const shared_memory_end: usize = 0x14000000;
-pub const linear_heap_memory_begin: usize = shared_memory_end;
-pub const linear_heap_memory_end: usize = 0x1E800000;
 
 pub const controlMemory = syscalls.controlMemory;
 pub const queryMemory = syscalls.queryMemory;
@@ -379,6 +371,7 @@ pub const getResourceLimitCurrentValues = syscalls.getResourceLimitCurrentValues
 pub const breakpoint = syscalls.breakpoint;
 
 pub const result = @import("horizon/result.zig");
+pub const memory = @import("horizon/memory.zig");
 pub const syscalls = @import("horizon/syscalls.zig");
 pub const kernel = @import("horizon/kernel.zig");
 pub const ipc = @import("horizon/ipc.zig");

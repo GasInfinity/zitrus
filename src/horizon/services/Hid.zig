@@ -65,7 +65,7 @@ session: Session,
 input: ?Handles = null,
 shm_memory_data: ?[]align(horizon.page_size_min) u8 = null,
 
-pub fn init(srv: ServiceManager, shm_allocator: *SharedMemoryAddressPageAllocator) (MemoryBlock.MapError || SharedMemoryAddressPageAllocator.Error || Error)!Hid {
+pub fn init(srv: ServiceManager, shm_allocator: *SharedMemoryAddressAllocator) (error{OutOfMemory} || MemoryBlock.MapError || Error)!Hid {
     var last_error: Error = undefined;
     const hid_session = used: for (service_names) |service_name| {
         const hid_session = srv.getService(service_name, true) catch |err| {
@@ -84,18 +84,18 @@ pub fn init(srv: ServiceManager, shm_allocator: *SharedMemoryAddressPageAllocato
     const input = try hid.sendGetIPCHandles();
     hid.input = input;
 
-    const shm_memory_data = try shm_allocator.allocateAddress(0x2B0);
+    const shm_memory_data = try shm_allocator.alloc(0x2B0, .fromByteUnits(4096));
     hid.shm_memory_data = shm_memory_data;
 
     try input.shm.map(shm_memory_data.ptr, .r, .dont_care);
     return hid;
 }
 
-pub fn deinit(hid: *Hid, shm_allocator: *SharedMemoryAddressPageAllocator) void {
+pub fn deinit(hid: *Hid, shm_allocator: *SharedMemoryAddressAllocator) void {
     if (hid.input) |*input| {
         if (hid.shm_memory_data) |*shm_data| {
             input.shm.unmap(shm_data.ptr);
-            shm_allocator.freeAddress(shm_data.*);
+            shm_allocator.free(shm_data.*);
         }
 
         input.deinit();
@@ -219,4 +219,4 @@ const MemoryBlock = horizon.MemoryBlock;
 
 const ServiceManager = zitrus.horizon.ServiceManager;
 
-const SharedMemoryAddressPageAllocator = horizon.SharedMemoryAddressPageAllocator;
+const SharedMemoryAddressAllocator = horizon.SharedMemoryAddressAllocator;
