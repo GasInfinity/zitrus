@@ -233,8 +233,8 @@ pub const ServiceManagerCommand = enum(u16) {
 const SrvManager = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
-const environment = zitrus.environment;
 const horizon = zitrus.horizon;
+const environment = horizon.environment;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
 

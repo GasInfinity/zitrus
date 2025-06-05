@@ -128,19 +128,20 @@ pub const CaptureBuffer = extern struct {
     bottom: Info,
 
     // TODO: Finish this
-    pub inline fn init(gsp: GspGpu.ScreenCapture) CaptureBuffer {
+    pub inline fn init(capture: GspGpu.ScreenCapture) CaptureBuffer {
         return CaptureBuffer{
             .size = 0,
-            .enabled_3d = gsp.top.format.mode() == .@"3d",
+            .enabled_3d = capture.top.format.mode() == .@"3d",
             .top = Info{
                 .left_offset = 0,
                 .right_offset = 0,
-                .color_format = @intFromEnum(gsp.top.format.color_format),
+                .color_format = @intFromEnum(capture.top.format.color_format),
             },
             .bottom = Info{
-                .left_offset = 0,
+                // XXX: These values work? Why? They've been tested with Bgr8 (24bpp tf?)
+                .left_offset = 400 * 240 * 4,
                 .right_offset = 0,
-                .color_format = @intFromEnum(gsp.bottom.format.color_format),
+                .color_format = @intFromEnum(capture.bottom.format.color_format),
             },
         };
     }
@@ -243,7 +244,7 @@ pub fn init(srv: ServiceManager) !Applet {
     try apt.sendEnable(srv, attr);
     apt.chainload = if (environment.program_meta.runtime_flags.apt_chainload) .soft_reset else .none;
 
-    // XXX: Here we don't need the gpu to wakeup
+    // XXX: Here we don't need the gsp to wakeup
     _ = try apt.waitForWakeup(srv, .enable, null);
     return apt;
 }
@@ -293,15 +294,15 @@ pub fn deinit(apt: *Applet, srv: ServiceManager) void {
     apt.* = undefined;
 }
 
-pub fn waitEvent(apt: *Applet, srv: ServiceManager, gpu: ?*GspGpu) Error!EventResult {
-    return (try apt.waitEventTimeout(srv, -1, gpu)).?;
+pub fn waitEvent(apt: *Applet, srv: ServiceManager, gsp: ?*GspGpu) Error!EventResult {
+    return (try apt.waitEventTimeout(srv, -1, gsp)).?;
 }
 
-pub fn pollEvent(apt: *Applet, srv: ServiceManager, gpu: ?*GspGpu) Error!?EventResult {
-    return apt.waitEventTimeout(srv, 0, gpu);
+pub fn pollEvent(apt: *Applet, srv: ServiceManager, gsp: ?*GspGpu) Error!?EventResult {
+    return apt.waitEventTimeout(srv, 0, gsp);
 }
 
-pub fn waitEventTimeout(apt: *Applet, srv: ServiceManager, timeout_ns: i64, gpu: ?*GspGpu) Error!?EventResult {
+pub fn waitEventTimeout(apt: *Applet, srv: ServiceManager, timeout_ns: i64, gsp: ?*GspGpu) Error!?EventResult {
     const events = apt.events.?;
 
     const id = Event.waitMultiple(&events, false, timeout_ns) catch |err| switch (err) {
@@ -319,7 +320,7 @@ pub fn waitEventTimeout(apt: *Applet, srv: ServiceManager, timeout_ns: i64, gpu:
                     } else if (!apt.flags.allow_home) {
                         try apt.clearJumpToHome(srv);
                     } else {
-                        try apt.jumpToHome(srv, gpu.?, .none);
+                        try apt.jumpToHome(srv, gsp.?, .none);
                     }
                 },
                 .sleep_query => {
@@ -332,7 +333,7 @@ pub fn waitEventTimeout(apt: *Applet, srv: ServiceManager, timeout_ns: i64, gpu:
                 },
                 .sleep_accepted => {
                     // sleep dsp if needed
-                    try apt.acceptSleep(srv, gpu.?.*);
+                    try apt.acceptSleep(srv, gsp.?.*);
                 },
                 .sleep_canceled_by_open => continue :notif_handling .sleep_wakeup,
                 .sleep_wakeup => {
@@ -345,8 +346,8 @@ pub fn waitEventTimeout(apt: *Applet, srv: ServiceManager, timeout_ns: i64, gpu:
                         return .sleep_wakeup;
                     }
                 },
-                .shutdown => try apt.jumpToHome(srv, gpu.?, .none),
-                .power_button_click => try apt.jumpToHome(srv, gpu.?, .none),
+                .shutdown => try apt.jumpToHome(srv, gsp.?, .none),
+                .power_button_click => try apt.jumpToHome(srv, gsp.?, .none),
                 .power_button_clear => {},
                 .try_sleep => {},
                 .order_to_close => apt.flags.should_close = true,
@@ -380,10 +381,10 @@ pub fn waitEventTimeout(apt: *Applet, srv: ServiceManager, timeout_ns: i64, gpu:
                     // This only if its not cancel_lib
                     if (handling_transition != .cancel_lib and cmd != .wakeup and cmd != .wakeup_by_cancel) {
                         // NOTE: Give a name to these flags, investigate/debug in the future
-                        const valid_gpu = gpu.?;
+                        const valid_gsp = gsp.?;
 
-                        try valid_gpu.acquireRight(0);
-                        try valid_gpu.sendRestoreVRAMSysArea();
+                        try valid_gsp.acquireRight(0);
+                        try valid_gsp.sendRestoreVRAMSysArea();
                     }
 
                     switch (cmd) {
@@ -409,7 +410,7 @@ pub fn waitEventTimeout(apt: *Applet, srv: ServiceManager, timeout_ns: i64, gpu:
                         }
                     } else {
                         try apt.sendLockTransition(srv, .jump_home, true);
-                        try apt.jumpToHome(srv, gpu.?, .none);
+                        try apt.jumpToHome(srv, gsp.?, .none);
                     }
 
                     return .{ .transition_completed = cmd };
@@ -427,7 +428,7 @@ pub fn waitEventTimeout(apt: *Applet, srv: ServiceManager, timeout_ns: i64, gpu:
     return .success;
 }
 
-pub fn waitForWakeup(apt: *Applet, srv: ServiceManager, transition: TransitionState, gpu: ?*GspGpu) Error!void {
+pub fn waitForWakeup(apt: *Applet, srv: ServiceManager, transition: TransitionState, gsp: ?*GspGpu) Error!void {
     std.debug.assert(transition != .active);
 
     try apt.sendNotifyToWait(srv, environment.program_meta.app_id);
@@ -437,32 +438,32 @@ pub fn waitForWakeup(apt: *Applet, srv: ServiceManager, transition: TransitionSt
         try apt.sendSleepIfShellClosed(srv);
     }
 
-    while (true) switch (try apt.waitEvent(srv, gpu)) {
+    while (true) switch (try apt.waitEvent(srv, gsp)) {
         .transition_completed => |_| return,
         else => {},
     };
 }
 
-pub fn jumpToHome(apt: *Applet, srv: ServiceManager, gpu: *GspGpu, params: JumpToHomeParameters) Error!void {
+pub fn jumpToHome(apt: *Applet, srv: ServiceManager, gsp: *GspGpu, params: JumpToHomeParameters) Error!void {
     const last_allow_sleep = apt.flags.allow_sleep;
 
     try apt.setSleepAllowed(srv, false);
     try apt.sendPrepareToJumpToHomeMenu(srv);
 
-    try gpu.sendSaveVRAMSysArea();
+    try gsp.sendSaveVRAMSysArea();
 
     const home_app_id = (try apt.sendGetAppletManInfo(srv, .none)).home_menu;
-    try apt.screenTransfer(srv, gpu, home_app_id, false);
+    try apt.screenTransfer(srv, gsp, home_app_id, false);
 
     // Sleep dsp
-    try gpu.releaseRight();
+    try gsp.releaseRight();
     try apt.sendJumpToHomeMenu(srv, params);
 
-    _ = try apt.waitForWakeup(srv, .jump_to_menu, gpu);
+    _ = try apt.waitForWakeup(srv, .jump_to_menu, gsp);
     try apt.setSleepAllowed(srv, last_allow_sleep);
 }
 
-pub fn acceptSleep(apt: *Applet, srv: ServiceManager, gpu: GspGpu) Error!void {
+pub fn acceptSleep(apt: *Applet, srv: ServiceManager, gsp: GspGpu) Error!void {
     apt.sendReplySleepNotificationComplete(srv, environment.program_meta.app_id) catch unreachable;
 
     // We're already waiting, we'll eventually wake up
@@ -476,7 +477,7 @@ pub fn acceptSleep(apt: *Applet, srv: ServiceManager, gpu: GspGpu) Error!void {
         else => {},
     };
 
-    try gpu.sendSetLcdForceBlack(false);
+    try gsp.sendSetLcdForceBlack(false);
 }
 
 pub fn setSleepAllowed(apt: *Applet, srv: ServiceManager, allow: bool) Error!void {
@@ -496,8 +497,8 @@ pub fn clearJumpToHome(apt: Applet, srv: ServiceManager) Error!void {
 }
 
 // NOTE: This is just straight up taken from libctru. I didn't know why jumping to home was not working, now I know :p
-pub fn screenTransfer(apt: *Applet, srv: ServiceManager, gpu: *GspGpu, target_app_id: AppId, is_library_applet: bool) Error!void {
-    const gsp_capture_info = try gpu.sendImportDisplayCaptureInfo();
+pub fn screenTransfer(apt: *Applet, srv: ServiceManager, gsp: *GspGpu, target_app_id: AppId, is_library_applet: bool) Error!void {
+    const gsp_capture_info = try gsp.sendImportDisplayCaptureInfo();
     const apt_capture_info = CaptureBuffer.init(gsp_capture_info);
 
     while (!(try apt.sendIsRegistered(srv, target_app_id))) {
@@ -508,7 +509,7 @@ pub fn screenTransfer(apt: *Applet, srv: ServiceManager, gpu: *GspGpu, target_ap
     try apt.sendSendParameter(srv, environment.program_meta.app_id, target_app_id, if (is_library_applet) .request else .request_for_sys_applet, null, std.mem.asBytes(&apt_capture_info));
 
     // NOTE: Recursion here!
-    const capture_memory_handle = capture_handle_wait: while (true) switch (try apt.waitEvent(srv, gpu)) {
+    const capture_memory_handle = capture_handle_wait: while (true) switch (try apt.waitEvent(srv, gsp)) {
         .response => {
             var handle: ?*Handle = null;
             const params = try apt.sendReceiveParameter(srv, environment.program_meta.app_id, std.mem.asBytes(&handle));
@@ -1036,7 +1037,7 @@ const Filesystem = horizon.services.Filesystem;
 const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
-const environment = zitrus.environment;
+const environment = horizon.environment;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
 

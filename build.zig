@@ -18,6 +18,46 @@ pub fn build(b: *std.Build) void {
     zitrus.addImport("zitrus", zitrus);
     zitrus.addImport("zitrus-tooling", zitrus_tooling);
     zitrus.addImport("zalloc", zalloc_mod);
+
+    buildTools(b, zitrus_tooling);
+}
+
+const tools = .{
+    .{
+        .name = "convert-3dsx",
+        .description = "Processes elf files and converts them to 3dsx",
+        .path = "tools/convert-3dsx.zig",
+    },
+};
+
+fn buildTools(b: *std.Build, tooling: *std.Build.Module) void {
+    const clap = b.lazyDependency("clap", .{}) orelse unreachable;
+
+    inline for (&tools) |tool_info| {
+        const tool = b.addExecutable(.{
+            .name = tool_info.name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(tool_info.path),
+                .target = b.resolveTargetQuery(.{}),
+                .strip = true,
+                .optimize = .ReleaseFast,
+            }),
+        });
+
+        tool.root_module.addImport("clap", clap.module("clap"));
+        tool.root_module.addImport("zitrus-tooling", tooling);
+
+        b.installArtifact(tool);
+
+        const run_tool = b.addRunArtifact(tool);
+        
+        if(b.args) |args| {
+            run_tool.addArgs(args);
+        }
+
+        const run_step = b.step("run-" ++ tool_info.name, tool_info.description);
+        run_step.dependOn(&run_tool.step);
+    }
 }
 
 pub const ExecutableOptions = struct {
@@ -49,28 +89,6 @@ pub fn addExecutable(b: *std.Build, options: ExecutableOptions) *std.Build.Step.
     return exe;
 }
 
-var convert_3dsx_artifact: ?*std.Build.Step.Compile = null;
-
-fn getConvert3dsx(b: *std.Build) *std.Build.Step.Compile {
-    if (convert_3dsx_artifact) |c| {
-        return c;
-    }
-
-    const zitrus = b.dependencyFromBuildZig(@This(), .{});
-    const clap = zitrus.builder.lazyDependency("clap", .{}) orelse unreachable;
-
-    const artifact = b.addExecutable(.{
-        .name = "convert-3dsx",
-        .root_module = b.createModule(.{ .root_source_file = zitrus.path("tools/convert-3dsx.zig"), .target = b.resolveTargetQuery(.{}) }),
-    });
-
-    artifact.root_module.addImport("clap", clap.module("clap"));
-    artifact.root_module.addImport("zitrus-tooling", zitrus.module("zitrus-tooling"));
-
-    convert_3dsx_artifact = artifact;
-    return artifact;
-}
-
 // TODO: Add RomFS and SMDH options
 pub const Convert3dsxOptions = struct {
     name: []const u8,
@@ -78,7 +96,8 @@ pub const Convert3dsxOptions = struct {
 };
 
 pub fn addConvert3dsx(b: *std.Build, options: Convert3dsxOptions) std.Build.LazyPath {
-    const run_convert = b.addRunArtifact(getConvert3dsx(b));
+    const zitrus = b.dependencyFromBuildZig(@This(), .{});
+    const run_convert = b.addRunArtifact(zitrus.artifact("convert-3dsx"));
 
     run_convert.addArtifactArg(options.exe);
     return run_convert.addOutputFileArg(options.name);

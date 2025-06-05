@@ -13,8 +13,8 @@ pub fn main() !void {
     var hid = try Hid.init(srv, &shm_alloc);
     defer hid.deinit(&shm_alloc);
 
-    var gpu = try GspGpu.init(srv, &shm_alloc);
-    defer gpu.deinit(&shm_alloc);
+    var gsp = try GspGpu.init(srv, &shm_alloc);
+    defer gsp.deinit(&shm_alloc);
 
     const linear_page_allocator = horizon.linear_page_allocator;
 
@@ -36,20 +36,20 @@ pub fn main() !void {
     @memcpy(top_fb, top_screen_bitmap);
     @memcpy(bottom_fb, bottom_screen_bitmap);
 
-    try framebuffer.flushBuffers(&gpu);
-    try framebuffer.present(&gpu);
+    try framebuffer.flushBuffers(&gsp);
+    try framebuffer.present(&gsp);
 
     // TODO: This is currently not that great...
     while (true) {
-        const interrupts = try gpu.waitInterrupts();
+        const interrupts = try gsp.waitInterrupts();
 
         if (interrupts.contains(.vblank_top)) {
             break;
         }
     }
 
-    try gpu.sendSetLcdForceBlack(false);
-    defer if (gpu.has_right) gpu.sendSetLcdForceBlack(true) catch {};
+    try gsp.sendSetLcdForceBlack(false);
+    defer if (gsp.has_right) gsp.sendSetLcdForceBlack(true) catch {};
 
     var running = true;
     while (running) {
@@ -58,7 +58,7 @@ pub fn main() !void {
             else => {},
         };
 
-        while (try apt.pollEvent(srv, &gpu)) |e| switch (e) {
+        while (try apt.pollEvent(srv, &gsp)) |e| switch (e) {
             else => {},
         };
 
@@ -69,7 +69,7 @@ pub fn main() !void {
         }
 
         while (true) {
-            const interrupts = try gpu.waitInterrupts();
+            const interrupts = try gsp.waitInterrupts();
 
             if (interrupts.contains(.vblank_top)) {
                 break;
@@ -85,7 +85,7 @@ const ServiceManager = horizon.ServiceManager;
 const Applet = horizon.services.Applet;
 const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
-const Framebuffer = zitrus.Framebuffer;
+const Framebuffer = zitrus.gpu.Framebuffer;
 
 pub const panic = zitrus.panic;
 const zitrus = @import("zitrus");

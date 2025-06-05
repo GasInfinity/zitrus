@@ -341,6 +341,10 @@ pub const page_size_min: usize = 4096;
 
 pub const SharedMemoryAddressAllocator = page_allocators.SharedMemoryAddressAllocator;
 pub const sharedMemoryAddressAllocator = page_allocators.sharedMemoryAddressAllocator;
+
+pub const VRamBankAllocator = page_allocators.VRamBankAllocator;
+pub const vramBankAllocator = page_allocators.vramBankAllocator;
+
 pub const linear_page_allocator = page_allocators.linear_page_allocator;
 
 pub const controlMemory = syscalls.controlMemory;
@@ -370,10 +374,11 @@ pub const getResourceLimitLimitValues = syscalls.getResourceLimitLimitValues;
 pub const getResourceLimitCurrentValues = syscalls.getResourceLimitCurrentValues;
 pub const breakpoint = syscalls.breakpoint;
 
+pub const environment = @import("horizon/environment.zig");
 pub const result = @import("horizon/result.zig");
 pub const memory = @import("horizon/memory.zig");
 pub const syscalls = @import("horizon/syscalls.zig");
-pub const kernel = @import("horizon/kernel.zig");
+pub const config = @import("horizon/config.zig");
 pub const ipc = @import("horizon/ipc.zig");
 pub const tls = @import("horizon/tls.zig");
 pub const page_allocators = @import("horizon/page_allocators.zig");

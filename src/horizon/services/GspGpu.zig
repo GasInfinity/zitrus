@@ -4,89 +4,6 @@ const service_name = "gsp::Gpu";
 
 pub const Error = Session.RequestError;
 
-// TODO: Some things could be moved to a separate generic 'Gpu.zig' file.
-pub const Screen = enum(u1) {
-    top,
-    bottom,
-
-    pub inline fn width(_: Screen) usize {
-        return 240;
-    }
-
-    pub inline fn height(screen: Screen) usize {
-        return switch (screen) {
-            .top => 400,
-            .bottom => 320,
-        };
-    }
-};
-
-pub const ColorFormat = enum(u3) {
-    abgr8,
-    bgr8,
-    bgr565,
-    a1_bgr5,
-    abgr4,
-
-    pub inline fn bytesPerPixel(format: ColorFormat) usize {
-        return switch (format) {
-            .abgr8 => 4,
-            .bgr8 => 3,
-            .bgr565, .a1_bgr5, .abgr4 => 2,
-        };
-    }
-};
-
-pub const FramebufferInterlacingMode = enum(u2) { none, scanline_doubling, enable, enable_inverted };
-
-pub const DmaSize = enum(u2) { @"32", @"64", @"128", vram };
-
-pub const FramebufferMode = enum { @"2d", @"3d", full_resolution };
-
-pub const FramebufferFormat = packed struct(u32) {
-    color_format: ColorFormat,
-    interlacing_mode: FramebufferInterlacingMode,
-    alternative_pixel_output: bool,
-    unknown0: u1 = 0,
-    dma_size: DmaSize,
-    unknown1: u7 = 0,
-    unknown2: u16 = 0,
-
-    pub inline fn mode(format: FramebufferFormat) FramebufferMode {
-        return switch (format.interlacing_mode) {
-            .enable => .@"3d",
-            else => if (format.alternative_pixel_output) .@"2d" else .full_resolution,
-        };
-    }
-};
-
-pub const DmaTransferData = extern struct {
-    pub const Scaling = enum(u2) { none, @"2x1", @"2x2" };
-
-    pub const Flags = packed struct(u32) {
-        flip_vertically: bool = false,
-        align_width: bool = false,
-        texture_copy: bool = false,
-        _reserved0: u1 = 0,
-        input_color_format: ColorFormat,
-        _reserved1: u1 = 0,
-        output_color_format: ColorFormat,
-        _reserved2: u1 = 0,
-        use_large_tiling: bool = false,
-        _reserved3: u6 = 0,
-        box_scale_down: Scaling = .none,
-        _reserved: u6 = 0,
-    };
-
-    pub const Size = packed struct(u32) { width: u16, height: u16 };
-
-    input_physical_address: u32,
-    output_physical_address: u32,
-    output: Size,
-    input: Size,
-    flags: Flags,
-};
-
 // https://www.3dbrew.org/wiki/GSP_Shared_Memory#Interrupt%20Queue
 pub const InterruptKind = enum(u8) {
     psc0,
@@ -208,32 +125,32 @@ shared_memory_data: ?[]align(horizon.page_size_min) u8 = null,
 pub fn init(srv: ServiceManager, shm_allocator: *SharedMemoryAddressAllocator) (error{OutOfMemory} || Session.ConnectionError || Event.CreationError || MemoryBlock.MapError || Error)!GspGpu {
     const gsp_handle = try srv.getService(service_name, true);
 
-    var gpu = GspGpu{ .session = gsp_handle };
+    var gsp = GspGpu{ .session = gsp_handle };
     // gpu.session = gsp_handle; // compiling with ReleaseSmall doesn't set the session above?
-    errdefer gpu.deinit(shm_allocator);
-    try gpu.acquireRight(0);
+    errdefer gsp.deinit(shm_allocator);
+    try gsp.acquireRight(0);
 
     const interrupt_event = try Event.init(.oneshot);
-    gpu.interrupt_event = interrupt_event;
+    gsp.interrupt_event = interrupt_event;
 
     // XXX: What does this flag mean?
-    const queue_result = try gpu.sendRegisterInterruptRelayQueue(0x1, interrupt_event);
+    const queue_result = try gsp.sendRegisterInterruptRelayQueue(0x1, interrupt_event);
 
     if (queue_result.should_initialize_hardware) {
-        try gpu.initializeHardware();
+        try gsp.initializeHardware();
     }
 
-    gpu.thread_index = queue_result.thread_index;
-    gpu.shared_memory = queue_result.shared_memory;
-    gpu.shared_memory_data = try shm_allocator.alloc(4096, .fromByteUnits(4096));
+    gsp.thread_index = queue_result.thread_index;
+    gsp.shared_memory = queue_result.shared_memory;
+    gsp.shared_memory_data = try shm_allocator.alloc(4096, .fromByteUnits(4096));
 
-    try gpu.shared_memory.?.map(gpu.shared_memory_data.?.ptr, .rw, .dont_care);
-    return gpu;
+    try gsp.shared_memory.?.map(gsp.shared_memory_data.?.ptr, .rw, .dont_care);
+    return gsp;
 }
 
-pub fn deinit(gpu: *GspGpu, shm_alloc: *SharedMemoryAddressAllocator) void {
-    if (gpu.shared_memory) |*shm_handle| {
-        if (gpu.shared_memory_data) |*shm| {
+pub fn deinit(gsp: *GspGpu, shm_alloc: *SharedMemoryAddressAllocator) void {
+    if (gsp.shared_memory) |*shm_handle| {
+        if (gsp.shared_memory_data) |*shm| {
             shm_handle.unmap(shm.ptr);
             shm_alloc.free(shm.*);
         }
@@ -241,27 +158,27 @@ pub fn deinit(gpu: *GspGpu, shm_alloc: *SharedMemoryAddressAllocator) void {
         shm_handle.deinit();
     }
 
-    gpu.sendUnregisterInterruptRelayQueue() catch unreachable;
-    gpu.releaseRight() catch unreachable;
+    gsp.sendUnregisterInterruptRelayQueue() catch unreachable;
+    gsp.releaseRight() catch unreachable;
 
-    if (gpu.interrupt_event) |*int_ev| {
+    if (gsp.interrupt_event) |*int_ev| {
         int_ev.deinit();
     }
 
-    gpu.session.deinit();
-    gpu.* = undefined;
+    gsp.session.deinit();
+    gsp.* = undefined;
 }
 
-pub fn waitInterrupts(gpu: *GspGpu) Error!InterruptQueue.Interrupts {
-    return (try gpu.waitInterruptsTimeout(-1)).?;
+pub fn waitInterrupts(gsp: *GspGpu) Error!InterruptQueue.Interrupts {
+    return (try gsp.waitInterruptsTimeout(-1)).?;
 }
 
-pub fn pollInterrupts(gpu: *GspGpu) Error!?InterruptQueue.Interrupts {
-    return try gpu.waitInterruptsTimeout(0);
+pub fn pollInterrupts(gsp: *GspGpu) Error!?InterruptQueue.Interrupts {
+    return try gsp.waitInterruptsTimeout(0);
 }
 
-pub fn waitInterruptsTimeout(gpu: *GspGpu, timeout_ns: i64) Error!?InterruptQueue.Interrupts {
-    const int_ev = gpu.interrupt_event.?;
+pub fn waitInterruptsTimeout(gsp: *GspGpu, timeout_ns: i64) Error!?InterruptQueue.Interrupts {
+    const int_ev = gsp.interrupt_event.?;
 
     int_ev.wait(timeout_ns) catch |err| switch (err) {
         error.Timeout => return null,
@@ -270,16 +187,16 @@ pub fn waitInterruptsTimeout(gpu: *GspGpu, timeout_ns: i64) Error!?InterruptQueu
 
     var interrupts = InterruptQueue.Interrupts.initEmpty();
 
-    while (gpu.dequeueInterrupt()) |interrupt| {
+    while (gsp.dequeueInterrupt()) |interrupt| {
         interrupts.setPresent(interrupt, true);
     }
 
     return interrupts;
 }
 
-pub fn dequeueInterrupt(gpu: *GspGpu) ?InterruptKind {
-    const gpu_data = gpu.shared_memory_data.?;
-    const interrupt_queue: *InterruptQueue = @alignCast(std.mem.bytesAsValue(InterruptQueue, gpu_data[(gpu.thread_index * @sizeOf(InterruptQueue))..][0..@sizeOf(InterruptQueue)]));
+pub fn dequeueInterrupt(gsp: *GspGpu) ?InterruptKind {
+    const gsp_data = gsp.shared_memory_data.?;
+    const interrupt_queue: *InterruptQueue = @alignCast(std.mem.bytesAsValue(InterruptQueue, gsp_data[(gsp.thread_index * @sizeOf(InterruptQueue))..][0..@sizeOf(InterruptQueue)]));
     const interrupt_header_address: *u32 = @ptrCast(&interrupt_queue.header);
 
     const interrupt = i: while (true) {
@@ -315,13 +232,13 @@ pub fn FramebufferPresent(comptime screen: Screen) type {
         left_vaddr: *anyopaque,
         right_vaddr: *anyopaque,
         stride: usize,
-        mode: (if (screen == .top) FramebufferMode else void) = if (screen == .top) .@"2d" else undefined,
+        mode: (if (screen == .top) TopFramebufferMode else void) = if (screen == .top) .@"2d" else undefined,
         dma_size: DmaSize,
     };
 }
 
-pub fn presentFramebuffer(gpu: *GspGpu, comptime screen: Screen, present: FramebufferPresent(screen)) Error!bool {
-    return gpu.writeFramebufferInfo(screen, FramebufferInfo{
+pub fn presentFramebuffer(gsp: *GspGpu, comptime screen: Screen, present: FramebufferPresent(screen)) Error!bool {
+    return gsp.writeFramebufferInfo(screen, FramebufferInfo{
         .active = present.active,
         .left_vaddr = present.left_vaddr,
         .right_vaddr = present.right_vaddr,
@@ -342,9 +259,9 @@ pub fn presentFramebuffer(gpu: *GspGpu, comptime screen: Screen, present: Frameb
     });
 }
 
-pub fn writeFramebufferInfo(gpu: *GspGpu, screen: Screen, info: FramebufferInfo) Error!bool {
-    const gpu_data = gpu.shared_memory_data.?;
-    const framebuffer_info_start = gpu_data[0x200 + (@as(usize, @intFromEnum(screen)) * 0x40) + (gpu.thread_index * 0x80) ..];
+pub fn writeFramebufferInfo(gsp: *GspGpu, screen: Screen, info: FramebufferInfo) Error!bool {
+    const gsp_data = gsp.shared_memory_data.?;
+    const framebuffer_info_start = gsp_data[0x200 + (@as(usize, @intFromEnum(screen)) * 0x40) + (gsp.thread_index * 0x80) ..];
     const framebuffer_info: []FramebufferInfo = @alignCast(std.mem.bytesAsSlice(FramebufferInfo, framebuffer_info_start[@sizeOf(FramebufferInfo.Header)..][0..(2 * @sizeOf(FramebufferInfo))]));
     const framebuffer_header_address: *u32 = @alignCast(@ptrCast(framebuffer_info_start.ptr));
     const initial_framebuffer_header: FramebufferInfo.Header = @bitCast(framebuffer_header_address.*);
@@ -352,7 +269,7 @@ pub fn writeFramebufferInfo(gpu: *GspGpu, screen: Screen, info: FramebufferInfo)
     const next_active = initial_framebuffer_header.index +% 1;
     framebuffer_info[next_active] = info;
 
-    // Ensure the framebuffer info is written and the gpu can see it before we update the header.
+    // Ensure the framebuffer info is written and the gsp can see it before we update the header.
     zitrus.arm.dsb();
 
     const was_presenting = was: while (true) {
@@ -367,99 +284,59 @@ pub fn writeFramebufferInfo(gpu: *GspGpu, screen: Screen, info: FramebufferInfo)
         }
     } else unreachable;
 
-    // This only is false when the gpu finished processing the last framebuffer
+    // This only is false when the gsp finished processing the last framebuffer
     return was_presenting;
 }
 
-pub fn initializeHardware(gpu: *GspGpu) Error!void {
-    const PackedComponents = packed struct(u32) {
-        lower: u16,
-        upper: u16,
-    };
-
-    const PdcControl = packed struct(u32) {
-        enable_display_controller: bool,
-        _unknown0: u7 = 0,
-        hblank_irq_disabled: bool,
-        vblank_irq_disabled: bool,
-        error_irq_disabled: bool,
-        _unknown1: u5 = 0,
-        output_enable: bool,
-        _unknown2: u15 = 0,
-    };
-
-    const PreFramebufferSetup = extern struct {
-        htotal: u32,
-        hstart: u32,
-        hbr: u32,
-        hpf: u32,
-        hsync: u32,
-        hpb: u32,
-        hbl: u32,
-        hinterrupt_timing: u32,
-        unknown0: u32,
-        vtotal: u32,
-        possibly_vblank: u32,
-        unknown_2c: u32,
-        vscanlines: u32,
-        vdisp: u32,
-        vdata_offset: u32,
-        unknown_3c: u32,
-        vinterrupt_timing: u32,
-        similar_hsync: u32,
-        disable: u32,
-    };
-
-    std.debug.assert(@sizeOf(PreFramebufferSetup) <= 0x80);
+pub fn initializeHardware(gsp: *GspGpu) Error!void {
+    const gpu_registers: *gpu.Registers = memory.gpu_registers;
 
     // XXX: Unknown, https://www.3dbrew.org/wiki/GPU/External_Registers#Map and libctru also just writes these values without knowing what they do
-    try gpu.sendWriteHwRegs(.unknown_write_0_on_init, std.mem.asBytes(&@as(u32, 0x0)));
-    try gpu.sendWriteHwRegs(.unknown_write_12345678_on_init, std.mem.asBytes(&@as(u32, 0x12345678)));
-    try gpu.sendWriteHwRegs(.unknown_write_fffffff0_on_init, std.mem.asBytes(&@as(u32, 0xFFFFFFF0)));
-    try gpu.sendWriteHwRegs(.unknown_write_1_on_init, std.mem.asBytes(&@as(u32, 0x1)));
-    try gpu.sendWriteHwRegs(.unknown_write_22221200_on_init, std.mem.asBytes(&@as(u32, 0x22221200)));
-    try gpu.sendWriteHwRegsWithMask(.unknown_write_ff2_on_init, std.mem.asBytes(&@as(u32, 0xFF2)), std.mem.asBytes(&@as(u32, 0xFFFF)));
+    try gsp.writeHwRegs(&gpu_registers.internal_registers.write_0_on_init_or_cmd, std.mem.asBytes(&[_]u32{0x00}));
+    try gsp.writeHwRegs(&gpu_registers.internal_registers.write_0x12345678_on_init, std.mem.asBytes(&[_]u32{0x12345678}));
+    try gsp.writeHwRegs(&gpu_registers.internal_registers.write_0xFFFFFFF0_on_init, std.mem.asBytes(&[_]u32{0xFFFFFFF0}));
+    try gsp.writeHwRegs(&gpu_registers.internal_registers.write_1_on_init, std.mem.asBytes(&[_]u32{0x01}));
+    try gsp.writeHwRegs(&gpu_registers.write_0x22221200_on_init, std.mem.asBytes(&[_]u32{0x22221200}));
+    try gsp.writeHwRegs(&gpu_registers.write_0xFF2_on_init, std.mem.asBytes(&[_]u32{0xFF2}));
 
     // Initialize top screen
     // Taken from: https://www.3dbrew.org/wiki/GPU/External_Registers#LCD_Source_Framebuffer_Setup / https://www.3dbrew.org/wiki/GPU/External_Registers#Framebuffers
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.top, .htotal), std.mem.asBytes(&PreFramebufferSetup{
-        .htotal = 0x1C2,
-        .hstart = 0xD1,
-        .hbr = 0x1C1,
-        .hpf = 0x1C1,
-        .hsync = 0x00,
-        .hpb = 0xCF,
-        .hbl = 0xD1,
-        .hinterrupt_timing = 0x1C501C1,
-        .unknown0 = 0x10000,
-        .vtotal = 0x19D,
-        .possibly_vblank = 0x2,
-        .unknown_2c = 0x1C2,
-        .vscanlines = 0x1C2,
-        .vdisp = 0x1C2,
-        .vdata_offset = 0x01,
-        .unknown_3c = 0x02,
-        .vinterrupt_timing = 0x1960192,
-        .similar_hsync = 0x00,
-        .disable = 0x00,
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].horizontal, std.mem.asBytes(&gpu.Pdc.Timing{
+        .total = 0x1C2,
+        .start = 0xD1,
+        .border = 0x1C1,
+        .front_porch = 0x1C1,
+        .sync = 0x00,
+        .back_porch = 0xCF,
+        .border_end = 0xD1,
+        .interrupt = 0x1C501C1,
     }));
-
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.top, .image_dimensions), std.mem.asBytes(&PackedComponents{
-        .lower = 240,
-        .upper = 400,
+    try gsp.writeHwRegs(&gpu_registers.pdc[0]._unknown0, std.mem.asBytes(&@as(u32, 0x10000)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].vertical, std.mem.asBytes(&gpu.Pdc.Timing{
+        .total = 0x19D,
+        .start = 0x2,
+        .border = 0x1C2,
+        .front_porch = 0x1C2,
+        .sync = 0x1C2,
+        .back_porch = 0x01,
+        .border_end = 0x02,
+        .interrupt = 0x1960192,
     }));
-
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.top, .hdisp), std.mem.asBytes(&PackedComponents{
-        .lower = 209,
-        .upper = 449,
+    try gsp.writeHwRegs(&gpu_registers.pdc[0]._unknown1, std.mem.asBytes(&@as(u32, 0x00)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].disable_sync, std.mem.asBytes(&@as(u32, 0x00)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].pixel_dimensions, std.mem.asBytes(&gpu.Dimensions{
+        .x = Screen.top.width(),
+        .y = Screen.top.height(),
     }));
-
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.top, .unknown_framebuffer_height), std.mem.asBytes(&PackedComponents{
-        .lower = 2,
-        .upper = 402,
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].horizontal_border, std.mem.asBytes(&gpu.Dimensions{
+        .x = 209,
+        .y = 449,
     }));
-
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.top, .framebuffer_format), std.mem.asBytes(&FramebufferFormat{
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].vertical_border, std.mem.asBytes(&gpu.Dimensions{
+        .x = 2,
+        .y = 402,
+    }));
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].framebuffer_format, std.mem.asBytes(&FramebufferFormat{
         .color_format = .abgr8,
         .interlacing_mode = .none,
         .alternative_pixel_output = false,
@@ -468,110 +345,125 @@ pub fn initializeHardware(gpu: *GspGpu) Error!void {
         .unknown1 = 1,
         .unknown2 = 8,
     }));
-
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.top, .pdc_control), std.mem.asBytes(&PdcControl{
-        .enable_display_controller = true,
-        .hblank_irq_disabled = true,
-        .vblank_irq_disabled = false,
-        .error_irq_disabled = true,
-        .output_enable = true,
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].control, std.mem.asBytes(&gpu.Pdc.Control{
+        .enable = true,
+        .disable_hblank_irq = true,
+        .disable_vblank_irq = false,
+        .disable_error_irq = true,
+        .enable_output = true,
     }));
-
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.top, .unknown_9c), std.mem.asBytes(&@as(u32, 0x0)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[0]._unknown5, std.mem.asBytes(&@as(u32, 0x00)));
 
     // Initialize bottom screen
     // From here I couldn't find any info about the bottom screen registers so these values are just yoinked from libctru.
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.bottom, .htotal), std.mem.asBytes(&PreFramebufferSetup{
-        .htotal = 0x1C2,
-        .hstart = 0xD1,
-        .hbr = 0x1C1,
-        .hpf = 0x1C1,
-        .hsync = 0xCD,
-        .hpb = 0xCF,
-        .hbl = 0xD1,
-        .hinterrupt_timing = 0x1C501C1,
-        .unknown0 = 0x10000,
-        .vtotal = 0x19D,
-        .possibly_vblank = 0x52,
-        .unknown_2c = 0x192,
-        .vscanlines = 0x192,
-        .vdisp = 0x4F,
-        .vdata_offset = 0x50,
-        .unknown_3c = 0x52,
-        .vinterrupt_timing = 0x1980194,
-        .similar_hsync = 0x00,
-        .disable = 0x11,
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].horizontal, std.mem.asBytes(&gpu.Pdc.Timing{
+        .total = 0x1C2,
+        .start = 0xD1,
+        .border = 0x1C1,
+        .front_porch = 0x1C1,
+        .sync = 0xCD,
+        .back_porch = 0xCF,
+        .border_end = 0xD1,
+        .interrupt = 0x1C501C1,
     }));
-
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.bottom, .image_dimensions), std.mem.asBytes(&PackedComponents{
-        .lower = 240,
-        .upper = 320,
+    try gsp.writeHwRegs(&gpu_registers.pdc[1]._unknown0, std.mem.asBytes(&@as(u32, 0x10000)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].vertical, std.mem.asBytes(&gpu.Pdc.Timing{
+        .total = 0x19D,
+        .start = 0x52,
+        .border = 0x192,
+        .front_porch = 0x192,
+        .sync = 0x4F,
+        .back_porch = 0x50,
+        .border_end = 0x52,
+        .interrupt = 0x1980194,
     }));
-
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.bottom, .hdisp), std.mem.asBytes(&PackedComponents{
-        .lower = 209,
-        .upper = 449,
+    try gsp.writeHwRegs(&gpu_registers.pdc[1]._unknown1, std.mem.asBytes(&@as(u32, 0x00)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].disable_sync, std.mem.asBytes(&@as(u32, 0x11)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].pixel_dimensions, std.mem.asBytes(&gpu.Dimensions{
+        .x = Screen.bottom.width(),
+        .y = Screen.bottom.height(),
     }));
-
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.bottom, .unknown_framebuffer_height), std.mem.asBytes(&PackedComponents{
-        .lower = 82,
-        .upper = 402,
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].horizontal_border, std.mem.asBytes(&gpu.Dimensions{
+        .x = 209,
+        .y = 449,
     }));
-
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.bottom, .framebuffer_format), std.mem.asBytes(&FramebufferFormat{
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].vertical_border, std.mem.asBytes(&gpu.Dimensions{
+        .x = 82,
+        .y = 402,
+    }));
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].framebuffer_format, std.mem.asBytes(&FramebufferFormat{
         .color_format = .abgr8,
         .interlacing_mode = .none,
         .alternative_pixel_output = false,
-        .unknown0 = 0,
+        .unknown0 = 1,
         .dma_size = .@"128",
         .unknown1 = 1,
         .unknown2 = 8,
     }));
-
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.bottom, .pdc_control), std.mem.asBytes(&PdcControl{
-        .enable_display_controller = true,
-        .hblank_irq_disabled = true,
-        .vblank_irq_disabled = false,
-        .error_irq_disabled = true,
-        .output_enable = true,
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].control, std.mem.asBytes(&gpu.Pdc.Control{
+        .enable = true,
+        .disable_hblank_irq = true,
+        .disable_vblank_irq = false,
+        .disable_error_irq = true,
+        .enable_output = true,
     }));
-
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.bottom, .unknown_9c), std.mem.asBytes(&@as(u32, 0x0)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[1]._unknown5, std.mem.asBytes(&@as(u32, 0x00)));
 
     // Initialize framebuffers
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.top, .framebuffer_a_first_address), std.mem.asBytes(&@as(u32, 0x18300000)));
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.top, .framebuffer_a_second_address), std.mem.asBytes(&@as(u32, 0x18300000)));
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.top, .framebuffer_b_first_address), std.mem.asBytes(&@as(u32, 0x18300000)));
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.top, .framebuffer_b_second_address), std.mem.asBytes(&@as(u32, 0x18300000)));
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.top, .framebuffer_select_status), std.mem.asBytes(&@as(u32, 0x1)));
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.bottom, .framebuffer_a_first_address), std.mem.asBytes(&@as(u32, 0x18300000)));
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.bottom, .framebuffer_a_second_address), std.mem.asBytes(&@as(u32, 0x18300000)));
-    try gpu.sendWriteHwRegs(.initFramebufferSetup(.bottom, .framebuffer_select_status), std.mem.asBytes(&@as(u32, 0x1)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].framebuffer_a_first, std.mem.asBytes(&@as(u32, 0x18300000)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].framebuffer_a_second, std.mem.asBytes(&@as(u32, 0x18300000)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].framebuffer_b_first, std.mem.asBytes(&@as(u32, 0x18300000)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].framebuffer_b_second, std.mem.asBytes(&@as(u32, 0x18300000)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].swap, std.mem.asBytes(&@as(u32, 0x1)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].framebuffer_a_first, std.mem.asBytes(&@as(u32, 0x18300000)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].framebuffer_a_second, std.mem.asBytes(&@as(u32, 0x18300000)));
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].swap, std.mem.asBytes(&@as(u32, 0x1)));
 
     // libctru does this also so we'll follow along
-    try gpu.sendWriteHwRegs(.clock, std.mem.asBytes(&@as(u32, 0x70100)));
-    try gpu.sendWriteHwRegsWithMask(.dma_transfer_state, std.mem.asBytes(&@as(u32, 0x00)), std.mem.asBytes(&@as(u32, 0xFF00)));
-
-    try gpu.sendWriteHwRegsWithMask(.initFramebufferFill(.top, .control), std.mem.asBytes(&@as(u32, 0x00)), std.mem.asBytes(&@as(u32, 0xFF)));
-    try gpu.sendWriteHwRegsWithMask(.initFramebufferFill(.bottom, .control), std.mem.asBytes(&@as(u32, 0x00)), std.mem.asBytes(&@as(u32, 0xFF)));
+    try gsp.writeHwRegs(&gpu_registers.clock, std.mem.asBytes(&@as(u32, 0x70100)));
+    try gsp.writeHwRegsWithMask(&gpu_registers.dma.control, std.mem.asBytes(&@as(u32, 0x00)), std.mem.asBytes(&@as(u32, 0xFF00)));
+    try gsp.writeHwRegsWithMask(&gpu_registers.psc[0].control, std.mem.asBytes(&@as(u32, 0x00)), std.mem.asBytes(&@as(u32, 0xFF)));
+    try gsp.writeHwRegsWithMask(&gpu_registers.psc[1].control, std.mem.asBytes(&@as(u32, 0x00)), std.mem.asBytes(&@as(u32, 0xFF)));
 }
 
-pub fn acquireRight(gpu: *GspGpu, unknown_flags: u8) Error!void {
-    if (gpu.has_right) {
+pub fn acquireRight(gsp: *GspGpu, unknown_flags: u8) Error!void {
+    if (gsp.has_right) {
         return;
     }
 
-    try gpu.sendAcquireRight(unknown_flags);
-    gpu.has_right = true;
+    try gsp.sendAcquireRight(unknown_flags);
+    gsp.has_right = true;
 }
 
-pub fn releaseRight(gpu: *GspGpu) Error!void {
-    if (!gpu.has_right) {
+pub fn releaseRight(gsp: *GspGpu) Error!void {
+    if (!gsp.has_right) {
         return;
     }
 
-    try gpu.sendReleaseRight();
-    gpu.has_right = false;
+    try gsp.sendReleaseRight();
+    gsp.has_right = false;
+}
+
+pub fn writeHwRegs(gsp: GspGpu, address: *anyopaque, buffer: []const u8) Error!void {
+    const offset = @intFromPtr(address) - 0x1EB00000;
+    var buffer_offset: usize = 0;
+    while (buffer_offset < buffer.len) : (buffer_offset += 0x80) {
+        const size = @min(buffer.len - buffer_offset, 0x80);
+
+        try gsp.sendWriteHwRegs(offset, buffer[buffer_offset..][0..size]);
+    }
+}
+
+pub fn writeHwRegsWithMask(gsp: GspGpu, address: *anyopaque, buffer: []const u8, mask: []const u8) Error!void {
+    std.debug.assert(buffer.len == mask.len);
+
+    const offset = @intFromPtr(address) - 0x1EB00000;
+    var buffer_offset: usize = 0;
+    while (buffer_offset < buffer.len) : (buffer_offset += 0x80) {
+        const size = @min(buffer.len - buffer_offset, 0x80);
+
+        try gsp.sendWriteHwRegsWithMask(offset, buffer[buffer_offset..][0..size], mask[buffer_offset..][0..size]);
+    }
 }
 
 const InterrupRelayQueueResult = struct {
@@ -580,41 +472,50 @@ const InterrupRelayQueueResult = struct {
     shared_memory: MemoryBlock,
 };
 
-pub fn sendWriteHwRegs(gpu: GspGpu, offset: GpuRegister, buffer: []const u8) Error!void {
+pub fn sendWriteHwRegs(gsp: GspGpu, offset: usize, buffer: []const u8) Error!void {
     std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
 
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.write_hw_regs, .{ @intFromEnum(offset), buffer.len }, .{ ipc.StaticBufferTranslationDescriptor.init(buffer.len, 0), @intFromPtr(buffer.ptr) });
+    data.ipc.fillCommand(Command.write_hw_regs, .{ offset, buffer.len }, .{ ipc.StaticBufferTranslationDescriptor.init(buffer.len, 0), @intFromPtr(buffer.ptr) });
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 }
 
-pub fn sendWriteHwRegsWithMask(gpu: GspGpu, offset: GpuRegister, buffer: []const u8, mask: []const u8) Error!void {
+pub fn sendWriteHwRegsWithMask(gsp: GspGpu, offset: usize, buffer: []const u8, mask: []const u8) Error!void {
     std.debug.assert(buffer.len == mask.len);
     std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
 
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.write_hw_regs_with_mask, .{ @intFromEnum(offset), buffer.len }, .{ ipc.StaticBufferTranslationDescriptor.init(buffer.len, 0), @intFromPtr(buffer.ptr), ipc.StaticBufferTranslationDescriptor.init(mask.len, 1), @intFromPtr(mask.ptr) });
+    data.ipc.fillCommand(Command.write_hw_regs_with_mask, .{ offset, buffer.len }, .{ ipc.StaticBufferTranslationDescriptor.init(buffer.len, 0), @intFromPtr(buffer.ptr), ipc.StaticBufferTranslationDescriptor.init(mask.len, 1), @intFromPtr(mask.ptr) });
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 }
 
-pub fn sendReadHwRegs(gpu: GspGpu, offset: GpuRegister, buffer: []u8) Error!void {
+pub fn sendWriteHwRegsRepeat(gsp: GspGpu, offset: usize, buffer: []const u8) Error!void {
     std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
 
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.read_hw_regs, .{ @intFromEnum(offset), buffer.len }, .{});
+    data.ipc.fillCommand(Command.write_hw_regs, .{ offset, buffer.len }, .{ ipc.StaticBufferTranslationDescriptor.init(buffer.len, 0), @intFromPtr(buffer.ptr) });
+
+    try gsp.session.sendRequest();
+}
+
+pub fn sendReadHwRegs(gsp: GspGpu, offset: usize, buffer: []u8) Error!void {
+    std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
+
+    const data = tls.getThreadLocalStorage();
+    data.ipc.fillCommand(Command.read_hw_regs, .{ offset, buffer.len }, .{});
     data.ipc_static_buffers[0] = @bitCast(ipc.StaticBufferTranslationDescriptor.init(buffer.len, 0));
     data.ipc_static_buffers[1] = @intFromPtr(buffer.ptr);
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 }
 
-pub fn sendRegisterInterruptRelayQueue(gpu: GspGpu, unknown_flags: u8, event: Event) Error!InterrupRelayQueueResult {
+pub fn sendRegisterInterruptRelayQueue(gsp: GspGpu, unknown_flags: u8, event: Event) Error!InterrupRelayQueueResult {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.register_interrupt_relay_queue, .{@as(u32, unknown_flags)}, .{ ipc.HandleTranslationDescriptor.init(0), @intFromPtr(event.handle) });
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 
     const last_result = data.ipc.getLastResult();
     const should_initialize_hardware = if (last_result.summary == .success and @intFromEnum(last_result.description) == 0x207)
@@ -630,64 +531,64 @@ pub fn sendRegisterInterruptRelayQueue(gpu: GspGpu, unknown_flags: u8, event: Ev
     };
 }
 
-pub fn sendFlushDataCache(gpu: GspGpu, buffer: []u8) Error!void {
+pub fn sendFlushDataCache(gsp: GspGpu, buffer: []u8) Error!void {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.flush_data_cache, .{ @intFromPtr(buffer.ptr), buffer.len }, .{ ipc.HandleTranslationDescriptor.init(0), @intFromPtr(horizon.Handle.current_process) });
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 }
 
-pub fn sendInvalidateDataCache(gpu: GspGpu, buffer: []u8) Error!void {
+pub fn sendInvalidateDataCache(gsp: GspGpu, buffer: []u8) Error!void {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.invalidate_data_cache, .{ @intFromPtr(buffer.ptr), buffer.len }, .{ ipc.HandleTranslationDescriptor.init(0), ipc.HandleTranslationDescriptor.replace_by_proccess_id });
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 }
 
-pub fn sendSetLcdForceBlack(gpu: GspGpu, force: bool) Error!void {
+pub fn sendSetLcdForceBlack(gsp: GspGpu, force: bool) Error!void {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.set_lcd_force_black, .{@as(u32, @intFromBool(force))}, .{});
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 }
 
-pub fn sendUnregisterInterruptRelayQueue(gpu: GspGpu) Error!void {
+pub fn sendUnregisterInterruptRelayQueue(gsp: GspGpu) Error!void {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.unregister_interrupt_relay_queue, .{}, .{});
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 }
 
-pub fn sendTryAcquireRight(gpu: GspGpu, unknown_flags: u8) Error!void {
+pub fn sendTryAcquireRight(gsp: GspGpu, unknown_flags: u8) Error!void {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.try_acquire_right, .{@as(u32, unknown_flags)}, .{ ipc.HandleTranslationDescriptor.init(0), @intFromPtr(horizon.Handle.current_process) });
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
     return true;
 }
 
-pub fn sendAcquireRight(gpu: GspGpu, unknown_flags: u8) Error!void {
+pub fn sendAcquireRight(gsp: GspGpu, unknown_flags: u8) Error!void {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.acquire_right, .{@as(u32, unknown_flags)}, .{ ipc.HandleTranslationDescriptor.init(0), @intFromPtr(horizon.Handle.current_process) });
 
     // HACK: WHY DOES THIS NOT WORK WITHOUT NOINLINE????
     // What happens is that the event for gsp interrupts never signals after for example returning from home or in rare cases after continuing from a break while debugging...
     // It doesn't make any sense as it happens EVEN if this is not called (e.f: after breaking from debugging somewhere unrelated)
-    try @call(.never_inline, Session.sendRequest, .{gpu.session});
+    try @call(.never_inline, Session.sendRequest, .{gsp.session});
 }
 
-pub fn sendReleaseRight(gpu: GspGpu) Error!void {
+pub fn sendReleaseRight(gsp: GspGpu) Error!void {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.release_right, .{}, .{});
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 }
 
-pub fn sendImportDisplayCaptureInfo(gpu: GspGpu) Error!ScreenCapture {
+pub fn sendImportDisplayCaptureInfo(gsp: GspGpu) Error!ScreenCapture {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.import_display_capture_info, .{}, .{});
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 
     return ScreenCapture{
         .top = .{
@@ -705,25 +606,25 @@ pub fn sendImportDisplayCaptureInfo(gpu: GspGpu) Error!ScreenCapture {
     };
 }
 
-pub fn sendSaveVRAMSysArea(gpu: GspGpu) Error!void {
+pub fn sendSaveVRAMSysArea(gsp: GspGpu) Error!void {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.save_vram_sys_area, .{}, .{});
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 }
 
-pub fn sendRestoreVRAMSysArea(gpu: GspGpu) Error!void {
+pub fn sendRestoreVRAMSysArea(gsp: GspGpu) Error!void {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.restore_vram_sys_area, .{}, .{});
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 }
 
-pub fn sendResetGpuCore(gpu: GspGpu) Error!void {
+pub fn sendResetGpuCore(gsp: GspGpu) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.reset_gpu_core, .{}, .{});
+    data.ipc.fillCommand(Command.reset_gsp_core, .{}, .{});
 
-    try gpu.session.sendRequest();
+    try gsp.session.sendRequest();
 }
 
 pub const Command = enum(u16) {
@@ -898,10 +799,18 @@ const FramebufferSetupRegister = enum(u32) {
 const GspGpu = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
+const gpu = zitrus.gpu;
+
 const horizon = zitrus.horizon;
-const environment = zitrus.environment;
+const memory = horizon.memory;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
+
+const Screen = gpu.Screen;
+const ColorFormat = gpu.ColorFormat;
+const DmaSize = gpu.DmaSize;
+const TopFramebufferMode = gpu.TopFramebufferMode;
+const FramebufferFormat = gpu.FramebufferFormat;
 
 const ResultCode = horizon.ResultCode;
 const Event = horizon.Event;

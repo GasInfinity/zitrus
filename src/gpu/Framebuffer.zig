@@ -1,13 +1,13 @@
 pub const Error = error{};
 
 pub const Config = struct {
-    pub const ScreenColorFormat = std.EnumArray(Screen, GspGpu.ColorFormat);
+    pub const ScreenColorFormat = std.EnumArray(Screen, ColorFormat);
     pub const ScreenDoubleBuffer = std.EnumArray(Screen, bool);
 
     double_buffer: ScreenDoubleBuffer = .initFill(true),
-    top_mode: GspGpu.FramebufferMode = .@"2d",
+    top_mode: TopFramebufferMode = .@"2d",
     color_format: ScreenColorFormat = .initFill(.bgr8),
-    dma_size: GspGpu.DmaSize = .@"128",
+    dma_size: DmaSize = .@"128",
     phys_linear_allocator: Allocator = horizon.linear_page_allocator,
 };
 
@@ -64,28 +64,29 @@ pub fn currentFramebuffer(fb: *Framebuffer, comptime screen: Screen) []u8 {
     };
 }
 
-pub fn flushBuffers(fb: *Framebuffer, gpu: *GspGpu) !void {
+// TODO: We can abstract this to not directly depend on the GSP services always (for example when booting as a firm)
+pub fn flushBuffers(fb: *Framebuffer, gsp: *GspGpu) !void {
     if (fb.config.top_mode == .@"3d") {
         for (fb.currentTopFramebuffers()) |buffer| {
-            try gpu.sendFlushDataCache(buffer);
+            try gsp.sendFlushDataCache(buffer);
         }
     } else {
-        try gpu.sendFlushDataCache(fb.currentFramebuffer(.top));
+        try gsp.sendFlushDataCache(fb.currentFramebuffer(.top));
     }
 
-    try gpu.sendFlushDataCache(fb.currentFramebuffer(.bottom));
+    try gsp.sendFlushDataCache(fb.currentFramebuffer(.bottom));
 }
 
-pub fn swapBuffers(fb: *Framebuffer, gpu: *GspGpu) !void {
+pub fn swapBuffers(fb: *Framebuffer, gsp: *GspGpu) !void {
     // Swap buffers after presenting the current back-buffer
     defer inline for (comptime std.enums.values(Screen)) |screen| {
         fb.current_framebuffer.set(screen, fb.current_framebuffer.get(screen) ^ @intFromBool(fb.config.double_buffer.get(screen)));
     };
 
-    return fb.present(gpu);
+    return fb.present(gsp);
 }
 
-pub fn present(fb: *Framebuffer, gpu: *GspGpu) !void {
+pub fn present(fb: *Framebuffer, gsp: *GspGpu) !void {
     const current_top_framebuffer: usize = fb.current_framebuffer.get(.top);
     const top_left_framebuffer, const top_right_framebuffer = switch (fb.config.top_mode) {
         .@"2d", .full_resolution => top_fb: {
@@ -95,35 +96,41 @@ pub fn present(fb: *Framebuffer, gpu: *GspGpu) !void {
         .@"3d" => fb.currentTopFramebuffers(),
     };
 
-    _ = try gpu.presentFramebuffer(.top, .{
+    _ = try gsp.presentFramebuffer(.top, .{
         .active = @enumFromInt(current_top_framebuffer),
         .color_format = fb.config.color_format.get(.top),
         .left_vaddr = top_left_framebuffer.ptr,
         .right_vaddr = top_right_framebuffer.ptr,
-        .stride = (fb.config.color_format.get(.top).bytesPerPixel() * GspGpu.Screen.top.width()) << (if (fb.config.top_mode == .full_resolution) 1 else 0),
+        .stride = (fb.config.color_format.get(.top).bytesPerPixel() * Screen.top.width()) << (if (fb.config.top_mode == .full_resolution) 1 else 0),
         .mode = fb.config.top_mode,
         .dma_size = fb.config.dma_size,
     });
 
     const current_bottom_framebuffer: usize = fb.current_framebuffer.get(.bottom);
     const bottom_framebuffer = fb.currentFramebuffer(.bottom);
-    _ = try gpu.presentFramebuffer(.bottom, .{
+    _ = try gsp.presentFramebuffer(.bottom, .{
         .active = @enumFromInt(current_bottom_framebuffer),
         .color_format = fb.config.color_format.get(.bottom),
         .left_vaddr = bottom_framebuffer.ptr,
         .right_vaddr = bottom_framebuffer.ptr,
-        .stride = fb.config.color_format.get(.bottom).bytesPerPixel() * GspGpu.Screen.bottom.width(),
+        .stride = fb.config.color_format.get(.bottom).bytesPerPixel() * Screen.bottom.width(),
         .dma_size = fb.config.dma_size,
     });
 }
 
-const DoubleBufferIndex = std.EnumArray(GspGpu.Screen, u1);
+const DoubleBufferIndex = std.EnumArray(Screen, u1);
 const Framebuffer = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");
+const gpu = zitrus.gpu;
+
 const horizon = zitrus.horizon;
 
 const Allocator = std.mem.Allocator;
 const GspGpu = horizon.services.GspGpu;
-const Screen = GspGpu.Screen;
+
+const Screen = gpu.Screen;
+const ColorFormat = gpu.ColorFormat;
+const DmaSize = gpu.DmaSize;
+const TopFramebufferMode = gpu.TopFramebufferMode;

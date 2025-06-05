@@ -11,11 +11,11 @@ pub const os = struct {
 };
 
 pub const arm = @import("arm.zig");
+pub const memory = @import("memory.zig");
 pub const start = @import("start.zig");
 pub const horizon = @import("horizon.zig");
-pub const environment = @import("environment.zig");
 
-pub const Framebuffer = @import("gpu/Framebuffer.zig");
+pub const gpu = @import("gpu.zig");
 
 const builtin = @import("builtin");
 

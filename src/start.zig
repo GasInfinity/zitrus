@@ -110,6 +110,6 @@ const builtin = @import("builtin");
 const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
-const environment = zitrus.environment;
+const environment = horizon.environment;
 
 const ErrorDisplayManager = horizon.ErrorDisplayManager;

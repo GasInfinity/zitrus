@@ -59,7 +59,7 @@ const AppState = struct {
     game: GameState = .get_ready,
     pipes: BoundedPipes = BoundedPipes.init(0) catch unreachable,
     ground_y: f32 = 0,
-    bird_x: f32 = (GspGpu.Screen.top.width() / 2),
+    bird_x: f32 = (Screen.top.width() / 2),
     current_bird_sprite: f32 = 0,
     current_bird_sprite_framerate: f32 = (1.0 / 6.0),
 
@@ -70,7 +70,7 @@ const AppState = struct {
                     state.game = .{ .gaming = .{} };
                 }
 
-                state.bird_x = (GspGpu.Screen.top.width() / 2);
+                state.bird_x = (Screen.top.width() / 2);
             },
             .gaming => |*g| {
                 if (pressed.a) {
@@ -88,8 +88,8 @@ const AppState = struct {
                 if (state.bird_x + (bird_image_size - bird_collider_size) < ground_total_width) {
                     state.bird_x = ground_total_width - (bird_image_size - bird_collider_size);
                     state.game = .game_over;
-                } else if (state.bird_x + ((bird_image_size / 2) + (bird_collider_size / 2)) >= GspGpu.Screen.top.width()) {
-                    state.bird_x = GspGpu.Screen.top.width() - ((bird_image_size / 2) + (bird_collider_size / 2));
+                } else if (state.bird_x + ((bird_image_size / 2) + (bird_collider_size / 2)) >= Screen.top.width()) {
+                    state.bird_x = Screen.top.width() - ((bird_image_size / 2) + (bird_collider_size / 2));
                     state.game = .game_over;
                 } else {
                     // These values look very "magic" (they are) but they give the best collision experience with the pipes
@@ -99,7 +99,7 @@ const AppState = struct {
                     const bird_y2 = bird_y1 + (bird_collider_size / 2);
 
                     for (state.pipes.slice()) |pipe| {
-                        const upper_start = (GspGpu.Screen.top.width() - pipe.upper_size);
+                        const upper_start = (Screen.top.width() - pipe.upper_size);
 
                         const pipe_down_x1: f32 = ground_total_width;
                         const pipe_down_x2: f32 = @floatFromInt(upper_start - pipe_gap);
@@ -107,7 +107,7 @@ const AppState = struct {
                         const pipe_down_y2: f32 = pipe_down_y1 + pipe_sheet_width;
 
                         const pipe_up_x1: f32 = @floatFromInt(upper_start);
-                        const pipe_up_x2: f32 = GspGpu.Screen.top.width();
+                        const pipe_up_x2: f32 = Screen.top.width();
                         const pipe_up_y1: f32 = pipe.y;
                         const pipe_up_y2: f32 = pipe_up_y1 + pipe_sheet_width;
 
@@ -125,9 +125,9 @@ const AppState = struct {
                     last_pipe_y = pipe.y;
                 }
 
-                if (state.pipes.slice().len < state.pipes.capacity() and last_pipe_y < (GspGpu.Screen.top.height() / 2)) {
+                if (state.pipes.slice().len < state.pipes.capacity() and last_pipe_y < (Screen.top.height() / 2)) {
                     state.pipes.append(Pipe{
-                        .y = GspGpu.Screen.top.height(),
+                        .y = Screen.top.height(),
                         .upper_size = random.intRangeAtMost(u8, 25, 150),
                         .index = random.int(u1),
                     }) catch unreachable;
@@ -177,21 +177,21 @@ const AppState = struct {
 
         switch (state.game) {
             .get_ready => {
-                ctx.drawSprite((GspGpu.Screen.top.width() / 3) + (GspGpu.Screen.top.width() / 2), (GspGpu.Screen.top.height() / 2) - (get_ready_image_height / 2), titles_image_width, get_ready_image, .{ .transparency_color = transparent_color });
+                ctx.drawSprite((Screen.top.width() / 3) + (Screen.top.width() / 2), (Screen.top.height() / 2) - (get_ready_image_height / 2), titles_image_width, get_ready_image, .{ .transparency_color = transparent_color });
             },
             .gaming => {},
             .game_over => {
-                ctx.drawSprite((GspGpu.Screen.top.width() / 3) + (GspGpu.Screen.top.width() / 2), (GspGpu.Screen.top.height() / 2) - (game_over_image_height / 2), titles_image_width, game_over_image, .{ .transparency_color = transparent_color });
+                ctx.drawSprite((Screen.top.width() / 3) + (Screen.top.width() / 2), (Screen.top.height() / 2) - (game_over_image_height / 2), titles_image_width, game_over_image, .{ .transparency_color = transparent_color });
             },
         }
     }
 
     fn drawGround(state: AppState, ctx: ScreenCtx) void {
-        ctx.drawRectangle(0, 0, 20, GspGpu.Screen.top.height(), ground_color);
+        ctx.drawRectangle(0, 0, 20, Screen.top.height(), ground_color);
 
         var cy: isize = @intFromFloat(@trunc(state.ground_y));
 
-        while (cy < GspGpu.Screen.top.height()) : (cy += ground_image_height) {
+        while (cy < Screen.top.height()) : (cy += ground_image_height) {
             ctx.drawSprite(20, cy, ground_image_width, ground, .{});
         }
     }
@@ -201,7 +201,7 @@ const AppState = struct {
             const pipe_image = pipes_sheet[(@as(usize, pipe.index) * (pipe_image_height * pipe_sheet_width))..][0..(pipe_image_height * pipe_sheet_width)];
             const yi: i32 = @intFromFloat(@round(pipe.y));
 
-            const upper_start = (GspGpu.Screen.top.width() - pipe.upper_size);
+            const upper_start = (Screen.top.width() - pipe.upper_size);
 
             for (ground_total_width..(upper_start - pipe_gap)) |x| {
                 ctx.drawSprite(@intCast(x), yi, pipe_sheet_width, pipe_image, .{
@@ -216,7 +216,7 @@ const AppState = struct {
                 .transparency_color = transparent_color,
             });
 
-            for (upper_start..GspGpu.Screen.top.width()) |x| {
+            for (upper_start..Screen.top.width()) |x| {
                 ctx.drawSprite(@intCast(x), yi, pipe_sheet_width, pipe_image, .{
                     .width = 1,
                     .transparency_color = transparent_color,
@@ -252,17 +252,16 @@ pub fn main() !void {
     var hid = try Hid.init(srv, &shm_alloc);
     defer hid.deinit(&shm_alloc);
 
-    var gpu = try GspGpu.init(srv, &shm_alloc);
-    defer gpu.deinit(&shm_alloc);
-
-    const linear_page_allocator = horizon.linear_page_allocator;
+    var gsp = try GspGpu.init(srv, &shm_alloc);
+    defer gsp.deinit(&shm_alloc);
 
     var framebuffer = try Framebuffer.init(.{
         .double_buffer = .init(.{
             .top = true,
             .bottom = false,
         }),
-        .phys_linear_allocator = linear_page_allocator,
+        .dma_size = .@"128",
+        .phys_linear_allocator = horizon.linear_page_allocator,
     });
     defer framebuffer.deinit();
 
@@ -271,22 +270,22 @@ pub fn main() !void {
         const bottom_fb = std.mem.bytesAsSlice(Bgr8, framebuffer.currentFramebuffer(.bottom));
         @memset(bottom_fb, ground_color);
 
-        const bottom = ScreenCtx.init(bottom_fb, GspGpu.Screen.bottom.width());
-        bottom.drawSprite(2 * (GspGpu.Screen.bottom.width() / 3), (GspGpu.Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ .transparency_color = transparent_color });
+        const bottom = ScreenCtx.init(bottom_fb, Screen.bottom.width());
+        bottom.drawSprite(2 * (Screen.bottom.width() / 3), (Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ .transparency_color = transparent_color });
     }
-    try framebuffer.flushBuffers(&gpu);
-    try framebuffer.swapBuffers(&gpu);
+    try framebuffer.flushBuffers(&gsp);
+    try framebuffer.swapBuffers(&gsp);
 
     while (true) {
-        const interrupts = try gpu.waitInterrupts();
+        const interrupts = try gsp.waitInterrupts();
 
         if (interrupts.contains(.vblank_top)) {
             break;
         }
     }
 
-    try gpu.sendSetLcdForceBlack(false);
-    defer if (gpu.has_right) gpu.sendSetLcdForceBlack(true) catch {};
+    try gsp.sendSetLcdForceBlack(false);
+    defer if (gsp.has_right) gsp.sendSetLcdForceBlack(true) catch {};
 
     var app_state: AppState = .{};
 
@@ -302,7 +301,7 @@ pub fn main() !void {
             else => {},
         };
 
-        while (try apt.pollEvent(srv, &gpu)) |e| switch (e) {
+        while (try apt.pollEvent(srv, &gsp)) |e| switch (e) {
             else => {},
         };
 
@@ -316,15 +315,15 @@ pub fn main() !void {
             break;
         }
 
-        const top = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.top), GspGpu.Screen.top.width());
+        const top = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.top), Screen.top.width());
 
         app_state.update(pressed, random);
         app_state.draw(top);
 
-        try framebuffer.flushBuffers(&gpu);
-        try framebuffer.swapBuffers(&gpu);
+        try framebuffer.flushBuffers(&gsp);
+        try framebuffer.swapBuffers(&gsp);
         while (true) {
-            const interrupts = try gpu.waitInterrupts();
+            const interrupts = try gsp.waitInterrupts();
 
             if (interrupts.contains(.vblank_top)) {
                 break;
@@ -340,15 +339,18 @@ fn collides(x11: f32, y11: f32, x12: f32, y12: f32, x21: f32, y21: f32, x22: f32
 }
 
 const zoftblit = @import("zoftblit.zig");
-const Bgr8 = extern struct { b: u8, g: u8, r: u8 };
 const ScreenCtx = zoftblit.Context(Bgr8);
+
+const gpu = zitrus.gpu;
+const Screen = gpu.Screen;
+const Bgr8 = gpu.ColorFormat.Bgr8;
 
 const horizon = zitrus.horizon;
 const ServiceManager = horizon.ServiceManager;
 const Applet = horizon.services.Applet;
 const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
-const Framebuffer = zitrus.Framebuffer;
+const Framebuffer = zitrus.gpu.Framebuffer;
 
 pub const panic = zitrus.panic;
 const zitrus = @import("zitrus");

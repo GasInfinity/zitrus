@@ -93,5 +93,4 @@ pub const SharedConfig = extern struct {
     headset_connected: u8,
 };
 
-pub const kernel_config: *KernelConfig = @ptrCast(0x1FF80000);
-pub const shared_config: *SharedConfig = @ptrCast(0x1FF81000);
+const zitrus = @import("zitrus");

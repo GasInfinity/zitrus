@@ -15,6 +15,12 @@ pub fn sharedMemoryAddressAllocator() SharedMemoryAddressAllocator {
     return .init(@ptrFromInt(horizon.memory.shared_memory_begin));
 }
 
+pub const VRamBankAllocator = zalloc.bitmap.StaticBitmapAllocator(.fromByteUnits(4096), zitrus.memory.vram_bank_size);
+
+pub fn vramBankAllocator(bank: memory.VRamBank) VRamBankAllocator {
+    return VRamBankAllocator.init(@ptrFromInt(horizon.memory.vram_memory_begin + (@intFromEnum(bank) * memory.vram_bank_size)));
+}
+
 // XXX: This is a very rough approximation of how I think it should work. Needs more testing
 pub fn linearAlloc(ctx: *anyopaque, n: usize, alignment: std.mem.Alignment, ra: usize) ?[*]u8 {
     _ = ctx;
@@ -59,3 +65,5 @@ const std = @import("std");
 const zalloc = @import("zalloc");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
+
+const memory = zitrus.memory;
