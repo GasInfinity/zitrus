@@ -17,7 +17,7 @@ const AppletSubCommand = t: {
         .fields = &applet_fields,
         .decls = &.{},
         .is_exhaustive = true,
-    }});
+    } });
 };
 
 const comma_separated_names = c: {

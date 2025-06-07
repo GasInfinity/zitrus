@@ -1,3 +1,4 @@
+// TODO: better file error handling (too much duplicated code)
 const named_parsers = .{
     .@"out.smdh" = clap.parsers.string,
     .@"settings.ziggy" = clap.parsers.string,
@@ -287,46 +288,130 @@ fn convertTitle(title: Title) !smdh.Title {
     return converted;
 }
 
-// TODO
 const Bgr565 = packed struct(u16) { b: u5, g: u6, r: u5 };
 
 fn loadIcons(arena: std.mem.Allocator, large_path: []const u8, small_path: ?[]const u8) !smdh.Icons {
-    _ = arena;
-    _ = large_path;
-    _ = small_path;
-    return std.mem.zeroes(smdh.Icons);
-    // if(small_path == null) {
-    //     @panic("TODO: Resize large if small is missing");
-    // }
-    // _ = small_path; 
-    // var icons: smdh.Icons = std.mem.zeroes(smdh.Icons);
-    //
-    // var large_image = zigimg.ImageUnmanaged.fromFilePath(arena, large_path) catch |err| switch (err) {
-    //     error.FileNotFound => {
-    //         std.debug.print("Icon file '{s}' not found\n", .{large_path});
-    //         return err;
-    //     },
-    //     else => {
-    //         std.debug.print("Could not open icon file '{s}': {s}", .{ large_path, @errorName(err) });
-    //         return err;
-    //     },
-    // };
-    // defer large_image.deinit(arena);
-    //
-    // if(large_image.width != large_image.height or large_image.width != 48) {
-    //     return error.InvalidIconDimensions;
-    // }
-    //
-    // try large_image.convert(arena, zigimg.PixelFormat.rgb24);
-    // convertIcon(std.mem.bytesAsSlice(Bgr565, &icons.large), large_image.width, large_image.pixels.rgb24);
-    // return icons;
+    var icons: smdh.Icons = std.mem.zeroes(smdh.Icons);
+
+    var large_image = zigimg.ImageUnmanaged.fromFilePath(arena, large_path) catch |err| switch (err) {
+        error.FileNotFound => {
+            std.debug.print("Icon file '{s}' not found\n", .{large_path});
+            return err;
+        },
+        else => {
+            std.debug.print("Could not open icon file '{s}': {s}", .{ large_path, @errorName(err) });
+            return err;
+        },
+    };
+    defer large_image.deinit(arena);
+
+    if (large_image.width != large_image.height or large_image.width != smdh.Icons.large_size) {
+        return error.InvalidIconDimensions;
+    }
+
+    try large_image.convert(arena, .rgb24);
+    mortonTile(smdh.Icons.large_size, @alignCast(std.mem.bytesAsSlice(Bgr565, &icons.large)), large_image.pixels.rgb24);
+
+    if (small_path) |path| {
+        var small_image = zigimg.ImageUnmanaged.fromFilePath(arena, path) catch |err| switch (err) {
+            error.FileNotFound => {
+                std.debug.print("Icon file '{s}' not found\n", .{path});
+                return err;
+            },
+            else => {
+                std.debug.print("Could not open icon file '{s}': {s}", .{ path, @errorName(err) });
+                return err;
+            },
+        };
+        defer small_image.deinit(arena);
+
+        if (small_image.width != small_image.height or small_image.width != smdh.Icons.small_size) {
+            return error.InvalidIconDimensions;
+        }
+
+        try small_image.convert(arena, .rgb24);
+        mortonTile(smdh.Icons.small_size, @alignCast(std.mem.bytesAsSlice(Bgr565, &icons.small)), small_image.pixels.rgb24);
+    } else {
+        var downsampled = try zigimg.ImageUnmanaged.create(arena, smdh.Icons.small_size, smdh.Icons.small_size, .rgb24);
+        defer downsampled.deinit(arena);
+
+        // XXX: I think zigimg should have a resize function, I'll cook something when I have time if nothing is done
+        const image_pixels = large_image.pixels.rgb24;
+        const downsampled_pixels = downsampled.pixels.rgb24;
+        for (0..smdh.Icons.small_size) |y| {
+            for (0..smdh.Icons.small_size) |x| {
+                const px1 = image_pixels[(2 * y) * smdh.Icons.large_size + (2 * x)];
+                const px2 = image_pixels[(2 * y) * smdh.Icons.large_size + (2 * x) + 1];
+                const px3 = image_pixels[((2 * y) + 1) * smdh.Icons.large_size + (2 * x)];
+                const px4 = image_pixels[((2 * y) + 1) * smdh.Icons.large_size + (2 * x) + 1];
+
+                const downsampled_pixel = zigimg.color.Rgb24{
+                    .r = @intCast((@as(usize, px1.r) + px2.r + px3.r + px4.r) / 4),
+                    .g = @intCast((@as(usize, px1.g) + px2.g + px3.g + px4.g) / 4),
+                    .b = @intCast((@as(usize, px1.b) + px2.b + px3.b + px4.b) / 4),
+                };
+
+                downsampled_pixels[y * smdh.Icons.small_size + x] = downsampled_pixel;
+            }
+        }
+
+        mortonTile(smdh.Icons.small_size, @alignCast(std.mem.bytesAsSlice(Bgr565, &icons.small)), downsampled.pixels.rgb24);
+    }
+
+    return icons;
 }
 
 // https://3dbrew.org/wiki/SMDH#Icon_graphics
-// const icon_tile_size = 8;
-// fn convertIcon(target: []align(1) Bgr565, size: usize, pixels: []zigimg.color.Rgb24) void {
-// }
-//
+const tile_size = 8;
+
+fn mortonTile(comptime size: usize, target_pixels: []Bgr565, pixels: []zigimg.color.Rgb24) void {
+    const tiles = @divExact(size, tile_size);
+
+    var i: u16 = 0;
+    for (0..tiles) |y_tile| {
+        for (0..tiles) |x_tile| {
+            const y_start = y_tile * tile_size;
+            const x_start = x_tile * tile_size;
+
+            for (0..(tile_size * tile_size)) |tile| {
+                // NOTE: We know the max size is 63 so we can squeeze it into 6 bits
+                const x, const y = morton.toDimensions(u6, 2, @intCast(tile));
+                const pixel = pixels[(y_start + y) * size + x_start + x];
+
+                target_pixels[i] = Bgr565{
+                    .r = @intCast(@as(usize, pixel.r) * std.math.maxInt(u5) / std.math.maxInt(u8)),
+                    .g = @intCast(@as(usize, pixel.g) * std.math.maxInt(u6) / std.math.maxInt(u8)),
+                    .b = @intCast(@as(usize, pixel.b) * std.math.maxInt(u5) / std.math.maxInt(u8)),
+                };
+
+                i += 1;
+            }
+        }
+    }
+}
+
+// https://en.wikipedia.org/wiki/Z-order_curve
+// TODO: This can be its own lib...
+const morton = struct {
+    // Basically bits are interleaved
+    // 2-dimensional 8-bits example: yxyxyxyx
+    fn toDimensions(comptime T: type, comptime dimensions: usize, morton_index: T) [dimensions]std.meta.Int(.unsigned, @divExact(@bitSizeOf(T), dimensions)) {
+        std.debug.assert(@typeInfo(T) == .int);
+        const DecomposedInt = std.meta.Int(.unsigned, @divExact(@bitSizeOf(T), dimensions));
+
+        var values: [dimensions]DecomposedInt = @splat(0);
+        var current_index = morton_index;
+        inline for (0..@bitSizeOf(T)) |i| {
+            const shift = i / dimensions;
+            const set = &values[i % dimensions];
+
+            set.* |= @intCast((current_index & 0b1) << shift);
+            current_index >>= 1;
+        }
+
+        return values;
+    }
+};
 
 test ApplicationSettings {
     try ziggy.schema.checkType(ApplicationSettings, @embedFile("settings.ziggy-schema"));

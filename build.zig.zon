@@ -23,6 +23,7 @@
         },
     },
     .paths = .{
+        "assets",
         "src",
         "tools",
         "3dsx.ld",

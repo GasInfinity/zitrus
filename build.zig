@@ -119,6 +119,8 @@ pub fn addMake3dsx(b: *std.Build, options: Make3dsxOptions) std.Build.LazyPath {
 pub const MakeSmdhOptions = struct {
     name: []const u8,
     settings: std.Build.LazyPath,
+    icon: ?std.Build.LazyPath = null,
+    small_icon: ?std.Build.LazyPath = null,
 };
 
 pub fn addMakeSmdh(b: *std.Build, options: MakeSmdhOptions) std.Build.LazyPath {
@@ -127,8 +129,22 @@ pub fn addMakeSmdh(b: *std.Build, options: MakeSmdhOptions) std.Build.LazyPath {
     run_make.addArg("make-smdh");
 
     const smdh = run_make.addOutputFileArg(options.name);
-
     run_make.addFileArg(options.settings);
+
+    if (options.icon) |icon| {
+        run_make.addFileArg(icon);
+
+        if (options.small_icon) |small_icon| {
+            run_make.addFileArg(small_icon);
+        }
+    } else {
+        if (options.small_icon != null) {
+            run_make.step.dependOn(&b.addFail("cannot set smdh small icon when no large icon was provided").step);
+        }
+
+        run_make.addFileArg(zitrus.path("assets/smdh-icon.png"));
+    }
+
     return smdh;
 }
 

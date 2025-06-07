@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) void {
     const flappy_smdh = zitrus.addMakeSmdh(b, .{
         .name = "flappy.smdh",
         .settings = b.path("smdh-settings.ziggy"),
-        // TODO: Icon (make-smdh)
+        .icon = b.path("icon.png"),
     });
 
     const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "flappy.3dsx", .exe = exe, .smdh = flappy_smdh });

@@ -101,6 +101,9 @@ pub const Settings = extern struct {
 };
 
 pub const Icons = extern struct {
+    pub const large_size = 48;
+    pub const small_size = large_size / 2;
+
     small: [0x480]u8,
     large: [0x1200]u8,
 };
