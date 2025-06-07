@@ -24,6 +24,12 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
-    const final_3dsx = zitrus.addConvert3dsx(b, .{ .name = "bitmap.3dsx", .exe = exe });
+    const bitmap_smdh = zitrus.addMakeSmdh(b, .{
+        .name = "bitmap.smdh",
+        .settings = b.path("smdh-settings.ziggy"),
+    });
+
+    const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "bitmap.3dsx", .exe = exe, .smdh = bitmap_smdh });
+
     b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "bitmap.3dsx").step);
 }

@@ -22,7 +22,7 @@ pub const ProgramMeta = extern struct {
     runtime_flags: RuntimeFlags = RuntimeFlags{},
 
     pub fn isHomebrew(prm: ProgramMeta) bool {
-        return prm.service_pointer != null;
+        return prm.provided_services != null;
     }
 };
 

@@ -26,6 +26,13 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
-    const final_3dsx = zitrus.addConvert3dsx(b, .{ .name = "flappy.3dsx", .exe = exe });
+    const flappy_smdh = zitrus.addMakeSmdh(b, .{
+        .name = "flappy.smdh",
+        .settings = b.path("smdh-settings.ziggy"),
+        // TODO: Icon (make-smdh)
+    });
+
+    const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "flappy.3dsx", .exe = exe, .smdh = flappy_smdh });
+
     b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "flappy.3dsx").step);
 }

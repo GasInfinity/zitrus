@@ -2,7 +2,11 @@
 // For more info: https://www.3dbrew.org/wiki/SMDH
 pub const magic = "SMDH";
 
-pub const Title = extern struct { short_description: [0x80]u16, long_description: [0x100]u16, publisher: [0x80]u16 };
+pub const Title = extern struct {
+    short_description: [0x40]u16,
+    long_description: [0x80]u16,
+    publisher: [0x40]u16,
+};
 
 pub const Language = enum(u4) {
     japanese,
@@ -39,20 +43,20 @@ pub const Ratings = extern struct {
 
     cero: Rating = .inactive,
     esrb: Rating = .inactive,
-    _reserved: u8 = 0,
+    _reserved0: u8 = 0,
     usk: Rating = .inactive,
     pegi_gen: Rating = .inactive,
-    _reserved0: u8 = 0,
+    _reserved1: u8 = 0,
     pegi_prt: Rating = .inactive,
     pegi_bbfc: Rating = .inactive,
     cob: Rating = .inactive,
     grb: Rating = .inactive,
     cgsrr: Rating = .inactive,
-    _reserved1: [5]u8 = @splat(0),
+    _reserved2: [5]u8 = @splat(0),
 };
 
 pub const RegionLock = packed struct(u32) {
-    pub const free: RegionLock = @bitCast(0x7fffffff);
+    pub const free: RegionLock = @bitCast(@as(u32, 0x7fffffff));
 
     japan: bool = false,
     north_america: bool = false,
@@ -61,16 +65,11 @@ pub const RegionLock = packed struct(u32) {
     china: bool = false,
     korea: bool = false,
     taiwan: bool = false,
-    _reserved: u25 = 0,
-};
-
-pub const MatchmakingIds = extern struct {
-    id: u32 = 0,
-    bit_id: u32 = 0,
+    _reserved0: u25 = 0,
 };
 
 pub const Flags = packed struct(u32) {
-    visible: bool = false,
+    visible: bool = true,
     autoboot: bool = false,
     allow_3d: bool = false,
     require_eula: bool = false,
@@ -81,7 +80,7 @@ pub const Flags = packed struct(u32) {
     record_app_usage: bool = false,
     disable_sd_backups: bool = false,
     new_3ds_exclusive: bool = false,
-    _reserved: u21 = 0,
+    _reserved0: u21 = 0,
 };
 
 pub const EulaVersion = extern struct {
@@ -92,11 +91,12 @@ pub const EulaVersion = extern struct {
 pub const Settings = extern struct {
     region_ratings: Ratings = .none,
     region_lockout: RegionLock = .free,
-    matchmaker_ids: MatchmakingIds = MatchmakingIds{},
+    matchmaking_id: u32 = 0,
+    matchmaking_bit_id: u64 = 0,
     flags: Flags = Flags{},
     eula_version: EulaVersion = EulaVersion{},
-    _reserved: u16 = 0,
-    optimal_animaton_default_frame: f32 = 0,
+    _reserved0: u16 = 0,
+    optimal_animation_default_frame: f32 = 0,
     cec_id: u32 = 0,
 };
 
@@ -108,10 +108,10 @@ pub const Icons = extern struct {
 pub const Smdh = extern struct {
     magic: [magic.len]u8 = magic.*,
     version: u16,
-    _reserved: u16 = 0,
+    _reserved0: u16 = 0,
     titles: [(1 << @bitSizeOf(Language))]Title,
     settings: Settings,
-    _reserved0: u64 = 0,
+    _reserved1: u64 = 0,
     icons: Icons,
 };
 

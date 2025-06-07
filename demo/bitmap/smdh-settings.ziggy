@@ -1,0 +1,9 @@
+{
+    .titles = Titles {
+        .english = Title {
+            .title = "Bitmap",
+            .description = "An example that just displays a bitmap image in each screen",
+            .publisher = "zitrus",
+        } 
+    },
+}

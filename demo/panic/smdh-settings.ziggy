@@ -1,0 +1,9 @@
+{
+    .titles = Titles {
+        .english = Title {
+            .title = "panic",
+            .description = "Panics when executed (warning, triggers errdisp!)",
+            .publisher = "zitrus",
+        } 
+    },
+}

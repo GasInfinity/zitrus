@@ -1,0 +1,9 @@
+{
+    .titles = Titles {
+        .english = Title {
+            .title = "Flappy",
+            .description = "A simple flappy bird clone that uses software rendering",
+            .publisher = "zitrus",
+        } 
+    },
+}

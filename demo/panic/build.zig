@@ -22,6 +22,11 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
-    const final_3dsx = zitrus.addConvert3dsx(b, .{ .name = "panic.3dsx", .exe = exe });
+    const panic_smdh = zitrus.addMakeSmdh(b, .{
+        .name = "panic.smdh",
+        .settings = b.path("smdh-settings.ziggy"),
+    });
+
+    const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "panic.3dsx", .exe = exe, .smdh = panic_smdh });
     b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "panic.3dsx").step);
 }
