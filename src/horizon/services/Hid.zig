@@ -132,7 +132,7 @@ const Handles = struct {
     }
 };
 
-pub fn sendGetIPCHandles(hid: *Hid) Error!Handles {
+pub fn sendGetIPCHandles(hid: Hid) Error!Handles {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.get_ipc_handles, .{}, .{});
 

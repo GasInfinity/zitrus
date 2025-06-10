@@ -1,0 +1,9 @@
+{
+    .titles = Titles {
+        .english = Title {
+            .title = "Info",
+            .description = "a zitrus example program to test functionality of a system",
+            .publisher = "zitrus",
+        } 
+    },
+}

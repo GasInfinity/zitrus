@@ -177,11 +177,11 @@ const AppState = struct {
 
         switch (state.game) {
             .get_ready => {
-                ctx.drawSprite((Screen.top.width() / 3) + (Screen.top.width() / 2), (Screen.top.height() / 2) - (get_ready_image_height / 2), titles_image_width, get_ready_image, .{ .transparency_color = transparent_color });
+                ctx.drawSprite(.transparent_bitmap, (Screen.top.width() / 3) + (Screen.top.width() / 2), (Screen.top.height() / 2) - (get_ready_image_height / 2), titles_image_width, get_ready_image, .{ .transparent = transparent_color }, .{});
             },
             .gaming => {},
             .game_over => {
-                ctx.drawSprite((Screen.top.width() / 3) + (Screen.top.width() / 2), (Screen.top.height() / 2) - (game_over_image_height / 2), titles_image_width, game_over_image, .{ .transparency_color = transparent_color });
+                ctx.drawSprite(.transparent_bitmap, (Screen.top.width() / 3) + (Screen.top.width() / 2), (Screen.top.height() / 2) - (game_over_image_height / 2), titles_image_width, game_over_image, .{ .transparent = transparent_color }, .{});
             },
         }
     }
@@ -192,7 +192,7 @@ const AppState = struct {
         var cy: isize = @intFromFloat(@trunc(state.ground_y));
 
         while (cy < Screen.top.height()) : (cy += ground_image_height) {
-            ctx.drawSprite(20, cy, ground_image_width, ground, .{});
+            ctx.drawSprite(.bitmap, 20, cy, ground_image_width, ground, .{}, .{});
         }
     }
 
@@ -204,29 +204,33 @@ const AppState = struct {
             const upper_start = (Screen.top.width() - pipe.upper_size);
 
             for (ground_total_width..(upper_start - pipe_gap)) |x| {
-                ctx.drawSprite(@intCast(x), yi, pipe_sheet_width, pipe_image, .{
-                    .width = 1,
-                    .transparency_color = transparent_color,
+                ctx.drawSprite(.transparent_bitmap, @intCast(x), yi, pipe_sheet_width, pipe_image, .{
+                    .transparent = transparent_color,
+                }, .{
+                    .width = 1
                 });
             }
 
-            ctx.drawSprite(@intCast(upper_start - pipe_gap - pipe_sheet_width + 1), yi, pipe_sheet_width, pipe_image, .{
+            ctx.drawSprite(.transparent_bitmap, @intCast(upper_start - pipe_gap - pipe_sheet_width + 1), yi, pipe_sheet_width, pipe_image, .{
+                .transparent = transparent_color,
+            }, .{
                 .x = 1,
                 .width = pipe_sheet_width - 1,
-                .transparency_color = transparent_color,
             });
 
             for (upper_start..Screen.top.width()) |x| {
-                ctx.drawSprite(@intCast(x), yi, pipe_sheet_width, pipe_image, .{
+                ctx.drawSprite(.transparent_bitmap, @intCast(x), yi, pipe_sheet_width, pipe_image, .{
+                    .transparent = transparent_color,
+                }, .{
                     .width = 1,
-                    .transparency_color = transparent_color,
                 });
             }
 
-            ctx.drawSprite(@intCast(upper_start), yi, pipe_sheet_width, pipe_image, .{
+            ctx.drawSprite(.transparent_bitmap, @intCast(upper_start), yi, pipe_sheet_width, pipe_image, .{
+                .transparent = transparent_color,
+            }, .{
                 .x = 1,
                 .width = pipe_sheet_width - 1,
-                .transparency_color = transparent_color,
                 .flip_h = true,
             });
         }
@@ -236,7 +240,7 @@ const AppState = struct {
         const pxi: i32 = @intFromFloat(@round(state.bird_x));
         const cbsi: usize = @intFromFloat(@trunc(state.current_bird_sprite));
         const bird_image = bird_sheet[((bird_image_size * bird_image_size) * cbsi)..][0..(bird_image_size * bird_image_size)];
-        ctx.drawSprite(pxi, bird_y, bird_image_size, bird_image, .{ .transparency_color = transparent_color });
+        ctx.drawSprite(.transparent_bitmap, pxi, bird_y, bird_image_size, bird_image, .{ .transparent = transparent_color }, .{});
     }
 };
 
@@ -271,7 +275,9 @@ pub fn main() !void {
         @memset(bottom_fb, ground_color);
 
         const bottom = ScreenCtx.init(bottom_fb, Screen.bottom.width());
-        bottom.drawSprite(2 * (Screen.bottom.width() / 3), (Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ .transparency_color = transparent_color });
+        bottom.drawSprite(.transparent_bitmap, 2 * (Screen.bottom.width() / 3), (Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ 
+            .transparent = transparent_color
+        }, .{});
     }
     try framebuffer.flushBuffers(&gsp);
     try framebuffer.swapBuffers(&gsp);

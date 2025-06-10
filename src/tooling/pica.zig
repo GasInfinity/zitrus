@@ -1,1 +1,1 @@
-pub const shader = @import("pica/shader.zig");
+pub const encoding = @import("pica/encoding.zig");

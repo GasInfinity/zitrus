@@ -247,9 +247,4 @@ pub const Instruction = union(Format) {
     };
 };
 
-// TODO:
-// - Write a assembler/disassembler
-// - Handle assembler correctness
-// - https://www.3dbrew.org/wiki/SHBIN
-
 const std = @import("std");

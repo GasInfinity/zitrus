@@ -1,0 +1,15 @@
+.{
+    .name = .info,
+    .version = "0.0.0",
+    .fingerprint = 0xcb893157388aa6a3, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.14.1",
+    .dependencies = .{
+        .zitrus = .{ .path = "../../" },
+    },
+    .paths = .{
+        "assets",
+        "src",
+        "build.zig",
+        "build.zig.zon",
+    },
+}
