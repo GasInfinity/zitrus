@@ -43,6 +43,22 @@ pub const StaticBufferTranslationDescriptor = packed struct(u32) {
     }
 };
 
+pub const BufferMappingTranslationDescriptor = packed struct(u32) {
+    _reserved0: u1 = 0,
+    read: bool,
+    write: bool,
+    type: u1 = 1,
+    size: u28,
+
+    pub fn init(size: usize, read: bool, write: bool) BufferMappingTranslationDescriptor {
+        return BufferMappingTranslationDescriptor{
+            .read = read,
+            .write = write,
+            .size = @intCast(size),
+        };
+    }
+};
+
 pub const CommandBuffer = extern struct {
     header: Header,
     parameters: [63]u32,

@@ -23,6 +23,19 @@ pub fn build(b: *std.Build) void {
     zitrus.addImport("zitrus-tooling", zitrus_tooling);
     zitrus.addImport("zalloc", zalloc_mod);
 
+    const zitrus_tooling_tests = b.addTest(.{
+        .name = "zitrus-tooling-tests",
+        .root_source_file = b.path("src/tooling/zitrus.zig"),
+        .target = b.resolveTargetQuery(.{})
+    });
+
+    // Bro? Why do I need to do this again? Target handling is so bad rn
+    zitrus_tooling_tests.root_module.addImport("zitrus-tooling", zitrus_tooling_tests.root_module);
+
+    const run_tooling_tests = b.addRunArtifact(zitrus_tooling_tests);
+    const run_tooling_tests_step = b.step("test-tooling", "Runs zitrus-tooling tests");
+    run_tooling_tests_step.dependOn(&run_tooling_tests.step);
+
     buildTools(b, optimize, target, zitrus_tooling);
 }
 

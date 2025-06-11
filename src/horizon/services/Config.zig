@@ -30,7 +30,7 @@ pub const Region = enum(u8) {
     aus,
     chn,
     kor,
-    twn
+    twn,
 };
 
 // https://www.3dbrew.org/wiki/Country_Code_List
@@ -170,6 +170,217 @@ pub const Country = enum(u16) {
     bm,
 };
 
+pub const Language = enum(u8) {
+    jp,
+    en,
+    fr,
+    de,
+    it,
+    es,
+    zh,
+    ko,
+    nl,
+    pt,
+    ru,
+    tw,
+};
+
+pub const Birthday = extern struct {
+    month: u8,
+    day: u8,
+};
+
+pub const CountryInfo = extern struct {
+    _unknown0: [2]u8 = @splat(0),
+    province_code: u8,
+    country_code: u8
+};
+
+pub const UserName = extern struct {
+    name: [11]u16,
+    inappropiate: u16,
+    inappropiate_version: u32,
+};
+
+pub const ParentalControls = extern struct {
+    pub const EmailQuestion = extern struct {
+        email_registered: bool,
+        address: [0x101]u8,
+        custom_secret_question: [52]u16,
+    };
+
+    pub const Twl = extern struct {
+        _unknown0: [13]u8,
+        pin: [4]u8,
+        secret_answer: [32]u16,
+    };
+
+    pub const RestrictionMask = packed struct(u32) {
+        enable: bool,
+        internet_browser: bool,
+        enable_3d: bool,
+        share_data: bool,
+        online_interaction: bool,
+        streetpass: bool,
+        friend_registration: bool,
+        ds_download_play: bool,
+        shopping_services: bool,
+        view_videos: bool,
+        view_miiverse: bool,
+        post_miiverse: bool,
+        _unused0: u19,
+        coppa: bool,
+    };
+
+    restrictions: RestrictionMask,
+    _unknown0: u32 = 0,
+    rating: u8,
+    maximum_allowed_age: u8,
+    secret_question_type: u8, // TODO: enum
+    _unknown1: u8 = 0,
+    parental_pin: [8]u8,
+    secret_answer: [34]u16,
+};
+
+pub const CountryName = extern struct {
+    value: [16][64]u16
+};
+
+pub const StateName = extern struct {
+    value: [16][64]u16
+};
+
+pub const Coordinates = packed struct(u32) {
+    latitude: i16,
+    longitude: i16,
+};
+
+pub const Block = enum(u32) {
+    pub const AccessFlags = packed struct(u8) {
+        pub const u = .{ .user_readable = true, .system_writable = true, .system_readable = true };
+        pub const s = .{ .user_readable = false, .system_writable = true, .system_readable = true };
+
+        _unused0: u1 = 0,
+        user_readable: bool,
+        system_writable: bool,
+        system_readable: bool,
+        _unused1: u4 = 0,
+    };
+
+    version = 0x00000000,
+    rtc = 0x00010000,
+    codec = 0x00020000,
+
+    leap_year_counter = 0x00030000,
+    user_time_offset,
+    settings_time_offset,
+
+    touch_calibration = 0x00040000,
+    analog_stick_calibration,
+    gyroscope,
+    accelerometer,
+    cstick_calibration,
+
+    screen_flicker = 0x00050000,
+    backlight_controls,
+    backlight_pwm,
+    power_saving_mode_calibration,
+    power_saving_mode_calibration_legacy,
+    stereo_display_settings,
+    switching_delay_3d,
+    unknown0,
+    power_saving_mode_extra,
+    new_3ds_backlight_control,
+
+    unknown1 = 0x00060000,
+
+    filters_3d = 0x00070000,
+    sound_output_mode = 0x00070001,
+    microphone_echo_cancellation_params,
+
+    wifi_slot_0 = 0x00080000,
+    wifi_slot_1,
+    wifi_slot_2,
+
+    console_unique_id = 0x00090000,
+    console_unique_id_1,
+    random,
+
+    user_name = 0x000A0000,
+    birthday,
+    language,
+
+    country_info = 0x000B0000,
+    country_name,
+    state_name,
+    coordinates,
+
+    parental_controls = 0x000C0000,
+    coppacs_restriction_data,
+    parental_controls_email_question,
+
+    last_agreed_eula = 0x000D0000,
+
+    spotpass_related = 0x000E0000,
+
+    debug_configuration = 0x000F0000,
+
+    unknown2 = 0x000F0001,
+    home_menu_button_disable = 0x000F0003,
+    system_model_unknown,
+    network_updates_enabled,
+    http_device_token,
+
+    twl_eula_info = 0x00100000,
+    twl_parental_control,
+    twl_country_code,
+    twl_unique_id,
+
+    system_setup_required = 0x00110000,
+    menu_to_launch,
+
+    volume_slider_bounds = 0x00120000,
+
+    debug_mode_enabled = 0x00130000,
+
+    clock_sequence = 0x00150000,
+    unknown3,
+    nfs_environment,
+
+    unknown4 = 0x00160000,
+
+    miiverse_access_key = 0x00170000,
+
+    qtm_ir_led = 0x00180000,
+    qtm_calibration_data,
+
+    nfc_unknown = 0x00190000,
+
+    pub fn Data(comptime block: Block) type {
+        return switch (block) {
+            .version => u16,
+            .rtc => u8,
+            .codec => @compileError("TODO"),
+            .leap_year_counter => u8,
+            .user_time_offset => u64,
+            .settings_time_offset => u64,
+
+            .user_name => UserName,
+            .birthday => Birthday,
+            .language => Language,
+            .country_info => CountryInfo,
+            .country_name => CountryName,
+            .state_name => StateName,
+            .coordinates => Coordinates,
+
+            .home_menu_button_disable => bool,
+            .parental_controls => ParentalControls,
+            .parental_controls_email_question => ParentalControls.EmailQuestion,
+            else => @compileError("Not implemented"),
+        };
+    }
+};
+
 session: Session,
 
 pub fn init(srv: ServiceManager) Error!Config {
@@ -191,12 +402,31 @@ pub fn deinit(config: *Config) void {
     config.* = undefined;
 }
 
+pub fn getConfigU(cfg: Config, comptime block: Block) Error!block.Data() {
+    var value: block.Data() = undefined;
+    try cfg.sendGetConfigInfoUser(block, std.mem.asBytes(&value));
+    return value;
+}
+
+pub fn sendGetConfigInfoUser(cfg: Config, block: Block, output: []u8) Error!void {
+    const data = tls.getThreadLocalStorage();
+    data.ipc.fillCommand(Command.get_config_user, .{
+        output.len,
+        @intFromEnum(block),
+    }, .{
+        ipc.BufferMappingTranslationDescriptor.init(output.len, false, true),
+        @intFromPtr(output.ptr),
+    });
+
+    try cfg.session.sendRequest();
+}
+
 pub fn sendGetRegion(cfg: Config) Error!Region {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.get_region, .{}, .{});
 
     try cfg.session.sendRequest();
-    return @enumFromInt(data.ipc.parameters[1]);
+    return @enumFromInt(@as(u8, @truncate(data.ipc.parameters[1])));
 }
 
 pub fn sendIsCoppacsSupported(cfg: Config) Error!bool {
@@ -212,7 +442,7 @@ pub fn sendGetSystemModel(cfg: Config) Error!SystemModel {
     data.ipc.fillCommand(Command.get_system_model, .{}, .{});
 
     try cfg.session.sendRequest();
-    return @enumFromInt(data.ipc.parameters[1]);
+    return @enumFromInt(@as(u8, @truncate(data.ipc.parameters[1])));
 }
 
 pub fn sendIsModelNintendo2DS(cfg: Config) Error!bool {
@@ -240,7 +470,7 @@ pub fn sendGetCountryCodeId(cfg: Config, string: *const [2]u8) Error!Country {
 }
 
 pub const Command = enum(u16) {
-    get_config = 0x0001,
+    get_config_user = 0x0001,
     get_region,
     get_transferable_id,
     is_coppacs_supported,
@@ -252,8 +482,8 @@ pub const Command = enum(u16) {
     get_country_code_id,
     is_fangate_supported,
 
-    get_config_info_blk8 = 0x0401,
-    get_config_info_blk4,
+    get_config_system = 0x0401,
+    set_config_system,
     update_config_nand_savegame,
     get_local_friend_code_seed_data,
     get_local_friend_code_seed,
@@ -270,7 +500,7 @@ pub const Command = enum(u16) {
 
     pub inline fn normalParameters(cmd: Command) u6 {
         return switch (cmd) {
-            .get_config => 2,
+            .get_config_user => 2,
             .get_region => 0,
             .get_transferable_id => 1,
             .is_coppacs_supported => 0,
@@ -288,7 +518,7 @@ pub const Command = enum(u16) {
 
     pub inline fn translateParameters(cmd: Command) u6 {
         return switch (cmd) {
-            .get_config => 2,
+            .get_config_user => 2,
             .get_region => 0,
             .get_transferable_id => 0,
             .is_coppacs_supported => 0,

@@ -3,7 +3,7 @@ pub const magic = "NCCH";
 
 // TODO: Docs, Docs and Docs
 pub const Header = extern struct {
-    pub const Flags = packed struct(u64) {};
+    pub const Flags = packed struct(u64) { _: u64 = 0, };
 
     signature: [0x100]u8,
     magic: [4]u8 = magic.*,
@@ -18,7 +18,7 @@ pub const Header = extern struct {
     product_code: [0x10]u8,
     extended_header_hash: [0x20]u8,
     extended_header_size: u32,
-    _reserved1: [4]u8 = 0,
+    _reserved1: [4]u8 = @splat(0),
     flags: Flags,
     plain_region_offset: u32,
     plain_region_size: u32,

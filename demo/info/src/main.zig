@@ -42,6 +42,21 @@ pub fn main() !void {
     drawString(top, 0, 0, try std.fmt.bufPrint(&fmt_buffer, "Model: {s} ({s})", .{@tagName(model), model.description()}), .{}); 
     drawString(top, font_width + 1, 0, try std.fmt.bufPrint(&fmt_buffer, "Region: {s}", .{@tagName(try cfg.sendGetRegion())}), .{}); 
 
+    var utf8_buf: [128]u8 = undefined;
+    const name = try cfg.getConfigU(.user_name);
+    const name_written = try std.unicode.utf16LeToUtf8(&utf8_buf, &name.name);
+    drawString(top, 2 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Name: {s}", .{utf8_buf[0..name_written]}), .{}); 
+
+    const language = try cfg.getConfigU(.language);
+    drawString(top, 3 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Language: {s}", .{@tagName(language)}), .{}); 
+
+    const birthday = try cfg.getConfigU(.birthday);
+    drawString(top, 4 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Birthday: {}/{}", .{birthday.day, birthday.month}), .{});
+
+    const country_info = try cfg.getConfigU(.country_info);
+    drawString(top, 5 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Country: {}/{}", .{country_info.province_code, country_info.country_code}), .{});
+
+
     try framebuffer.flushBuffers(&gsp);
     try framebuffer.present(&gsp);
 
