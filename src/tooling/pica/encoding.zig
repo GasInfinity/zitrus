@@ -73,90 +73,90 @@ pub const Component = enum(u2) {
     };
 
     pub const Selector = packed struct(u8) {
-        pub const x: Selector = .{ .@"0" = .x };
-        pub const y: Selector = .{ .@"0" = .y };
-        pub const z: Selector = .{ .@"0" = .z };
-        pub const w: Selector = .{ .@"0" = .w };
-        pub const xx: Selector = .{ .@"0" = .x, .@"1" = .x };
-        pub const xy: Selector = .{ .@"0" = .x, .@"1" = .y };
-        pub const xz: Selector = .{ .@"0" = .x, .@"1" = .z };
-        pub const xw: Selector = .{ .@"0" = .x, .@"1" = .w };
-        pub const yx: Selector = .{ .@"0" = .y, .@"1" = .x };
-        pub const yy: Selector = .{ .@"0" = .y, .@"1" = .y };
-        pub const yz: Selector = .{ .@"0" = .y, .@"1" = .z };
-        pub const yw: Selector = .{ .@"0" = .y, .@"1" = .w };
-        pub const zx: Selector = .{ .@"0" = .z, .@"1" = .x };
-        pub const zy: Selector = .{ .@"0" = .z, .@"1" = .y };
-        pub const zz: Selector = .{ .@"0" = .z, .@"1" = .z };
-        pub const zw: Selector = .{ .@"0" = .z, .@"1" = .w };
-        pub const wx: Selector = .{ .@"0" = .w, .@"1" = .x };
-        pub const wy: Selector = .{ .@"0" = .w, .@"1" = .y };
-        pub const wz: Selector = .{ .@"0" = .w, .@"1" = .z };
-        pub const ww: Selector = .{ .@"0" = .w, .@"1" = .w };
-        pub const xxx: Selector = .{ .@"0" = .x, .@"1" = .x, .@"2" = .x };
-        pub const xxy: Selector = .{ .@"0" = .x, .@"1" = .x, .@"2" = .y };
-        pub const xxz: Selector = .{ .@"0" = .x, .@"1" = .x, .@"2" = .z };
-        pub const xxw: Selector = .{ .@"0" = .x, .@"1" = .x, .@"2" = .w };
-        pub const xyx: Selector = .{ .@"0" = .x, .@"1" = .y, .@"2" = .x };
-        pub const xyy: Selector = .{ .@"0" = .x, .@"1" = .y, .@"2" = .y };
-        pub const xyz: Selector = .{ .@"0" = .x, .@"1" = .y, .@"2" = .z };
-        pub const xyw: Selector = .{ .@"0" = .x, .@"1" = .y, .@"2" = .w };
-        pub const xzx: Selector = .{ .@"0" = .x, .@"1" = .z, .@"2" = .x };
-        pub const xzy: Selector = .{ .@"0" = .x, .@"1" = .z, .@"2" = .y };
-        pub const xzz: Selector = .{ .@"0" = .x, .@"1" = .z, .@"2" = .z };
-        pub const xzw: Selector = .{ .@"0" = .x, .@"1" = .z, .@"2" = .w };
-        pub const xwx: Selector = .{ .@"0" = .x, .@"1" = .w, .@"2" = .x };
-        pub const xwy: Selector = .{ .@"0" = .x, .@"1" = .w, .@"2" = .y };
-        pub const xwz: Selector = .{ .@"0" = .x, .@"1" = .w, .@"2" = .z };
-        pub const xww: Selector = .{ .@"0" = .x, .@"1" = .w, .@"2" = .w };
-        pub const yxx: Selector = .{ .@"0" = .y, .@"1" = .x, .@"2" = .x };
-        pub const yxy: Selector = .{ .@"0" = .y, .@"1" = .x, .@"2" = .y };
-        pub const yxz: Selector = .{ .@"0" = .y, .@"1" = .x, .@"2" = .z };
-        pub const yxw: Selector = .{ .@"0" = .y, .@"1" = .x, .@"2" = .w };
-        pub const yyx: Selector = .{ .@"0" = .y, .@"1" = .y, .@"2" = .x };
-        pub const yyy: Selector = .{ .@"0" = .y, .@"1" = .y, .@"2" = .y };
-        pub const yyz: Selector = .{ .@"0" = .y, .@"1" = .y, .@"2" = .z };
-        pub const yyw: Selector = .{ .@"0" = .y, .@"1" = .y, .@"2" = .w };
-        pub const yzx: Selector = .{ .@"0" = .y, .@"1" = .z, .@"2" = .x };
-        pub const yzy: Selector = .{ .@"0" = .y, .@"1" = .z, .@"2" = .y };
-        pub const yzz: Selector = .{ .@"0" = .y, .@"1" = .z, .@"2" = .z };
-        pub const yzw: Selector = .{ .@"0" = .y, .@"1" = .z, .@"2" = .w };
-        pub const ywx: Selector = .{ .@"0" = .y, .@"1" = .w, .@"2" = .x };
-        pub const ywy: Selector = .{ .@"0" = .y, .@"1" = .w, .@"2" = .y };
-        pub const ywz: Selector = .{ .@"0" = .y, .@"1" = .w, .@"2" = .z };
-        pub const yww: Selector = .{ .@"0" = .y, .@"1" = .w, .@"2" = .w };
-        pub const zxx: Selector = .{ .@"0" = .z, .@"1" = .x, .@"2" = .x };
-        pub const zxy: Selector = .{ .@"0" = .z, .@"1" = .x, .@"2" = .y };
-        pub const zxz: Selector = .{ .@"0" = .z, .@"1" = .x, .@"2" = .z };
-        pub const zxw: Selector = .{ .@"0" = .z, .@"1" = .x, .@"2" = .w };
-        pub const zyx: Selector = .{ .@"0" = .z, .@"1" = .y, .@"2" = .x };
-        pub const zyy: Selector = .{ .@"0" = .z, .@"1" = .y, .@"2" = .y };
-        pub const zyz: Selector = .{ .@"0" = .z, .@"1" = .y, .@"2" = .z };
-        pub const zyw: Selector = .{ .@"0" = .z, .@"1" = .y, .@"2" = .w };
-        pub const zzx: Selector = .{ .@"0" = .z, .@"1" = .z, .@"2" = .x };
-        pub const zzy: Selector = .{ .@"0" = .z, .@"1" = .z, .@"2" = .y };
-        pub const zzz: Selector = .{ .@"0" = .z, .@"1" = .z, .@"2" = .z };
-        pub const zzw: Selector = .{ .@"0" = .z, .@"1" = .z, .@"2" = .w };
-        pub const zwx: Selector = .{ .@"0" = .z, .@"1" = .w, .@"2" = .x };
-        pub const zwy: Selector = .{ .@"0" = .z, .@"1" = .w, .@"2" = .y };
-        pub const zwz: Selector = .{ .@"0" = .z, .@"1" = .w, .@"2" = .z };
-        pub const zww: Selector = .{ .@"0" = .z, .@"1" = .w, .@"2" = .w };
-        pub const wxx: Selector = .{ .@"0" = .w, .@"1" = .x, .@"2" = .x };
-        pub const wxy: Selector = .{ .@"0" = .w, .@"1" = .x, .@"2" = .y };
-        pub const wxz: Selector = .{ .@"0" = .w, .@"1" = .x, .@"2" = .z };
-        pub const wxw: Selector = .{ .@"0" = .w, .@"1" = .x, .@"2" = .w };
-        pub const wyx: Selector = .{ .@"0" = .w, .@"1" = .y, .@"2" = .x };
-        pub const wyy: Selector = .{ .@"0" = .w, .@"1" = .y, .@"2" = .y };
-        pub const wyz: Selector = .{ .@"0" = .w, .@"1" = .y, .@"2" = .z };
-        pub const wyw: Selector = .{ .@"0" = .w, .@"1" = .y, .@"2" = .w };
-        pub const wzx: Selector = .{ .@"0" = .w, .@"1" = .z, .@"2" = .x };
-        pub const wzy: Selector = .{ .@"0" = .w, .@"1" = .z, .@"2" = .y };
-        pub const wzz: Selector = .{ .@"0" = .w, .@"1" = .z, .@"2" = .z };
-        pub const wzw: Selector = .{ .@"0" = .w, .@"1" = .z, .@"2" = .w };
-        pub const wwx: Selector = .{ .@"0" = .w, .@"1" = .w, .@"2" = .x };
-        pub const wwy: Selector = .{ .@"0" = .w, .@"1" = .w, .@"2" = .y };
-        pub const wwz: Selector = .{ .@"0" = .w, .@"1" = .w, .@"2" = .z };
-        pub const www: Selector = .{ .@"0" = .w, .@"1" = .w, .@"2" = .w };
+        pub const x: Selector = .xxxx;
+        pub const y: Selector = .yyyy;
+        pub const z: Selector = .zzzz;
+        pub const w: Selector = .wwww;
+        pub const xx: Selector = .xxxx;
+        pub const xy: Selector = .xyyy;
+        pub const xz: Selector = .xzzz;
+        pub const xw: Selector = .xwww;
+        pub const yx: Selector = .yxxx;
+        pub const yy: Selector = .yyyy;
+        pub const yz: Selector = .yzzz;
+        pub const yw: Selector = .ywww;
+        pub const zx: Selector = .zxxx;
+        pub const zy: Selector = .zyyy;
+        pub const zz: Selector = .zzzz;
+        pub const zw: Selector = .zwww;
+        pub const wx: Selector = .wxxx;
+        pub const wy: Selector = .wyyy;
+        pub const wz: Selector = .wzzz;
+        pub const ww: Selector = .wwww;
+        pub const xxx: Selector = .xxxx;
+        pub const xxy: Selector = .xxyy;
+        pub const xxz: Selector = .xxzz;
+        pub const xxw: Selector = .xxww;
+        pub const xyx: Selector = .xyxx;
+        pub const xyy: Selector = .xyyy;
+        pub const xyz: Selector = .xyzz;
+        pub const xyw: Selector = .xyww;
+        pub const xzx: Selector = .xzxx;
+        pub const xzy: Selector = .xzyy;
+        pub const xzz: Selector = .xzzz;
+        pub const xzw: Selector = .xzww;
+        pub const xwx: Selector = .xwxx;
+        pub const xwy: Selector = .xwyy;
+        pub const xwz: Selector = .xwzz;
+        pub const xww: Selector = .xwww;
+        pub const yxx: Selector = .yxxx;
+        pub const yxy: Selector = .yxyy;
+        pub const yxz: Selector = .yxzz;
+        pub const yxw: Selector = .yxww;
+        pub const yyx: Selector = .yyxx;
+        pub const yyy: Selector = .yyyy;
+        pub const yyz: Selector = .yyzz;
+        pub const yyw: Selector = .yyww;
+        pub const yzx: Selector = .yzxx;
+        pub const yzy: Selector = .yzyy;
+        pub const yzz: Selector = .yzzz;
+        pub const yzw: Selector = .yzww;
+        pub const ywx: Selector = .ywxx;
+        pub const ywy: Selector = .ywyy;
+        pub const ywz: Selector = .ywzz;
+        pub const yww: Selector = .ywww;
+        pub const zxx: Selector = .zxxx;
+        pub const zxy: Selector = .zxyy;
+        pub const zxz: Selector = .zxzz;
+        pub const zxw: Selector = .zxww;
+        pub const zyx: Selector = .zyxx;
+        pub const zyy: Selector = .zyyy;
+        pub const zyz: Selector = .zyzz;
+        pub const zyw: Selector = .zyww;
+        pub const zzx: Selector = .zzxx;
+        pub const zzy: Selector = .zzyy;
+        pub const zzz: Selector = .zzzz;
+        pub const zzw: Selector = .zzww;
+        pub const zwx: Selector = .zwxx;
+        pub const zwy: Selector = .zwyy;
+        pub const zwz: Selector = .zwzz;
+        pub const zww: Selector = .zwww;
+        pub const wxx: Selector = .wxxx;
+        pub const wxy: Selector = .wxyy;
+        pub const wxz: Selector = .wxzz;
+        pub const wxw: Selector = .wxww;
+        pub const wyx: Selector = .wyxx;
+        pub const wyy: Selector = .wyyy;
+        pub const wyz: Selector = .wyzz;
+        pub const wyw: Selector = .wyww;
+        pub const wzx: Selector = .wzxx;
+        pub const wzy: Selector = .wzyy;
+        pub const wzz: Selector = .wzzz;
+        pub const wzw: Selector = .wzww;
+        pub const wwx: Selector = .wwxx;
+        pub const wwy: Selector = .wwyy;
+        pub const wwz: Selector = .wwzz;
+        pub const www: Selector = .wwww;
         pub const xxxx: Selector = .{ .@"0" = .x, .@"1" = .x, .@"2" = .x, .@"3" = .x };
         pub const xxxy: Selector = .{ .@"0" = .x, .@"1" = .x, .@"2" = .x, .@"3" = .y };
         pub const xxxz: Selector = .{ .@"0" = .x, .@"1" = .x, .@"2" = .x, .@"3" = .z };
@@ -419,6 +419,20 @@ pub const Component = enum(u2) {
         @"1": Component = .x,
         @"0": Component = .x,
 
+        const indexes = "0123";
+
+        pub fn swizzle(selector: Selector, other: Selector) Selector {
+            var new_selector: Selector = undefined;
+            inline for (indexes) |f| {
+                const component = @field(other, std.mem.asBytes(&f));
+
+                @field(new_selector, std.mem.asBytes(&f)) = switch (component) {
+                    inline else => |v| @field(selector, std.mem.asBytes(&indexes[@intFromEnum(v)])),
+                };
+            }
+            return new_selector;
+        }
+
         pub const ParseError = error{
             Syntax,
             InvalidComponent,
@@ -429,20 +443,27 @@ pub const Component = enum(u2) {
                 return error.Syntax;
             }
 
+            var last: Component = undefined;
             var selector: Selector = undefined;
             inline for ("0123", 0..) |f, i| {
                 const component: Component = if(i >= value.len)
-                    .x
+                    last 
                 else 
                     @enumFromInt(std.mem.indexOf(u8, span, &.{value[i]}) orelse return error.InvalidComponent);
 
                 @field(selector, std.mem.asBytes(&f)) = component;
+                last = component;
             }
 
             return selector;
         }
 
         test parse {
+            try testing.expectEqual(Selector.wwww, Selector.xyzw.swizzle(.wwww));
+            try testing.expectEqual(Selector.yzww, Selector.xyzw.swizzle(.wzyx).swizzle(.zyxx));
+            try testing.expectEqual(Selector.xyxy, Selector.xyzw.swizzle(.xxyy).swizzle(.xzyw));
+            try testing.expectEqual(Selector.wzyy, Selector.xyzw.swizzle(.wzyx).swizzle(.xyzz));
+
             try testing.expectEqual(Selector.wxyz, try parse("wxyz"));
             try testing.expectEqual(Selector.wwww, try parse("wwww"));
             try testing.expectEqual(Selector.wxwx, try parse("wxwx"));
@@ -456,14 +477,38 @@ pub const Component = enum(u2) {
 };
 
 pub const OperandDescriptor = packed struct(u32) {
-    destination_mask: Component.Mask,
-    src1_neg: bool,
-    src1_selector: Component.Selector,
-    src2_neg: bool,
-    src2_selector: Component.Selector,
-    src3_neg: bool,
-    src3_selector: Component.Selector,
+    pub const Mask = packed struct(u8) {
+        pub const unary: Mask = .{ .dst = true, .src1 = true };
+        pub const binary: Mask = .{ .dst = true, .src1 = true, .src2 = true };
+        pub const full: Mask = .{ .dst = true, .src1 = true, .src2 = true, .src3 = true };
+        pub const comparison: Mask = .{ .src1 = true, .src2 = true };
+
+        dst: bool = false,
+        src1: bool = false,
+        src2: bool = false,
+        src3: bool = false,
+        _: u4 = 0,
+
+        pub fn contains(mask: Mask, other: Mask) bool {
+            return @as(u8, @bitCast(mask)) <= @as(u8, @bitCast(other));
+        }
+    };
+
+    destination_mask: Component.Mask = .xyzw,
+    src1_neg: bool = false,
+    src1_selector: Component.Selector = .xyzw,
+    src2_neg: bool = false,
+    src2_selector: Component.Selector = .xyzw,
+    src3_neg: bool = false,
+    src3_selector: Component.Selector = .xyzw,
     _unused0: u1 = 0,
+
+    pub fn equalsMasked(desc: OperandDescriptor, mask: Mask, other: OperandDescriptor) bool {
+        return (!mask.dst or (mask.dst and (desc.destination_mask == other.destination_mask)))
+           and (!mask.src1 or (mask.src1 and (desc.src1_neg == other.src1_neg and desc.src1_selector == other.src1_selector)))
+           and (!mask.src2 or (mask.src2 and (desc.src2_neg == other.src2_neg and desc.src2_selector == other.src2_selector)))
+           and (!mask.src3 or (mask.src3 and (desc.src3_neg == other.src3_neg and desc.src3_selector == other.src3_selector)));
+    }
 };
 
 pub const ComparisonOperation = enum(u3) {
@@ -484,7 +529,7 @@ pub const Condition = enum(u2) {
     y,
 };
 
-pub const Instruction = union(Format) {
+pub const Instruction = extern union {
     pub const Opcode = enum(u6) {
         pub const Mad = enum(u3) { _ };
         pub const Comparison = enum(u5) { _ };
@@ -533,6 +578,23 @@ pub const Instruction = union(Format) {
         mad = 0x38, // - 0x3F
         _,
 
+        pub fn isCommutative(opcode: Opcode) bool {
+            return switch (opcode) {
+                .add, .dp3, .dp4, .mul, .max, .min => true,
+                else => false,
+            };
+        }
+
+        pub fn invert(opcode: Opcode) ?Opcode {
+            return switch (opcode) {
+                .dph => .dphi,
+                .dst => .dsti,
+                .sge => .sgei,
+                .slt => .slti,
+                else => null,
+            };
+        }
+
         pub fn toComparison(opcode: Opcode) ?Comparison {
             return switch (@intFromEnum(opcode)) {
                 0x2E...0x2F => @enumFromInt(@intFromEnum(Opcode.cmp) >> 3),
@@ -550,7 +612,7 @@ pub const Instruction = union(Format) {
     };
 
     pub const format = struct {
-        pub const Unparametized = packed struct(u32) { _unused0: u26, opcode: u6 };
+        pub const Unparametized = packed struct(u32) { _unused0: u26 = 0, opcode: Opcode };
 
         pub fn Register(comptime inverted: bool) type {
             return packed struct(u32) {
@@ -643,12 +705,6 @@ pub const Instruction = union(Format) {
     set_emit: format.SetEmit,
     mad: format.Mad(false),
     mad_inverted: format.Mad(true),
-
-    pub inline fn raw(in: Instruction) u32 {
-        return switch (in) {
-            inline else => |v| @bitCast(v),
-        };
-    }
 };
 
 const std = @import("std");

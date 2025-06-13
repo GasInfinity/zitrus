@@ -63,6 +63,14 @@ pub const SourceRegister = enum(u7) {
         };
     }
 
+    pub fn isLimited(register: SourceRegister) bool {
+        return @as(u7, @intFromEnum(register)) < 32;
+    }
+
+    pub fn toLimited(register: SourceRegister) ?Limited {
+        return if(register.isLimited()) @enumFromInt(@as(u5, @intCast(@intFromEnum(register)))) else null;
+    }
+
     pub fn kind(register: SourceRegister) Kind {
         return switch (@intFromEnum(register)) {
             else => |r| if (r > 0x1F) .constant else (if ((r & (1 << 4)) != 0) .temporary else .input),
