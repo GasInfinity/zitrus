@@ -22,10 +22,10 @@ pub const Component = enum(u2) {
         pub const yzw: Mask = .{ .enable_y = true, .enable_z = true, .enable_w = true };
         pub const xyzw: Mask = .{ .enable_x = true, .enable_y = true, .enable_z = true, .enable_w = true };
 
-        enable_x: bool = false,
-        enable_y: bool = false,
-        enable_z: bool = false,
         enable_w: bool = false,
+        enable_z: bool = false,
+        enable_y: bool = false,
+        enable_x: bool = false,
 
         pub fn size(mask: Mask) usize {
             return (((@as(usize, @intFromBool(mask.enable_x)) + @intFromBool(mask.enable_y)) + @intFromBool(mask.enable_z)) + @intFromBool(mask.enable_w));
@@ -53,7 +53,7 @@ pub const Component = enum(u2) {
                     }
                 }
 
-                mask |= @as(u4, 1) << @intCast(component);
+                mask |= @as(u4, 1) << @intCast(span.len - 1 - component);
                 last = component;
             }
 
@@ -642,7 +642,7 @@ pub const Instruction = extern union {
         };
 
         pub const SetEmit = packed struct(u32) {
-            _unused: u22,
+            _unused: u22 = 0,
             winding: bool,
             primitive_emit: bool,
             vertex_id: u2,

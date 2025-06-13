@@ -45,7 +45,7 @@ pub fn getOrAllocateOperandDescriptor(encoder: *Encoder, comptime T: type, compt
     if (encoder.allocated_descriptors < std.math.maxInt(T)) {
         encoder.descriptors[encoder.allocated_descriptors] = operand_descriptor;
         encoder.allocated_descriptors += 1;
-        return encoder.allocated_descriptors - 1;
+        return @intCast(encoder.allocated_descriptors - 1);
     }
 
     // TODO:
@@ -242,7 +242,14 @@ pub fn loop(encoder: *Encoder, alloc: Allocator, dest: u12, i: IntegerRegister) 
     return encoder.flowConstant(alloc, .loop, 0, dest, .{ .int = i });
 }
 
-// TODO: setemit
+pub fn setemit(encoder: *Encoder, alloc: Allocator, winding: bool, primitive_emit: bool, vertex_id: u2) !void {
+    return encoder.addInstruction(alloc, .{ .set_emit = .{
+        .winding = winding,
+        .primitive_emit = primitive_emit,
+        .vertex_id = vertex_id,
+        .opcode = .setemit,
+    }});
+}
 
 pub fn emit(encoder: *Encoder, alloc: Allocator) !void {
     return encoder.unparametized(alloc, .emit);
@@ -277,7 +284,45 @@ pub fn cmp(encoder: *Encoder, alloc: Allocator, src1: SourceRegister, src1_selec
     } });
 }
 
-// TODO: mad
+// madi handled by mad
+
+pub fn mad(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1: SourceRegister.Limited, src1_selector: Selector, src1_neg: bool, src2: SourceRegister, src2_selector: Selector, src2_neg: bool, src3: SourceRegister, src3_selector: Selector, src3_neg: bool, src_rel: RelativeComponent) !void {
+    if(!src2.isLimited() and !src3.isLimited()) {
+        return error.InvalidSourceRegisterCombination;
+    }
+
+    const descriptor_id = try encoder.getOrAllocateOperandDescriptor(u5, .full, .{
+        .destination_mask = dst_mask,
+        .src1_neg = src1_neg,
+        .src1_selector = src1_selector,
+        .src2_neg = src2_neg,
+        .src2_selector = src2_selector,
+        .src3_neg = src3_neg,
+        .src3_selector = src3_selector,
+    });
+
+    if(src2.isLimited() != src3.isLimited() and src2.isLimited()) {
+        return try encoder.addInstruction(alloc, .{ .mad_inverted = .{
+            .operand_descriptor_id = descriptor_id,
+            .src1 = src1,
+            .src2 = src2.toLimited().?,
+            .src3 = src3,
+            .address_index = src_rel,
+            .dst = dest,
+            .opcode = Instruction.Opcode.madi.toMad().?,
+        }});
+    }
+
+    return try encoder.addInstruction(alloc, .{ .mad = .{
+        .operand_descriptor_id = descriptor_id,
+        .src1 = src1,
+        .src2 = src2,
+        .src3 = src3.toLimited().?,
+        .address_index = src_rel,
+        .dst = dest,
+        .opcode = Instruction.Opcode.mad.toMad().?,
+    }});
+}
 
 test Encoder {
     const expected_output: []const u32 = &.{
