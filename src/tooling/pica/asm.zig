@@ -54,9 +54,7 @@ const Operand = enum {
 pub const Assembler = struct {
     tk: Tokenizer,
 
-    pub const Tokenizer = struct {
-              
-    };
+    pub const Tokenizer = struct {};
 };
 
 const encoding = @import("encoding.zig");

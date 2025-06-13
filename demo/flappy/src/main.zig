@@ -206,9 +206,7 @@ const AppState = struct {
             for (ground_total_width..(upper_start - pipe_gap)) |x| {
                 ctx.drawSprite(.transparent_bitmap, @intCast(x), yi, pipe_sheet_width, pipe_image, .{
                     .transparent = transparent_color,
-                }, .{
-                    .width = 1
-                });
+                }, .{ .width = 1 });
             }
 
             ctx.drawSprite(.transparent_bitmap, @intCast(upper_start - pipe_gap - pipe_sheet_width + 1), yi, pipe_sheet_width, pipe_image, .{
@@ -275,9 +273,7 @@ pub fn main() !void {
         @memset(bottom_fb, ground_color);
 
         const bottom = ScreenCtx.init(bottom_fb, Screen.bottom.width());
-        bottom.drawSprite(.transparent_bitmap, 2 * (Screen.bottom.width() / 3), (Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ 
-            .transparent = transparent_color
-        }, .{});
+        bottom.drawSprite(.transparent_bitmap, 2 * (Screen.bottom.width() / 3), (Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ .transparent = transparent_color }, .{});
     }
     try framebuffer.flushBuffers(&gsp);
     try framebuffer.swapBuffers(&gsp);

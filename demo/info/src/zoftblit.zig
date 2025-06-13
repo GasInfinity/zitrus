@@ -14,10 +14,7 @@ pub fn Context(Color: type) type {
                 flip_v: bool = false,
             };
 
-            pub const Bit = struct {
-                off: ?PixelColor = null,
-                on: PixelColor
-            };
+            pub const Bit = struct { off: ?PixelColor = null, on: PixelColor };
 
             pub const Bitmap = struct {};
 
@@ -93,9 +90,9 @@ pub fn Context(Color: type) type {
             }
         }
 
-        pub fn drawSprite(ctx: Ctx, comptime sprite: Sprite, x: isize, y: isize, data: sprite.Data(), buffer: []const (if(sprite == .bit) data else PixelColor), parameters: sprite.Parameters(), options: Sprite.Options) void {
+        pub fn drawSprite(ctx: Ctx, comptime sprite: Sprite, x: isize, y: isize, data: sprite.Data(), buffer: []const (if (sprite == .bit) data else PixelColor), parameters: sprite.Parameters(), options: Sprite.Options) void {
             const width = sprite.width(data);
-            const height = if(sprite == .bit) buffer.len else @divExact(buffer.len, width);
+            const height = if (sprite == .bit) buffer.len else @divExact(buffer.len, width);
 
             const x1: usize = @max(0, x);
             const y1: usize = @max(0, y);
@@ -143,14 +140,14 @@ pub fn Context(Color: type) type {
                         for (0..drawn_width) |i| {
                             defer cx += 1;
 
-                            if(cx >= ctx.width) {
+                            if (cx >= ctx.width) {
                                 break;
                             }
 
-                            const current_bit = ((if(options.flip_h) (current_unit >> @intCast(width - i - 1)) else (current_unit >> @intCast(i))) & 0b1) != 0;
-                            const color = if(current_bit) parameters.on else parameters.off;
+                            const current_bit = ((if (options.flip_h) (current_unit >> @intCast(width - i - 1)) else (current_unit >> @intCast(i))) & 0b1) != 0;
+                            const color = if (current_bit) parameters.on else parameters.off;
 
-                            if(color) |c| {
+                            if (color) |c| {
                                 ctx.framebuffer[offset + cx] = c;
                             }
                         }

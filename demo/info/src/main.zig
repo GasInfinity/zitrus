@@ -39,23 +39,22 @@ pub fn main() !void {
 
     const model = try cfg.sendGetSystemModel();
     var fmt_buffer: [512]u8 = undefined;
-    drawString(top, 0, 0, try std.fmt.bufPrint(&fmt_buffer, "Model: {s} ({s})", .{@tagName(model), model.description()}), .{}); 
-    drawString(top, font_width + 1, 0, try std.fmt.bufPrint(&fmt_buffer, "Region: {s}", .{@tagName(try cfg.sendGetRegion())}), .{}); 
+    drawString(top, 0, 0, try std.fmt.bufPrint(&fmt_buffer, "Model: {s} ({s})", .{ @tagName(model), model.description() }), .{});
+    drawString(top, font_width + 1, 0, try std.fmt.bufPrint(&fmt_buffer, "Region: {s}", .{@tagName(try cfg.sendGetRegion())}), .{});
 
     var utf8_buf: [128]u8 = undefined;
     const name = try cfg.getConfigU(.user_name);
     const name_written = try std.unicode.utf16LeToUtf8(&utf8_buf, &name.name);
-    drawString(top, 2 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Name: {s}", .{utf8_buf[0..name_written]}), .{}); 
+    drawString(top, 2 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Name: {s}", .{utf8_buf[0..name_written]}), .{});
 
     const language = try cfg.getConfigU(.language);
-    drawString(top, 3 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Language: {s}", .{@tagName(language)}), .{}); 
+    drawString(top, 3 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Language: {s}", .{@tagName(language)}), .{});
 
     const birthday = try cfg.getConfigU(.birthday);
-    drawString(top, 4 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Birthday: {}/{}", .{birthday.day, birthday.month}), .{});
+    drawString(top, 4 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Birthday: {}/{}", .{ birthday.day, birthday.month }), .{});
 
     const country_info = try cfg.getConfigU(.country_info);
-    drawString(top, 5 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Country: {}/{}", .{country_info.province_code, country_info.country_code}), .{});
-
+    drawString(top, 5 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Country: {}/{}", .{ country_info.province_code, country_info.country_code }), .{});
 
     try framebuffer.flushBuffers(&gsp);
     try framebuffer.present(&gsp);
@@ -101,9 +100,7 @@ pub fn main() !void {
     }
 }
 
-const StringDrawingOptions = struct {
-    wrap: bool = false
-};
+const StringDrawingOptions = struct { wrap: bool = false };
 
 fn drawString(ctx: ScreenCtx, x: isize, y: isize, string: []const u8, options: StringDrawingOptions) void {
     const ctx_height = @divExact(ctx.framebuffer.len, ctx.width);
@@ -112,17 +109,17 @@ fn drawString(ctx: ScreenCtx, x: isize, y: isize, string: []const u8, options: S
 
     var i: usize = 0;
     while (i < string.len and cx >= 0) : (i += 1) {
-        if(string[i] == '\n') {
+        if (string[i] == '\n') {
             cx -= font_width + 1;
             cy = y;
             continue;
         }
 
-        drawCharacter(ctx, cx, cy, string[i]); 
+        drawCharacter(ctx, cx, cy, string[i]);
         cy += font_height + 1;
 
-        if(cy >= (ctx_height - font_width)) {
-            if(!options.wrap) {
+        if (cy >= (ctx_height - font_width)) {
+            if (!options.wrap) {
                 break;
             }
 
@@ -146,7 +143,7 @@ const bit_font = bit: {
     var offset = 0;
     for (&buffer) |*v| {
         for (0..@bitSizeOf(u8)) |i| {
-            v.* |= ((if(bitmap_font[offset] == 255) 1 else 0) << i);
+            v.* |= ((if (bitmap_font[offset] == 255) 1 else 0) << i);
             offset += 1;
         }
     }
@@ -154,7 +151,7 @@ const bit_font = bit: {
     break :bit buffer;
 };
 
-const white_color = Bgr8{ .r = 255, .g = 255, .b = 255};
+const white_color = Bgr8{ .r = 255, .g = 255, .b = 255 };
 fn drawCharacter(ctx: ScreenCtx, x: isize, y: isize, character: u8) void {
     const offset: ?usize = of: switch (character) {
         0...32, 127 => null,
@@ -166,7 +163,7 @@ fn drawCharacter(ctx: ScreenCtx, x: isize, y: isize, character: u8) void {
         else => null,
     };
 
-    if(offset) |off| {
+    if (offset) |off| {
         ctx.drawSprite(.bit, x, y, u8, &bit_font, .{ .on = white_color }, .{
             .y = font_height * off,
             .height = font_height,

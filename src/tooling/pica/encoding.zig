@@ -38,7 +38,7 @@ pub const Component = enum(u2) {
         };
 
         pub fn parse(value: []const u8) ParseError!Mask {
-            if(value.len == 0 or value.len > 4) {
+            if (value.len == 0 or value.len > 4) {
                 return error.Syntax;
             }
 
@@ -47,8 +47,8 @@ pub const Component = enum(u2) {
             for (value) |c| {
                 const component = std.mem.indexOf(u8, span, &.{c}) orelse return error.InvalidComponent;
 
-                if(last) |l| {
-                    if(component <= l) {
+                if (last) |l| {
+                    if (component <= l) {
                         return error.InvalidMask;
                     }
                 }
@@ -439,16 +439,16 @@ pub const Component = enum(u2) {
         };
 
         pub fn parse(value: []const u8) ParseError!Selector {
-            if(value.len == 0 or value.len > 4) {
+            if (value.len == 0 or value.len > 4) {
                 return error.Syntax;
             }
 
             var last: Component = undefined;
             var selector: Selector = undefined;
             inline for ("0123", 0..) |f, i| {
-                const component: Component = if(i >= value.len)
-                    last 
-                else 
+                const component: Component = if (i >= value.len)
+                    last
+                else
                     @enumFromInt(std.mem.indexOf(u8, span, &.{value[i]}) orelse return error.InvalidComponent);
 
                 @field(selector, std.mem.asBytes(&f)) = component;
@@ -504,23 +504,11 @@ pub const OperandDescriptor = packed struct(u32) {
     _unused0: u1 = 0,
 
     pub fn equalsMasked(desc: OperandDescriptor, mask: Mask, other: OperandDescriptor) bool {
-        return (!mask.dst or (mask.dst and (desc.destination_mask == other.destination_mask)))
-           and (!mask.src1 or (mask.src1 and (desc.src1_neg == other.src1_neg and desc.src1_selector == other.src1_selector)))
-           and (!mask.src2 or (mask.src2 and (desc.src2_neg == other.src2_neg and desc.src2_selector == other.src2_selector)))
-           and (!mask.src3 or (mask.src3 and (desc.src3_neg == other.src3_neg and desc.src3_selector == other.src3_selector)));
+        return (!mask.dst or (mask.dst and (desc.destination_mask == other.destination_mask))) and (!mask.src1 or (mask.src1 and (desc.src1_neg == other.src1_neg and desc.src1_selector == other.src1_selector))) and (!mask.src2 or (mask.src2 and (desc.src2_neg == other.src2_neg and desc.src2_selector == other.src2_selector))) and (!mask.src3 or (mask.src3 and (desc.src3_neg == other.src3_neg and desc.src3_selector == other.src3_selector)));
     }
 };
 
-pub const ComparisonOperation = enum(u3) {
-    eq,
-    ne,
-    lt,
-    le,
-    gt,
-    ge,
-    true0,
-    true1
-};
+pub const ComparisonOperation = enum(u3) { eq, ne, lt, le, gt, ge, true0, true1 };
 
 pub const Condition = enum(u2) {
     @"or",
@@ -690,7 +678,7 @@ pub const Instruction = extern union {
             return switch (fmt) {
                 .unparametized, .control_flow, .constant_control_flow, .set_emit => null,
                 .mad, .mad_inverted => 5,
-                else => 7
+                else => 7,
             };
         }
     };

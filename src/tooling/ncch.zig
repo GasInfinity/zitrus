@@ -3,7 +3,9 @@ pub const magic = "NCCH";
 
 // TODO: Docs, Docs and Docs
 pub const Header = extern struct {
-    pub const Flags = packed struct(u64) { _: u64 = 0, };
+    pub const Flags = packed struct(u64) {
+        _: u64 = 0,
+    };
 
     signature: [0x100]u8,
     magic: [4]u8 = magic.*,

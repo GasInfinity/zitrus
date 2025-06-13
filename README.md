@@ -61,7 +61,9 @@ I wanted to learn arm and always wanted to develop 3DS homebrew, also I searched
 # Tooling coverage
 - 🟢 smdh creation (tools/smdh)
 - 🟡 elf -> 3dsx conversion (tools/3dsx)
-- 🟡 PICA200 shader assembler/disassembler
+- 🟡 PICA200 shader assembler/disassembler:
+    - 🟢 Instruction encoding/decoding
+    - 🔴 Assembler/disassembler
 - NCCH:
     - 🟢 ExeFS
     - 🔴 RomFS

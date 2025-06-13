@@ -2,7 +2,7 @@
 
 pub const Header = extern struct {
     pub const magic_value = "DVLB";
-    
+
     magic: [4]u8 = magic_value.*,
     dvle_num: u32,
 
@@ -77,7 +77,7 @@ pub const Dvle = extern struct {
 
     pub const ConstantEntry = extern struct {
         pub const Type = enum(u8) {
-            @"bool",
+            bool,
             u8x4,
             f24x4,
         };
@@ -87,7 +87,7 @@ pub const Dvle = extern struct {
             pub const U8X4 = extern struct { x: u8, y: u8, z: u8, w: u8 };
             pub const F24X4 = extern struct { x: u32, y: u32, z: u32, w: u32 };
 
-            @"bool": Bool,
+            bool: Bool,
             u8x4: U8X4,
             f24x4: F24X4,
         };
@@ -119,14 +119,10 @@ pub const Dvle = extern struct {
 
     pub const UniformEntry = extern struct {
         // TODO: Values of this
-        pub const Register = enum(u16) {
-            _
-        };
+        pub const Register = enum(u16) { _ };
 
         offset: u32,
         register_start: Register,
         register_end: Register,
     };
 };
-
-

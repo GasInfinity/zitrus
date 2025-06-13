@@ -36,7 +36,7 @@ pub const SourceRegister = enum(u7) {
     f58, f59, f60, f61, f62, f63, f64, f65, f66, f67, f68, f69, f70, f71,
     f72, f73, f74, f75, f76, f77, f78, f79, f80, f81, f82, f83, f84, f85,
     f86, f87, f88, f89, f90, f91, f92, f93, f94, f95, 
-    // zig fmt: on 
+    // zig fmt: on
 
     pub fn initLimited(limited: Limited) SourceRegister {
         return @enumFromInt(@intFromEnum(limited));
@@ -68,7 +68,7 @@ pub const SourceRegister = enum(u7) {
     }
 
     pub fn toLimited(register: SourceRegister) ?Limited {
-        return if(register.isLimited()) @enumFromInt(@as(u5, @intCast(@intFromEnum(register)))) else null;
+        return if (register.isLimited()) @enumFromInt(@as(u5, @intCast(@intFromEnum(register)))) else null;
     }
 
     pub fn kind(register: SourceRegister) Kind {
@@ -84,7 +84,7 @@ pub const SourceRegister = enum(u7) {
     };
 
     pub fn parse(value: []const u8) ParseError!SourceRegister {
-        if(value.len < 2 or (!std.ascii.isAlphabetic(value[0]) or !std.ascii.isDigit(value[1]))) {
+        if (value.len < 2 or (!std.ascii.isAlphabetic(value[0]) or !std.ascii.isDigit(value[1]))) {
             return error.Syntax;
         }
 
@@ -94,8 +94,8 @@ pub const SourceRegister = enum(u7) {
             error.Overflow => return error.InvalidIndex,
             error.InvalidCharacter => return error.Syntax,
         };
-    
-        if(index >= k.amount()) {
+
+        if (index >= k.amount()) {
             return error.InvalidIndex;
         }
 
@@ -155,7 +155,7 @@ pub const DestinationRegister = enum(u5) {
     };
 
     pub fn parse(value: []const u8) ParseError!DestinationRegister {
-        if(value.len < 2 or (!std.ascii.isAlphabetic(value[0]) or !std.ascii.isDigit(value[1]))) {
+        if (value.len < 2 or (!std.ascii.isAlphabetic(value[0]) or !std.ascii.isDigit(value[1]))) {
             return error.Syntax;
         }
 
@@ -165,8 +165,8 @@ pub const DestinationRegister = enum(u5) {
             error.Overflow => return error.InvalidIndex,
             error.InvalidCharacter => return error.Syntax,
         };
-    
-        if(index >= k.amount()) {
+
+        if (index >= k.amount()) {
             return error.InvalidIndex;
         }
 
@@ -185,15 +185,28 @@ pub const DestinationRegister = enum(u5) {
 };
 
 pub const BooleanRegister = enum(u4) {
-    b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15,
+    b0,
+    b1,
+    b2,
+    b3,
+    b4,
+    b5,
+    b6,
+    b7,
+    b8,
+    b9,
+    b10,
+    b11,
+    b12,
+    b13,
+    b14,
+    b15,
 };
 
-pub const IntegerRegister = enum(u4) {
-    i0, i1, i2, i3
-};
+pub const IntegerRegister = enum(u4) { i0, i1, i2, i3 };
 
 pub const IntegralRegister = packed union {
-    @"bool": BooleanRegister,
+    bool: BooleanRegister,
     int: IntegerRegister,
 };
 

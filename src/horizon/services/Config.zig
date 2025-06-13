@@ -12,7 +12,7 @@ pub const SystemModel = enum(u8) {
     jan,
 
     pub fn description(model: SystemModel) [:0]const u8 {
-        return switch(model) {
+        return switch (model) {
             .ctr => "Nintendo 3DS",
             .spr => "Nintendo 3DS XL",
             .ktr => "New Nintendo 3DS",
@@ -190,11 +190,7 @@ pub const Birthday = extern struct {
     day: u8,
 };
 
-pub const CountryInfo = extern struct {
-    _unknown0: [2]u8 = @splat(0),
-    province_code: u8,
-    country_code: u8
-};
+pub const CountryInfo = extern struct { _unknown0: [2]u8 = @splat(0), province_code: u8, country_code: u8 };
 
 pub const UserName = extern struct {
     name: [11]u16,
@@ -242,13 +238,9 @@ pub const ParentalControls = extern struct {
     secret_answer: [34]u16,
 };
 
-pub const CountryName = extern struct {
-    value: [16][64]u16
-};
+pub const CountryName = extern struct { value: [16][64]u16 };
 
-pub const StateName = extern struct {
-    value: [16][64]u16
-};
+pub const StateName = extern struct { value: [16][64]u16 };
 
 pub const Coordinates = packed struct(u32) {
     latitude: i16,
@@ -455,7 +447,7 @@ pub fn sendIsModelNintendo2DS(cfg: Config) Error!bool {
 
 pub fn sendGetCountryCodeString(cfg: Config, id: Country) Error![2]u8 {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.get_country_code_string, .{ @as(u32, @intFromEnum(id)) }, .{});
+    data.ipc.fillCommand(Command.get_country_code_string, .{@as(u32, @intFromEnum(id))}, .{});
 
     try cfg.session.sendRequest();
     return .{ @truncate(data.ipc.parameters[1]), @truncate(data.ipc.parameters[1] >> 8) };
@@ -463,7 +455,7 @@ pub fn sendGetCountryCodeString(cfg: Config, id: Country) Error![2]u8 {
 
 pub fn sendGetCountryCodeId(cfg: Config, string: *const [2]u8) Error!Country {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.get_country_code_id, .{ @as(u32, @as(u16, string.*)) }, .{});
+    data.ipc.fillCommand(Command.get_country_code_id, .{@as(u32, @as(u16, string.*))}, .{});
 
     try cfg.session.sendRequest();
     return @enumFromInt(data.ipc.parameters[1]);
