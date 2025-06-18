@@ -23,6 +23,20 @@ pub fn build(b: *std.Build) void {
     zitrus.addImport("zitrus-tooling", zitrus_tooling);
     zitrus.addImport("zalloc", zalloc_mod);
 
+    const static_zitrus_lib = b.addStaticLibrary(.{
+        .name = "zitrus",
+        .root_module = zitrus,
+    });
+
+    const install_docs = b.addInstallDirectory(.{
+        .source_dir = static_zitrus_lib.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    });
+
+    const docs_step = b.step("docs", "Install docs");
+    docs_step.dependOn(&install_docs.step);
+
     const zitrus_tooling_tests = b.addTest(.{ .name = "zitrus-tooling-tests", .root_source_file = b.path("src/tooling/zitrus.zig"), .target = b.resolveTargetQuery(.{}) });
 
     // Bro? Why do I need to do this again? Target handling is so bad rn
