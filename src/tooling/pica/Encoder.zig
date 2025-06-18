@@ -19,6 +19,7 @@ pub fn init() Encoder {
 
 pub fn deinit(encoder: *Encoder, allocator: Allocator) void {
     encoder.instructions.deinit(allocator);
+    encoder.* = undefined;
 }
 
 pub fn getOrAllocateOperandDescriptor(encoder: *Encoder, comptime T: type, comptime descriptor_mask: OperandDescriptor.Mask, operand_descriptor: OperandDescriptor) OperandDescriptorAllocationError!T {
@@ -105,7 +106,7 @@ fn binary(encoder: *Encoder, alloc: Allocator, comptime opcode: Instruction.Opco
     return encoder.addInstruction(alloc, .{ .register = .{ .operand_descriptor_id = descriptor_id, .src2 = src2.toLimited().?, .src1 = src1, .address_index = src_rel, .dst = dest, .opcode = opcode } });
 }
 
-fn flow(encoder: *Encoder, alloc: Allocator, comptime opcode: Instruction.Opcode, num: u8, dest: u12, condition: Condition, x: bool, y: bool) !void {
+fn flow(encoder: *Encoder, alloc: Allocator, comptime opcode: Instruction.Opcode, num: u8, dest: i12, condition: Condition, x: bool, y: bool) !void {
     return encoder.addInstruction(alloc, .{ .control_flow = .{
         .num = num,
         .dst_word_offset = dest,
@@ -116,7 +117,7 @@ fn flow(encoder: *Encoder, alloc: Allocator, comptime opcode: Instruction.Opcode
     } });
 }
 
-fn flowConstant(encoder: *Encoder, alloc: Allocator, comptime opcode: Instruction.Opcode, num: u8, dest: u12, constant: IntegralRegister) !void {
+fn flowConstant(encoder: *Encoder, alloc: Allocator, comptime opcode: Instruction.Opcode, num: u8, dest: i12, constant: IntegralRegister) !void {
     return encoder.addInstruction(alloc, .{ .constant_control_flow = .{
         .num = num,
         .dst_word_offset = dest,
@@ -218,49 +219,49 @@ pub fn breakc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool
     return encoder.flow(alloc, .breakc, 0, 0, condition, x, y);
 }
 
-pub fn call(encoder: *Encoder, alloc: Allocator, num: u8, dest: u12) !void {
+pub fn call(encoder: *Encoder, alloc: Allocator, dest: i12, num: u8) !void {
     return encoder.flow(alloc, .call, num, dest, .@"and", false, false);
 }
 
-pub fn callc(encoder: *Encoder, alloc: Allocator, num: u8, dest: u12, condition: Condition, x: bool, y: bool) !void {
+pub fn callc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool, y: bool, dest: i12, num: u8) !void {
     return encoder.flow(alloc, .callc, num, dest, condition, x, y);
 }
 
-pub fn callu(encoder: *Encoder, alloc: Allocator, num: u8, dest: u12, b: BooleanRegister) !void {
+pub fn callu(encoder: *Encoder, alloc: Allocator, b: BooleanRegister, dest: i12, num: u8) !void {
     return encoder.flowConstant(alloc, .callu, num, dest, .{ .bool = b });
 }
 
-pub fn ifu(encoder: *Encoder, alloc: Allocator, num: u8, dest: u12, b: BooleanRegister) !void {
+pub fn ifu(encoder: *Encoder, alloc: Allocator, b: BooleanRegister, dest: i12, num: u8) !void {
     return encoder.flowConstant(alloc, .ifu, num, dest, .{ .bool = b });
 }
 
-pub fn ifc(encoder: *Encoder, alloc: Allocator, num: u8, dest: u12, condition: Condition, x: bool, y: bool) !void {
+pub fn ifc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool, y: bool, dest: i12, num: u8) !void {
     return encoder.flow(alloc, .ifc, num, dest, condition, x, y);
 }
 
-pub fn loop(encoder: *Encoder, alloc: Allocator, dest: u12, i: IntegerRegister) !void {
+pub fn loop(encoder: *Encoder, alloc: Allocator, i: IntegerRegister, dest: i12) !void {
     return encoder.flowConstant(alloc, .loop, 0, dest, .{ .int = i });
 }
 
-pub fn setemit(encoder: *Encoder, alloc: Allocator, winding: bool, primitive_emit: bool, vertex_id: u2) !void {
+pub fn setemit(encoder: *Encoder, alloc: Allocator, vertex_id: u2, primitive: Primitive, winding: Winding) !void {
     return encoder.addInstruction(alloc, .{ .set_emit = .{
         .winding = winding,
-        .primitive_emit = primitive_emit,
+        .primitive_emit = primitive,
         .vertex_id = vertex_id,
         .opcode = .setemit,
-    }});
+    } });
 }
 
 pub fn emit(encoder: *Encoder, alloc: Allocator) !void {
     return encoder.unparametized(alloc, .emit);
 }
 
-pub fn jmpc(encoder: *Encoder, alloc: Allocator, dest: u12, condition: Condition, x: bool, y: bool) !void {
-    return encoder.flow(alloc, .call, 0, dest, condition, x, y);
+pub fn jmpc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool, y: bool, dest: i12) !void {
+    return encoder.flow(alloc, .jmpc, 0, dest, condition, x, y);
 }
 
-pub fn jmpu(encoder: *Encoder, alloc: Allocator, invert: bool, dest: u12, b: BooleanRegister) !void {
-    return encoder.flowConstant(alloc, .ifu, @intFromBool(invert), dest, .{ .bool = b });
+pub fn jmpu(encoder: *Encoder, alloc: Allocator, b: BooleanRegister, if_true: bool, dest: i12) !void {
+    return encoder.flowConstant(alloc, .jmpu, @intFromBool(!if_true), dest, .{ .bool = b });
 }
 
 pub fn cmp(encoder: *Encoder, alloc: Allocator, src1: SourceRegister, src1_selector: Selector, src1_neg: bool, src2: SourceRegister, src2_selector: Selector, src2_neg: bool, src_rel: RelativeComponent, x: Comparison, y: Comparison) !void {
@@ -287,7 +288,7 @@ pub fn cmp(encoder: *Encoder, alloc: Allocator, src1: SourceRegister, src1_selec
 // madi handled by mad
 
 pub fn mad(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1: SourceRegister.Limited, src1_selector: Selector, src1_neg: bool, src2: SourceRegister, src2_selector: Selector, src2_neg: bool, src3: SourceRegister, src3_selector: Selector, src3_neg: bool, src_rel: RelativeComponent) !void {
-    if(!src2.isLimited() and !src3.isLimited()) {
+    if (!src2.isLimited() and !src3.isLimited()) {
         return error.InvalidSourceRegisterCombination;
     }
 
@@ -301,7 +302,7 @@ pub fn mad(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_m
         .src3_selector = src3_selector,
     });
 
-    if(src2.isLimited() != src3.isLimited() and src2.isLimited()) {
+    if (src2.isLimited() != src3.isLimited() and src2.isLimited()) {
         return try encoder.addInstruction(alloc, .{ .mad_inverted = .{
             .operand_descriptor_id = descriptor_id,
             .src1 = src1,
@@ -310,7 +311,7 @@ pub fn mad(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_m
             .address_index = src_rel,
             .dst = dest,
             .opcode = Instruction.Opcode.madi.toMad().?,
-        }});
+        } });
     }
 
     return try encoder.addInstruction(alloc, .{ .mad = .{
@@ -321,7 +322,7 @@ pub fn mad(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_m
         .address_index = src_rel,
         .dst = dest,
         .opcode = Instruction.Opcode.mad.toMad().?,
-    }});
+    } });
 }
 
 test Encoder {
@@ -358,6 +359,8 @@ const Instruction = encoding.Instruction;
 const OperandDescriptor = encoding.OperandDescriptor;
 const Condition = encoding.Condition;
 const Comparison = encoding.ComparisonOperation;
+const Winding = encoding.Winding;
+const Primitive = encoding.Primitive;
 
 const Mask = encoding.Component.Mask;
 const Selector = encoding.Component.Selector;

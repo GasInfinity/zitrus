@@ -63,7 +63,7 @@ I wanted to learn arm and always wanted to develop 3DS homebrew, also I searched
 - 🟡 elf -> 3dsx conversion (tools/3dsx)
 - 🟡 PICA200 shader assembler/disassembler:
     - 🟢 Instruction encoding/decoding
-    - 🔴 Assembler/disassembler
+    - 🟡 Assembler/disassembler
 - NCCH:
     - 🟢 ExeFS
     - 🔴 RomFS

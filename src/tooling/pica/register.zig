@@ -84,7 +84,7 @@ pub const SourceRegister = enum(u7) {
     };
 
     pub fn parse(value: []const u8) ParseError!SourceRegister {
-        if (value.len < 2 or (!std.ascii.isAlphabetic(value[0]) or !std.ascii.isDigit(value[1]))) {
+        if (value.len < 2 or !std.ascii.isAlphabetic(value[0]) or !std.ascii.isDigit(value[1])) {
             return error.Syntax;
         }
 

@@ -1,3 +1,8 @@
+pub const Shader = enum(u1) {
+    gsh,
+    all,
+};
+
 pub const Component = enum(u2) {
     const span = "xyzw";
 
@@ -517,6 +522,16 @@ pub const Condition = enum(u2) {
     y,
 };
 
+pub const Primitive = enum(u1) {
+    none,
+    emmiting
+};
+
+pub const Winding = enum(u1) {
+    ccw,
+    cw
+};
+
 pub const Instruction = extern union {
     pub const Opcode = enum(u6) {
         pub const Mad = enum(u3) { _ };
@@ -626,7 +641,7 @@ pub const Instruction = extern union {
         pub const ControlFlow = packed struct(u32) {
             num: u8,
             _unused: u2 = 0,
-            dst_word_offset: u12,
+            dst_word_offset: i12,
             condition: Condition,
             ref_y: bool,
             ref_x: bool,
@@ -636,15 +651,15 @@ pub const Instruction = extern union {
         pub const ConstantControlFlow = packed struct(u32) {
             num: u8,
             _unused0: u2 = 0,
-            dst_word_offset: u12,
+            dst_word_offset: i12,
             constant_id: IntegralRegister,
             opcode: Opcode,
         };
 
         pub const SetEmit = packed struct(u32) {
             _unused: u22 = 0,
-            winding: bool,
-            primitive_emit: bool,
+            winding: Winding,
+            primitive_emit: Primitive,
             vertex_id: u2,
             opcode: Opcode,
         };
