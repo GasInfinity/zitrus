@@ -5,7 +5,7 @@ const service_name = "gsp::Gpu";
 pub const Error = Session.RequestError;
 
 // https://www.3dbrew.org/wiki/GSP_Shared_Memory#Interrupt%20Queue
-pub const InterruptKind = enum(u8) {
+pub const Interrupt = enum(u8) {
     psc0,
     psc1,
     vblank_top,
@@ -13,26 +13,27 @@ pub const InterruptKind = enum(u8) {
     ppf,
     p3d,
     dma,
-};
 
-pub const InterruptQueue = extern struct {
-    pub const Header = packed struct(u32) {
-        pub const Flags = packed struct(u8) { skip_pdc: bool = false, _unused: u7 = 0 };
+    pub const Set = std.EnumSet(Interrupt);
 
-        offset: u8,
-        count: u8,
-        missed_other: bool,
-        _reserved0: u7 = 0,
-        flags: Flags,
+    pub const Queue = extern struct {
+        pub const Header = packed struct(u32) {
+            pub const Flags = packed struct(u8) { skip_pdc: bool = false, _unused: u7 = 0 };
+
+            offset: u8,
+            count: u8,
+            missed_other: bool,
+            _reserved0: u7 = 0,
+            flags: Flags,
+        };
+
+        pub const max_interrupts = 0x34;
+
+        header: Header,
+        missed_pdc0: u32,
+        missed_pdc1: u32,
+        interrupt_list: [max_interrupts]Interrupt,
     };
-
-    pub const max_interrupts = 0x34;
-    pub const Interrupts = std.EnumSet(InterruptKind);
-
-    header: Header,
-    missed_pdc0: u32,
-    missed_pdc1: u32,
-    interrupt_list: [max_interrupts]InterruptKind,
 };
 
 pub const FramebufferInfo = extern struct {
@@ -45,44 +46,21 @@ pub const FramebufferInfo = extern struct {
         _unused1: u16 = 0,
     };
 
-    pub const Active = enum(u32) { first, second };
+    pub const Framebuffer = extern struct {
+        pub const Active = enum(u32) { first, second };
 
-    active: Active,
-    left_vaddr: *anyopaque,
-    right_vaddr: *anyopaque,
-    stride: usize,
-    format: FramebufferFormat,
-    select: u32,
-    attribute: u32,
-};
-
-// TODO: MOVE THIS TO SEPARATE FILE!
-pub const GxCommand = extern struct {
-    pub const Header = packed struct(u32) {
-        command_id: u8,
-        _unused0: u8 = 0,
-        stop_processing_queue: bool = 0,
-        _unused1: u7,
-        fail_if_any: bool,
-        _unused2: u7 = 0,
+        active: Active,
+        left_vaddr: *anyopaque,
+        right_vaddr: *anyopaque,
+        stride: usize,
+        format: FramebufferFormat,
+        select: u32,
+        attribute: u32,
     };
 
-    pub const DmaRequest = extern struct {};
-    pub const ListProcessing = extern struct {};
-    pub const MemoryFill = extern struct {};
-    pub const DisplayTransfer = extern struct {};
-    pub const TextureCopy = extern struct {};
-    pub const FlushCacheRegions = extern struct {};
-
     header: Header,
-    data: extern union {
-        dma_request: DmaRequest,
-        command_list_processing: ListProcessing,
-        memory_fill: MemoryFill,
-        display_transfer: DisplayTransfer,
-        texture_copy: TextureCopy,
-        flush_cache_regions: FlushCacheRegions,
-    },
+    framebuffers: [2]Framebuffer,
+    _unused0: u32 = 0,
 };
 
 pub const GxCommandQueue = extern struct {
@@ -101,6 +79,13 @@ pub const GxCommandQueue = extern struct {
         halt_processing: bool,
         _unused1: u7 = 0,
     };
+
+    pub const max_commands = 15;
+
+    header: Header,
+    last_result: ResultCode,
+    _unused0: [6]u32 = @splat(0),
+    commands: [max_commands]gx.Command,
 };
 
 pub const ScreenCapture = extern struct {
@@ -120,14 +105,14 @@ has_right: bool = false,
 interrupt_event: ?Event = null,
 thread_index: u32 = 0,
 shared_memory: ?MemoryBlock = null,
-shared_memory_data: ?[]align(horizon.page_size_min) u8 = null,
+shared_memory_data: ?[]u8 = null,
 
-pub fn init(srv: ServiceManager, shm_allocator: *SharedMemoryAddressAllocator) (error{OutOfMemory} || Session.ConnectionError || Event.CreationError || MemoryBlock.MapError || Error)!GspGpu {
+pub fn init(srv: ServiceManager) (error{OutOfMemory} || Session.ConnectionError || Event.CreationError || MemoryBlock.MapError || Error)!GspGpu {
     const gsp_handle = try srv.getService(service_name, true);
 
     var gsp = GspGpu{ .session = gsp_handle };
     // gpu.session = gsp_handle; // compiling with ReleaseSmall doesn't set the session above?
-    errdefer gsp.deinit(shm_allocator);
+    errdefer gsp.deinit();
     try gsp.acquireRight(0);
 
     const interrupt_event = try Event.init(.oneshot);
@@ -142,17 +127,19 @@ pub fn init(srv: ServiceManager, shm_allocator: *SharedMemoryAddressAllocator) (
 
     gsp.thread_index = queue_result.thread_index;
     gsp.shared_memory = queue_result.shared_memory;
-    gsp.shared_memory_data = try shm_allocator.alloc(4096, .fromByteUnits(4096));
 
-    try gsp.shared_memory.?.map(gsp.shared_memory_data.?.ptr, .rw, .dont_care);
+    const shared_memory_data = try horizon.heap.shared_memory_address_allocator.alloc(u8, 4096);
+    gsp.shared_memory_data = shared_memory_data;
+
+    try queue_result.shared_memory.map(@alignCast(shared_memory_data.ptr), .rw, .dont_care);
     return gsp;
 }
 
-pub fn deinit(gsp: *GspGpu, shm_alloc: *SharedMemoryAddressAllocator) void {
+pub fn deinit(gsp: *GspGpu) void {
     if (gsp.shared_memory) |*shm_handle| {
-        if (gsp.shared_memory_data) |*shm| {
-            shm_handle.unmap(shm.ptr);
-            shm_alloc.free(shm.*);
+        if (gsp.shared_memory_data) |shm| {
+            shm_handle.unmap(@alignCast(shm.ptr));
+            horizon.heap.shared_memory_address_allocator.free(shm);
         }
 
         shm_handle.deinit();
@@ -169,15 +156,15 @@ pub fn deinit(gsp: *GspGpu, shm_alloc: *SharedMemoryAddressAllocator) void {
     gsp.* = undefined;
 }
 
-pub fn waitInterrupts(gsp: *GspGpu) Error!InterruptQueue.Interrupts {
+pub fn waitInterrupts(gsp: *GspGpu) Error!Interrupt.Set {
     return (try gsp.waitInterruptsTimeout(-1)).?;
 }
 
-pub fn pollInterrupts(gsp: *GspGpu) Error!?InterruptQueue.Interrupts {
+pub fn pollInterrupts(gsp: *GspGpu) Error!?Interrupt.Set {
     return try gsp.waitInterruptsTimeout(0);
 }
 
-pub fn waitInterruptsTimeout(gsp: *GspGpu, timeout_ns: i64) Error!?InterruptQueue.Interrupts {
+pub fn waitInterruptsTimeout(gsp: *GspGpu, timeout_ns: i64) Error!?Interrupt.Set {
     const int_ev = gsp.interrupt_event.?;
 
     int_ev.wait(timeout_ns) catch |err| switch (err) {
@@ -185,49 +172,46 @@ pub fn waitInterruptsTimeout(gsp: *GspGpu, timeout_ns: i64) Error!?InterruptQueu
         else => |e| return e,
     };
 
-    var interrupts = InterruptQueue.Interrupts.initEmpty();
+    var interrupts = Interrupt.Set.initEmpty();
 
-    while (gsp.dequeueInterrupt()) |interrupt| {
-        interrupts.setPresent(interrupt, true);
+    while (gsp.dequeueInterrupt()) |int| {
+        interrupts.setPresent(int, true);
     }
 
     return interrupts;
 }
 
-pub fn dequeueInterrupt(gsp: *GspGpu) ?InterruptKind {
+pub fn dequeueInterrupt(gsp: *GspGpu) ?Interrupt {
     const gsp_data = gsp.shared_memory_data.?;
-    const interrupt_queue: *InterruptQueue = @alignCast(std.mem.bytesAsValue(InterruptQueue, gsp_data[(gsp.thread_index * @sizeOf(InterruptQueue))..][0..@sizeOf(InterruptQueue)]));
-    const interrupt_header_address: *u32 = @ptrCast(&interrupt_queue.header);
+    const interrupt_queue: *Interrupt.Queue = @alignCast(std.mem.bytesAsValue(Interrupt.Queue, gsp_data[(gsp.thread_index * @sizeOf(Interrupt.Queue))..][0..@sizeOf(Interrupt.Queue)]));
 
-    const interrupt = i: while (true) {
-        const interrupt_header: InterruptQueue.Header = @bitCast(zitrus.arm.ldrex(interrupt_header_address));
+    const int = i: while (true) {
+        const interrupt_header = @atomicLoad(Interrupt.Queue.Header, &interrupt_queue.header, .monotonic);
 
         if (interrupt_header.count == 0) {
-            @branchHint(.unlikely);
-            zitrus.arm.clrex();
             break :i null;
         }
 
         const interrupt_index = interrupt_header.offset;
-        const interrupt = interrupt_queue.interrupt_list[interrupt_index];
+        const int = interrupt_queue.interrupt_list[interrupt_index];
 
-        if (zitrus.arm.strex(interrupt_header_address, @bitCast(InterruptQueue.Header{
-            .offset = if (interrupt_index == InterruptQueue.max_interrupts - 1) 0 else interrupt_index + 1,
+        if (@cmpxchgWeak(Interrupt.Queue.Header, &interrupt_queue.header, interrupt_header, .{
+            .offset = if (interrupt_index == Interrupt.Queue.max_interrupts - 1) 0 else interrupt_index + 1,
             .count = interrupt_header.count - 1,
             .missed_other = false,
             .flags = .{},
-        }))) {
+        }, .monotonic, .monotonic) == null) {
             @branchHint(.likely);
-            break :i interrupt;
+            break :i int;
         }
     };
 
-    return interrupt;
+    return int;
 }
 
 pub fn FramebufferPresent(comptime screen: Screen) type {
     return struct {
-        active: FramebufferInfo.Active,
+        active: FramebufferInfo.Framebuffer.Active,
         color_format: ColorFormat,
         left_vaddr: *anyopaque,
         right_vaddr: *anyopaque,
@@ -238,7 +222,7 @@ pub fn FramebufferPresent(comptime screen: Screen) type {
 }
 
 pub fn presentFramebuffer(gsp: *GspGpu, comptime screen: Screen, present: FramebufferPresent(screen)) Error!bool {
-    return gsp.writeFramebufferInfo(screen, FramebufferInfo{
+    return gsp.writeFramebufferInfo(screen, FramebufferInfo.Framebuffer{
         .active = present.active,
         .left_vaddr = present.left_vaddr,
         .right_vaddr = present.right_vaddr,
@@ -259,33 +243,54 @@ pub fn presentFramebuffer(gsp: *GspGpu, comptime screen: Screen, present: Frameb
     });
 }
 
-pub fn writeFramebufferInfo(gsp: *GspGpu, screen: Screen, info: FramebufferInfo) Error!bool {
+pub fn writeFramebufferInfo(gsp: *GspGpu, screen: Screen, info: FramebufferInfo.Framebuffer) Error!bool {
     const gsp_data = gsp.shared_memory_data.?;
-    const framebuffer_info_start = gsp_data[0x200 + (@as(usize, @intFromEnum(screen)) * 0x40) + (gsp.thread_index * 0x80) ..];
-    const framebuffer_info: []FramebufferInfo = @alignCast(std.mem.bytesAsSlice(FramebufferInfo, framebuffer_info_start[@sizeOf(FramebufferInfo.Header)..][0..(2 * @sizeOf(FramebufferInfo))]));
-    const framebuffer_header_address: *u32 = @alignCast(@ptrCast(framebuffer_info_start.ptr));
-    const initial_framebuffer_header: FramebufferInfo.Header = @bitCast(framebuffer_header_address.*);
+    const framebuffer_info: *FramebufferInfo = @alignCast(std.mem.bytesAsValue(FramebufferInfo, gsp_data[0x200 + (@as(usize, @intFromEnum(screen)) * @sizeOf(FramebufferInfo)) + (gsp.thread_index * 0x80) ..][0..@sizeOf(FramebufferInfo)]));
+    const initial_framebuffer_header: FramebufferInfo.Header = @atomicLoad(FramebufferInfo.Header, &framebuffer_info.header, .monotonic);
 
     const next_active = initial_framebuffer_header.index +% 1;
-    framebuffer_info[next_active] = info;
+    framebuffer_info.framebuffers[next_active] = info;
 
     // Ensure the framebuffer info is written and the gsp can see it before we update the header.
     zitrus.arm.dsb();
 
-    const was_presenting = was: while (true) {
-        const framebuffer_header: FramebufferInfo.Header = @bitCast(zitrus.arm.ldrex(framebuffer_header_address));
-
-        if (zitrus.arm.strex(framebuffer_header_address, @bitCast(FramebufferInfo.Header{
-            .index = next_active,
-            .flags = .{ .new_data = true },
-        }))) {
-            @branchHint(.likely);
-            break :was framebuffer_header.flags.new_data;
-        }
-    } else unreachable;
+    var framebuffer_header = initial_framebuffer_header;
+    while (@cmpxchgWeak(FramebufferInfo.Header, &framebuffer_info.header, framebuffer_header, .{
+        .index = next_active,
+        .flags = .{ .new_data = true },
+    }, .monotonic, .monotonic)) |_| {
+        framebuffer_header = @atomicLoad(FramebufferInfo.Header, &framebuffer_info.header, .monotonic);
+    }
 
     // This only is false when the gsp finished processing the last framebuffer
-    return was_presenting;
+    return framebuffer_header.flags.new_data;
+}
+
+pub fn submitGxCommand(gsp: *GspGpu, command: gx.Command) !void {
+    const gsp_data = gsp.shared_memory_data.?;
+    const gx_queue: *GxCommandQueue = @alignCast(std.mem.bytesAsValue(GxCommandQueue, gsp_data[0x800 + (gsp.thread_index * @sizeOf(GxCommandQueue)) ..][0..@sizeOf(GxCommandQueue)]));
+    const gx_header: GxCommandQueue.Header = @atomicLoad(GxCommandQueue.Header, &gx_queue.header, .monotonic);
+
+    if (gx_header.total_commands >= GxCommandQueue.max_commands) {
+        return error.OutOfCommandSlots;
+    }
+
+    const next_command_index: u4 = (@as(u4, @intCast(gx_header.current_command_index)) +% @as(u4, @intCast(gx_header.total_commands)));
+    gx_queue.commands[next_command_index] = command;
+
+    // Same as with the fb info
+    zitrus.arm.dsb();
+
+    var gx_total_commands = gx_header.total_commands;
+
+    while (@cmpxchgWeak(u8, &gx_queue.header.total_commands, gx_total_commands, gx_total_commands + 1, .monotonic, .monotonic)) |_| {
+        gx_total_commands = @atomicLoad(u8, &gx_queue.header.total_commands, .monotonic);
+    }
+
+    // NOTE: This means gx_queue.header.total_commands is now 1
+    if (gx_total_commands == 0) {
+        return gsp.sendTriggerCmdReqQueue();
+    }
 }
 
 pub fn initializeHardware(gsp: *GspGpu) Error!void {
@@ -552,6 +557,13 @@ pub fn sendSetLcdForceBlack(gsp: GspGpu, force: bool) Error!void {
     try gsp.session.sendRequest();
 }
 
+pub fn sendTriggerCmdReqQueue(gsp: GspGpu) Error!void {
+    const data = tls.getThreadLocalStorage();
+    data.ipc.fillCommand(Command.trigger_cmd_req_queue, .{}, .{});
+
+    try gsp.session.sendRequest();
+}
+
 pub fn sendUnregisterInterruptRelayQueue(gsp: GspGpu) Error!void {
     const data = tls.getThreadLocalStorage();
     data.ipc.fillCommand(Command.unregister_interrupt_relay_queue, .{}, .{});
@@ -733,73 +745,11 @@ pub const Command = enum(u16) {
     }
 };
 
-const GpuRegister = enum(u32) {
-    clock = 0x400004,
-    memory_fill_pdc0_start = 0x400010,
-    memory_fill_pdc1_start = 0x400020,
-    unknown_write_22221200_on_init = 0x400050,
-    unknown_write_ff2_on_init = 0x400054,
-    dma_transfer_state = 0x400C18,
-    framebuffer_setup_pdc0_htotal = 0x400400,
-    framebuffer_setup_pdc1_htotal = 0x400500,
-    unknown_write_0_on_init = 0x401000,
-    unknown_write_12345678_on_init = 0x401080,
-    unknown_write_fffffff0_on_init = 0x4010C0,
-    unknown_write_1_on_init = 0x4010D0,
-    _,
-
-    pub inline fn initFramebufferSetup(screen: Screen, fb_setup_reg: FramebufferSetupRegister) GpuRegister {
-        return @enumFromInt(@intFromEnum(GpuRegister.framebuffer_setup_pdc0_htotal) + (@as(usize, @intFromEnum(screen)) * 0x100) + @intFromEnum(fb_setup_reg));
-    }
-
-    pub inline fn initFramebufferFill(screen: Screen, fb_fill_reg: MemoryFillRegister) GpuRegister {
-        return @enumFromInt(@intFromEnum(GpuRegister.memory_fill_pdc0_start) + (@as(usize, @intFromEnum(screen)) * 0x10) + @intFromEnum(fb_fill_reg));
-    }
-};
-
-const MemoryFillRegister = enum(u32) { config = 0x00, control = 0x0C };
-
-const FramebufferSetupRegister = enum(u32) {
-    htotal = 0x00,
-    hstart = 0x04,
-    hbr = 0x08,
-    hpf = 0x0C,
-    hsync = 0x10,
-    hpb = 0x14,
-    hbl = 0x18,
-    hinterrupt_timing = 0x1C,
-    unknown0 = 0x20,
-    vtotal = 0x24,
-    possibly_vblank = 0x28,
-    unknown_2c = 0x2c,
-    vscanlines = 0x30,
-    vdisp = 0x34,
-    vdata_offset = 0x38,
-    unknown_3c = 0x3c,
-    vinterrupt_timing = 0x40,
-    similar_hsync = 0x44,
-    disable = 0x48,
-    overscan_fill_color = 0x4C,
-    hcount = 0x50,
-    vcount = 0x54,
-
-    image_dimensions = 0x5C,
-    hdisp = 0x60,
-    unknown_framebuffer_height = 0x64,
-    framebuffer_a_first_address = 0x68,
-    framebuffer_a_second_address = 0x6C,
-    framebuffer_format = 0x70,
-    pdc_control = 0x74,
-    framebuffer_select_status = 0x78,
-    framebuffer_b_first_address = 0x94,
-    framebuffer_b_second_address = 0x98,
-    unknown_9c = 0x9C,
-};
-
 const GspGpu = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
 const gpu = zitrus.gpu;
+const gx = gpu.gx;
 
 const horizon = zitrus.horizon;
 const memory = horizon.memory;

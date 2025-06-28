@@ -201,18 +201,31 @@ pub const MemoryFill = extern struct {
         @"16",
         @"24",
         @"32",
+        _,
+
+        pub inline fn is24(fill: FillWidth) bool {
+            return switch (fill) {
+                1, 3 => true,
+                else => false,
+            };
+        }
+    };
+
+    pub const Control = packed struct(u16) {
+        pub const none: Control = .{ .busy = false, .fill_width = .@"16" };
+
+        busy: bool,
+        finished: bool = false,
+        _unused0: u6 = 0,
+        fill_width: FillWidth,
+        _unused1: u6 = 0,
     };
 
     physical_address_start: usize,
     physical_address_end: usize,
     value: u32,
-    control: packed struct(u32) {
-        busy: bool,
-        finished: bool,
-        _unused0: u6 = 0,
-        fill_width: FillWidth,
-        _unused1: u22 = 0,
-    },
+    control: Control,
+    _padding0: u16 = 0,
 };
 
 pub const TransferEngine = extern struct {
@@ -320,6 +333,8 @@ comptime {
         @compileError(std.fmt.comptimePrint("(@sizeOf(TransferEngine) == 0x{X}) and 0x{X} != 0x2C!", .{ @sizeOf(TransferEngine), @sizeOf(TransferEngine) }));
 }
 
+pub const gx = @import("gpu/gx.zig");
+pub const Command = @import("gpu/Command.zig");
 pub const Framebuffer = @import("gpu/Framebuffer.zig");
 
 const std = @import("std");

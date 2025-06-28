@@ -1,6 +1,3 @@
-const top_screen_bitmap = @embedFile("top-screen");
-const bottom_screen_bitmap = @embedFile("bottom-screen");
-
 pub fn main() !void {
     var srv = try ServiceManager.init("srv:");
     defer srv.deinit();
@@ -27,10 +24,21 @@ pub fn main() !void {
     });
     defer framebuffer.deinit();
 
-    const top_fb = framebuffer.currentFramebuffer(.top);
-    const bottom_fb = framebuffer.currentFramebuffer(.bottom);
-    @memcpy(top_fb, top_screen_bitmap);
-    @memcpy(bottom_fb, bottom_screen_bitmap);
+    const top = framebuffer.currentFramebuffer(.top);
+    const bottom = framebuffer.currentFramebuffer(.bottom);
+
+    // TODO: Continue this when the assembler is finished
+    try gsp.submitGxCommand(.initMemoryFill(.{ .buffers = .{
+        .{
+            .slice = top,
+            .value = .{ .@"32" = 0xFFFFFFFF },
+        },
+        .{
+            .slice = bottom,
+            .value = .{ .@"32" = 0xFFFFFFFF },
+        },
+    } }, false, false));
+    _ = try gsp.waitInterrupts();
 
     try framebuffer.flushBuffers(&gsp);
     try framebuffer.present(&gsp);

@@ -4,14 +4,17 @@
     .fingerprint = 0xa735bcf8f4b10813, // Changing this has security and trust implications.
     .minimum_zig_version = "0.14.0",
     .dependencies = .{
-        // NOTE: Lazy dependency used for tools (convert-3dsx)
-        .clap = .{
-            .url = "git+https://github.com/Hejsil/zig-clap#cc5c6a5d71a317ed4b0ad776842d1d0655f72d0a",
-            .hash = "clap-0.10.0-oBajB7jkAQAZ4cKLlzkeV9mDu2yGZvtN2QuOyfAfjBij",
-        },
         .zalloc = .{
             .url = "git+https://github.com/GasInfinity/zalloc/#677973e252dc39f07b8b5407d8ae5e609f81f94b",
             .hash = "zalloc-0.0.0-xJbxwYgmAACabsNLWfjierZN9784iOJ6PgMarP11jlDQ",
+        },
+        .zsflt = .{
+            .url = "git+https://github.com/GasInfinity/zsflt.git#7b3387d86ec73d43863291672bbe8c3d4490b4c1",
+            .hash = "zsflt-0.0.0-_pCibZUdAAC7PLh6iHhAaMtZ3-V6fnwExbE-D16aSTqI",
+        },
+        .flags = .{
+            .url = "git+https://github.com/n0s4/flags#290cccefff7f3783039bed4135ccca9e503a56ae",
+            .hash = "flags-0.10.0-a_9h3kR2AABNAfaPGRyOOGmWsfv12Hk6JQPTX4MM446s",
         },
         .ziggy = .{
             .url = "git+https://github.com/kristoff-it/ziggy.git#fe3bf9389e7ff213cf3548caaf9c6f3d4bb38647",

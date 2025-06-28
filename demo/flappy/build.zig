@@ -11,6 +11,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = zitrus_mod.resolved_target,
         .optimize = optimize,
+        .single_threaded = true,
     });
 
     exe_mod.addImport("zitrus", zitrus_mod);

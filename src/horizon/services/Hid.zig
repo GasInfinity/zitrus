@@ -63,9 +63,9 @@ pub const ControllerState = struct {
 
 session: Session,
 input: ?Handles = null,
-shm_memory_data: ?[]align(horizon.page_size_min) u8 = null,
+shm_memory_data: ?[]u8 = null,
 
-pub fn init(srv: ServiceManager, shm_allocator: *SharedMemoryAddressAllocator) (error{OutOfMemory} || MemoryBlock.MapError || Error)!Hid {
+pub fn init(srv: ServiceManager) (error{OutOfMemory} || MemoryBlock.MapError || Error)!Hid {
     var last_error: Error = undefined;
     const hid_session = used: for (service_names) |service_name| {
         const hid_session = srv.getService(service_name, true) catch |err| {
@@ -79,23 +79,23 @@ pub fn init(srv: ServiceManager, shm_allocator: *SharedMemoryAddressAllocator) (
     var hid = Hid{
         .session = hid_session,
     };
-    errdefer hid.deinit(shm_allocator);
+    errdefer hid.deinit();
 
     const input = try hid.sendGetIPCHandles();
     hid.input = input;
 
-    const shm_memory_data = try shm_allocator.alloc(0x2B0, .fromByteUnits(4096));
+    const shm_memory_data = try horizon.heap.shared_memory_address_allocator.alloc(u8, 0x2B0);
     hid.shm_memory_data = shm_memory_data;
 
-    try input.shm.map(shm_memory_data.ptr, .r, .dont_care);
+    try input.shm.map(@alignCast(shm_memory_data.ptr), .r, .dont_care);
     return hid;
 }
 
-pub fn deinit(hid: *Hid, shm_allocator: *SharedMemoryAddressAllocator) void {
+pub fn deinit(hid: *Hid) void {
     if (hid.input) |*input| {
-        if (hid.shm_memory_data) |*shm_data| {
-            input.shm.unmap(shm_data.ptr);
-            shm_allocator.free(shm_data.*);
+        if (hid.shm_memory_data) |shm_data| {
+            input.shm.unmap(@alignCast(shm_data.ptr));
+            horizon.heap.shared_memory_address_allocator.free(shm_data);
         }
 
         input.deinit();
@@ -108,7 +108,7 @@ pub fn deinit(hid: *Hid, shm_allocator: *SharedMemoryAddressAllocator) void {
 // TODO: Proper event handling
 pub fn readPadInput(hid: *Hid) Pad.Entry {
     const hid_data = hid.shm_memory_data.?;
-    const pad_data: *const Pad = std.mem.bytesAsValue(Pad, hid_data);
+    const pad_data: *const Pad = @alignCast(std.mem.bytesAsValue(Pad, hid_data));
 
     const current_index = pad_data.index;
     return pad_data.entries[current_index];

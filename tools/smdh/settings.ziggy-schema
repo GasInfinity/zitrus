@@ -3,7 +3,6 @@ root = ApplicationSettings
 @unrestricted = enum { inactive, pending, unrestricted },
 
 struct ApplicationSettings {
-    version: int,
     titles: Titles,
     flags: Flags,
     ratings: Ratings,

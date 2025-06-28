@@ -5,8 +5,12 @@ pub fn build(b: *std.Build) void {
     const zalloc = b.dependency("zalloc", .{});
     const zalloc_mod = zalloc.module("zalloc");
 
+    const zsflt = b.dependency("zsflt", .{});
+    const zsflt_mod = zsflt.module("zsflt");
+
     const zitrus_tooling = b.addModule("zitrus-tooling", .{ .root_source_file = b.path("src/tooling/zitrus.zig") });
     zitrus_tooling.addImport("zitrus-tooling", zitrus_tooling);
+    zitrus_tooling.addImport("zsflt", zsflt_mod);
 
     const zitrus = b.addModule("zitrus", .{
         .root_source_file = b.path("src/zitrus.zig"),
@@ -22,6 +26,7 @@ pub fn build(b: *std.Build) void {
     zitrus.addImport("zitrus", zitrus);
     zitrus.addImport("zitrus-tooling", zitrus_tooling);
     zitrus.addImport("zalloc", zalloc_mod);
+    zitrus.addImport("zsflt", zsflt_mod);
 
     const static_zitrus_lib = b.addStaticLibrary(.{
         .name = "zitrus",
@@ -41,6 +46,7 @@ pub fn build(b: *std.Build) void {
 
     // Bro? Why do I need to do this again? Target handling is so bad rn
     zitrus_tooling_tests.root_module.addImport("zitrus-tooling", zitrus_tooling_tests.root_module);
+    zitrus_tooling_tests.root_module.addImport("zsflt", zsflt_mod);
 
     const run_tooling_tests = b.addRunArtifact(zitrus_tooling_tests);
     const run_tooling_tests_step = b.step("test-tooling", "Runs zitrus-tooling tests");
@@ -58,8 +64,8 @@ fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, target: std.Bui
 
     tools.addImport("zitrus-tooling", tooling);
 
-    const clap = b.dependency("clap", .{});
-    tools.addImport("clap", clap.module("clap"));
+    const flags = b.dependency("flags", .{});
+    tools.addImport("flags", flags.module("flags"));
 
     const ziggy = b.dependency("ziggy", .{});
     tools.addImport("ziggy", ziggy.module("ziggy"));
@@ -128,7 +134,8 @@ pub const Make3dsxOptions = struct {
 pub fn addMake3dsx(b: *std.Build, options: Make3dsxOptions) std.Build.LazyPath {
     const zitrus = b.dependencyFromBuildZig(@This(), .{});
     const run_make = b.addRunArtifact(zitrus.artifact("zitrus-tools"));
-    run_make.addArg("make-3dsx");
+    run_make.addArgs(&.{ "3dsx", "make" });
+
     run_make.addArtifactArg(options.exe);
 
     if (options.smdh) |smdh| {
@@ -149,7 +156,7 @@ pub const MakeSmdhOptions = struct {
 pub fn addMakeSmdh(b: *std.Build, options: MakeSmdhOptions) std.Build.LazyPath {
     const zitrus = b.dependencyFromBuildZig(@This(), .{});
     const run_make = b.addRunArtifact(zitrus.artifact("zitrus-tools"));
-    run_make.addArg("make-smdh");
+    run_make.addArgs(&.{ "smdh", "make" });
 
     const smdh = run_make.addOutputFileArg(options.name);
     run_make.addFileArg(options.settings);

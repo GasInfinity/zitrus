@@ -240,7 +240,7 @@ pub fn ifc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool, y
 }
 
 pub fn loop(encoder: *Encoder, alloc: Allocator, i: IntegerRegister, dest: i12) !void {
-    return encoder.flowConstant(alloc, .loop, 0, dest, .{ .int = i });
+    return encoder.flowConstant(alloc, .loop, 0, dest, .{ .int = .{ .used = i } });
 }
 
 pub fn setemit(encoder: *Encoder, alloc: Allocator, vertex_id: u2, primitive: Primitive, winding: Winding) !void {

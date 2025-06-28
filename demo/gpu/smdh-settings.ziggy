@@ -1,0 +1,9 @@
+{
+    .titles = Titles {
+        .english = Title {
+            .title = "GPU",
+            .description = "A GPU accelerated demo!",
+            .publisher = "zitrus",
+        } 
+    },
+}

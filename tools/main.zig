@@ -1,9 +1,9 @@
 const AppletSubCommand = t: {
-    const applets_info = @typeInfo(applets).@"struct";
-    var applet_fields: [applets_info.decls.len]std.builtin.Type.EnumField = undefined;
+    const applets_decls = @typeInfo(applets).@"struct".decls;
+    var applet_fields: [applets_decls.len]std.builtin.Type.EnumField = undefined;
 
     var i = 0;
-    for (applets_info.decls) |applet| {
+    for (applets_decls) |applet| {
         applet_fields[i] = .{
             .name = applet.name,
             .value = i,
@@ -20,56 +20,53 @@ const AppletSubCommand = t: {
     } });
 };
 
-const comma_separated_names = c: {
-    const all_applets = std.enums.values(AppletSubCommand);
-    var total_len = 0;
-    var i = 0;
-    for (all_applets) |applet| {
-        total_len += @tagName(applet).len;
-        i += 1;
+// NOTE: I initially did it at comptime, however zig does not support adding decls at comptime and I cannot set the descriptions struct :(
+// At least we get comptime checking when adding a new applet...
+const AppletSubcommandArguments = union(AppletSubCommand) {
+    pub const descriptions = (d: {
+        const defined_applets = std.enums.values(AppletSubCommand);
+        var applet_descriptions: [defined_applets.len]std.builtin.Type.StructField = undefined;
 
-        if (i < all_applets.len) {
-            total_len += ", ".len;
+        for (defined_applets, 0..) |applet, i| {
+            const applet_name = @tagName(applet);
+            const applet_namespace = @field(applets, applet_name);
+
+            if (!@hasDecl(applet_namespace, "description")) {
+                @compileError("applet " ++ applet_name ++ " does not have a description!");
+            }
+
+            applet_descriptions[i] = .{
+                .name = applet_name,
+                .type = []const u8,
+                .default_value_ptr = @ptrCast(&@as([]const u8, @field(applet_namespace, "description"))),
+                .is_comptime = false,
+                .alignment = @alignOf([]const u8),
+            };
         }
-    }
 
-    var names: [total_len]u8 = undefined;
+        break :d @Type(std.builtin.Type{ .@"struct" = .{
+            .layout = .auto,
+            .fields = &applet_descriptions,
+            .decls = &.{},
+            .is_tuple = false,
+        } });
+    }){};
 
-    i = 0;
-    for (all_applets) |applet| {
-        const name = @tagName(applet);
-        @memcpy(names[i..][0..name.len], name);
-
-        i += name.len;
-        if (i < names.len) {
-            @memcpy(names[i..][0..2], ", ");
-
-            i += 2;
-        }
-    }
-
-    break :c names;
+    @"3dsx": applets.@"3dsx".Arguments,
+    smdh: applets.smdh.Arguments,
+    pica: applets.pica.Arguments,
 };
 
-const main_parsers = .{ .applet = clap.parsers.enumeration(AppletSubCommand) };
-const main_params = clap.parseParamsComptime(std.fmt.comptimePrint(
-    \\-h, --help  Display this help and exit.
-    \\<applet>    The applet/subcommand to run [available applets: {s}]
-    \\
-, .{comma_separated_names}));
+const Arguments = struct {
+    pub const description =
+        \\tools to dump / make different 3ds related files.
+    ;
 
-const MainArgs = clap.ResultEx(clap.Help, &main_params, main_parsers);
+    command: AppletSubcommandArguments,
+};
 
-fn showHelp(stderr: anytype) !void {
-    try std.fmt.format(stderr,
-        \\ zitrus - tools
-        \\
-    , .{});
-    try clap.help(stderr, clap.Help, &main_params, .{});
-}
-
-pub fn main() !void {
-    var gpa_state = std.heap.GeneralPurposeAllocator(.{}){};
+pub fn main() !u8 {
+    var gpa_state: std.heap.GeneralPurposeAllocator(.{}) = .init;
     const gpa = gpa_state.allocator();
     defer _ = gpa_state.deinit();
 
@@ -77,35 +74,28 @@ pub fn main() !void {
     const arena = arena_state.allocator();
     defer arena_state.deinit();
 
-    var iter = try std.process.ArgIterator.initWithAllocator(arena);
-    defer iter.deinit();
+    const args = try std.process.argsAlloc(arena);
+    defer std.process.argsFree(arena, args);
 
-    // Skip program name
-    _ = iter.next();
-
-    const stderr = std.io.getStdErr().writer();
-
-    var diag = clap.Diagnostic{};
-    var res = clap.parseEx(clap.Help, &main_params, main_parsers, &iter, .{
-        .diagnostic = &diag,
-        .allocator = arena,
-        .terminating_positional = 0,
-    }) catch |err| {
-        try showHelp(stderr);
-        diag.report(stderr, err) catch {};
-        return;
+    var diagnostics: flags.Diagnostics = undefined;
+    const arguments = flags.parse(args, "zitrus-tools", Arguments, .{
+        .diagnostics = &diagnostics,
+    }) catch |err| switch (err) {
+        error.PrintedHelp => return 0,
+        error.EmptyArgument, error.MissingArgument, error.MissingCommand, error.MissingFlag, error.MissingValue, error.UnexpectedPositional, error.UnrecognizedArgument, error.UnrecognizedFlag, error.UnrecognizedOption, error.UnrecognizedSwitch => {
+            try diagnostics.printUsage(&flags.ColorScheme.default);
+            return 1;
+        },
+        else => {
+            std.debug.print("Encountered unknown error while parsing for command '{s}': {s}", .{ diagnostics.command_name, @errorName(err) });
+            return 1;
+        },
     };
-    defer res.deinit();
 
-    if (res.args.help != 0 or res.positionals[0] == null) {
-        try showHelp(stderr);
-        return;
-    }
-
-    const applet = res.positionals[0].?;
+    const applet = std.meta.activeTag(arguments.command);
 
     return switch (applet) {
-        inline else => |a| @call(.auto, @field(applets, @tagName(a)).main, .{ arena, &iter }),
+        inline else => |a| @call(.auto, @field(applets, @tagName(a)).main, .{ arena, @field(arguments.command, @tagName(a)) }),
     };
 }
 
@@ -116,4 +106,4 @@ test {
 const applets = @import("applets.zig");
 
 const std = @import("std");
-const clap = @import("clap");
+const flags = @import("flags");

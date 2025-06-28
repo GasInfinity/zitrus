@@ -8,7 +8,7 @@ pub const Config = struct {
     top_mode: TopFramebufferMode = .@"2d",
     color_format: ScreenColorFormat = .initFill(.bgr8),
     dma_size: DmaSize = .@"128",
-    phys_linear_allocator: Allocator = horizon.linear_page_allocator,
+    phys_linear_allocator: Allocator = horizon.heap.linear_page_allocator,
 };
 
 config: Config,

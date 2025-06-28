@@ -110,7 +110,7 @@ pub const Icons = extern struct {
 
 pub const Smdh = extern struct {
     magic: [magic.len]u8 = magic.*,
-    version: u16,
+    version: u16 = 0,
     _reserved0: u16 = 0,
     titles: [(1 << @bitSizeOf(Language))]Title,
     settings: Settings,

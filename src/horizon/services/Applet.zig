@@ -591,7 +591,7 @@ pub const ParameterResult = struct {
 
     pub fn deinit(result: ParameterResult) void {
         if (result.parameter) |handle| {
-            _ = horizon.syscalls.closeHandle(handle);
+            _ = horizon.closeHandle(handle);
         }
     }
 };

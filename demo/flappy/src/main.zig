@@ -243,19 +243,17 @@ const AppState = struct {
 };
 
 pub fn main() !void {
-    var shm_alloc = horizon.sharedMemoryAddressAllocator();
-
     var srv = try ServiceManager.init("srv:");
     defer srv.deinit();
 
     var apt = try Applet.init(srv);
     defer apt.deinit(srv);
 
-    var hid = try Hid.init(srv, &shm_alloc);
-    defer hid.deinit(&shm_alloc);
+    var hid = try Hid.init(srv);
+    defer hid.deinit();
 
-    var gsp = try GspGpu.init(srv, &shm_alloc);
-    defer gsp.deinit(&shm_alloc);
+    var gsp = try GspGpu.init(srv);
+    defer gsp.deinit();
 
     var framebuffer = try Framebuffer.init(.{
         .double_buffer = .init(.{
@@ -263,7 +261,7 @@ pub fn main() !void {
             .bottom = false,
         }),
         .dma_size = .@"128",
-        .phys_linear_allocator = horizon.linear_page_allocator,
+        .phys_linear_allocator = horizon.heap.linear_page_allocator,
     });
     defer framebuffer.deinit();
 

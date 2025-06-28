@@ -488,3 +488,40 @@ pub const Id = enum(u16) {
     vsh_opdescs_data6,
     vsh_opdescs_data7,
 };
+
+pub const CullingMode = enum(u2) {
+    none,
+    front,
+    back,
+};
+
+pub const OutputMap = packed struct(u28) {
+    pub const Semantic = enum(u4) { position_x, position_y, position_z, position_w, normal_quat_x, normal_quat_y, normal_quat_z, normal_quat_w, color_r, color_g, color_b, color_a, texture_coordinate_0_u, texture_coordinate_0_v, texture_coordinate_1_u, texture_coordinate_1_v, texture_coordinate_0_w, view_x = 0x12, view_y, view_z, texture_coordinate_2_u = 0x12, texture_coordinate_2_v, unused = 0x1F };
+
+    x: Semantic,
+    y: Semantic,
+    z: Semantic,
+    w: Semantic,
+};
+
+pub const Queue = struct {
+    buffer: []align(8) u32,
+    current_index: usize,
+
+    pub fn initBuffer(buffer: []align(8) u32) Queue {
+        std.debug.assert(std.mem.isAligned(buffer.len, 4));
+
+        return .{
+            .buffer = buffer,
+            .current_index = 0,
+        };
+    }
+};
+
+const std = @import("std");
+
+const zitrus = @import("zitrus");
+const zitrus_tooling = @import("zitrus-tooling");
+const pica = zitrus_tooling.pica;
+
+const gpu = zitrus.gpu;

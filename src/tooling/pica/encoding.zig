@@ -1,4 +1,5 @@
-pub const Shader = enum(u1) {
+pub const Shader = enum {
+    vsh,
     gsh,
     all,
 };
@@ -42,14 +43,14 @@ pub const Component = enum(u2) {
             InvalidComponent,
         };
 
-        pub fn parse(value: []const u8) ParseError!Mask {
-            if (value.len == 0 or value.len > 4) {
+        pub fn parse(expression: []const u8) ParseError!Mask {
+            if (expression.len == 0 or expression.len > 4) {
                 return error.Syntax;
             }
 
             var last: ?usize = null;
             var mask: u4 = 0;
-            for (value) |c| {
+            for (expression) |c| {
                 const component = std.mem.indexOf(u8, span, &.{c}) orelse return error.InvalidComponent;
 
                 if (last) |l| {
@@ -419,10 +420,10 @@ pub const Component = enum(u2) {
         pub const wwwz: Selector = .{ .@"0" = .w, .@"1" = .w, .@"2" = .w, .@"3" = .z };
         pub const wwww: Selector = .{ .@"0" = .w, .@"1" = .w, .@"2" = .w, .@"3" = .w };
 
-        @"3": Component = .x,
-        @"2": Component = .x,
-        @"1": Component = .x,
-        @"0": Component = .x,
+        @"3": Component,
+        @"2": Component,
+        @"1": Component,
+        @"0": Component,
 
         const indexes = "0123";
 
@@ -443,24 +444,37 @@ pub const Component = enum(u2) {
             InvalidComponent,
         };
 
-        pub fn parse(value: []const u8) ParseError!Selector {
-            if (value.len == 0 or value.len > 4) {
+        pub fn parse(expression: []const u8) ParseError!Selector {
+            if (expression.len == 0 or expression.len > 4) {
                 return error.Syntax;
             }
 
             var last: Component = undefined;
             var selector: Selector = undefined;
             inline for ("0123", 0..) |f, i| {
-                const component: Component = if (i >= value.len)
+                const component: Component = if (i >= expression.len)
                     last
                 else
-                    @enumFromInt(std.mem.indexOf(u8, span, &.{value[i]}) orelse return error.InvalidComponent);
+                    @enumFromInt(std.mem.indexOf(u8, span, &.{expression[i]}) orelse return error.InvalidComponent);
 
                 @field(selector, std.mem.asBytes(&f)) = component;
                 last = component;
             }
 
             return selector;
+        }
+
+        /// parses sequential swizzles with '.' as a separator, returns the final swizzle
+        pub fn parseSequential(expression: []const u8) ParseError!Selector {
+            var swizzles = std.mem.tokenizeScalar(u8, expression, '.');
+
+            var final_swizzle: Component.Selector = .xyzw;
+            while (swizzles.next()) |swizzle_str| {
+                const current_swizzle = try Component.Selector.parse(std.mem.trim(u8, swizzle_str, " \t"));
+                final_swizzle = final_swizzle.swizzle(current_swizzle);
+            }
+
+            return final_swizzle;
         }
 
         test parse {
@@ -522,15 +536,9 @@ pub const Condition = enum(u2) {
     y,
 };
 
-pub const Primitive = enum(u1) {
-    none,
-    emmiting
-};
+pub const Primitive = enum(u1) { none, emmiting };
 
-pub const Winding = enum(u1) {
-    ccw,
-    cw
-};
+pub const Winding = enum(u1) { ccw, cw };
 
 pub const Instruction = extern union {
     pub const Opcode = enum(u6) {

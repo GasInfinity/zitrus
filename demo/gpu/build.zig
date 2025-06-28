@@ -17,17 +17,18 @@ pub fn build(b: *std.Build) void {
     exe_mod.addImport("zitrus", zitrus_mod);
 
     const exe = zitrus.addExecutable(b, .{
-        .name = "panic.elf",
+        .name = "gpu.elf",
         .root_module = exe_mod,
     });
 
     b.installArtifact(exe);
 
-    const panic_smdh = zitrus.addMakeSmdh(b, .{
-        .name = "panic.smdh",
+    const bitmap_smdh = zitrus.addMakeSmdh(b, .{
+        .name = "gpu.smdh",
         .settings = b.path("smdh-settings.ziggy"),
     });
 
-    const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "panic.3dsx", .exe = exe, .smdh = panic_smdh });
-    b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "panic.3dsx").step);
+    const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "gpu.3dsx", .exe = exe, .smdh = bitmap_smdh });
+
+    b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "gpu.3dsx").step);
 }
