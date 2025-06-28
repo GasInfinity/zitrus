@@ -65,8 +65,10 @@ const Directive = enum {
     out,
     /// .alias <name> dX[.swizzle]
     alias,
-    /// .set <name> <f/i/b>X <(X, Y, Z, W)/X>
+    /// .set <f/i/b>X <(X, Y, Z, W)/X>
     set,
+    /// .uniform <symbol> dX dY
+    uniform,
 };
 
 const AliasedRegister = union(Kind) {
@@ -174,6 +176,36 @@ const AliasedRegister = union(Kind) {
     }
 };
 
+const ConstantRegisterKind = enum {
+    floating,
+    integer,
+    boolean,
+
+    pub fn Scalar(comptime kind: ConstantRegisterKind) type {
+        return switch (kind) {
+            .floating => f32,
+            .integer => i8,
+            .boolean => bool,
+        };
+    }
+
+    pub fn Register(comptime kind: ConstantRegisterKind) type {
+        return switch (kind) {
+            .floating => SourceRegister.Constant,
+            .integer => IntegerRegister,
+            .boolean => BooleanRegister,
+        };
+    }
+
+    pub fn isVector(kind: ConstantRegisterKind) bool {
+        return switch (kind) {
+            .boolean => false,
+            else => true,
+        };
+    }
+};
+
+// TODO: This is missing useful info, we can obviously make this better
 pub const Diagnostic = union(enum) {
     invalid_identifier: struct {
         identifier: []const u8,
@@ -212,23 +244,38 @@ pub const Diagnostic = union(enum) {
         loc: Assembler.Location,
     },
     expected_mnemonic: struct {
-        found: []const u8,
         loc: Assembler.Location,
     },
     expected_directive: struct {
-        found: []const u8,
+        loc: Assembler.Location,
+    },
+    duplicated_input: struct {
+        loc: Assembler.Location,
+    },
+    mismatched_uniform_spaces: struct {
+        first: UniformRegister.Kind,
+        second: UniformRegister.Kind,
+        loc: Assembler.Location,
+    },
+    invalid_uniform_end: struct {
         loc: Assembler.Location,
     },
 };
 
-// Each assembler should be unique to the file it's assembling, however the encoder could be shared (as the binary and operand descriptor table is in the DVLP)
+// XXX: Refactor this someday
+
+/// Each assembler should be unique to the file it's assembling, however the encoder could be shared (as the binary and operand descriptor table is in the DVLP)
 pub const Assembler = struct {
     pub const empty: Assembler = .{};
 
     pub const Location = struct { start: u32, end: u32 };
+    pub const Entry = struct { start: []const u8, end: []const u8 };
+    pub const Uniform = struct { start: UniformRegister, end: UniformRegister };
+
+    const Labels = std.StringArrayHashMapUnmanaged(u16);
     const Diagnostics = std.ArrayListUnmanaged(Diagnostic);
     const Aliases = std.StringArrayHashMapUnmanaged(AliasedRegister);
-    // TODO: const Uniforms = std.StringArrayHashMapUnmanaged();
+    const Uniforms = std.StringArrayHashMapUnmanaged(Uniform);
 
     diagnostics: Diagnostics = .empty,
     encoder: Encoder = .init(),
@@ -237,7 +284,10 @@ pub const Assembler = struct {
     floating_constants: std.EnumMap(SourceRegister.Constant, [4]f32) = .init(.{}),
     integer_constants: std.EnumMap(IntegerRegister, [4]i8) = .init(.{}),
     boolean_constants: std.EnumMap(BooleanRegister, bool) = .init(.{}),
-    entry: ?[]const u8 = null,
+    uniforms: Uniforms = .empty,
+    inputs: std.EnumSet(SourceRegister.Input) = .init(.{}),
+    outputs: std.EnumMap(DestinationRegister.Output, Semantic) = .init(.{}),
+    entry: ?Entry = null,
 
     pub fn deinit(assembler: *Assembler, alloc: mem.Allocator) void {
         assembler.encoder.deinit(alloc);
@@ -273,7 +323,6 @@ pub const Assembler = struct {
                     const directive_str = full_directive_line[0..(mem.indexOf(u8, full_directive_line, " ") orelse full_directive_line.len)];
                     const directive = std.meta.stringToEnum(Directive, directive_str) orelse {
                         try assembler.fail(alloc, .{ .expected_directive = .{
-                            .found = directive_str,
                             .loc = .{ .start = line_start_index + 1, .end = @intCast(line_start_index + 1 + directive_str.len) },
                         } });
                         had_error = true;
@@ -285,7 +334,7 @@ pub const Assembler = struct {
 
                     switch (directive) {
                         .entry => {
-                            const label = directive_args_tok.next() orelse {
+                            const start_label = directive_args_tok.next() orelse {
                                 try assembler.fail(alloc, .{ .expected_operand = .{
                                     .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
                                 } });
@@ -294,17 +343,104 @@ pub const Assembler = struct {
                                 continue :line_loop;
                             };
 
-                            if (!isValidIdentifier(label)) {
+                            const end_label = directive_args_tok.next() orelse {
+                                try assembler.fail(alloc, .{ .expected_operand = .{
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+
+                                had_error = true;
+                                continue :line_loop;
+                            };
+
+                            if (!isValidIdentifier(start_label)) {
                                 // TODO: Proper location
                                 try assembler.fail(alloc, .{ .invalid_identifier = .{
-                                    .identifier = label,
+                                    .identifier = start_label,
                                     .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
                                 } });
                                 had_error = true;
                                 continue :line_loop;
                             }
 
-                            assembler.entry = label;
+                            if (!isValidIdentifier(end_label)) {
+                                // TODO: Proper location
+                                try assembler.fail(alloc, .{ .invalid_identifier = .{
+                                    .identifier = end_label,
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+                                had_error = true;
+                                continue :line_loop;
+                            }
+
+                            assembler.entry = .{ .start = start_label, .end = end_label };
+                        },
+                        .in => {
+                            const reg_str = directive_args_tok.next() orelse {
+                                try assembler.fail(alloc, .{ .expected_operand = .{
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+
+                                had_error = true;
+                                continue :line_loop;
+                            };
+
+                            const reg = std.meta.stringToEnum(SourceRegister.Input, reg_str) orelse {
+                                try assembler.fail(alloc, .{ .invalid_register = .{
+                                    .register = reg_str,
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+                                had_error = true;
+                                continue :line_loop;
+                            };
+
+                            if (assembler.inputs.contains(reg)) {
+                                try assembler.fail(alloc, .{ .duplicated_input = .{
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+                                had_error = true;
+                                continue :line_loop;
+                            }
+
+                            assembler.inputs.setPresent(reg, true);
+                        },
+                        .out => {
+                            const reg_str = directive_args_tok.next() orelse {
+                                try assembler.fail(alloc, .{ .expected_operand = .{
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+
+                                had_error = true;
+                                continue :line_loop;
+                            };
+
+                            const semantic_str = directive_args_tok.next() orelse {
+                                try assembler.fail(alloc, .{ .expected_operand = .{
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+
+                                had_error = true;
+                                continue :line_loop;
+                            };
+
+                            const reg = std.meta.stringToEnum(DestinationRegister.Output, reg_str) orelse {
+                                try assembler.fail(alloc, .{ .invalid_register = .{
+                                    .register = reg_str,
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+                                had_error = true;
+                                continue :line_loop;
+                            };
+
+                            const semantic = std.meta.stringToEnum(Semantic, semantic_str) orelse {
+                                try assembler.fail(alloc, .{ .invalid_value = .{
+                                    .value = semantic_str,
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+                                had_error = true;
+                                continue :line_loop;
+                            };
+
+                            assembler.outputs.put(reg, semantic);
                         },
                         .alias => {
                             const alias_name = directive_args_tok.next() orelse {
@@ -368,7 +504,7 @@ pub const Assembler = struct {
                                 continue :line_loop;
                             }
 
-                            const reg_kind = mem.indexOfScalar(u8, "fib", reg_str[0]) orelse {
+                            const reg_kind: ConstantRegisterKind = @enumFromInt(mem.indexOfScalar(u8, "fib", reg_str[0]) orelse {
                                 // TODO: Proper location
                                 try assembler.fail(alloc, .{ .invalid_register_kind = .{
                                     .register = reg_str,
@@ -377,16 +513,18 @@ pub const Assembler = struct {
                                 } });
                                 had_error = true;
                                 continue :line_loop;
-                            };
+                            });
 
                             switch (reg_kind) {
-                                else => unreachable,
-                                inline 0, 1, 2 => |kind| {
-                                    const RegisterType, const ScalarType = switch (kind) {
-                                        0 => .{ SourceRegister.Constant, f32 },
-                                        1 => .{ IntegerRegister, i8 },
-                                        2 => .{ BooleanRegister, bool },
-                                        else => unreachable,
+                                inline else => |kind| {
+                                    const RegisterType = kind.Register();
+                                    const ScalarType = kind.Scalar();
+                                    const is_vector = comptime kind.isVector();
+
+                                    const map_ptr = switch (kind) {
+                                        .floating => &assembler.floating_constants,
+                                        .integer => &assembler.integer_constants,
+                                        .boolean => &assembler.boolean_constants,
                                     };
 
                                     const reg = std.meta.stringToEnum(RegisterType, reg_str) orelse {
@@ -398,53 +536,23 @@ pub const Assembler = struct {
                                         continue :line_loop;
                                     };
 
-                                    switch (kind) {
-                                        0, 1 => {
-                                            const vec_str = std.mem.trim(u8, directive_args[directive_args_tok.index..], " \t");
+                                    const final_value = if (is_vector) vec: {
+                                        const vec_str = std.mem.trim(u8, directive_args[directive_args_tok.index..], " \t");
 
-                                            if (vec_str.len <= 2 or vec_str[0] != '(' or vec_str[vec_str.len - 1] != ')') {
-                                                try assembler.fail(alloc, .{ .invalid_value = .{
-                                                    .value = vec_str,
-                                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
-                                                } });
-                                                had_error = true;
-                                                continue :line_loop;
-                                            }
+                                        if (vec_str.len <= 2 or vec_str[0] != '(' or vec_str[vec_str.len - 1] != ')') {
+                                            try assembler.fail(alloc, .{ .invalid_value = .{
+                                                .value = vec_str,
+                                                .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                            } });
+                                            had_error = true;
+                                            continue :line_loop;
+                                        }
 
-                                            var vec_values_tok = mem.tokenizeAny(u8, vec_str[1..(vec_str.len - 1)], ", ");
+                                        var vec_values_tok = mem.tokenizeAny(u8, vec_str[1..(vec_str.len - 1)], ", ");
 
-                                            var vec_buf: [4]ScalarType = undefined;
-                                            inline for (0..4) |i| {
-                                                const scalar_str = vec_values_tok.next() orelse {
-                                                    try assembler.fail(alloc, .{ .expected_operand = .{
-                                                        .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
-                                                    } });
-
-                                                    had_error = true;
-                                                    continue :line_loop;
-                                                };
-
-                                                const scalar = (if (kind == 0)
-                                                    std.fmt.parseFloat(ScalarType, scalar_str)
-                                                else
-                                                    std.fmt.parseInt(ScalarType, scalar_str, 0)) catch {
-                                                    try assembler.fail(alloc, .{ .invalid_value = .{
-                                                        .value = scalar_str,
-                                                        .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
-                                                    } });
-                                                    had_error = true;
-                                                    continue :line_loop;
-                                                };
-
-                                                vec_buf[i] = scalar;
-                                            }
-
-                                            const map = if (kind == 0) &assembler.floating_constants else &assembler.integer_constants;
-
-                                            map.put(reg, vec_buf);
-                                        },
-                                        2 => {
-                                            const value_str = directive_args_tok.next() orelse {
+                                        var vec_buf: [4]ScalarType = undefined;
+                                        inline for (0..4) |i| {
+                                            const scalar_str = vec_values_tok.next() orelse {
                                                 try assembler.fail(alloc, .{ .expected_operand = .{
                                                     .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
                                                 } });
@@ -453,27 +561,131 @@ pub const Assembler = struct {
                                                 continue :line_loop;
                                             };
 
-                                            const value = if (mem.eql(u8, value_str, "true"))
-                                                true
-                                            else if (mem.eql(u8, value_str, "false"))
-                                                false
-                                            else {
+                                            const maybe_scalar = if (@typeInfo(ScalarType) == .float)
+                                                std.fmt.parseFloat(ScalarType, scalar_str)
+                                            else
+                                                std.fmt.parseInt(ScalarType, scalar_str, 0);
+
+                                            const scalar = maybe_scalar catch {
                                                 try assembler.fail(alloc, .{ .invalid_value = .{
-                                                    .value = value_str,
+                                                    .value = scalar_str,
                                                     .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
                                                 } });
                                                 had_error = true;
                                                 continue :line_loop;
                                             };
 
-                                            assembler.boolean_constants.put(reg, value);
-                                        },
-                                        else => unreachable,
-                                    }
+                                            vec_buf[i] = scalar;
+                                        }
+
+                                        break :vec vec_buf;
+                                    } else sca: {
+                                        std.debug.assert(kind == .boolean);
+
+                                        const value_str = directive_args_tok.next() orelse {
+                                            try assembler.fail(alloc, .{ .expected_operand = .{
+                                                .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                            } });
+
+                                            had_error = true;
+                                            continue :line_loop;
+                                        };
+
+                                        const value = parseBit(value_str) orelse {
+                                            try assembler.fail(alloc, .{ .invalid_value = .{
+                                                .value = value_str,
+                                                .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                            } });
+                                            had_error = true;
+                                            continue :line_loop;
+                                        };
+
+                                        break :sca value;
+                                    };
+
+                                    map_ptr.put(reg, final_value);
                                 },
                             }
                         },
-                        else => @panic("TODO"),
+                        .uniform => {
+                            const symbol = directive_args_tok.next() orelse {
+                                try assembler.fail(alloc, .{ .expected_operand = .{
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+
+                                had_error = true;
+                                continue :line_loop;
+                            };
+
+                            if (!isValidIdentifier(symbol)) {
+                                // TODO: Proper location
+                                try assembler.fail(alloc, .{ .invalid_identifier = .{
+                                    .identifier = symbol,
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+                                had_error = true;
+                                continue :line_loop;
+                            }
+
+                            const first_reg_str = directive_args_tok.next() orelse {
+                                try assembler.fail(alloc, .{ .expected_operand = .{
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+
+                                had_error = true;
+                                continue :line_loop;
+                            };
+
+                            const second_reg_str = directive_args_tok.next() orelse {
+                                try assembler.fail(alloc, .{ .expected_operand = .{
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+
+                                had_error = true;
+                                continue :line_loop;
+                            };
+
+                            const first_reg = std.meta.stringToEnum(UniformRegister, first_reg_str) orelse {
+                                try assembler.fail(alloc, .{ .invalid_register = .{
+                                    .register = first_reg_str,
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+                                had_error = true;
+                                continue :line_loop;
+                            };
+
+                            const second_reg = std.meta.stringToEnum(UniformRegister, second_reg_str) orelse {
+                                try assembler.fail(alloc, .{ .invalid_register = .{
+                                    .register = second_reg_str,
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+                                had_error = true;
+                                continue :line_loop;
+                            };
+
+                            const first_kind = first_reg.kind();
+                            const second_kind = second_reg.kind();
+
+                            if (first_kind != second_kind) {
+                                try assembler.fail(alloc, .{ .mismatched_uniform_spaces = .{
+                                    .first = first_kind,
+                                    .second = second_kind,
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+                                had_error = true;
+                                continue :line_loop;
+                            }
+
+                            if (@intFromEnum(first_reg) > @intFromEnum(second_reg)) {
+                                try assembler.fail(alloc, .{ .invalid_uniform_end = .{
+                                    .loc = .{ .start = line_start_index, .end = line_start_index + line_len },
+                                } });
+                                had_error = true;
+                                continue :line_loop;
+                            }
+
+                            try assembler.uniforms.put(alloc, symbol, .{ .start = first_reg, .end = second_reg });
+                        },
                     }
                 },
                 else => {
@@ -516,7 +728,6 @@ pub const Assembler = struct {
             const mnemonic_str = line[0..operands_start];
             const mnemonic = std.meta.stringToEnum(Mnemonic, mnemonic_str) orelse {
                 try assembler.fail(alloc, .{ .expected_mnemonic = .{
-                    .found = mnemonic_str,
                     .loc = .{ .start = line_info.index, .end = line_info.index + line_info.len },
                 } });
                 had_error = true;
@@ -539,6 +750,7 @@ pub const Assembler = struct {
         }
     }
 
+    // TODO: Write diagnostics
     fn encodeInstruction(assembler: *Assembler, alloc: mem.Allocator, comptime mnemonic: Mnemonic, operands: []const u8, start_index: u32, end_index: u32) !void {
         _ = start_index;
         _ = end_index;
@@ -618,12 +830,7 @@ pub const Assembler = struct {
                         },
                         .src, .src_limited => unreachable,
                         .bit => {
-                            const value = if (mem.eql(u8, current, "true"))
-                                true
-                            else if (mem.eql(u8, current, "false"))
-                                false
-                            else
-                                return error.Syntax;
+                            const value = parseBit(current) orelse return error.Syntax;
 
                             args[arg] = value;
                             arg += 1;
@@ -735,8 +942,8 @@ pub const Assembler = struct {
     };
 
     const format = fmt: {
-        const Entry = struct { Mnemonic, []const OperandKind, Shader };
-        const format_entries: []const Entry = @import("as-format.zon");
+        const FormatEntry = struct { Mnemonic, []const OperandKind, Shader };
+        const format_entries: []const FormatEntry = @import("as-format.zon");
 
         var map: std.EnumArray(Mnemonic, Format) = .initUndefined();
         for (format_entries) |e| {
@@ -746,6 +953,10 @@ pub const Assembler = struct {
         break :fmt map;
     };
 };
+
+fn parseBit(bit_str: []const u8) ?bool {
+    return if (mem.eql(u8, bit_str, "true")) true else if (mem.eql(u8, bit_str, "false")) false else null;
+}
 
 const testing = std.testing;
 
@@ -820,12 +1031,17 @@ test Assembler {
 }
 
 const std = @import("std");
-const Labels = std.StringArrayHashMapUnmanaged(u16);
-
 const mem = std.mem;
 
-const encoding = @import("encoding.zig");
-const Encoder = @import("Encoder.zig");
+const zitrus_tooling = @import("zitrus-tooling");
+
+const shbin = zitrus_tooling.shbin;
+const Semantic = shbin.Dvle.OutputEntry.Semantic;
+
+const pica = zitrus_tooling.pica;
+
+const encoding = pica.encoding;
+const Encoder = pica.Encoder;
 const Shader = encoding.Shader;
 const Condition = encoding.Condition;
 const ComparisonOperation = encoding.ComparisonOperation;
@@ -833,10 +1049,11 @@ const Primitive = encoding.Primitive;
 const Winding = encoding.Winding;
 const Component = encoding.Component;
 
-const register = @import("register.zig");
+const register = pica.register;
 const RelativeComponent = register.RelativeComponent;
 const TemporaryRegister = register.TemporaryRegister;
 const SourceRegister = register.SourceRegister;
 const DestinationRegister = register.DestinationRegister;
 const BooleanRegister = register.BooleanRegister;
 const IntegerRegister = register.IntegerRegister;
+const UniformRegister = register.UniformRegister;

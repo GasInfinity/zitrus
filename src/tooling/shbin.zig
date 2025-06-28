@@ -22,7 +22,7 @@ pub const Dvlp = extern struct {
     /// Same value as filename symbol table offset
     _unknown0: u32,
     /// Always zero?
-    _unknown1: u32,
+    _unknown1: u32 = 0,
     filename_symbol_table_offset: u32,
     filename_symbol_table_size: u32,
 };
@@ -83,34 +83,30 @@ pub const Dvle = extern struct {
         };
 
         pub const Data = extern union {
-            pub const Bool = extern struct { value: bool };
-            pub const U8X4 = extern struct { x: u8, y: u8, z: u8, w: u8 };
-            pub const F24X4 = extern struct { x: u32, y: u32, z: u32, w: u32 };
-
-            bool: Bool,
-            u8x4: U8X4,
-            f24x4: F24X4,
+            bool: bool,
+            u8x4: pica.I8x4,
+            f24x4: pica.F7_16x4,
         };
 
         type: Type,
-        register_id: u8,
+        register_id: UniformRegister,
         data: Data,
     };
 
     pub const OutputEntry = extern struct {
-        pub const Type = enum(u16) {
+        pub const Semantic = enum(u16) {
             position,
-            normal_quat,
+            normal_quaternion,
             color,
-            texcoord0,
-            texcoord0w,
-            texcoord1,
-            texcoord2,
-            unknown,
-            view,
+            texure_coordinates_0,
+            texure_coordinates_0_w,
+            texure_coordinates_1,
+            texure_coordinates_2,
+
+            view = 0x8,
         };
 
-        type: Type,
+        semantic: Semantic,
         register_id: u16,
         // TODO: Separate type for the mask
         output_attribute_mask: u16,
@@ -126,3 +122,7 @@ pub const Dvle = extern struct {
         register_end: Register,
     };
 };
+
+const zitrus_tooling = @import("zitrus-tooling");
+const pica = zitrus_tooling.pica;
+const UniformRegister = pica.register.UniformRegister;

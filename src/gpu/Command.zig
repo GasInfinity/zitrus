@@ -496,7 +496,31 @@ pub const CullingMode = enum(u2) {
 };
 
 pub const OutputMap = packed struct(u28) {
-    pub const Semantic = enum(u4) { position_x, position_y, position_z, position_w, normal_quat_x, normal_quat_y, normal_quat_z, normal_quat_w, color_r, color_g, color_b, color_a, texture_coordinate_0_u, texture_coordinate_0_v, texture_coordinate_1_u, texture_coordinate_1_v, texture_coordinate_0_w, view_x = 0x12, view_y, view_z, texture_coordinate_2_u = 0x12, texture_coordinate_2_v, unused = 0x1F };
+    pub const Semantic = enum(u4) {
+        position_x,
+        position_y,
+        position_z,
+        position_w,
+        normal_quaternion_x,
+        normal_quaternion_y,
+        normal_quaternion_z,
+        normal_quaternion_w,
+        color_r,
+        color_g,
+        color_b,
+        color_a,
+        texture_coordinate_0_u,
+        texture_coordinate_0_v,
+        texture_coordinate_1_u,
+        texture_coordinate_1_v,
+        texture_coordinate_0_w,
+        view_x = 0x12,
+        view_y,
+        view_z,
+        texture_coordinate_2_u = 0x12,
+        texture_coordinate_2_v,
+        unused = 0x1F,
+    };
 
     x: Semantic,
     y: Semantic,

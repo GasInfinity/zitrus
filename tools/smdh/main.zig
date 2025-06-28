@@ -266,6 +266,10 @@ const morton = struct {
     }
 };
 
+comptime {
+    _ = ApplicationSettings;
+}
+
 const ApplicationSettings = @import("ApplicationSettings.zig");
 
 const std = @import("std");
