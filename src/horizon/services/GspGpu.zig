@@ -297,16 +297,17 @@ pub fn initializeHardware(gsp: *GspGpu) Error!void {
     const gpu_registers: *gpu.Registers = memory.gpu_registers;
 
     // XXX: Unknown, https://www.3dbrew.org/wiki/GPU/External_Registers#Map and libctru also just writes these values without knowing what they do
-    try gsp.writeHwRegs(&gpu_registers.internal_registers.write_0_on_init_or_cmd, std.mem.asBytes(&[_]u32{0x00}));
-    try gsp.writeHwRegs(&gpu_registers.internal_registers.write_0x12345678_on_init, std.mem.asBytes(&[_]u32{0x12345678}));
-    try gsp.writeHwRegs(&gpu_registers.internal_registers.write_0xFFFFFFF0_on_init, std.mem.asBytes(&[_]u32{0xFFFFFFF0}));
-    try gsp.writeHwRegs(&gpu_registers.internal_registers.write_1_on_init, std.mem.asBytes(&[_]u32{0x01}));
-    try gsp.writeHwRegs(&gpu_registers.write_0x22221200_on_init, std.mem.asBytes(&[_]u32{0x22221200}));
-    try gsp.writeHwRegs(&gpu_registers.write_0xFF2_on_init, std.mem.asBytes(&[_]u32{0xFF2}));
+    try gsp.writeHwRegs(&gpu_registers.internal.irq.ack[0], std.mem.asBytes(&[_]u32{0x00}));
+    try gsp.writeHwRegs(&gpu_registers.internal.irq.cmp[0], std.mem.asBytes(&[_]u32{0x12345678}));
+    try gsp.writeHwRegs(&gpu_registers.internal.irq.mask, std.mem.asBytes(&[_]u32{0xFFFFFFF0, 0xFFFFFFFF}));
+    try gsp.writeHwRegs(&gpu_registers.internal.irq.autostop, std.mem.asBytes(&gpu.Registers.Internal.Interrupt.AutoStop{
+        .stop_command_list = true, 
+    }));
+    try gsp.writeHwRegs(&gpu_registers.timing_control, std.mem.asBytes(&[_]u32{0x22221200, 0xFF2}));
 
     // Initialize top screen
     // Taken from: https://www.3dbrew.org/wiki/GPU/External_Registers#LCD_Source_Framebuffer_Setup / https://www.3dbrew.org/wiki/GPU/External_Registers#Framebuffers
-    try gsp.writeHwRegs(&gpu_registers.pdc[0].horizontal, std.mem.asBytes(&gpu.Pdc.Timing{
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].horizontal, std.mem.asBytes(&gpu.Registers.Pdc.Timing{
         .total = 0x1C2,
         .start = 0xD1,
         .border = 0x1C1,
@@ -317,7 +318,7 @@ pub fn initializeHardware(gsp: *GspGpu) Error!void {
         .interrupt = 0x1C501C1,
     }));
     try gsp.writeHwRegs(&gpu_registers.pdc[0]._unknown0, std.mem.asBytes(&@as(u32, 0x10000)));
-    try gsp.writeHwRegs(&gpu_registers.pdc[0].vertical, std.mem.asBytes(&gpu.Pdc.Timing{
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].vertical, std.mem.asBytes(&gpu.Registers.Pdc.Timing{
         .total = 0x19D,
         .start = 0x2,
         .border = 0x1C2,
@@ -350,7 +351,7 @@ pub fn initializeHardware(gsp: *GspGpu) Error!void {
         .unknown1 = 1,
         .unknown2 = 8,
     }));
-    try gsp.writeHwRegs(&gpu_registers.pdc[0].control, std.mem.asBytes(&gpu.Pdc.Control{
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].control, std.mem.asBytes(&gpu.Registers.Pdc.Control{
         .enable = true,
         .disable_hblank_irq = true,
         .disable_vblank_irq = false,
@@ -361,7 +362,7 @@ pub fn initializeHardware(gsp: *GspGpu) Error!void {
 
     // Initialize bottom screen
     // From here I couldn't find any info about the bottom screen registers so these values are just yoinked from libctru.
-    try gsp.writeHwRegs(&gpu_registers.pdc[1].horizontal, std.mem.asBytes(&gpu.Pdc.Timing{
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].horizontal, std.mem.asBytes(&gpu.Registers.Pdc.Timing{
         .total = 0x1C2,
         .start = 0xD1,
         .border = 0x1C1,
@@ -372,7 +373,7 @@ pub fn initializeHardware(gsp: *GspGpu) Error!void {
         .interrupt = 0x1C501C1,
     }));
     try gsp.writeHwRegs(&gpu_registers.pdc[1]._unknown0, std.mem.asBytes(&@as(u32, 0x10000)));
-    try gsp.writeHwRegs(&gpu_registers.pdc[1].vertical, std.mem.asBytes(&gpu.Pdc.Timing{
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].vertical, std.mem.asBytes(&gpu.Registers.Pdc.Timing{
         .total = 0x19D,
         .start = 0x52,
         .border = 0x192,
@@ -405,7 +406,7 @@ pub fn initializeHardware(gsp: *GspGpu) Error!void {
         .unknown1 = 1,
         .unknown2 = 8,
     }));
-    try gsp.writeHwRegs(&gpu_registers.pdc[1].control, std.mem.asBytes(&gpu.Pdc.Control{
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].control, std.mem.asBytes(&gpu.Registers.Pdc.Control{
         .enable = true,
         .disable_hblank_irq = true,
         .disable_vblank_irq = false,

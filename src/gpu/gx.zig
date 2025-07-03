@@ -1,4 +1,5 @@
 // TODO: We could maybe ziggify this more?
+// FIXME: Ok, this is specific to horizon and the gsp module, why is it toplevel (a.k.a: freestanding)?
 pub const Command = extern struct {
     pub const Id = enum(u8) { request_dma, process_command_list, memory_fill, display_transfer, texture_copy, flush_cache_regions };
 
