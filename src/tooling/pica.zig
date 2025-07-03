@@ -35,12 +35,10 @@ pub const F7_23 = packed struct(u32) {
 pub const I8x4 = extern struct { x: i8, y: i8, z: i8, w: i8 };
 
 pub const F7_16x4 = extern struct {
-    pub const Storage = packed struct(u32) { value: F7_16, _unused0: u8 = 0 };
-
-    x: Storage,
-    y: Storage,
-    z: Storage,
-    w: Storage,
+    x: F7_16,
+    y: F7_16,
+    z: F7_16,
+    w: F7_16,
 };
 
 const zsflt = @import("zsflt");
