@@ -281,7 +281,7 @@ pub fn deinit(apt: *Applet, srv: ServiceManager) void {
 
     if (perform_apt_exit) {
         apt.sendPrepareToCloseApplication(srv, true) catch {};
-        apt.sendCloseApplication(srv, &.{}, null) catch {};
+        apt.sendCloseApplication(srv, &.{}, .null) catch {};
     }
 
     apt.lock.deinit();
@@ -506,12 +506,12 @@ pub fn screenTransfer(apt: *Applet, srv: ServiceManager, gsp: *GspGpu, target_ap
         horizon.sleepThread(10000000);
     }
 
-    try apt.sendSendParameter(srv, environment.program_meta.app_id, target_app_id, if (is_library_applet) .request else .request_for_sys_applet, null, std.mem.asBytes(&apt_capture_info));
+    try apt.sendSendParameter(srv, environment.program_meta.app_id, target_app_id, if (is_library_applet) .request else .request_for_sys_applet, .null, std.mem.asBytes(&apt_capture_info));
 
     // NOTE: Recursion here!
     const capture_memory_handle = capture_handle_wait: while (true) switch (try apt.waitEvent(srv, gsp)) {
         .response => {
-            var handle: ?*Handle = null;
+            var handle: Object = .null;
             const params = try apt.sendReceiveParameter(srv, environment.program_meta.app_id, std.mem.asBytes(&handle));
             defer params.deinit();
 
@@ -519,8 +519,8 @@ pub fn screenTransfer(apt: *Applet, srv: ServiceManager, gsp: *GspGpu, target_ap
         },
         else => unreachable,
     } else unreachable;
-    defer if (capture_memory_handle) |cap_handle| {
-        _ = horizon.closeHandle(cap_handle);
+    defer if (capture_memory_handle != .null) {
+        _ = horizon.closeHandle(capture_memory_handle);
     };
 
     if (is_library_applet) {
@@ -579,19 +579,19 @@ pub fn sendInquireNotification(apt: Applet, srv: ServiceManager, app_id: AppId) 
     return @as(Notification, @enumFromInt(data.ipc.parameters[1]));
 }
 
-pub fn sendSendParameter(apt: Applet, srv: ServiceManager, src: AppId, dst: AppId, cmd: AppCommand, handle: ?*Handle, parameter: []const u8) !void {
-    try apt.lockSendCommand(srv, Command.send_parameter, .{ @intFromEnum(src), @intFromEnum(dst), @intFromEnum(cmd), parameter.len }, .{ ipc.HandleTranslationDescriptor.init(0), (if (handle) |h| @intFromPtr(h) else 0), ipc.StaticBufferTranslationDescriptor.init(parameter.len, 0), @intFromPtr(parameter.ptr) }, null);
+pub fn sendSendParameter(apt: Applet, srv: ServiceManager, src: AppId, dst: AppId, cmd: AppCommand, handle: Object, parameter: []const u8) !void {
+    try apt.lockSendCommand(srv, Command.send_parameter, .{ @intFromEnum(src), @intFromEnum(dst), @intFromEnum(cmd), parameter.len }, .{ ipc.HandleTranslationDescriptor.init(0), @intFromEnum(handle), ipc.StaticBufferTranslationDescriptor.init(parameter.len, 0), @intFromPtr(parameter.ptr) }, null);
 }
 
 pub const ParameterResult = struct {
     sender: AppId,
     command: AppCommand,
     actual_size: usize,
-    parameter: ?*Handle,
+    parameter: Object,
 
     pub fn deinit(result: ParameterResult) void {
-        if (result.parameter) |handle| {
-            _ = horizon.closeHandle(handle);
+        if (result.parameter != .null) {
+            _ = horizon.closeHandle(result.parameter);
         }
     }
 };
@@ -604,7 +604,7 @@ fn sendQueryParameter(apt: Applet, comptime cmd: Command, srv: ServiceManager, a
         .sender = @enumFromInt(data.ipc.parameters[1]),
         .command = @enumFromInt(data.ipc.parameters[2]),
         .actual_size = data.ipc.parameters[3],
-        .parameter = if (data.ipc.parameters[5] == 0) null else @ptrFromInt(data.ipc.parameters[5]),
+        .parameter = @enumFromInt(data.ipc.parameters[5]),
     };
 }
 
@@ -627,8 +627,8 @@ pub fn sendPrepareToCloseApplication(apt: Applet, srv: ServiceManager, cancel: b
     return apt.lockSendCommand(srv, Command.prepare_to_close_application, .{@as(u32, @intFromBool(cancel))}, .{}, null);
 }
 
-pub fn sendCloseApplication(apt: Applet, srv: ServiceManager, parameters: []const u8, handle: ?*Handle) !void {
-    return apt.lockSendCommand(srv, Command.close_application, .{parameters.len}, .{ ipc.HandleTranslationDescriptor.init(0), if (handle) |h| @intFromPtr(h) else 0, ipc.StaticBufferTranslationDescriptor.init(parameters.len, 0), @intFromPtr(parameters.ptr) }, null);
+pub fn sendCloseApplication(apt: Applet, srv: ServiceManager, parameters: []const u8, handle: Object) !void {
+    return apt.lockSendCommand(srv, Command.close_application, .{parameters.len}, .{ ipc.HandleTranslationDescriptor.init(0), @intFromEnum(handle), ipc.StaticBufferTranslationDescriptor.init(parameters.len, 0), @intFromPtr(parameters.ptr) }, null);
 }
 
 pub fn sendPrepareToJumpToHomeMenu(apt: Applet, srv: ServiceManager) !void {
@@ -672,12 +672,12 @@ pub fn sendDoApplicationJump(apt: Applet, srv: ServiceManager, parameters: []con
     return apt.lockSendCommand(srv, Command.do_application_jump, .{ parameters.len, hmac.len }, .{ ipc.StaticBufferTranslationDescriptor.init(parameters.len, 0), @intFromPtr(parameters.ptr), ipc.StaticBufferTranslationDescriptor.init(hmac.len, 2), @intFromPtr(hmac) }, null);
 }
 
-pub fn sendDspSleep(apt: Applet, srv: ServiceManager, app_id: AppId, handle: *Handle) Error!void {
-    return apt.lockSendCommand(srv, Command.send_dsp_sleep, .{app_id}, .{ ipc.StaticBufferTranslationDescriptor.init(0), @intFromPtr(handle) }, null);
+pub fn sendDspSleep(apt: Applet, srv: ServiceManager, app_id: AppId, handle: Object) Error!void {
+    return apt.lockSendCommand(srv, Command.send_dsp_sleep, .{app_id}, .{ ipc.StaticBufferTranslationDescriptor.init(0), @intFromEnum(handle) }, null);
 }
 
-pub fn sendDspWakeup(apt: Applet, srv: ServiceManager, app_id: AppId, handle: *Handle) Error!void {
-    return apt.lockSendCommand(srv, Command.send_dsp_wake_up, .{app_id}, .{ ipc.StaticBufferTranslationDescriptor.init(0), @intFromPtr(handle) }, null);
+pub fn sendDspWakeup(apt: Applet, srv: ServiceManager, app_id: AppId, handle: Object) Error!void {
+    return apt.lockSendCommand(srv, Command.send_dsp_wake_up, .{app_id}, .{ ipc.StaticBufferTranslationDescriptor.init(0), @intFromEnum(handle) }, null);
 }
 
 pub fn sendReplySleepQuery(apt: Applet, srv: ServiceManager, app_id: AppId, reply: QueryReply) Error!void {
@@ -1042,8 +1042,8 @@ const tls = horizon.tls;
 const ipc = horizon.ipc;
 
 const ResultCode = horizon.ResultCode;
-const Handle = horizon.Handle;
-const Session = horizon.Session;
+const Object = horizon.Object;
+const Session = horizon.ClientSession;
 const Event = horizon.Event;
 const Mutex = horizon.Mutex;
 const ServiceManager = zitrus.horizon.ServiceManager;

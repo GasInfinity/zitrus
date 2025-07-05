@@ -55,5 +55,5 @@ const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
 
-const Session = horizon.Session;
+const Session = horizon.ClientSession;
 const Applet = horizon.services.Applet;

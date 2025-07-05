@@ -74,12 +74,11 @@ pub const Command = enum(u16) {
 const ErrDispManager = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
-const environment = zitrus.environment;
 const horizon = zitrus.horizon;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
 
 const Event = horizon.Event;
 const Semaphore = horizon.Semaphore;
-const Session = horizon.Session;
+const Session = horizon.ClientSession;
 const ResultCode = horizon.ResultCode;

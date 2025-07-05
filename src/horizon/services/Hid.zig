@@ -1,6 +1,6 @@
 const service_names = [_][]const u8{ "hid:USER", "hid:SPVR" };
 
-pub const Error = Session.RequestError;
+pub const Error = ClientSession.RequestError;
 
 pub const Pad = extern struct {
     pub const State = packed struct(u32) {
@@ -61,7 +61,7 @@ pub const ControllerState = struct {
     circle: Pad.CircleState,
 };
 
-session: Session,
+session: ClientSession,
 input: ?Handles = null,
 shm_memory_data: ?[]u8 = null,
 
@@ -208,12 +208,11 @@ const Hid = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
-const environment = zitrus.environment;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
 
 const ResultCode = horizon.ResultCode;
-const Session = horizon.Session;
+const ClientSession = horizon.ClientSession;
 const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;
 

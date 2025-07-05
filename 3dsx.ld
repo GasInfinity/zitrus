@@ -154,6 +154,7 @@ SECTIONS
 	{
 		*(.dynbss)
 		*(.bss)
+		/* FIXME: compiler_rt is emmiting '.bss.compiler_rt.atomics.spinlocks' which is aligned to 64 bytes, currently it's not correctly aligned. fix this! */
 		*(.bss.*)
 		*(.gnu.linkonce.b*)
 		*(COMMON)
@@ -168,11 +169,11 @@ SECTIONS
 		__tls_start = .;
 		. += SIZEOF(.tdata);
 
-        /* Ensure the alignment of .tbss is accounted for in the total size,
-           since SIZEOF(.tdata) doesn't include any padding before .tbss.
-         */
-        . = ALIGN(ALIGNOF(.tbss));
-        . += SIZEOF(.tbss);
+		/* Ensure the alignment of .tbss is accounted for in the total size,
+		   since SIZEOF(.tdata) doesn't include any padding before .tbss.
+		 */
+		. = ALIGN(ALIGNOF(.tbss));
+		. += SIZEOF(.tbss);
 		__tls_end = .;
 	} : data
 	__bss_end__ = .;

@@ -1,7 +1,7 @@
 // https://www.3dbrew.org/wiki/Config_Services
 const service_names = [_][]const u8{ "cfg:i", "cfg:s", "cfg:u" };
 
-pub const Error = Session.RequestError;
+pub const Error = ClientSession.RequestError;
 
 pub const SystemModel = enum(u8) {
     ctr,
@@ -373,7 +373,7 @@ pub const Block = enum(u32) {
     }
 };
 
-session: Session,
+session: ClientSession,
 
 pub fn init(srv: ServiceManager) Error!Config {
     var last_error: Error = undefined;
@@ -535,7 +535,7 @@ const tls = horizon.tls;
 const ipc = horizon.ipc;
 
 const ResultCode = horizon.ResultCode;
-const Session = horizon.Session;
+const ClientSession = horizon.ClientSession;
 const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;
 

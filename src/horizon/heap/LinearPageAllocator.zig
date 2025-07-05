@@ -15,17 +15,15 @@ pub fn alloc(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize)
     }
 
     const aligned_len = std.mem.alignForward(usize, len, horizon.heap.page_size);
-    const allocation_result = horizon.controlMemory(horizon.MemoryOperation{
+
+    return switch(horizon.controlMemory(horizon.MemoryOperation{
         .fundamental_operation = .commit,
         .area = .all,
         .linear = true,
-    }, null, null, aligned_len, .rw);
-
-    if (!allocation_result.code.isSuccess()) {
-        return null;
-    }
-
-    return @ptrCast(allocation_result.value.?);
+    }, null, null, aligned_len, .rw)) {
+        .success => |s| s.value,
+        .failure => null,
+    };
 }
 
 pub fn resize(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) bool {
@@ -57,7 +55,7 @@ pub fn free(ctx: *anyopaque, memory: []u8, alignment: Alignment, ra: usize) void
         .fundamental_operation = .free,
         .area = .all,
         .linear = true,
-    }, @ptrCast(memory.ptr), null, aligned_len, .rw);
+    }, memory.ptr, null, aligned_len, .rw);
 }
 
 const std = @import("std");

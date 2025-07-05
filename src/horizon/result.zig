@@ -175,13 +175,21 @@ pub const ResultCode = packed struct(i32) {
     level: ResultLevel = .success,
 
     pub inline fn isSuccess(code: ResultCode) bool {
-        return @as(i32, @bitCast(code)) == 0;
+        return @as(i32, @bitCast(code)) >= 0;
     }
 };
 
 pub fn Result(T: type) type {
-    return struct {
-        code: ResultCode,
-        value: ?T,
+    return union(enum) {
+        const Res = @This();
+
+        pub const Success = struct { code: ResultCode, value: T };
+
+        success: Success,
+        failure: ResultCode,
+
+        pub inline fn of(code: ResultCode, value: T) Res {
+            return if(code.isSuccess()) .{ .success = .{ .code = code, .value = value } } else .{ .failure = code };
+        }
     };
 }

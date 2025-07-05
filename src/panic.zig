@@ -28,14 +28,18 @@ pub fn throw(msg: []const u8, ret_trace: ?*std.builtin.StackTrace) noreturn {
 
     errdisp.sendSetUserString(stack_trace_stream.getWritten()) catch {};
 
-    const process_id = horizon.getProcessId(.current_process);
+    const process_id: u32 = switch(horizon.getProcessId(.current)) {
+        .success => |s| s.value,
+        .failure => |_| 0xDEADCAFE, 
+    };
+
     errdisp.sendThrow(ErrorDisplayManager.FatalErrorInfo{
         .type = .failure,
         .revision_high = 0x00,
         .revision_low = 0x00,
         .result_code = .{},
         .pc_address = last_trace_pc,
-        .process_id = (if (!process_id.code.isSuccess()) 0xDEADCAFE else process_id.value.?),
+        .process_id = process_id,
         .title_id = 0x0,
         .applet_title_id = 0x0,
         .data = .{ .failure = .{
@@ -50,6 +54,7 @@ pub fn throw(msg: []const u8, ret_trace: ?*std.builtin.StackTrace) noreturn {
         // Bad luck? Try next time :D!
     };
 
+    horizon.breakExecution(.panic);
     horizon.exit();
 }
 

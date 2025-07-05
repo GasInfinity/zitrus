@@ -2,6 +2,7 @@
 // https://www.3dbrew.org/wiki/Services_API
 // https://www.3dbrew.org/wiki/Services
 
+// XXX: REFACTOR
 pub const Header = packed struct(u32) {
     translate_parameters: u6,
     normal_parameters: u6,

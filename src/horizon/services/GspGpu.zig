@@ -115,7 +115,7 @@ pub fn init(srv: ServiceManager) (error{OutOfMemory} || Session.ConnectionError 
     errdefer gsp.deinit();
     try gsp.acquireRight(0);
 
-    const interrupt_event = try Event.init(.oneshot);
+    const interrupt_event = try Event.create(.oneshot);
     gsp.interrupt_event = interrupt_event;
 
     // XXX: What does this flag mean?
@@ -519,7 +519,7 @@ pub fn sendReadHwRegs(gsp: GspGpu, offset: usize, buffer: []u8) Error!void {
 
 pub fn sendRegisterInterruptRelayQueue(gsp: GspGpu, unknown_flags: u8, event: Event) Error!InterrupRelayQueueResult {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.register_interrupt_relay_queue, .{@as(u32, unknown_flags)}, .{ ipc.HandleTranslationDescriptor.init(0), @intFromPtr(event.handle) });
+    data.ipc.fillCommand(Command.register_interrupt_relay_queue, .{@as(u32, unknown_flags)}, .{ ipc.HandleTranslationDescriptor.init(0), event });
 
     try gsp.session.sendRequest();
 
@@ -539,7 +539,7 @@ pub fn sendRegisterInterruptRelayQueue(gsp: GspGpu, unknown_flags: u8, event: Ev
 
 pub fn sendFlushDataCache(gsp: GspGpu, buffer: []u8) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.flush_data_cache, .{ @intFromPtr(buffer.ptr), buffer.len }, .{ ipc.HandleTranslationDescriptor.init(0), @intFromPtr(horizon.Handle.current_process) });
+    data.ipc.fillCommand(Command.flush_data_cache, .{ @intFromPtr(buffer.ptr), buffer.len }, .{ ipc.HandleTranslationDescriptor.init(0), horizon.Process.current });
 
     try gsp.session.sendRequest();
 }
@@ -574,7 +574,7 @@ pub fn sendUnregisterInterruptRelayQueue(gsp: GspGpu) Error!void {
 
 pub fn sendTryAcquireRight(gsp: GspGpu, unknown_flags: u8) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.try_acquire_right, .{@as(u32, unknown_flags)}, .{ ipc.HandleTranslationDescriptor.init(0), @intFromPtr(horizon.Handle.current_process) });
+    data.ipc.fillCommand(Command.try_acquire_right, .{@as(u32, unknown_flags)}, .{ ipc.HandleTranslationDescriptor.init(0), horizon.Process.current });
 
     try gsp.session.sendRequest();
     return true;
@@ -582,7 +582,7 @@ pub fn sendTryAcquireRight(gsp: GspGpu, unknown_flags: u8) Error!void {
 
 pub fn sendAcquireRight(gsp: GspGpu, unknown_flags: u8) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.acquire_right, .{@as(u32, unknown_flags)}, .{ ipc.HandleTranslationDescriptor.init(0), @intFromPtr(horizon.Handle.current_process) });
+    data.ipc.fillCommand(Command.acquire_right, .{@as(u32, unknown_flags)}, .{ ipc.HandleTranslationDescriptor.init(0), horizon.Process.current });
 
     // HACK: WHY DOES THIS NOT WORK WITHOUT NOINLINE????
     // What happens is that the event for gsp interrupts never signals after for example returning from home or in rare cases after continuing from a break while debugging...
@@ -766,7 +766,7 @@ const FramebufferFormat = gpu.FramebufferFormat;
 const ResultCode = horizon.ResultCode;
 const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;
-const Session = horizon.Session;
+const Session = horizon.ClientSession;
 const ServiceManager = zitrus.horizon.ServiceManager;
 
 const SharedMemoryAddressAllocator = horizon.SharedMemoryAddressAllocator;

@@ -1,6 +1,6 @@
 # 🍊 zitrus
 
-3DS homebrew library written entirely in zig.
+3DS homebrew library and toolchain written entirely in zig.
 
 ![bitmap example in a 2ds](https://github.com/GasInfinity/zitrus/blob/main/docs/images/bitmap-2ds.png?raw=true)
 
@@ -46,7 +46,7 @@ b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "homebrew.3dsx").st
 ```
 
 ## Examples / Demos
-Currently there are 3 examples in the `demo/` directory, only basic software blitting is implemented for graphics and we're missing almost all the services:
+Currently there are 4 examples in the `demo/` directory, only basic software blitting is implemented for graphics and we're missing almost all the services:
 - [panic](demo/panic/) is a simple example that panics when opened to test panics and traces.
 - [info](demo/info) is a simple app that currently shows the console region and model (will be updated to show more info over time).
 - [bitmap](demo/bitmap/) is a port of the bitmap example in libctru's 3ds-examples.
@@ -60,16 +60,20 @@ I wanted to learn arm and always wanted to develop 3DS homebrew, also I searched
 
 # Tooling coverage
 - 🟢 smdh creation (tools/smdh)
-- 🟡 elf -> 3dsx conversion (tools/3dsx)
+- 🟢 elf -> 3dsx conversion (tools/3dsx)
 - 🟡 PICA200 shader assembler/disassembler:
     - 🟢 Instruction encoding/decoding
-    - 🟡 Assembler/disassembler
+    - 🟢 Assembler/disassembler
+    - 🟡 Diagnostics
+    - 🔴 Output shbin/bin files
 - NCCH:
     - 🟢 ExeFS
     - 🔴 RomFS
     - 🔴 elf -> ExeFS .code
 - 🔴 Everything not listed here
-- 🔴 Dumping, a.k.a: 3dsx/exefs --> bin/elf, smdh -> config + icons, etc... (Reverse engineering mainly, lowest priority overall)
+- 🟡 Dumping, a.k.a: 3dsx/exefs --> bin/elf, smdh -> config + icons, etc... (Reverse engineering mainly, lowest priority overall)
+    - 🟡 smdh -> config + ~icons~
+    - 🔴 Everything not listed here
 
 # HOS Coverage
 Zitrus is currently very work in progress, it's able to run basic homebrew but lots of things are missing (services, ports, syscalls, io, etc...)
@@ -80,13 +84,13 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 
 ## Runtime support
 - 🟢 crt0/startup code
-- 🟡 Panic and error reporting and tracing
+- 🟡 panic and error reporting and tracing
 - 🔴 std coverage/byos for io and some other useful things.
 
 ## Gpu Support
 
 - 🟢 Software rendering with Framebuffers
-- 🔴 GX Commands
+- 🟡 GX Commands
 - 🔴 2D/3D Acceleration (a.k.a: REALLY using the Gpu to do things)
 
 ## Port/Service Support
