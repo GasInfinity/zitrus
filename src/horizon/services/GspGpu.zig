@@ -100,6 +100,19 @@ pub const ScreenCapture = extern struct {
     bottom: Info,
 };
 
+pub const PerfLogInfo = extern struct {
+    pub const Measurements = extern struct {
+        delta: u32,
+        sum: u32,
+    };
+
+    psc: [2]Measurements,
+    pdc: [2]Measurements,
+    ppf: Measurements,
+    p3d: Measurements,
+    dma: Measurements,
+};
+
 session: Session,
 has_right: bool = false,
 interrupt_event: ?Event = null,
@@ -107,8 +120,8 @@ thread_index: u32 = 0,
 shared_memory: ?MemoryBlock = null,
 shared_memory_data: ?[]u8 = null,
 
-pub fn init(srv: ServiceManager) (error{OutOfMemory} || Session.ConnectionError || Event.CreationError || MemoryBlock.MapError || Error)!GspGpu {
-    const gsp_handle = try srv.getService(service_name, true);
+pub fn init(srv: ServiceManager) !GspGpu {
+    const gsp_handle = try srv.getService(service_name, .wait);
 
     var gsp = GspGpu{ .session = gsp_handle };
     // gpu.session = gsp_handle; // compiling with ReleaseSmall doesn't set the session above?
@@ -121,17 +134,17 @@ pub fn init(srv: ServiceManager) (error{OutOfMemory} || Session.ConnectionError 
     // XXX: What does this flag mean?
     const queue_result = try gsp.sendRegisterInterruptRelayQueue(0x1, interrupt_event);
 
-    if (queue_result.should_initialize_hardware) {
+    if (queue_result.should_init_hw) {
         try gsp.initializeHardware();
     }
 
-    gsp.thread_index = queue_result.thread_index;
-    gsp.shared_memory = queue_result.shared_memory;
+    gsp.thread_index = queue_result.response.thread_index;
+    gsp.shared_memory = queue_result.response.gsp_memory;
 
-    const shared_memory_data = try horizon.heap.shared_memory_address_allocator.alloc(u8, 4096);
+    const shared_memory_data = try horizon.heap.non_thread_safe_shared_memory_address_allocator.alloc(4096, .@"1");
     gsp.shared_memory_data = shared_memory_data;
 
-    try queue_result.shared_memory.map(@alignCast(shared_memory_data.ptr), .rw, .dont_care);
+    try queue_result.response.gsp_memory.map(@alignCast(shared_memory_data.ptr), .rw, .dont_care);
     return gsp;
 }
 
@@ -139,7 +152,7 @@ pub fn deinit(gsp: *GspGpu) void {
     if (gsp.shared_memory) |*shm_handle| {
         if (gsp.shared_memory_data) |shm| {
             shm_handle.unmap(@alignCast(shm.ptr));
-            horizon.heap.shared_memory_address_allocator.free(shm);
+            horizon.heap.non_thread_safe_shared_memory_address_allocator.free(shm);
         }
 
         shm_handle.deinit();
@@ -266,7 +279,7 @@ pub fn writeFramebufferInfo(gsp: *GspGpu, screen: Screen, info: FramebufferInfo.
     return framebuffer_header.flags.new_data;
 }
 
-pub fn submitGxCommand(gsp: *GspGpu, command: gx.Command) !void {
+pub fn submitGxCommand(gsp: *GspGpu, cmd: gx.Command) !void {
     const gsp_data = gsp.shared_memory_data.?;
     const gx_queue: *GxCommandQueue = @alignCast(std.mem.bytesAsValue(GxCommandQueue, gsp_data[0x800 + (gsp.thread_index * @sizeOf(GxCommandQueue)) ..][0..@sizeOf(GxCommandQueue)]));
     const gx_header: GxCommandQueue.Header = @atomicLoad(GxCommandQueue.Header, &gx_queue.header, .monotonic);
@@ -276,7 +289,7 @@ pub fn submitGxCommand(gsp: *GspGpu, command: gx.Command) !void {
     }
 
     const next_command_index: u4 = (@as(u4, @intCast(gx_header.current_command_index)) +% @as(u4, @intCast(gx_header.total_commands)));
-    gx_queue.commands[next_command_index] = command;
+    gx_queue.commands[next_command_index] = cmd;
 
     // Same as with the fb info
     zitrus.arm.dsb();
@@ -299,11 +312,11 @@ pub fn initializeHardware(gsp: *GspGpu) Error!void {
     // XXX: Unknown, https://www.3dbrew.org/wiki/GPU/External_Registers#Map and libctru also just writes these values without knowing what they do
     try gsp.writeHwRegs(&gpu_registers.internal.irq.ack[0], std.mem.asBytes(&[_]u32{0x00}));
     try gsp.writeHwRegs(&gpu_registers.internal.irq.cmp[0], std.mem.asBytes(&[_]u32{0x12345678}));
-    try gsp.writeHwRegs(&gpu_registers.internal.irq.mask, std.mem.asBytes(&[_]u32{0xFFFFFFF0, 0xFFFFFFFF}));
+    try gsp.writeHwRegs(&gpu_registers.internal.irq.mask, std.mem.asBytes(&[_]u32{ 0xFFFFFFF0, 0xFFFFFFFF }));
     try gsp.writeHwRegs(&gpu_registers.internal.irq.autostop, std.mem.asBytes(&gpu.Registers.Internal.Interrupt.AutoStop{
-        .stop_command_list = true, 
+        .stop_command_list = true,
     }));
-    try gsp.writeHwRegs(&gpu_registers.timing_control, std.mem.asBytes(&[_]u32{0x22221200, 0xFF2}));
+    try gsp.writeHwRegs(&gpu_registers.timing_control, std.mem.asBytes(&[_]u32{ 0x22221200, 0xFF2 }));
 
     // Initialize top screen
     // Taken from: https://www.3dbrew.org/wiki/GPU/External_Registers#LCD_Source_Framebuffer_Setup / https://www.3dbrew.org/wiki/GPU/External_Registers#Framebuffers
@@ -482,9 +495,10 @@ pub fn sendWriteHwRegs(gsp: GspGpu, offset: usize, buffer: []const u8) Error!voi
     std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
 
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.write_hw_regs, .{ offset, buffer.len }, .{ ipc.StaticBufferTranslationDescriptor.init(buffer.len, 0), @intFromPtr(buffer.ptr) });
-
-    try gsp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(gsp.session, command.WriteHwRegs, .{ .offset = offset, .size = buffer.len, .data = .init(buffer) }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendWriteHwRegsWithMask(gsp: GspGpu, offset: usize, buffer: []const u8, mask: []const u8) Error!void {
@@ -492,259 +506,299 @@ pub fn sendWriteHwRegsWithMask(gsp: GspGpu, offset: usize, buffer: []const u8, m
     std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
 
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.write_hw_regs_with_mask, .{ offset, buffer.len }, .{ ipc.StaticBufferTranslationDescriptor.init(buffer.len, 0), @intFromPtr(buffer.ptr), ipc.StaticBufferTranslationDescriptor.init(mask.len, 1), @intFromPtr(mask.ptr) });
-
-    try gsp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(gsp.session, command.WriteHwRegsWithMask, .{ .offset = offset, .size = buffer.len, .data = .init(buffer), .mask = .init(mask) }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendWriteHwRegsRepeat(gsp: GspGpu, offset: usize, buffer: []const u8) Error!void {
+pub fn sendWriteHwRegRepeat(gsp: GspGpu, offset: usize, buffer: []const u8) Error!void {
     std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
 
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.write_hw_regs, .{ offset, buffer.len }, .{ ipc.StaticBufferTranslationDescriptor.init(buffer.len, 0), @intFromPtr(buffer.ptr) });
-
-    try gsp.session.sendRequest();
+    return switch(data.ipc.unpackResponse(gsp.session, command.WriteHwRegRepeat, .{ .offset = offset, .size = buffer.len, .data = .init(buffer) }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendReadHwRegs(gsp: GspGpu, offset: usize, buffer: []u8) Error!void {
     std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
 
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.read_hw_regs, .{ offset, buffer.len }, .{});
-    data.ipc_static_buffers[0] = @bitCast(ipc.StaticBufferTranslationDescriptor.init(buffer.len, 0));
-    data.ipc_static_buffers[1] = @intFromPtr(buffer.ptr);
-
-    try gsp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(gsp.session, command.ReadHwRegs, .{ .offset = offset, .size = buffer.len }, .{ buffer })) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendRegisterInterruptRelayQueue(gsp: GspGpu, unknown_flags: u8, event: Event) Error!InterrupRelayQueueResult {
+pub fn sendSetBufferSwap(gsp: GspGpu, screen: Screen, info: FramebufferInfo) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.register_interrupt_relay_queue, .{@as(u32, unknown_flags)}, .{ ipc.HandleTranslationDescriptor.init(0), event });
-
-    try gsp.session.sendRequest();
-
-    const last_result = data.ipc.getLastResult();
-    const should_initialize_hardware = if (last_result.summary == .success and @intFromEnum(last_result.description) == 0x207)
-        true
-    else ihw: {
-        break :ihw false;
-    };
-
-    return InterrupRelayQueueResult{
-        .should_initialize_hardware = should_initialize_hardware,
-        .thread_index = data.ipc.parameters[1],
-        .shared_memory = @bitCast(data.ipc.parameters[3]),
+    return switch(try data.ipc.sendRequest(gsp.session, command.SetBufferSwap, .{ .screen = screen, .info = info }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendFlushDataCache(gsp: GspGpu, buffer: []u8) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.flush_data_cache, .{ @intFromPtr(buffer.ptr), buffer.len }, .{ ipc.HandleTranslationDescriptor.init(0), horizon.Process.current });
-
-    try gsp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(gsp.session, command.FlushDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendInvalidateDataCache(gsp: GspGpu, buffer: []u8) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.invalidate_data_cache, .{ @intFromPtr(buffer.ptr), buffer.len }, .{ ipc.HandleTranslationDescriptor.init(0), ipc.HandleTranslationDescriptor.replace_by_proccess_id });
-
-    try gsp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(gsp.session, command.InvalidateDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendSetLcdForceBlack(gsp: GspGpu, force: bool) Error!void {
+pub fn sendSetLcdForceBlack(gsp: GspGpu, fill: bool) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.set_lcd_force_black, .{@as(u32, @intFromBool(force))}, .{});
-
-    try gsp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(gsp.session, command.SetLcdForceBlack, .{ .fill = fill }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendTriggerCmdReqQueue(gsp: GspGpu) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.trigger_cmd_req_queue, .{}, .{});
+    return switch(try data.ipc.sendRequest(gsp.session, command.TriggerCmdReqQueue, .{}, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
 
-    try gsp.session.sendRequest();
+pub fn sendSetAxiConfigQosMode(gsp: GspGpu, qos: u32) Error!void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(gsp.session, command.SetAxiConfigQosMode, .{ .qos = qos }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendSetPerfLogMode(gsp: GspGpu, enabled: bool) Error!void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(gsp.session, command.SetPerfLogMode, .{ .enabled = enabled }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendGetPerfLog(gsp: GspGpu) Error!PerfLogInfo {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(gsp.session, command.GetPerfLog, .{}, .{})) {
+        .success => |s| s.value.response.info,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub const RegisterInterruptRelayQueueResponse = struct {
+    should_init_hw: bool,
+    response: command.RegisterInterruptRelayQueue.Response,
+};
+
+pub fn sendRegisterInterruptRelayQueue(gsp: GspGpu, unknown_flags: u8, event: Event) Error!RegisterInterruptRelayQueueResponse {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(gsp.session, command.RegisterInterruptRelayQueue, .{ .flags = unknown_flags, .ev = event }, .{})) {
+        .success => |s| .{
+            .should_init_hw = s.code.description == @as(horizon.result.ResultDescription, @enumFromInt(0x207)),
+            .response = s.value.response,
+        },
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendUnregisterInterruptRelayQueue(gsp: GspGpu) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.unregister_interrupt_relay_queue, .{}, .{});
-
-    try gsp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(gsp.session, command.UnregisterInterruptRelayQueue, .{}, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendTryAcquireRight(gsp: GspGpu, unknown_flags: u8) Error!void {
+pub fn sendTryAcquireRight(gsp: GspGpu, init_hw: u8) Error!bool {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.try_acquire_right, .{@as(u32, unknown_flags)}, .{ ipc.HandleTranslationDescriptor.init(0), horizon.Process.current });
-
-    try gsp.session.sendRequest();
-    return true;
+    return switch(try data.ipc.sendRequest(gsp.session, command.TryAcquireRight, .{ .init_hw = init_hw, .process = .current }, .{})) {
+        .success => true,
+        .failure => |code| if(code == @as(horizon.ResultCode, @bitCast(@as(u32, 0xC8402BF0)))) false else horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendAcquireRight(gsp: GspGpu, unknown_flags: u8) Error!void {
+pub fn sendAcquireRight(gsp: GspGpu, init_hw: u8) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.acquire_right, .{@as(u32, unknown_flags)}, .{ ipc.HandleTranslationDescriptor.init(0), horizon.Process.current });
+    data.ipc.packRequest(command.AcquireRight, .{ .init_hw = init_hw, .process = .current }, .{});
 
-    // HACK: WHY DOES THIS NOT WORK WITHOUT NOINLINE????
+    // FIXME: WHY DOES THIS NOT WORK WITHOUT NOINLINE????
     // What happens is that the event for gsp interrupts never signals after for example returning from home or in rare cases after continuing from a break while debugging...
     // It doesn't make any sense as it happens EVEN if this is not called (e.f: after breaking from debugging somewhere unrelated)
     try @call(.never_inline, Session.sendRequest, .{gsp.session});
+    return switch(data.ipc.unpackResponse(command.AcquireRight)) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendReleaseRight(gsp: GspGpu) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.release_right, .{}, .{});
-
-    try gsp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(gsp.session, command.ReleaseRight, .{}, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendImportDisplayCaptureInfo(gsp: GspGpu) Error!ScreenCapture {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.import_display_capture_info, .{}, .{});
-
-    try gsp.session.sendRequest();
-
-    return ScreenCapture{
-        .top = .{
-            .left_vaddr = @ptrFromInt(data.ipc.parameters[1]),
-            .right_vaddr = @ptrFromInt(data.ipc.parameters[2]),
-            .format = @bitCast(data.ipc.parameters[3]),
-            .stride = data.ipc.parameters[4],
-        },
-        .bottom = .{
-            .left_vaddr = @ptrFromInt(data.ipc.parameters[5]),
-            .right_vaddr = @ptrFromInt(data.ipc.parameters[6]),
-            .format = @bitCast(data.ipc.parameters[7]),
-            .stride = data.ipc.parameters[8],
-        },
+    return switch(try data.ipc.sendRequest(gsp.session, command.ImportDisplayCaptureInfo, .{}, .{})) {
+        .success => |s| s.value.response.capture,
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendSaveVRAMSysArea(gsp: GspGpu) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.save_vram_sys_area, .{}, .{});
-
-    try gsp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(gsp.session, command.SaveVRamSysArea, .{}, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendRestoreVRAMSysArea(gsp: GspGpu) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.restore_vram_sys_area, .{}, .{});
-
-    try gsp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(gsp.session, command.RestoreVRamSysArea, .{}, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendResetGpuCore(gsp: GspGpu) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.reset_gsp_core, .{}, .{});
-
-    try gsp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(gsp.session, command.ResetGpuCore, .{}, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub const Command = enum(u16) {
-    write_hw_regs = 0x0001,
-    write_hw_regs_with_mask,
-    write_hw_reg_repeat,
-    read_hw_regs,
-    set_buffer_swap,
-    set_command_list,
-    request_dma,
-    flush_data_cache,
-    invalidate_data_cache,
-    register_interrupt_events,
-    set_lcd_force_black,
-    trigger_cmd_req_queue,
-    set_display_transfer,
-    set_texture_copy,
-    set_memory_fill,
-    set_axi_config_qos_mode,
-    set_perf_log_mode,
-    get_perf_log,
-    register_interrupt_relay_queue,
-    unregister_interrupt_relay_queue,
-    try_acquire_right,
-    acquire_right,
-    release_right,
-    import_display_capture_info,
-    save_vram_sys_area,
-    restore_vram_sys_area,
-    reset_gpu_core,
-    set_led_force_off,
-    set_test_command,
-    set_internal_priorities,
-    store_data_cache,
+pub fn sendSetLedForceOff(gsp: GspGpu, disable: bool) Error!void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(gsp.session, command.SetLedForceOff, .{ .disable = disable }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
 
-    pub inline fn normalParameters(cmd: Command) u6 {
-        return switch (cmd) {
-            .write_hw_regs => 2,
-            .write_hw_regs_with_mask => 2,
-            .write_hw_reg_repeat => 2,
-            .read_hw_regs => 2,
-            .set_buffer_swap => 8,
-            .set_command_list => 2,
-            .request_dma => 3,
-            .flush_data_cache => 2,
-            .invalidate_data_cache => 2,
-            .register_interrupt_events => 1,
-            .set_lcd_force_black => 1,
-            .trigger_cmd_req_queue => 0,
-            .set_display_transfer => 5,
-            .set_texture_copy => 6,
-            .set_memory_fill => 8,
-            .set_axi_config_qos_mode => 1,
-            .set_perf_log_mode => 1,
-            .get_perf_log => 0,
-            .register_interrupt_relay_queue => 1,
-            .unregister_interrupt_relay_queue => 0,
-            .try_acquire_right => 0,
-            .acquire_right => 1,
-            .release_right => 0,
-            .import_display_capture_info => 0,
-            .save_vram_sys_area => 0,
-            .restore_vram_sys_area => 0,
-            .reset_gpu_core => 0,
-            .set_led_force_off => 1,
-            .set_test_command => 1,
-            .set_internal_priorities => 2,
-            .store_data_cache => 2,
-        };
-    }
+pub fn sendSetInternalPriorities(gsp: GspGpu, session_thread: u6, command_queue: u6) Error!void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(gsp.session, command.SetInternalPriorities, .{ .session_thread = session_thread, .command_queue = command_queue }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
 
-    pub inline fn translateParameters(cmd: Command) u6 {
-        return switch (cmd) {
-            .write_hw_regs => 2,
-            .write_hw_regs_with_mask => 4,
-            .write_hw_reg_repeat => 2,
-            .read_hw_regs => 0,
-            .set_buffer_swap => 0,
-            .set_command_list => 2,
-            .request_dma => 2,
-            .flush_data_cache => 2,
-            .invalidate_data_cache => 2,
-            .register_interrupt_events => 4,
-            .set_lcd_force_black => 0,
-            .trigger_cmd_req_queue => 0,
-            .set_display_transfer => 0,
-            .set_texture_copy => 0,
-            .set_memory_fill => 0,
-            .set_axi_config_qos_mode => 0,
-            .set_perf_log_mode => 0,
-            .get_perf_log => 0,
-            .register_interrupt_relay_queue => 2,
-            .unregister_interrupt_relay_queue => 0,
-            .try_acquire_right => 2,
-            .acquire_right => 2,
-            .release_right => 0,
-            .import_display_capture_info => 0,
-            .save_vram_sys_area => 0,
-            .restore_vram_sys_area => 0,
-            .reset_gpu_core => 0,
-            .set_led_force_off => 0,
-            .set_test_command => 0,
-            .set_internal_priorities => 0,
-            .store_data_cache => 2,
-        };
-    }
+pub fn sendStoreDataCache(gsp: GspGpu, buffer: []u8) Error!void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(gsp.session, command.StoreDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub const command = struct {
+    pub const WriteHwRegs = ipc.Command(Id, .write_hw_regs, struct {
+        offset: usize,
+        size: usize,
+        data: ipc.StaticSlice(0),
+    }, struct {});
+    pub const WriteHwRegsWithMask = ipc.Command(Id, .write_hw_regs_with_mask, struct {
+        offset: usize,
+        size: usize,
+        data: ipc.StaticSlice(0),
+        mask: ipc.StaticSlice(1),
+    }, struct {});
+    pub const WriteHwRegRepeat = ipc.Command(Id, .write_hw_reg_repeat, struct {
+        offset: usize,
+        size: usize,
+        data: ipc.StaticSlice(0),
+    }, struct {});
+    pub const ReadHwRegs = ipc.Command(Id, .read_hw_regs, struct {
+        pub const static_buffers = 1;
+        offset: usize,
+        size: usize,
+    }, struct {
+        output: ipc.StaticSlice(0),
+    });
+    pub const SetBufferSwap = ipc.Command(Id, .set_buffer_swap, struct { screen: Screen, info: FramebufferInfo }, struct {});
+    // SetCommandList stubbed
+    // RequestDma stubbed
+    pub const FlushDataCache = ipc.Command(Id, .flush_data_cache, struct { address: usize, size: usize, process: horizon.Process }, struct {}); 
+    pub const InvalidateDataCache = ipc.Command(Id, .invalidate_data_cache, struct { address: usize, size: usize, process: horizon.Process }, struct {}); 
+    // RegisterInterruptEvents stubbed
+    pub const SetLcdForceBlack = ipc.Command(Id, .set_lcd_force_black, struct { fill: bool }, struct {}); 
+    pub const TriggerCmdReqQueue = ipc.Command(Id, .trigger_cmd_req_queue, struct {}, struct {}); 
+    // SetDisplayTransfer stubbed
+    // SetTextureCopy stubbed
+    // SetMemoryFill stubbed
+    pub const SetAxiConfigQosMode = ipc.Command(Id, .set_axi_config_qos_mode, struct { qos: u32 }, struct {});
+    pub const SetPerfLogMode = ipc.Command(Id, .set_perf_log_mode, struct { enabled: bool }, struct {});
+    pub const GetPerfLog = ipc.Command(Id, .get_perf_log, struct {}, struct { info: PerfLogInfo });
+    pub const RegisterInterruptRelayQueue = ipc.Command(Id, .register_interrupt_relay_queue, struct {
+        flags: u32,
+        ev: Event,
+    }, struct {
+        thread_index: u32,
+        gsp_memory: MemoryBlock,
+    });
+    pub const UnregisterInterruptRelayQueue = ipc.Command(Id, .unregister_interrupt_relay_queue, struct {}, struct {});
+    pub const TryAcquireRight = ipc.Command(Id, .try_acquire_right, struct { process: horizon.Process }, struct {});
+    pub const AcquireRight = ipc.Command(Id, .acquire_right, struct { init_hw: u32, process: horizon.Process }, struct {});
+    pub const ReleaseRight = ipc.Command(Id, .release_right, struct {}, struct {});
+    pub const ImportDisplayCaptureInfo = ipc.Command(Id, .import_display_capture_info, struct {}, struct { capture: ScreenCapture });
+    pub const SaveVRamSysArea = ipc.Command(Id, .save_vram_sys_area, struct {}, struct {});
+    pub const RestoreVRamSysArea = ipc.Command(Id, .restore_vram_sys_area, struct {}, struct {});
+    pub const ResetGpuCore = ipc.Command(Id, .reset_gpu_core, struct {}, struct {});
+    pub const SetLedForceOff = ipc.Command(Id, .set_led_force_off, struct { disable: bool }, struct {});
+    // SetTestCommand stubbed
+    pub const SetInternalPriorities = ipc.Command(Id, .set_internal_priorities, struct { session_thread: u6, command_queue: u6 }, struct {}); 
+    pub const StoreDataCache = ipc.Command(Id, .store_data_cache, struct { address: usize, size: usize, process: horizon.Process }, struct {}); 
+
+    pub const Id = enum(u16) {
+        write_hw_regs = 0x0001,
+        write_hw_regs_with_mask,
+        write_hw_reg_repeat,
+        read_hw_regs,
+        set_buffer_swap,
+        set_command_list,
+        request_dma,
+        flush_data_cache,
+        invalidate_data_cache,
+        register_interrupt_events,
+        set_lcd_force_black,
+        trigger_cmd_req_queue,
+        set_display_transfer,
+        set_texture_copy,
+        set_memory_fill,
+        set_axi_config_qos_mode,
+        set_perf_log_mode,
+        get_perf_log,
+        register_interrupt_relay_queue,
+        unregister_interrupt_relay_queue,
+        try_acquire_right,
+        acquire_right,
+        release_right,
+        import_display_capture_info,
+        save_vram_sys_area,
+        restore_vram_sys_area,
+        reset_gpu_core,
+        set_led_force_off,
+        set_test_command,
+        set_internal_priorities,
+        store_data_cache,
+    };
 };
+
 
 const GspGpu = @This();
 const std = @import("std");

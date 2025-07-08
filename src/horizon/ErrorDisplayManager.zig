@@ -1,3 +1,5 @@
+const port_name = "err:f";
+
 pub const Error = Session.RequestError;
 
 pub const FatalErrorInfo = extern struct {
@@ -26,8 +28,8 @@ pub const FatalErrorInfo = extern struct {
 
 session: Session,
 
-pub fn init(port: [:0]const u8) !ErrDispManager {
-    const errdisp_session = try Session.connect(port);
+pub fn init() !ErrDispManager {
+    const errdisp_session = try Session.connect(port_name);
     return ErrDispManager{ .session = errdisp_session };
 }
 
@@ -38,36 +40,34 @@ pub fn deinit(errdisp: *ErrDispManager) void {
 
 pub fn sendSetUserString(errdisp: ErrDispManager, str: []const u8) !void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.set_user_string, .{str.len}, .{ ipc.StaticBufferTranslationDescriptor.init(str.len, 0), @intFromPtr(str.ptr) });
-
-    try errdisp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(errdisp.session, command.SetUserString, .{ .str_size = str.len, .str = .init(str) }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendThrow(errdisp: ErrDispManager, fatal: FatalErrorInfo) !void {
-    const as_u32: []const u32 = std.mem.bytesAsSlice(u32, std.mem.asBytes(&fatal));
-
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.throw, as_u32, .{});
-
-    try errdisp.session.sendRequest();
+    return switch(try data.ipc.sendRequest(errdisp.session, command.Throw, fatal, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub const Command = enum(u16) {
-    throw = 0x0001,
-    set_user_string,
+pub const command = struct {
+    pub const Id = enum(u16) {
+        throw = 0x0001,
+        set_user_string,
+    };
 
-    pub inline fn normalParameters(cmd: Command) u6 {
-        return switch (cmd) {
-            .throw => 32,
-            .set_user_string => 1,
-        };
-    }
+    pub const Throw = ipc.Command(Id, .throw, FatalErrorInfo, struct {});
+    pub const SetUserString = ipc.Command(Id, .set_user_string, struct { str_size: usize, str: ipc.StaticSlice(0) }, struct {});
 
-    pub inline fn translateParameters(cmd: Command) u6 {
-        return switch (cmd) {
-            .throw => 0,
-            .set_user_string => 2,
-        };
+    comptime {
+        std.debug.assert(std.meta.eql(Throw.request, .{ .normal = 32, .translate = 0 }));
+        std.debug.assert(std.meta.eql(Throw.response, .{ .normal = 1, .translate = 0 }));
+        std.debug.assert(std.meta.eql(SetUserString.request, .{ .normal = 1, .translate = 2 }));
+        std.debug.assert(std.meta.eql(SetUserString.response, .{ .normal = 1, .translate = 0 }));
     }
 };
 

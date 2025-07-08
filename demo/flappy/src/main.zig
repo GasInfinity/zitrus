@@ -243,7 +243,7 @@ const AppState = struct {
 };
 
 pub fn main() !void {
-    var srv = try ServiceManager.init("srv:");
+    var srv = try ServiceManager.init();
     defer srv.deinit();
 
     var apt = try Applet.init(srv);
@@ -312,7 +312,7 @@ pub fn main() !void {
         const pressed = changed.same(input.current);
 
         if (input.current.start) {
-            break;
+            running = false;
         }
 
         const top = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.top), Screen.top.width());

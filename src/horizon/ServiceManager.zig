@@ -1,4 +1,6 @@
-pub const Error = Session.RequestError;
+const port_name = "srv:";
+
+pub const Error = ClientSession.RequestError;
 
 pub const Notification = enum(u32) {
     must_terminate = 0x100,
@@ -42,11 +44,11 @@ pub const Notification = enum(u32) {
     _,
 };
 
-session: Session,
+session: ClientSession,
 notification: ?Semaphore = null,
 
-pub fn init(port: [:0]const u8) !SrvManager {
-    const srv_session = try Session.connect(port);
+pub fn init() !SrvManager {
+    const srv_session = try ClientSession.connect(port_name);
     var srv = SrvManager{
         .session = srv_session,
     };
@@ -76,7 +78,6 @@ pub fn pollNotification(srv: SrvManager) Error!?Notification {
 
 pub fn waitNotificationTimeout(srv: SrvManager, timeout_ns: i64) Error!?Notification {
     const notification = srv.notification.?;
-
     notification.wait(timeout_ns) catch |err| switch (err) {
         error.Timeout => return null,
         else => |e| return e,
@@ -85,149 +86,275 @@ pub fn waitNotificationTimeout(srv: SrvManager, timeout_ns: i64) Error!?Notifica
     return try srv.sendReceiveNotification();
 }
 
-pub fn getService(srv: SrvManager, name: []const u8, wait: bool) Error!Session {
+pub fn getService(srv: SrvManager, name: []const u8, flags: command.GetServiceHandle.Request.Flags) !ClientSession {
     if (environment.findService(name)) |service| {
         return service;
     }
 
-    return srv.sendGetServiceHandle(name, wait);
+    return srv.sendGetServiceHandle(name, flags);
 }
 
 pub fn sendRegisterClient(srv: SrvManager) !void {
     const data = tls.getThreadLocalStorage();
-
-    data.ipc.fillCommand(ServiceManagerCommand.register_client, .{}, .{ ipc.HandleTranslationDescriptor.replace_by_proccess_id, @as(u32, 0) });
-    try srv.session.sendRequest();
-    // @as(horizon.ResultCode, @bitCast(data.ipc.parameters[1])).;
+    return switch(try data.ipc.sendRequest(srv.session, command.RegisterClient, .{}, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendEnableNotification(srv: SrvManager) !Semaphore {
     const data = tls.getThreadLocalStorage();
-
-    data.ipc.fillCommand(ServiceManagerCommand.enable_notification, .{}, .{});
-    try srv.session.sendRequest();
-    // try data.ipc.checkLastResult();
-    return @as(Semaphore, @bitCast(data.ipc.parameters[2]));
+    return switch(try data.ipc.sendRequest(srv.session, command.EnableNotification, .{}, .{})) {
+        .success => |s| s.value.response.notification_received,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendGetServiceHandle(srv: SrvManager, name: []const u8, wait: bool) !Session {
+pub fn sendRegisterService(srv: SrvManager, name: []const u8, max_sessions: i16) !ServerPort {
     std.debug.assert(name.len <= 8);
-    const data = tls.getThreadLocalStorage();
 
-    const first: u32, const second: u32 = if (name.len <= 4) short: {
-        var first: u32 = 0;
-        @memcpy(std.mem.asBytes(&first)[0..name.len], name);
-        break :short .{ first, 0 };
-    } else long: {
-        const remaining = name.len - 4;
-        var second: u32 = 0;
-        @memcpy(std.mem.asBytes(&second)[0..remaining], name[4..][0..remaining]);
-
-        break :long .{ @as(u32, @bitCast(name[0..4].*)), second };
+    var req: command.RegisterService.Request = .{
+        .name = undefined,
+        .name_len = @intCast(name.len),
+        .max_sessions = max_sessions,
     };
+    @memcpy(req.name[0..name.len], name);
 
-    data.ipc.fillCommand(ServiceManagerCommand.get_service_handle, .{ first, second, @as(u32, @intCast(name.len)), @as(u32, @intFromBool(!wait)) }, .{});
-    try srv.session.sendRequest();
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(srv.session, command.RegisterService, req, .{})) {
+        .success => |s| s.value.response.server,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
 
-    // const get_handle_result: ResultCode = @bitCast(data.ipc.parameters[0]);
-    // try get_handle_result.ziggify();
+pub fn sendUnregisterService(srv: SrvManager, name: []const u8) !void {
+    std.debug.assert(name.len <= 8);
 
-    return @as(Session, @bitCast(data.ipc.parameters[2]));
+    var req: command.UnregisterService.Request = .{
+        .name = undefined,
+        .name_len = @intCast(name.len),
+    };
+    @memcpy(req.name[0..name.len], name);
+
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(srv.session, command.UnregisterService, req, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub const GetServiceHandleError = error {AccessDenied, PortFull};
+
+// FIXME: Handle errors properly!
+pub fn sendGetServiceHandle(srv: SrvManager, name: []const u8, flags: command.GetServiceHandle.Request.Flags) !ClientSession {
+    std.debug.assert(name.len <= 8);
+
+    var req: command.GetServiceHandle.Request = .{
+        .name = undefined,
+        .name_len = name.len,
+        .flags = flags,
+    };
+    @memcpy(req.name[0..name.len], name);
+
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(srv.session, command.GetServiceHandle, req, .{})) {
+        .success => |s| s.value.response.service.handle,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendRegisterPort(srv: SrvManager, name: []const u8, port: ClientPort) !ServerPort {
+    std.debug.assert(name.len <= 8);
+
+    var req: command.RegisterPort.Request = .{
+        .name = undefined,
+        .name_len = name.len,
+        .port = port,
+    };
+    @memcpy(req.name[0..name.len], name);
+
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(srv.session, command.RegisterPort, req, .{})) {
+        .success => |s| s.value.response.server,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendUnregisterPort(srv: SrvManager, name: []const u8) !void{
+    std.debug.assert(name.len <= 8);
+
+    var req: command.UnregisterPort.Request = .{
+        .name = undefined,
+        .name_len = name.len,
+    };
+    @memcpy(req.name[0..name.len], name);
+
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(srv.session, command.UnregisterPort, req, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendGetPort(srv: SrvManager, name: []const u8, wait_until_found: bool) !ClientPort {
+    std.debug.assert(name.len <= 8);
+
+    var req: command.GetPort.Request = .{
+        .name = undefined,
+        .name_len = name.len,
+        .wait_until_found = wait_until_found,
+    };
+    @memcpy(req.name[0..name.len], name);
+
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(srv.session, command.GetPort, req, .{})) {
+        .success => |s| s.value.response.service,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendSubscribe(srv: SrvManager, notification: Notification) !void {
     const data = tls.getThreadLocalStorage();
-
-    data.ipc.fillCommand(ServiceManagerCommand.subscribe, .{notification}, .{});
-    try srv.session.sendRequest();
-    // try data.ipc.checkLastResult();
+    return switch(try data.ipc.sendRequest(srv.session, command.Subscribe, .{ .notification = notification }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendUnsubscribe(srv: SrvManager, notification: Notification) !void {
     const data = tls.getThreadLocalStorage();
-
-    data.ipc.fillCommand(ServiceManagerCommand.unsubscribe, .{notification}, .{});
-    try srv.session.sendRequest();
-    // try data.ipc.checkLastResult();
+    return switch(try data.ipc.sendRequest(srv.session, command.Unsubscribe, .{ .notification = notification }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendReceiveNotification(srv: SrvManager) !Notification {
     const data = tls.getThreadLocalStorage();
-
-    data.ipc.fillCommand(ServiceManagerCommand.receive_notification, .{}, .{});
-    try srv.session.sendRequest();
-    // try data.ipc.checkLastResult();
-    return @enumFromInt(data.ipc.parameters[1]);
+    return switch(try data.ipc.sendRequest(srv.session, command.ReceiveNotification, .{}, .{})) {
+        .success => |s| s.value.response.notification,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub const ServiceManagerCommand = enum(u16) {
-    register_client = 0x0001,
-    enable_notification,
-    register_service,
-    unregister_service,
-    get_service_handle,
-    register_port,
-    unregister_port,
-    get_port,
-    subscribe,
-    unsubscribe,
-    receive_notification,
-    publish_to_subscriber,
-    publish_and_get_subscriber,
-    is_service_registered,
+pub fn sendPublishToSubscriber(srv: SrvManager, notification: Notification, flags: command.PublishToSubscriber.Request.Flags) !void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(srv.session, command.PublishToSubscriber, .{ .notification = notification, .flags = flags }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    }; 
+}
 
-    // Only available to "srv:pm"
-    // TODO: Split this
-    publish_to_process = 0x0401,
-    publish_to_all,
-    register_process,
-    unregister_process,
+pub fn sendPublishAndGetSubscriber(srv: SrvManager, notification: Notification) !command.PublishAndGetSubscriber.Response {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(srv.session, command.PublishAndGetSubscriber, .{ .notification = notification }, .{})) {
+        .success => |s| s.value.response,
+        .failure => |code| horizon.unexpectedResult(code),
+    }; 
+}
 
-    pub inline fn normalParameters(cmd: ServiceManagerCommand) u6 {
-        return switch (cmd) {
-            .register_client => 0,
-            .enable_notification => 0,
-            .register_service => 4,
-            .unregister_service => 3,
-            .get_service_handle => 4,
-            .register_port => 3,
-            .unregister_port => 3,
-            .get_port => 4,
-            .subscribe => 1,
-            .unsubscribe => 1,
-            .receive_notification => 0,
-            .publish_to_subscriber => 2,
-            .publish_and_get_subscriber => 1,
-            .is_service_registered => 3,
-            .publish_to_process => 1,
-            .publish_to_all => 1,
-            .register_process => 2,
-            .unregister_process => 1,
+pub fn sendIsServiceRegistered(srv: SrvManager, name: []const u8) !bool {
+    std.debug.assert(name.len <= 8);
+
+    var req: command.IsServiceRegistered.Request = .{
+        .name = undefined,
+        .name_len = name.len,
+    };
+
+    @memcpy(req.name[0..name.len], name);
+
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(srv.session, command.IsServiceRegistered, req, .{})) {
+        .success => |s| s.value.response.registered,
+        .failure => |code| horizon.unexpectedResult(code),
+    }; 
+}
+
+pub const command = struct {
+    pub const RegisterClient = ipc.Command(Id, .register_client, struct { pid: ipc.ReplaceByProcessId = .replace }, struct {});
+    pub const EnableNotification = ipc.Command(Id, .enable_notification, struct {}, struct { notification_received: Semaphore });
+    pub const RegisterService = ipc.Command(Id, .register_service, struct {
+        name: [8]u8,
+        name_len: usize,
+        max_sessions: i16,
+    }, struct { server: ServerPort });
+    pub const UnregisterService = ipc.Command(Id, .unregister_service, struct {
+        name: [8]u8,
+        name_len: usize,
+    }, struct {});
+    pub const GetServiceHandle = ipc.Command(Id, .get_service_handle, struct {
+        pub const Flags = packed struct(u32) {
+            pub const wait: Flags = .{};
+            pub const poll: Flags = .{ .error_if_full = true };
+
+            error_if_full: bool = false,
+            _: u31 = 0,
         };
-    }
-
-    pub inline fn translateParameters(cmd: ServiceManagerCommand) u6 {
-        return switch (cmd) {
-            .register_client => 2,
-            .enable_notification => 0,
-            .register_service => 0,
-            .unregister_service => 0,
-            .get_service_handle => 0,
-            .register_port => 2,
-            .unregister_port => 0,
-            .get_port => 0,
-            .subscribe => 0,
-            .unsubscribe => 0,
-            .receive_notification => 0,
-            .publish_to_subscriber => 0,
-            .publish_and_get_subscriber => 0,
-            .is_service_registered => 0,
-            .publish_to_process => 2,
-            .publish_to_all => 0,
-            .register_process => 2,
-            .unregister_process => 0,
+        name: [8]u8,
+        name_len: usize,
+        flags: Flags,
+    }, struct { service: ipc.MoveHandle(ClientSession) });
+    pub const RegisterPort = ipc.Command(Id, .register_port, struct {
+        name: [8]u8,
+        name_len: usize,
+        port: ClientPort,
+    }, struct {});
+    pub const UnregisterPort = ipc.Command(Id, .unregister_port, struct {
+        name: [8]u8,
+        name_len: usize,
+    }, struct {});
+    // XXX: What kind of port does this retrieve? I suppose a client port, also check if its moved from~
+    pub const GetPort = ipc.Command(Id, .get_port, struct {
+        name: [8]u8,
+        name_len: usize,
+        wait_until_found: bool,
+    }, struct { port: ClientPort });
+    pub const Subscribe = ipc.Command(Id, .subscribe, struct {
+        notification: Notification,
+    }, struct {});
+    pub const Unsubscribe = ipc.Command(Id, .unsubscribe, struct {
+        notification: Notification,
+    }, struct {});
+    pub const ReceiveNotification = ipc.Command(Id, .receive_notification, struct {}, struct { notification: Notification });
+    pub const PublishToSubscriber = ipc.Command(Id, .publish_to_subscriber, struct {
+        pub const Flags = packed struct(u32) {
+            fire_if_not_pending: bool = false,
+            no_error_if_full: bool = false,
+            _: u30 = 0,
         };
-    }
+
+        notification: Notification,
+        flags: Flags,
+    }, struct {});
+    pub const PublishAndGetSubscriber = ipc.Command(Id, .publish_and_get_subscriber, struct {
+        notification: Notification,
+    }, struct {
+        pid_count: u6,
+        pids: [61]u32,
+    });
+    pub const IsServiceRegistered = ipc.Command(Id, .is_service_registered, struct {
+        name: [8]u8,
+        name_len: u4,
+    }, struct {
+        registered: bool,
+    });
+
+    pub const Id = enum(u16) {
+        register_client = 0x0001,
+        enable_notification,
+        register_service,
+        unregister_service,
+        get_service_handle,
+        register_port,
+        unregister_port,
+        get_port,
+        subscribe,
+        unsubscribe,
+        receive_notification,
+        publish_to_subscriber,
+        publish_and_get_subscriber,
+        is_service_registered,
+    };
 };
 
 const SrvManager = @This();
@@ -240,5 +367,7 @@ const ipc = horizon.ipc;
 
 const Event = horizon.Event;
 const Semaphore = horizon.Semaphore;
-const Session = horizon.ClientSession;
+const ClientSession = horizon.ClientSession;
+const ServerPort = horizon.ServerPort;
+const ClientPort = horizon.ClientPort;
 const ResultCode = horizon.ResultCode;

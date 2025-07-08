@@ -2,7 +2,7 @@ const top_screen_bitmap = @embedFile("top-screen");
 const bottom_screen_bitmap = @embedFile("bottom-screen");
 
 pub fn main() !void {
-    var srv = try ServiceManager.init("srv:");
+    var srv = try ServiceManager.init();
     defer srv.deinit();
 
     var apt = try Applet.init(srv);
@@ -61,7 +61,7 @@ pub fn main() !void {
         const input = hid.readPadInput();
 
         if (input.current.start) {
-            break;
+            running = false;
         }
 
         while (true) {

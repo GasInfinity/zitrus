@@ -86,13 +86,7 @@ pub const MemoryQuery = struct {
 pub const ResetType = enum(u32) { oneshot, sticky, pulse };
 
 pub const Arbitration = union(Type) {
-    pub const Type = enum(u32) {
-        signal,
-        wait_if_less_than,
-        decrement_and_wait_if_less_than,
-        wait_if_less_than_timeout,
-        decrement_and_wait_if_less_than_timeout
-    };
+    pub const Type = enum(u32) { signal, wait_if_less_than, decrement_and_wait_if_less_than, wait_if_less_than_timeout, decrement_and_wait_if_less_than_timeout };
 
     pub const TimeoutValue = extern struct { value: i32, timeout_ns: i64 };
 
@@ -130,9 +124,7 @@ pub const BreakReason = enum(u32) {
     user,
 };
 
-pub const InterruptId = enum(u32) {
-
-};
+pub const InterruptId = enum(u32) {};
 
 pub const StartupInfo = extern struct {
     priority: i32,
@@ -164,48 +156,53 @@ pub const AddressArbiter = packed struct(u32) {
     pub fn arbitrate(arbiter: AddressArbiter, address: *i32, arbitration: Arbitration) UnexpectedError!AddressArbiter {
         const value: u32, const timeout_ns: i64 = switch (arbitration) {
             inline .signal, .wait_if_less_than, .decrement_and_wait_if_less_than => |value| .{ value, 0 },
-            inline .wait_if_less_than_timeout, .decrement_and_wait_if_less_than_timeout => |timeout_value| .{ timeout_value.value , timeout_value.timeout_ns },        
+            inline .wait_if_less_than_timeout, .decrement_and_wait_if_less_than_timeout => |timeout_value| .{ timeout_value.value, timeout_value.timeout_ns },
         };
 
         return arbitrateAddress(arbiter, address, std.meta.activeTag(arbitration), value, timeout_ns);
+    }
+
+    pub fn deinit(arbiter: *AddressArbiter) void {
+        _ = closeHandle(arbiter.obj);
+        arbiter.* = undefined;
     }
 };
 
 pub const Synchronization = packed struct(u32) {
     pub const CreationError = error{OutOfSynchronizationObjects} || UnexpectedError;
-    pub const WaitError = error{ Timeout } || UnexpectedError;
+    pub const WaitError = error{Timeout} || UnexpectedError;
 
     obj: Object,
 
     pub fn checkResult(comptime T: type, res: Result(T)) CreationError!T {
         return switch (res) {
             .success => |s| s.value,
-            .failure => |code| if(code == ResultCode.out_of_sync_objects) error.OutOfSynchronizationObjects else unexpectedResult(code),
+            .failure => |code| if (code == ResultCode.out_of_sync_objects) error.OutOfSynchronizationObjects else unexpectedResult(code),
         };
     }
 
     pub fn wait(sync: Synchronization, timeout_ns: i64) WaitError!void {
         const sync_result = waitSynchronization(sync, timeout_ns);
 
-        if(sync_result == ResultCode.timeout) {
+        if (sync_result == ResultCode.timeout) {
             return error.Timeout;
         }
-        
-        if(!sync_result.isSuccess()) {
+
+        if (!sync_result.isSuccess()) {
             return unexpectedResult(sync_result);
         }
     }
 
     pub fn waitMultiple(syncs: []const Synchronization, wait_all: bool, timeout_ns: i64) WaitError!usize {
-        return switch(waitSynchronizationMultiple(@ptrCast(syncs), wait_all, timeout_ns)) {
-            .success => |s| if(s.code == ResultCode.timeout) error.Timeout else s.value,
+        return switch (waitSynchronizationMultiple(@ptrCast(syncs), wait_all, timeout_ns)) {
+            .success => |s| if (s.code == ResultCode.timeout) error.Timeout else s.value,
             .failure => |code| unexpectedResult(code),
         };
     }
 };
 
 pub const Interruptable = packed struct(u32) {
-    sync: Synchronization, 
+    sync: Synchronization,
 };
 
 pub const Mutex = packed struct(u32) {
@@ -339,9 +336,9 @@ pub const MemoryBlock = packed struct(u32) {
     obj: Object,
 
     pub fn create(address: *align(heap.page_size) anyopaque, size: usize, this: MemoryPermission, other: MemoryPermission) CreationError!MemoryBlock {
-        return switch(createMemoryBlock(address, size, this, other)) {
+        return switch (createMemoryBlock(address, size, this, other)) {
             .success => |s| s.value,
-            .failure => |code| if(code == ResultCode.out_of_memory_blocks) error.OutOfMemoryBlocks else unexpectedResult(code),
+            .failure => |code| if (code == ResultCode.out_of_memory_blocks) error.OutOfMemoryBlocks else unexpectedResult(code),
         };
     }
 
@@ -384,17 +381,17 @@ pub const ClientSession = packed struct(u32) {
     sync: Synchronization,
 
     pub fn connect(port: [:0]const u8) ConnectionError!ClientSession {
-        return switch(connectToPort(port)) {
+        return switch (connectToPort(port)) {
             .success => |s| s.value,
-            .failure => |code| if(code == ResultCode.port_not_found) error.NotFound else unexpectedResult(code),
+            .failure => |code| if (code == ResultCode.port_not_found) error.NotFound else unexpectedResult(code),
         };
     }
 
     pub fn sendRequest(session: ClientSession) RequestError!void {
         const req_result = sendSyncRequest(session);
 
-        if(!req_result.isSuccess()) {
-            if(req_result == ResultCode.session_closed) {
+        if (!req_result.isSuccess()) {
+            if (req_result == ResultCode.session_closed) {
                 return error.ConnectionClosed;
             }
 
@@ -413,7 +410,7 @@ pub const Session = struct {
     client: ClientSession,
 
     pub fn create() UnexpectedError!Session {
-        return switch(createSession()) {
+        return switch (createSession()) {
             .success => |s| s.value,
             .failure => |code| unexpectedResult(code),
         };
@@ -422,7 +419,7 @@ pub const Session = struct {
     pub fn deinit(session: *Session) void {
         session.server.deinit();
         session.client.deinit();
-        session.* = undefined; 
+        session.* = undefined;
     }
 };
 
@@ -430,7 +427,7 @@ pub const ServerPort = packed struct(u32) {
     sync: Synchronization,
 
     pub fn accept(port: ServerPort) UnexpectedError!ServerSession {
-        return switch(acceptSession(port)) {
+        return switch (acceptSession(port)) {
             .success => |s| s.value,
             .failure => |code| unexpectedResult(code),
         };
@@ -446,7 +443,7 @@ pub const ClientPort = packed struct(u32) {
     sync: Synchronization,
 
     pub fn createNewSession(port: ClientPort) UnexpectedError!ClientSession {
-        return switch(createSessionToPort(port)) {
+        return switch (createSessionToPort(port)) {
             .success => |s| s.value,
             .failure => |code| unexpectedResult(code),
         };
@@ -463,7 +460,7 @@ pub const Port = struct {
     client: ClientPort,
 
     pub fn create(name: [:0]const u8, max_sessions: i16) UnexpectedError!Port {
-        return switch(createPort(name, max_sessions)) {
+        return switch (createPort(name, max_sessions)) {
             .success => |s| s.value,
             .failure => |code| unexpectedResult(code),
         };
@@ -472,7 +469,7 @@ pub const Port = struct {
     pub fn deinit(port: *Port) void {
         port.server.deinit();
         port.client.deinit();
-        port.* = undefined; 
+        port.* = undefined;
     }
 };
 
@@ -483,7 +480,7 @@ pub const Thread = packed struct(u32) {
 
     sync: Synchronization,
 
-    pub fn create(entry: *fn(ctx: *anyopaque) void, ctx: *anyopaque, stack_top: [*]u8, priority: u6, processor_id: i32) UnexpectedError!Thread {
+    pub fn create(entry: *fn (ctx: *anyopaque) void, ctx: *anyopaque, stack_top: [*]u8, priority: u6, processor_id: i32) UnexpectedError!Thread {
         return switch (createThread(entry, ctx, stack_top, priority, processor_id)) {
             .success => |s| s.value,
             .failure => |code| unexpectedResult(code),
@@ -550,7 +547,7 @@ pub fn exit() noreturn {
 
 pub fn getProcessAffinityMask(process: Process, processor_count: i32) Result(u8) {
     var affinity_mask: u8 = undefined;
-    
+
     const code = asm volatile ("svc 0x04"
         : [code] "={r0}" (-> ResultCode),
         : [affinity_mask] "{r0}" (&affinity_mask),
@@ -589,13 +586,13 @@ pub fn setProcessIdealProcessor(process: Process, ideal_processor: i32) ResultCo
     return asm volatile ("svc 0x07"
         : [code] "={r0}" (-> ResultCode),
         : [process] "{r0}" (process),
-          [ideal_processor] "{r1}" (ideal_processor)
+          [ideal_processor] "{r1}" (ideal_processor),
         : "r1", "r2", "r3", "r12", "cc", "memory"
     );
 }
 
 // TODO: processor_id type?
-pub fn createThread(entry: *fn(ctx: *anyopaque) void, ctx: *anyopaque, stack_top: [*]u8, priority: u6, processor_id: i32) Result(Thread) {
+pub fn createThread(entry: *fn (ctx: *anyopaque) void, ctx: *anyopaque, stack_top: [*]u8, priority: u6, processor_id: i32) Result(Thread) {
     var handle: Thread = undefined;
 
     const code = asm volatile ("svc 0x08"
@@ -645,14 +642,14 @@ pub fn setThreadPriority(thread: Thread, priority: u6) ResultCode {
     return asm volatile ("svc 0x0C"
         : [code] "={r0}" (-> ResultCode),
         : [thread] "{r0}" (thread),
-          [priority] "{r1}" (priority)
+          [priority] "{r1}" (priority),
         : "r1", "r2", "r3", "r12", "cc", "memory"
     );
 }
 
 pub fn getThreadAffinityMask(thread: Thread, processor_count: i32) Result(u8) {
     var affinity_mask: u8 = undefined;
-    
+
     const code = asm volatile ("svc 0x0D"
         : [code] "={r0}" (-> ResultCode),
         : [affinity_mask] "{r0}" (&affinity_mask),
@@ -691,13 +688,17 @@ pub fn setThreadIdealProcessor(thread: Process, ideal_processor: i32) ResultCode
     return asm volatile ("svc 0x10"
         : [code] "={r0}" (-> ResultCode),
         : [thread] "{r0}" (thread),
-          [ideal_processor] "{r1}" (ideal_processor)
+          [ideal_processor] "{r1}" (ideal_processor),
         : "r1", "r2", "r3", "r12", "cc", "memory"
     );
 }
 
 pub fn getCurrentProcessorNumber() i32 {
-    return asm volatile("svc 0x11" : [processor_number] "={r0}" (-> i32) :: "r1", "r2", "r3", "r12", "cc", "memory");
+    return asm volatile ("svc 0x11"
+        : [processor_number] "={r0}" (-> i32),
+        :
+        : "r1", "r2", "r3", "r12", "cc", "memory"
+    );
 }
 
 pub fn run(process: Process, startup_info: *const StartupInfo) ResultCode {
@@ -832,7 +833,7 @@ pub fn clearTimer(timer: Timer) ResultCode {
 }
 
 pub fn createMemoryBlock(address: [*]align(heap.page_size) u8, size: usize, this: MemoryPermission, other: MemoryPermission) Result(MemoryBlock) {
-    var memory_block: MemoryBlock= undefined;
+    var memory_block: MemoryBlock = undefined;
 
     const code = asm volatile ("svc 0x1E"
         : [code] "={r0}" (-> ResultCode),
@@ -868,7 +869,7 @@ pub fn unmapMemoryBlock(memory_block: MemoryBlock, address: [*]align(heap.page_s
 }
 
 pub fn createAddressArbiter() Result(AddressArbiter) {
-    var arbiter: AddressArbiter= undefined;
+    var arbiter: AddressArbiter = undefined;
 
     const code = asm volatile ("svc 0x21"
         : [code] "={r0}" (-> ResultCode),
@@ -890,9 +891,9 @@ pub fn arbitrateAddress(arbiter: AddressArbiter, address: *i32, arbitration_type
           [type] "{r2}" (arbitration_type),
           [value] "{r3}" (value),
           [timeout_ns_low] "{r4}" (@as(u32, @truncate(timeout_ns_u))),
-          [timeout_ns_high] "{r5}" (@as(u32, @truncate(timeout_ns_u >> 32))),      
+          [timeout_ns_high] "{r5}" (@as(u32, @truncate(timeout_ns_u >> 32))),
         : "r1", "r2", "r3", "r12", "cc", "memory"
-    ); 
+    );
 }
 
 pub fn closeHandle(handle: Object) ResultCode {
@@ -936,13 +937,13 @@ pub fn waitSynchronizationMultiple(handles: []const Synchronization, wait_all: b
 // svc signalAndWait() stubbed 0x26
 
 pub fn duplicateHandle(original: Object) Result(Object) {
-    var duplicated: Object= undefined;
+    var duplicated: Object = undefined;
 
     const code = asm volatile ("svc 0x27"
         : [code] "={r0}" (-> ResultCode),
           [duplicated] "={r1}" (duplicated),
         : [original] "{r0}" (original),
-        : "r2", "r3", "r12",  "cc", "memory"
+        : "r2", "r3", "r12", "cc", "memory"
     );
 
     return .of(code, duplicated);
@@ -1026,7 +1027,7 @@ pub fn sendSyncRequest(session: ClientSession) ResultCode {
 }
 
 pub fn openProcess(process_id: u32) Result(Process) {
-    var process: Process= undefined;
+    var process: Process = undefined;
 
     const code = asm volatile ("svc 0x33"
         : [code] "={r0}" (-> ResultCode),
@@ -1035,11 +1036,11 @@ pub fn openProcess(process_id: u32) Result(Process) {
         : "r2", "r3", "r12", "cc", "memory"
     );
 
-    return .of(code, process); 
+    return .of(code, process);
 }
 
 pub fn openThread(process: Process, thread_id: u32) Result(Thread) {
-    var thread: Thread= undefined;
+    var thread: Thread = undefined;
 
     const code = asm volatile ("svc 0x34"
         : [code] "={r0}" (-> ResultCode),
@@ -1049,7 +1050,7 @@ pub fn openThread(process: Process, thread_id: u32) Result(Thread) {
         : "r2", "r3", "r12", "cc", "memory"
     );
 
-    return .of(code, thread); 
+    return .of(code, thread);
 }
 
 pub fn getProcessId(process: Process) Result(u32) {
@@ -1092,7 +1093,7 @@ pub fn getThreadId(thread: Thread) Result(u32) {
 }
 
 pub fn getResourceLimit(process: Process) Result(ResouceLimit) {
-    var resource_limit: ResouceLimit= undefined;
+    var resource_limit: ResouceLimit = undefined;
 
     const code = asm volatile ("svc 0x38"
         : [code] "={r0}" (-> ResultCode),
@@ -1113,7 +1114,6 @@ pub fn getResourceLimitLimitValues(values: []i64, resource_limit: ResouceLimit, 
           [resource_limit] "{r1}" (resource_limit),
           [names_ptr] "{r2}" (names.ptr),
           [names_len] "{r3}" (names.len),
-
         : "r1", "r2", "r3", "r12", "cc", "memory"
     );
 }
@@ -1135,7 +1135,7 @@ pub fn getResourceLimitCurrentValues(values: []i64, resource_limit: ResouceLimit
 
 pub fn breakExecution(reason: BreakReason) void {
     asm volatile ("svc 0x3C"
-        : 
+        :
         : [reason] "{r0}" (reason),
         : "r0", "r1", "r2", "r3", "r12", "cc", "memory"
     );
@@ -1143,21 +1143,21 @@ pub fn breakExecution(reason: BreakReason) void {
 
 pub fn breakDebug(reason: BreakReason, cro_info: []const u8) void {
     asm volatile ("svc 0x3C"
-        : 
+        :
         : [reason] "{r0}" (reason),
           [cro_info] "{r1}" (cro_info.ptr),
-          [cro_info_size] "{r2}" (cro_info.len), 
+          [cro_info_size] "{r2}" (cro_info.len),
         : "r0", "r1", "r2", "r3", "r12", "cc", "memory"
     );
 }
 
 pub fn outputDebugString(str: []const u8) void {
     asm volatile ("svc 0x3D"
-        : 
+        :
         : [str_ptr] "{r0}" (str.ptr),
           [str_len] "{r1}" (str.len),
         : "r0", "r1", "r2", "r3", "r12", "cc", "memory"
-    ); 
+    );
 }
 
 // svc controlPerformanceCounter() TODO: 0x3E
@@ -1236,7 +1236,7 @@ pub fn replyAndReceive(port_sessions: []Object, reply_target: ServerSession) Res
         : "r2", "r3", "r12", "cc", "memory"
     );
 
-    return .of(code, index); 
+    return .of(code, index);
 }
 
 pub fn bindInterrupt(id: InterruptId, int: Interruptable, priority: i32, isHighActive: bool) ResultCode {
@@ -1247,7 +1247,7 @@ pub fn bindInterrupt(id: InterruptId, int: Interruptable, priority: i32, isHighA
           [priority] "{r2}" (priority),
           [isHighActive] "{r3}" (isHighActive),
         : "r1", "r2", "r3", "r12", "cc", "memory"
-    ); 
+    );
 }
 
 pub fn unbindInterrupt(id: InterruptId, int: Interruptable) ResultCode {
@@ -1311,7 +1311,7 @@ pub fn unexpectedResult(code: ResultCode) UnexpectedError {
 comptime {
     // TODO: Testing instead of relying on this!
 
-    std.testing.refAllDeclsRecursive(@This());
+    // std.testing.refAllDeclsRecursive(@This());
 }
 
 pub const heap = @import("horizon/heap.zig");

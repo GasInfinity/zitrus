@@ -160,6 +160,8 @@ pub const ResultDescription = enum(u10) {
 };
 
 pub const ResultCode = packed struct(i32) {
+    pub const success: ResultCode = @bitCast(@as(u32, 0));
+
     pub const timeout: ResultCode = @bitCast(@as(u32, 0x09401BFE));
     pub const out_of_sync_objects: ResultCode = @bitCast(@as(u32, 0xC8601801));
     pub const out_of_memory_blocks: ResultCode = @bitCast(@as(u32, 0xC8601802));
@@ -189,7 +191,7 @@ pub fn Result(T: type) type {
         failure: ResultCode,
 
         pub inline fn of(code: ResultCode, value: T) Res {
-            return if(code.isSuccess()) .{ .success = .{ .code = code, .value = value } } else .{ .failure = code };
+            return if (code.isSuccess()) .{ .success = .{ .code = code, .value = value } } else .{ .failure = code };
         }
     };
 }

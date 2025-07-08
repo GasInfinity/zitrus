@@ -378,7 +378,7 @@ session: ClientSession,
 pub fn init(srv: ServiceManager) Error!Config {
     var last_error: Error = undefined;
     const config_session = used: for (service_names) |service_name| {
-        const config_session = srv.getService(service_name, true) catch |err| {
+        const config_session = srv.getService(service_name, .wait) catch |err| {
             last_error = err;
             continue;
         };
@@ -394,137 +394,111 @@ pub fn deinit(config: *Config) void {
     config.* = undefined;
 }
 
-pub fn getConfigU(cfg: Config, comptime block: Block) Error!block.Data() {
+pub fn getConfigUser(cfg: Config, comptime block: Block) Error!block.Data() {
     var value: block.Data() = undefined;
-    try cfg.sendGetConfigInfoUser(block, std.mem.asBytes(&value));
+    try cfg.sendGetConfigUser(block, std.mem.asBytes(&value));
     return value;
 }
 
-pub fn sendGetConfigInfoUser(cfg: Config, block: Block, output: []u8) Error!void {
+pub fn sendGetConfigUser(cfg: Config, block: Block, output: []u8) Error!void {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.get_config_user, .{
-        output.len,
-        @intFromEnum(block),
-    }, .{
-        ipc.BufferMappingTranslationDescriptor.init(output.len, false, true),
-        @intFromPtr(output.ptr),
-    });
-
-    try cfg.session.sendRequest();
+    return switch (try data.ipc.sendRequest(cfg.session, command.GetConfigUser, .{ .size = output.len, .blk = block, .output = .init(output) }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendGetRegion(cfg: Config) Error!Region {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.get_region, .{}, .{});
-
-    try cfg.session.sendRequest();
-    return @enumFromInt(@as(u8, @truncate(data.ipc.parameters[1])));
+    return switch (try data.ipc.sendRequest(cfg.session, command.GetRegion, .{}, .{})) {
+        .success => |s| s.value.response.region,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendIsCoppacsSupported(cfg: Config) Error!bool {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.is_coppacs_supported, .{}, .{});
-
-    try cfg.session.sendRequest();
-    return data.ipc.parameters[1] != 0;
+    return switch (try data.ipc.sendRequest(cfg.session, command.IsCoppacsSupported, .{}, .{})) {
+        .success => |s| s.value.response.supported,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendGetSystemModel(cfg: Config) Error!SystemModel {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.get_system_model, .{}, .{});
-
-    try cfg.session.sendRequest();
-    return @enumFromInt(@as(u8, @truncate(data.ipc.parameters[1])));
+    return switch (try data.ipc.sendRequest(cfg.session, command.GetSystemModel, .{}, .{})) {
+        .success => |s| s.value.response.model,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendIsModelNintendo2DS(cfg: Config) Error!bool {
+pub fn sendIsModelNintendo2ds(cfg: Config) Error!bool {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.is_model_nintendo_2ds, .{}, .{});
-
-    try cfg.session.sendRequest();
-    return data.ipc.parameters[1] != 0;
+    return switch (try data.ipc.sendRequest(cfg.session, command.IsModelNintendo2ds, .{}, .{})) {
+        .success => |s| s.value.response.value,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendGetCountryCodeString(cfg: Config, id: Country) Error![2]u8 {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.get_country_code_string, .{@as(u32, @intFromEnum(id))}, .{});
-
-    try cfg.session.sendRequest();
-    return .{ @truncate(data.ipc.parameters[1]), @truncate(data.ipc.parameters[1] >> 8) };
+    return switch (try data.ipc.sendRequest(cfg.session, command.GetCountryCodeString, .{ .id = id }, .{})) {
+        .success => |s| s.value.response.str,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendGetCountryCodeId(cfg: Config, string: *const [2]u8) Error!Country {
+pub fn sendGetCountryCodeId(cfg: Config, string: [2]u8) Error!Country {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.get_country_code_id, .{@as(u32, @as(u16, string.*))}, .{});
-
-    try cfg.session.sendRequest();
-    return @enumFromInt(data.ipc.parameters[1]);
+    return switch (try data.ipc.sendRequest(cfg.session, command.GetCountryCodeId, .{ .str = string }, .{})) {
+        .success => |s| s.value.response.id,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub const Command = enum(u16) {
-    get_config_user = 0x0001,
-    get_region,
-    get_transferable_id,
-    is_coppacs_supported,
-    get_system_model,
-    is_model_nintendo_2ds,
-    write_unknown_0x00160000,
-    translate_country_info,
-    get_country_code_string,
-    get_country_code_id,
-    is_fangate_supported,
+pub const command = struct {
+    pub const GetConfigUser = ipc.Command(Id, .get_config_user, struct {
+        size: usize,
+        blk: Block,
+        output: ipc.MappedSlice(.write),
+    }, struct { output: ipc.MappedSlice(.write) });
+    pub const GetRegion = ipc.Command(Id, .get_region, struct {}, struct { region: Region });
+    pub const GetTransferableId = ipc.Command(Id, .get_transferable_id, struct { salt: u20 }, struct { hash: u64 });
+    pub const IsCoppacsSupported = ipc.Command(Id, .is_coppacs_supported, struct {}, struct { supported: bool });
+    pub const GetSystemModel = ipc.Command(Id, .get_system_model, struct {}, struct { model: SystemModel });
+    pub const IsModelNintendo2ds = ipc.Command(Id, .is_model_nintendo_2ds, struct {}, struct { value: bool });
+    pub const GetCountryCodeString = ipc.Command(Id, .get_country_code_string, struct { id: Country }, struct { str: [2]u8 });
+    pub const GetCountryCodeId = ipc.Command(Id, .get_country_code_id, struct { str: [2]u8 }, struct { id: Country });
 
-    get_config_system = 0x0401,
-    set_config_system,
-    update_config_nand_savegame,
-    get_local_friend_code_seed_data,
-    get_local_friend_code_seed,
-    s_get_region,
-    secureinfo_get_byte_0x101,
-    get_serial_no,
-    update_config_blk_0x00040003,
-    s_unknown_0,
-    s_unknown_1,
-    s_unknown_2,
-    set_uuid_clock_sequence,
-    get_uuid_clock_sequence,
-    clear_parental_controls,
+    pub const Id = enum(u16) {
+        get_config_user = 0x0001,
+        get_region,
+        get_transferable_id,
+        is_coppacs_supported,
+        get_system_model,
+        is_model_nintendo_2ds,
+        write_unknown_0x00160000,
+        translate_country_info,
+        get_country_code_string,
+        get_country_code_id,
+        is_fangate_supported,
 
-    pub inline fn normalParameters(cmd: Command) u6 {
-        return switch (cmd) {
-            .get_config_user => 2,
-            .get_region => 0,
-            .get_transferable_id => 1,
-            .is_coppacs_supported => 0,
-            .get_system_model => 0,
-            .is_model_nintendo_2ds => 0,
-            .write_unknown_0x00160000 => 1,
-            .translate_country_info => 2,
-            .get_country_code_string => 1,
-            .get_country_code_id => 1,
-            .is_fangate_supported => 0,
-
-            else => @compileError("Not implemented"),
-        };
-    }
-
-    pub inline fn translateParameters(cmd: Command) u6 {
-        return switch (cmd) {
-            .get_config_user => 2,
-            .get_region => 0,
-            .get_transferable_id => 0,
-            .is_coppacs_supported => 0,
-            .get_system_model => 0,
-            .is_model_nintendo_2ds => 0,
-            .write_unknown_0x00160000 => 0,
-            .translate_country_info => 0,
-            .get_country_code_string => 0,
-            .get_country_code_id => 0,
-            .is_fangate_supported => 0,
-
-            else => @compileError("Not implemented"),
-        };
-    }
+        get_config_system = 0x0401,
+        set_config_system,
+        update_config_nand_savegame,
+        get_local_friend_code_seed_data,
+        get_local_friend_code_seed,
+        s_get_region,
+        secureinfo_get_byte_0x101,
+        get_serial_no,
+        update_config_blk_0x00040003,
+        s_unknown_0,
+        s_unknown_1,
+        s_unknown_2,
+        set_uuid_clock_sequence,
+        get_uuid_clock_sequence,
+        clear_parental_controls,
+    };
 };
 
 const Config = @This();

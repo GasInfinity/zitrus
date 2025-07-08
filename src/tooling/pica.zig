@@ -4,28 +4,27 @@ pub const Encoder = @import("pica/Encoder.zig");
 pub const as = @import("pica/as.zig");
 pub const disas = @import("pica/disas.zig");
 
-pub const F3_12 = packed struct(u16) { 
+pub const F3_12 = packed struct(u16) {
     pub const Float = zsflt.Float(3, 12);
 
     value: Float,
 };
 
-
-pub const F7_12 = packed struct(u32) { 
+pub const F7_12 = packed struct(u32) {
     pub const Float = zsflt.Float(7, 12);
 
     value: Float,
     _: u12 = 0,
 };
 
-pub const F7_16 = packed struct(u32) { 
+pub const F7_16 = packed struct(u32) {
     pub const Float = zsflt.Float(7, 16);
 
     value: Float,
     _: u8 = 0,
 };
 
-pub const F7_23 = packed struct(u32) { 
+pub const F7_23 = packed struct(u32) {
     pub const Float = zsflt.Float(7, 23);
 
     value: Float,

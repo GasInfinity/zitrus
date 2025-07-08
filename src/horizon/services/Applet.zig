@@ -91,7 +91,7 @@ pub const Utility = enum(u32) {
     unknown2,
 };
 
-pub const AppCommand = enum(u32) {
+pub const Command = enum(u32) {
     none,
     wakeup,
     request,
@@ -166,13 +166,13 @@ pub const EventResult = union(enum) {
     message,
 
     /// Internal, should be unreachable to user code
-    transition_completed: AppCommand,
+    transition_completed: Command,
     sleep_wakeup,
 };
 
-pub const Flags = packed struct(u8) {
-    pub const default = Flags{ .allow_home = true, .allow_sleep = true };
-    pub const safe = Flags{ .allow_home = false, .allow_sleep = true };
+pub const State = packed struct(u8) {
+    pub const default: State = .{ .allow_home = true, .allow_sleep = true };
+    pub const safe: State = .{ .allow_home = false, .allow_sleep = true };
 
     allow_home: bool = false,
     allow_sleep: bool = false,
@@ -203,13 +203,13 @@ lock: Mutex,
 available_service_name: []const u8,
 events: ?[2]Event = null,
 current_transition: TransitionState,
-flags: Flags,
+flags: State,
 chainload: ChainloadTarget = .none,
 
 pub fn init(srv: ServiceManager) !Applet {
     var last_error: anyerror = undefined;
     const available_service_name, var available_service: Session = used: for (service_names) |service_name| {
-        const service_handle = srv.sendGetServiceHandle(service_name, true) catch |err| {
+        const service_handle = srv.sendGetServiceHandle(service_name, .wait) catch |err| {
             last_error = err;
             continue;
         };
@@ -222,10 +222,10 @@ pub fn init(srv: ServiceManager) !Applet {
     var lock: Mutex = lock: {
         defer available_service.deinit();
 
-        data.ipc.fillCommand(Command.get_lock_handle, .{@as(u32, 0x0)}, .{});
-        try available_service.sendRequest();
-
-        break :lock @bitCast(data.ipc.parameters[4]);
+        break :lock switch (try data.ipc.sendRequest(available_service, command.GetLockHandle, .{ .flags = 0x0 }, .{})) {
+            .success => |s| s.value.response.lock,
+            .failure => |code| return horizon.unexpectedResult(code),
+        };
     };
 
     errdefer lock.deinit();
@@ -258,7 +258,7 @@ pub fn deinit(apt: *Applet, srv: ServiceManager) void {
     } else switch (apt.chainload) {
         .none => true,
         else => close: {
-            const program_id: u64, const media_type: Filesystem.MediaType, const flags: ApplicationJumpFlags, const parameters: []const u8, const hmac: *const [0x20]u8 = switch (apt.chainload) {
+            const program_id: u64, const media_type: Filesystem.MediaType, const flags: command.PrepareToDoApplicationJump.Request.Flags, const parameters: []const u8, const hmac: *const [0x20]u8 = switch (apt.chainload) {
                 .caller => .{ 0x00, .nand, .use_ns_parameters, &.{}, &@splat(0) },
                 .soft_reset => .{ 0x00, .nand, .use_app_id_parameters, &.{}, &@splat(0) },
                 else => @panic("TODO: chainload"),
@@ -356,9 +356,11 @@ pub fn waitEventTimeout(apt: *Applet, srv: ServiceManager, timeout_ns: i64, gsp:
         },
         1 => {
             const params = try apt.sendGlanceParameter(srv, environment.program_meta.app_id, &.{});
-            defer params.deinit();
+            defer if(params.parameter_handle != .null) {
+                _ = horizon.closeHandle(params.parameter_handle);
+            };
 
-            const cmd = params.command;
+            const cmd = params.cmd;
 
             sw: switch (cmd) {
                 .dsp_sleep => {},
@@ -513,7 +515,9 @@ pub fn screenTransfer(apt: *Applet, srv: ServiceManager, gsp: *GspGpu, target_ap
         .response => {
             var handle: Object = .null;
             const params = try apt.sendReceiveParameter(srv, environment.program_meta.app_id, std.mem.asBytes(&handle));
-            defer params.deinit();
+            defer if(params.parameter_handle.handle != .null) {
+                _ = horizon.closeHandle(params.parameter_handle.handle);
+            };
 
             break :capture_handle_wait handle;
         },
@@ -530,109 +534,95 @@ pub fn screenTransfer(apt: *Applet, srv: ServiceManager, gsp: *GspGpu, target_ap
     try apt.sendSendCaptureBufferInfo(srv, &apt_capture_info);
 }
 
-pub fn sendInitialize(apt: Applet, srv: ServiceManager, app_id: AppId, attr: Attributes) Error![2]Event {
-    try apt.lockSendCommand(srv, Command.initialize, .{ app_id, attr }, .{}, null);
-
-    const data = tls.getThreadLocalStorage();
-    // NOTE: notification, resume
-    return .{ @bitCast(data.ipc.parameters[2]), @bitCast(data.ipc.parameters[3]) };
+pub fn sendInitialize(apt: Applet, srv: ServiceManager, id: AppId, attr: Attributes) Error![2]Event {
+    return switch(try apt.lockSendCommand(srv, command.Initialize, .{ .id = id, .attributes = attr }, .{})) {
+        .success => |s| s.value.response.notification_resume,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendEnable(apt: Applet, srv: ServiceManager, attr: Attributes) Error!void {
-    return try apt.lockSendCommand(srv, Command.enable, .{attr}, .{}, null);
-}
-
-pub fn sendFinalize(apt: Applet, srv: ServiceManager, app_id: AppId) !void {
-    return apt.lockSendCommand(srv, Command.finalize, .{app_id}, .{}, null);
-}
-
-pub const ManagerInfo = struct {
-    position: Position,
-    requested: AppId,
-    home_menu: AppId,
-    current: AppId,
-};
-
-pub fn sendGetAppletManInfo(apt: Applet, srv: ServiceManager, position: Position) !ManagerInfo {
-    try apt.lockSendCommand(srv, Command.get_applet_man_info, .{@as(u32, @intFromEnum(position))}, .{}, null);
-
-    const data = tls.getThreadLocalStorage();
-    return ManagerInfo{
-        .position = @enumFromInt(data.ipc.parameters[1]),
-        .requested = @enumFromInt(data.ipc.parameters[2]),
-        .home_menu = @enumFromInt(data.ipc.parameters[3]),
-        .current = @enumFromInt(data.ipc.parameters[4]),
+    return switch(try apt.lockSendCommand(srv, command.Enable, .{ .attributes = attr }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendIsRegistered(apt: Applet, srv: ServiceManager, app_id: AppId) !bool {
-    try apt.lockSendCommand(srv, Command.is_registered, .{app_id}, .{}, null);
-
-    const data = tls.getThreadLocalStorage();
-    return data.ipc.parameters[1] != 0;
-}
-
-pub fn sendInquireNotification(apt: Applet, srv: ServiceManager, app_id: AppId) !Notification {
-    try apt.lockSendCommand(srv, Command.inquire_notification, .{app_id}, .{}, null);
-
-    const data = tls.getThreadLocalStorage();
-    return @as(Notification, @enumFromInt(data.ipc.parameters[1]));
-}
-
-pub fn sendSendParameter(apt: Applet, srv: ServiceManager, src: AppId, dst: AppId, cmd: AppCommand, handle: Object, parameter: []const u8) !void {
-    try apt.lockSendCommand(srv, Command.send_parameter, .{ @intFromEnum(src), @intFromEnum(dst), @intFromEnum(cmd), parameter.len }, .{ ipc.HandleTranslationDescriptor.init(0), @intFromEnum(handle), ipc.StaticBufferTranslationDescriptor.init(parameter.len, 0), @intFromPtr(parameter.ptr) }, null);
-}
-
-pub const ParameterResult = struct {
-    sender: AppId,
-    command: AppCommand,
-    actual_size: usize,
-    parameter: Object,
-
-    pub fn deinit(result: ParameterResult) void {
-        if (result.parameter != .null) {
-            _ = horizon.closeHandle(result.parameter);
-        }
-    }
-};
-
-fn sendQueryParameter(apt: Applet, comptime cmd: Command, srv: ServiceManager, app_id: AppId, parameter: []u8) !ParameterResult {
-    try apt.lockSendCommand(srv, cmd, .{ app_id, parameter.len }, .{}, &.{ @bitCast(ipc.StaticBufferTranslationDescriptor.init(parameter.len, 0)), @intFromPtr(parameter.ptr) });
-
-    const data = tls.getThreadLocalStorage();
-    return ParameterResult{
-        .sender = @enumFromInt(data.ipc.parameters[1]),
-        .command = @enumFromInt(data.ipc.parameters[2]),
-        .actual_size = data.ipc.parameters[3],
-        .parameter = @enumFromInt(data.ipc.parameters[5]),
+pub fn sendFinalize(apt: Applet, srv: ServiceManager, id: AppId) !void {
+    return switch(try apt.lockSendCommand(srv, command.Finalize, .{ .id = id }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendReceiveParameter(apt: Applet, srv: ServiceManager, app_id: AppId, parameter: []u8) !ParameterResult {
-    return apt.sendQueryParameter(.receive_parameter, srv, app_id, parameter);
+pub fn sendGetAppletManInfo(apt: Applet, srv: ServiceManager, position: Position) !command.GetAppletManInfo.Response {
+    return switch(try apt.lockSendCommand(srv, command.GetAppletManInfo, .{ .position = position }, .{})) {
+        .success => |s| s.value.response,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendGlanceParameter(apt: Applet, srv: ServiceManager, app_id: AppId, parameter: []u8) !ParameterResult {
-    return apt.sendQueryParameter(.glance_parameter, srv, app_id, parameter);
+pub fn sendIsRegistered(apt: Applet, srv: ServiceManager, id: AppId) !bool {
+    return switch(try apt.lockSendCommand(srv, command.IsRegistered, .{ .id = id }, .{})) {
+        .success => |s| s.value.response.registered,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendInquireNotification(apt: Applet, srv: ServiceManager, id: AppId) !Notification {
+    return switch(try apt.lockSendCommand(srv, command.InquireNotification, .{ .id = id }, .{})) {
+        .success => |s| s.value.response.notification,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendSendParameter(apt: Applet, srv: ServiceManager, src: AppId, dst: AppId, cmd: Command, handle: Object, parameter: []const u8) !void {
+    return switch(try apt.lockSendCommand(srv, command.SendParameter, .{ .src_id = src, .dst_id = dst, .cmd = cmd, .parameter_size = parameter.len, .parameter_handle = handle, .parameter = .init(parameter) }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendReceiveParameter(apt: Applet, srv: ServiceManager, id: AppId, parameter: []u8) !command.ReceiveParameter.Response {
+    return switch(try apt.lockSendCommand(srv, command.ReceiveParameter, .{ .id = id, .parameter_size = parameter.len }, .{ parameter })) {
+        .success => |s| s.value.response,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendGlanceParameter(apt: Applet, srv: ServiceManager, id: AppId, parameter: []u8) !command.GlanceParameter.Response {
+    return switch(try apt.lockSendCommand(srv, command.GlanceParameter, .{ .id = id, .parameter_size = parameter.len }, .{ parameter })) {
+        .success => |s| s.value.response,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendCancelParameter(apt: Applet, srv: ServiceManager, src: AppId, dst: AppId) !bool {
-    try apt.lockSendCommand(srv, Command.cancel_parameter, .{}, .{ @as(u32, @intFromBool(src != .none)), src, @as(u32, @intFromBool(dst != .none)), dst }, null);
-
-    const data = tls.getThreadLocalStorage();
-    return data.ipc.parameters[1] != 0;
+    return switch(try apt.lockSendCommand(srv, command.CancelParameter, .{ .check_sender = src != .none, .sender = src, .check_receiver = dst != .none, .receiver = dst }, .{})) {
+        .success => |s| s.value.response.success,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendPrepareToCloseApplication(apt: Applet, srv: ServiceManager, cancel: bool) !void {
-    return apt.lockSendCommand(srv, Command.prepare_to_close_application, .{@as(u32, @intFromBool(cancel))}, .{}, null);
+pub fn sendPrepareToCloseApplication(apt: Applet, srv: ServiceManager, cancel_preload: bool) !void {
+    return switch(try apt.lockSendCommand(srv, command.PrepareToCloseApplication, .{ .cancel_preload = cancel_preload }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendCloseApplication(apt: Applet, srv: ServiceManager, parameters: []const u8, handle: Object) !void {
-    return apt.lockSendCommand(srv, Command.close_application, .{parameters.len}, .{ ipc.HandleTranslationDescriptor.init(0), @intFromEnum(handle), ipc.StaticBufferTranslationDescriptor.init(parameters.len, 0), @intFromPtr(parameters.ptr) }, null);
+    return switch(try apt.lockSendCommand(srv, command.CloseApplication, .{ .parameters_size = parameters.len, .parameter_handle = handle, .parameters = .init(parameters) }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendPrepareToJumpToHomeMenu(apt: Applet, srv: ServiceManager) !void {
-    return apt.lockSendCommand(srv, Command.prepare_to_jump_to_home_menu, .{}, .{}, null);
+    return switch(try apt.lockSendCommand(srv, command.PrepareToJumpToHomeMenu, .{}, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub const JumpToHomeCommand = enum(u8) {
@@ -655,49 +645,74 @@ pub fn sendJumpToHomeMenu(apt: Applet, srv: ServiceManager, params: JumpToHomePa
         else => .{ 'A', 'S', 'H', 'P', @intFromEnum(params) },
     });
 
-    return apt.lockSendCommand(srv, Command.jump_to_home_menu, .{parameters.len}, .{ ipc.HandleTranslationDescriptor.init(0), @as(usize, 0x00), ipc.StaticBufferTranslationDescriptor.init(parameters.len, 0), @intFromPtr(parameters.ptr) }, null);
+    return switch(try apt.lockSendCommand(srv, command.JumpToHomeMenu, .{ .parameters_size = parameters.len, .parameter_handle = .null, .parameters = .init(parameters) }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub const ApplicationJumpFlags = enum(u8) {
-    use_input_parameters,
-    use_ns_parameters,
-    use_app_id_parameters,
-};
-
-pub fn sendPrepareToDoApplicationJump(apt: Applet, srv: ServiceManager, flags: ApplicationJumpFlags, program_id: u64, media_type: Filesystem.MediaType) !void {
-    return apt.lockSendCommand(srv, Command.prepare_to_do_application_jump, .{ @as(u32, @intFromEnum(flags)), @as(u32, @truncate(program_id)), @as(u32, @intCast(program_id >> 32)), @as(u32, @intFromEnum(media_type)) }, .{}, null);
+pub fn sendPrepareToDoApplicationJump(apt: Applet, srv: ServiceManager, flags: command.PrepareToDoApplicationJump.Request.Flags, title_id: u64, media_type: Filesystem.MediaType) !void {
+    return switch(try apt.lockSendCommand(srv, command.PrepareToDoApplicationJump, .{ .flags = flags, .title_id = title_id, .media_type = media_type }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendDoApplicationJump(apt: Applet, srv: ServiceManager, parameters: []const u8, hmac: *const [0x20]u8) Error!void {
-    return apt.lockSendCommand(srv, Command.do_application_jump, .{ parameters.len, hmac.len }, .{ ipc.StaticBufferTranslationDescriptor.init(parameters.len, 0), @intFromPtr(parameters.ptr), ipc.StaticBufferTranslationDescriptor.init(hmac.len, 2), @intFromPtr(hmac) }, null);
+    return switch(try apt.lockSendCommand(srv, command.DoApplicationJump, .{ .parameter_size = parameters.len, .hmac_size = hmac.len, .parameter = .init(parameters), .hmac = .init(hmac[0..20]) }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendDspSleep(apt: Applet, srv: ServiceManager, app_id: AppId, handle: Object) Error!void {
-    return apt.lockSendCommand(srv, Command.send_dsp_sleep, .{app_id}, .{ ipc.StaticBufferTranslationDescriptor.init(0), @intFromEnum(handle) }, null);
+pub fn sendSendDspSleep(apt: Applet, srv: ServiceManager, source: AppId, handle: Object) Error!void {
+    return switch(try apt.lockSendCommand(srv, command.SendDspSleep, .{ .source = source, .handle = handle }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendDspWakeup(apt: Applet, srv: ServiceManager, app_id: AppId, handle: Object) Error!void {
-    return apt.lockSendCommand(srv, Command.send_dsp_wake_up, .{app_id}, .{ ipc.StaticBufferTranslationDescriptor.init(0), @intFromEnum(handle) }, null);
+pub fn sendSendDspWakeup(apt: Applet, srv: ServiceManager, source: AppId, handle: Object) Error!void {
+    return switch(try apt.lockSendCommand(srv, command.SendDspWakeup, .{ .source = source, .handle = handle }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendReplySleepQuery(apt: Applet, srv: ServiceManager, app_id: AppId, reply: QueryReply) Error!void {
-    return apt.lockSendCommand(srv, Command.reply_sleep_query, .{ app_id, reply }, .{}, null);
+pub fn sendReplySleepQuery(apt: Applet, srv: ServiceManager, id: AppId, reply: QueryReply) Error!void {
+    return switch(try apt.lockSendCommand(srv, command.ReplySleepQuery, .{ .id = id, .reply = reply }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendReplySleepNotificationComplete(apt: Applet, srv: ServiceManager, app_id: AppId) Error!void {
-    return apt.lockSendCommand(srv, Command.reply_sleep_notification_complete, .{app_id}, .{}, null);
+pub fn sendReplySleepNotificationComplete(apt: Applet, srv: ServiceManager, id: AppId) Error!void {
+    return switch(try apt.lockSendCommand(srv, command.ReplySleepNotificationComplete, .{ .id = id }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendSendCaptureBufferInfo(apt: Applet, srv: ServiceManager, info: *const CaptureBuffer) Error!void {
-    return apt.lockSendCommand(srv, Command.send_capture_buffer_info, .{@as(usize, @sizeOf(CaptureBuffer))}, .{ ipc.StaticBufferTranslationDescriptor.init(@sizeOf(CaptureBuffer), 0), @intFromPtr(info) }, null);
+    return switch(try apt.lockSendCommand(srv, command.SendCaptureBufferInfo, .{ .capture_size = @sizeOf(CaptureBuffer), .capture = .init(std.mem.asBytes(info)) }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
-pub fn sendNotifyToWait(apt: Applet, srv: ServiceManager, app_id: AppId) Error!void {
-    return apt.lockSendCommand(srv, Command.notify_to_wait, .{app_id}, .{}, null);
+pub fn sendNotifyToWait(apt: Applet, srv: ServiceManager, id: AppId) Error!void {
+    return switch(try apt.lockSendCommand(srv, command.NotifyToWait, .{ .id = id }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendAppletUtility(apt: Applet, srv: ServiceManager, utility: Utility, input: []const u8, output: []u8) Error!void {
-    try apt.lockSendCommand(srv, Command.applet_utility, .{ utility, input.len, output.len }, .{ ipc.StaticBufferTranslationDescriptor.init(input.len, 1), @intFromPtr(input.ptr) }, &.{ @bitCast(ipc.StaticBufferTranslationDescriptor.init(output.len, 0)), @intFromPtr(output.ptr) });
+    // TODO: return the ResultCode from applet_result in the Response, waiting for ziglang# #24231
+    return switch(try apt.lockSendCommand(srv, command.AppletUtility, .{ .utility = utility, .input_size = input.len, .output_size = output.len, .input = .init(input) }, .{ output })) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
 }
 
 pub fn sendSleepIfShellClosed(apt: Applet, srv: ServiceManager) Error!void {
@@ -715,319 +730,277 @@ pub fn sendTryLockTransition(apt: Applet, srv: ServiceManager, transition: Trans
     return success;
 }
 
+// FIXME: returns wrong_arg error?
 pub fn sendUnlockTransition(apt: Applet, srv: ServiceManager, transition: Transition) Error!void {
     return apt.sendAppletUtility(srv, .unlock_transition, std.mem.asBytes(&transition), &.{});
 }
 
-pub fn lockSendCommand(apt: Applet, srv: ServiceManager, comptime cmd: Command, normal: anytype, translate: anytype, static_buffers: ?[]const u32) Error!void {
+pub fn lockSendCommand(apt: Applet, srv: ServiceManager, comptime DefinedCommand: type, request: DefinedCommand.Request, static_buffers: [DefinedCommand.input_static_buffers][]u8) !Result(ipc.Response(DefinedCommand.Response, DefinedCommand.output_static_buffers)) {
     try apt.lock.wait(-1);
     defer apt.lock.release();
 
-    var fresh_session = try srv.sendGetServiceHandle(apt.available_service_name, true);
+    var fresh_session = try srv.sendGetServiceHandle(apt.available_service_name, .wait);
     defer fresh_session.deinit();
 
     const data = tls.getThreadLocalStorage();
 
-    data.ipc.fillCommand(cmd, normal, translate);
-    if (static_buffers) |buffers| {
-        std.debug.assert(buffers.len < data.ipc_static_buffers.len);
-        @memcpy(data.ipc_static_buffers[0..buffers.len], buffers);
-    }
-
-    try fresh_session.sendRequest();
+    return data.ipc.sendRequest(fresh_session, DefinedCommand, request, static_buffers);
 }
 
-// TODO: Finish this, some currently unused commands may not be accurate
-pub const Command = enum(u16) {
-    get_lock_handle = 0x0001,
-    initialize,
-    enable,
-    finalize,
-    get_applet_man_info,
-    get_applet_info,
-    get_last_signaled_applet_id,
-    count_registered_applet,
-    is_registered,
-    get_attribute,
-    inquire_notification,
-    send_parameter,
-    receive_parameter,
-    glance_parameter,
-    cancel_parameter,
-    debug_func,
-    map_program_id_for_debug,
-    set_home_menu_applet_id_for_debug,
-    get_preparation_state,
-    set_preparation_state,
-    prepare_to_start_application,
-    preload_library_applet,
-    finish_preloading_library_applet,
-    prepare_to_start_library_applet,
-    prepare_to_start_system_applet,
-    prepare_to_start_newest_home_menu,
-    start_application,
-    wakeup_application,
-    cancel_application,
-    start_library_applet,
-    start_system_applet,
-    start_newest_home_menu,
-    order_to_close_application,
-    prepare_to_close_application,
-    prepare_to_jump_to_application,
-    jump_to_application,
-    prepare_to_close_library_applet,
-    prepare_to_close_system_applet,
-    close_application,
-    close_library_applet,
-    close_system_applet,
-    order_to_close_system_applet,
-    prepare_to_jump_to_home_menu,
-    jump_to_home_menu,
-    prepare_to_leave_home_menu,
-    leave_home_menu,
-    prepare_to_leave_resident_applet,
-    leave_resident_applet,
-    prepare_to_do_application_jump,
-    do_application_jump,
-    get_program_id_on_application_jump,
-    send_deliver_arg,
-    receive_deliver_arg,
-    load_sys_menu_arg,
-    store_sys_menu_arg,
-    preload_resident_applet,
-    prepare_to_start_resident_applet,
-    start_resident_applet,
-    cancel_library_applet,
-    send_dsp_sleep,
-    send_dsp_wake_up,
-    reply_sleep_query,
-    reply_sleep_notification_complete,
-    send_capture_buffer_info,
-    receive_capture_buffer_info,
-    sleep_system,
-    notify_to_wait,
-    get_shared_font,
-    get_wireless_reboot_info,
-    wrap,
-    unwrap,
-    get_program_info,
-    reboot,
-    get_capture_info,
-    applet_utility,
-    set_fatal_err_disp_mode,
-    get_applet_program_info,
-    hardware_reset_async,
-    set_application_cpu_time_limit,
-    get_application_cpu_time_limit,
-    get_startup_argument,
-    wrap1,
-    unwrap1,
-    unknown_0054,
-    set_screen_capture_post_permission,
-    get_screen_capture_post_permission,
-    wakeup_application2,
-    get_program_id = 0x0058,
-    get_target_platform = 0x0101,
-    check_new_3ds,
-    get_application_running_mode,
-    is_standard_memory_layout,
-    is_title_allowed,
-
-    pub inline fn normalParameters(cmd: Command) u6 {
-        return switch (cmd) {
-            .get_lock_handle => 1,
-            .initialize => 2,
-            .enable => 1,
-            .finalize => 1,
-            .get_applet_man_info => 1,
-            .get_applet_info => 1,
-            .get_last_signaled_applet_id => 0,
-            .count_registered_applet => 0,
-            .is_registered => 1,
-            .get_attribute => 1,
-            .inquire_notification => 1,
-            .send_parameter => 4,
-            .receive_parameter => 2,
-            .glance_parameter => 2,
-            .cancel_parameter => 0,
-            .debug_func => 3,
-            .map_program_id_for_debug => 3,
-            .set_home_menu_applet_id_for_debug => 1,
-            .get_preparation_state => 0,
-            .set_preparation_state => 1,
-            .prepare_to_start_application => 5,
-            .preload_library_applet => 1,
-            .finish_preloading_library_applet => 1,
-            .prepare_to_start_library_applet => 1,
-            .prepare_to_start_system_applet => 1,
-            .prepare_to_start_newest_home_menu => 0,
-            .start_application => 5,
-            .wakeup_application => 0,
-            .cancel_application => 0,
-            .start_library_applet => 3,
-            .start_system_applet => 3,
-            .start_newest_home_menu => 1,
-            .order_to_close_application => 0,
-            .prepare_to_close_application => 1,
-            .prepare_to_jump_to_application => 1,
-            .jump_to_application => 1,
-            .prepare_to_close_library_applet => 3,
-            .prepare_to_close_system_applet => 0,
-            .close_application => 1,
-            .close_library_applet => 1,
-            .close_system_applet => 1,
-            .order_to_close_system_applet => 0,
-            .prepare_to_jump_to_home_menu => 0,
-            .jump_to_home_menu => 1,
-            .prepare_to_leave_home_menu => 0,
-            .leave_home_menu => 1,
-            .prepare_to_leave_resident_applet => 1,
-            .leave_resident_applet => 1,
-            .prepare_to_do_application_jump => 4,
-            .do_application_jump => 2,
-            .get_program_id_on_application_jump => 0,
-            .send_deliver_arg => 2,
-            .receive_deliver_arg => 2,
-            .load_sys_menu_arg => 1,
-            .store_sys_menu_arg => 1,
-            .preload_resident_applet => 1,
-            .prepare_to_start_resident_applet => 1,
-            .start_resident_applet => 1,
-            .cancel_library_applet => 1,
-            .send_dsp_sleep => 1,
-            .send_dsp_wake_up => 1,
-            .reply_sleep_query => 2,
-            .reply_sleep_notification_complete => 1,
-            .send_capture_buffer_info => 1,
-            .receive_capture_buffer_info => 1,
-            .sleep_system => 2,
-            .notify_to_wait => 1,
-            .get_shared_font => 0,
-            .get_wireless_reboot_info => 1,
-            .wrap => 4,
-            .unwrap => 4,
-            .get_program_info => 1,
-            .reboot => 6,
-            .get_capture_info => 1,
-            .applet_utility => 3,
-            .set_fatal_err_disp_mode => 0,
-            .get_applet_program_info => 1,
-            .hardware_reset_async => 0,
-            .set_application_cpu_time_limit => 2,
-            .get_application_cpu_time_limit => 1,
-            .get_startup_argument => 2,
-            .wrap1 => 4,
-            .unwrap1 => 4,
-            .unknown_0054 => 1,
-            .set_screen_capture_post_permission => 1,
-            .get_screen_capture_post_permission => 0,
-            .wakeup_application2 => 1,
-            .get_program_id => 2,
-            .get_target_platform => 0,
-            .check_new_3ds => 0,
-            .get_application_running_mode => 0,
-            .is_standard_memory_layout => 0,
-            .is_title_allowed => 1,
+pub const command = struct {
+    pub const GetLockHandle = ipc.Command(Id, .get_lock_handle, struct { flags: u32 = 0 }, struct {
+        pub const Flags = packed struct(u32) {
+            power_button: bool,
+            order_to_close: bool,
+            _: u30 = 0,
         };
-    }
 
-    pub inline fn translateParameters(cmd: Command) u6 {
-        return switch (cmd) {
-            .get_lock_handle => 0,
-            .initialize => 0,
-            .enable => 0,
-            .finalize => 0,
-            .get_applet_man_info => 0,
-            .get_applet_info => 0,
-            .get_last_signaled_applet_id => 0,
-            .count_registered_applet => 0,
-            .is_registered => 0,
-            .get_attribute => 0,
-            .inquire_notification => 0,
-            .send_parameter => 4,
-            .receive_parameter => 0,
-            .glance_parameter => 0,
-            .cancel_parameter => 4,
-            .debug_func => 2,
-            .map_program_id_for_debug => 0,
-            .set_home_menu_applet_id_for_debug => 0,
-            .get_preparation_state => 0,
-            .set_preparation_state => 0,
-            .prepare_to_start_application => 1,
-            .preload_library_applet => 0,
-            .finish_preloading_library_applet => 0,
-            .prepare_to_start_library_applet => 0,
-            .prepare_to_start_system_applet => 0,
-            .prepare_to_start_newest_home_menu => 0,
-            .start_application => 1,
-            .wakeup_application => 0,
-            .cancel_application => 0,
-            .start_library_applet => 2,
-            .start_system_applet => 2,
-            .start_newest_home_menu => 1,
-            .order_to_close_application => 0,
-            .prepare_to_close_application => 0,
-            .prepare_to_jump_to_application => 0,
-            .jump_to_application => 1,
-            .prepare_to_close_library_applet => 0,
-            .prepare_to_close_system_applet => 0,
-            .close_application => 4,
-            .close_library_applet => 0,
-            .close_system_applet => 0,
-            .order_to_close_system_applet => 0,
-            .prepare_to_jump_to_home_menu => 0,
-            .jump_to_home_menu => 4,
-            .prepare_to_leave_home_menu => 0,
-            .leave_home_menu => 1,
-            .prepare_to_leave_resident_applet => 0,
-            .leave_resident_applet => 0,
-            .prepare_to_do_application_jump => 0,
-            .do_application_jump => 4,
-            .get_program_id_on_application_jump => 0,
-            .send_deliver_arg => 0,
-            .receive_deliver_arg => 0,
-            .load_sys_menu_arg => 0,
-            .store_sys_menu_arg => 2,
-            .preload_resident_applet => 0,
-            .prepare_to_start_resident_applet => 0,
-            .start_resident_applet => 0,
-            .cancel_library_applet => 0,
-            .send_dsp_sleep => 1,
-            .send_dsp_wake_up => 1,
-            .reply_sleep_query => 0,
-            .reply_sleep_notification_complete => 0,
-            .send_capture_buffer_info => 2,
-            .receive_capture_buffer_info => 0,
-            .sleep_system => 0,
-            .notify_to_wait => 0,
-            .get_shared_font => 0,
-            .get_wireless_reboot_info => 0,
-            .wrap => 1,
-            .unwrap => 1,
-            .get_program_info => 0,
-            .reboot => 3,
-            .get_capture_info => 0,
-            .applet_utility => 2,
-            .set_fatal_err_disp_mode => 0,
-            .get_applet_program_info => 0,
-            .hardware_reset_async => 0,
-            .set_application_cpu_time_limit => 2,
-            .get_application_cpu_time_limit => 0,
-            .get_startup_argument => 0,
-            .wrap1 => 1,
-            .unwrap1 => 1,
-            .unknown_0054 => 0,
-            .set_screen_capture_post_permission => 0,
-            .get_screen_capture_post_permission => 0,
-            .wakeup_application2 => 1,
-            .get_program_id => 0,
-            .get_target_platform => 0,
-            .check_new_3ds => 0,
-            .get_application_running_mode => 0,
-            .is_standard_memory_layout => 0,
-            .is_title_allowed => 1,
+        attributes: Attributes,
+        state: Flags,
+        lock: Mutex,
+    });
+    pub const Initialize = ipc.Command(Id, .initialize, struct {
+        id: AppId,
+        attributes: Attributes,
+    }, struct {
+        notification_resume: [2]Event,
+    });
+    pub const Enable = ipc.Command(Id, .enable, struct { attributes: Attributes }, struct {});
+    pub const Finalize = ipc.Command(Id, .finalize, struct { id: AppId }, struct {});
+    pub const GetAppletManInfo = ipc.Command(Id, .get_applet_man_info, struct {
+        position: Position, 
+    }, struct {
+        position: Position,
+        requested: AppId,
+        home_menu: AppId,
+        current: AppId,
+    });
+    pub const GetAppletInfo = ipc.Command(Id, .get_applet_info, struct {
+        id: AppId,
+    }, struct {
+        title_id: u64,
+        media_type: Filesystem.MediaType,
+        registered: bool,
+        loaded: bool,
+        attributes: Attributes,
+    });
+    pub const GetLastSignaledAppletId = ipc.Command(Id, .get_last_signaled_applet_id, struct {}, struct { id: AppId });
+    pub const CountRegisteredApplet = ipc.Command(Id, .count_registered_applet, struct {}, struct { registered: u32 });
+    pub const IsRegistered = ipc.Command(Id, .is_registered, struct { id: AppId }, struct { registered: bool });
+    pub const GetAttribute = ipc.Command(Id, .get_attribute, struct { id: AppId }, struct { attributes: Attributes });
+    pub const InquireNotification = ipc.Command(Id, .inquire_notification, struct { id: AppId }, struct { notification: Notification });
+    pub const SendParameter = ipc.Command(Id, .send_parameter, struct {
+        src_id: AppId,
+        dst_id: AppId,
+        cmd: Command,
+        parameter_size: usize,
+        parameter_handle: horizon.Object,
+        parameter: ipc.StaticSlice(0),
+    }, struct {});
+    pub const ReceiveParameter = ipc.Command(Id, .receive_parameter, struct {
+        pub const static_buffers = 1;
+        id: AppId,
+        parameter_size: usize,
+    }, struct {
+        sender: AppId,
+        cmd: Command,
+        actual_size: usize,
+        parameter_handle: ipc.MoveHandle(horizon.Object),
+        actual_parameter: ipc.StaticSlice(0),
+    });
+    pub const GlanceParameter = ipc.Command(Id, .glance_parameter, struct {
+        pub const static_buffers = 1;
+        id: AppId,
+        parameter_size: usize,
+    }, struct {
+        sender: AppId,
+        cmd: Command,
+        actual_size: usize,
+        parameter_handle: horizon.Object,
+        actual_parameter: ipc.StaticSlice(0),
+    });
+    pub const CancelParameter = ipc.Command(Id, .cancel_parameter, struct {
+        check_sender: bool,
+        sender: AppId,
+        check_receiver: bool,
+        receiver: AppId,
+    }, struct {
+        success: bool,
+    });
+    // TODO: DebugFunc
+    // TODO: MapProgramIdForDebug 
+    // TODO: SetHomeMenuAppletIdForDebug 
+    // TODO: GetPreparationState 
+    // TODO: SetPreparationState 
+    // TODO: PrepareToStartApplication
+    // TODO: PreloadLibraryApplet 
+    // TODO: FinishPreloadingLibraryApplet
+    // TODO: PrepareToStartLibraryApplet
+    // TODO: PrepareToStartSystemApplet
+    // TODO: PrepareToStartNewestHomeMenu
+    // TODO: StartApplication
+    // TODO: WakeupApplication
+    // TODO: CancelApplication
+    // TODO: StartLibraryApplet
+    // TODO: StartSystemApplet
+    // TODO: StartNewestHomeMenu
+    // TODO: OrderToCloseApplcation
+    pub const PrepareToCloseApplication = ipc.Command(Id, .prepare_to_close_application, struct { cancel_preload: bool }, struct {}); 
+    // TODO: PrepareToJumpToApplication
+    // TODO: JumpToApplication
+    // TODO: PrepareToCloseLibraryApplet
+    // TODO: PrepareToCloseSystemApplet
+    pub const CloseApplication = ipc.Command(Id, .close_application, struct {
+        parameters_size: usize,
+        parameter_handle: horizon.Object,
+        parameters: ipc.StaticSlice(0),
+    }, struct {}); 
+    // TODO: ... 
+    pub const PrepareToJumpToHomeMenu = ipc.Command(Id, .prepare_to_jump_to_home_menu, struct {}, struct {});
+    pub const JumpToHomeMenu = ipc.Command(Id, .jump_to_home_menu, struct {
+        parameters_size: usize,
+        parameter_handle: horizon.Object,
+        parameters: ipc.StaticSlice(0),
+    }, struct {});
+    // TODO: ...
+    pub const PrepareToDoApplicationJump = ipc.Command(Id, .prepare_to_do_application_jump, struct {
+        pub const Flags = enum(u8) {
+            use_input_parameters,
+            use_ns_parameters,
+            use_app_id_parameters,
         };
-    }
+
+        flags: Flags,
+        title_id: u64,
+        media_type: Filesystem.MediaType,
+    }, struct {});
+    pub const DoApplicationJump = ipc.Command(Id, .do_application_jump, struct {
+        parameter_size: usize,
+        hmac_size: usize,
+        parameter: ipc.StaticSlice(0),
+        hmac: ipc.StaticSlice(2),
+    }, struct {});
+    // TODO: ...
+    pub const SendDspSleep = ipc.Command(Id, .send_dsp_sleep, struct { source: AppId, handle: horizon.Object }, struct {});
+    pub const SendDspWakeup = ipc.Command(Id, .send_dsp_wakeup, struct { source: AppId, handle: horizon.Object }, struct {});
+    pub const ReplySleepQuery = ipc.Command(Id, .reply_sleep_query, struct {
+        id: AppId,
+        reply: QueryReply,
+    }, struct {});
+    pub const ReplySleepNotificationComplete = ipc.Command(Id, .reply_sleep_notification_complete, struct {
+        id: AppId,
+    }, struct {});
+    pub const SendCaptureBufferInfo = ipc.Command(Id, .send_capture_buffer_info, struct {
+        capture_size: usize,
+        capture: ipc.StaticSlice(0),
+    }, struct {});
+    // TODO: ...
+    pub const NotifyToWait = ipc.Command(Id, .notify_to_wait, struct { id: AppId }, struct {});
+    // TODO: ...
+    pub const AppletUtility = ipc.Command(Id, .applet_utility, struct {
+        pub const static_buffers = 1;
+        utility: Utility,
+        input_size: usize,
+        output_size: usize,
+        input: ipc.StaticSlice(1),
+    }, struct { applet_result: ResultCode, output: ipc.StaticSlice(0) });
+    // TODO: ...
+
+    pub const Id = enum(u16) {
+        get_lock_handle = 0x0001,
+        initialize,
+        enable,
+        finalize,
+        get_applet_man_info,
+        get_applet_info,
+        get_last_signaled_applet_id,
+        count_registered_applet,
+        is_registered,
+        get_attribute,
+        inquire_notification,
+        send_parameter,
+        receive_parameter,
+        glance_parameter,
+        cancel_parameter,
+        debug_func,
+        map_program_id_for_debug,
+        set_home_menu_applet_id_for_debug,
+        get_preparation_state,
+        set_preparation_state,
+        prepare_to_start_application,
+        preload_library_applet,
+        finish_preloading_library_applet,
+        prepare_to_start_library_applet,
+        prepare_to_start_system_applet,
+        prepare_to_start_newest_home_menu,
+        start_application,
+        wakeup_application,
+        cancel_application,
+        start_library_applet,
+        start_system_applet,
+        start_newest_home_menu,
+        order_to_close_application,
+        prepare_to_close_application,
+        prepare_to_jump_to_application,
+        jump_to_application,
+        prepare_to_close_library_applet,
+        prepare_to_close_system_applet,
+        close_application,
+        close_library_applet,
+        close_system_applet,
+        order_to_close_system_applet,
+        prepare_to_jump_to_home_menu,
+        jump_to_home_menu,
+        prepare_to_leave_home_menu,
+        leave_home_menu,
+        prepare_to_leave_resident_applet,
+        leave_resident_applet,
+        prepare_to_do_application_jump,
+        do_application_jump,
+        get_program_id_on_application_jump,
+        send_deliver_arg,
+        receive_deliver_arg,
+        load_sys_menu_arg,
+        store_sys_menu_arg,
+        preload_resident_applet,
+        prepare_to_start_resident_applet,
+        start_resident_applet,
+        cancel_library_applet,
+        send_dsp_sleep,
+        send_dsp_wake_up,
+        reply_sleep_query,
+        reply_sleep_notification_complete,
+        send_capture_buffer_info,
+        receive_capture_buffer_info,
+        sleep_system,
+        notify_to_wait,
+        get_shared_font,
+        get_wireless_reboot_info,
+        wrap,
+        unwrap,
+        get_program_info,
+        reboot,
+        get_capture_info,
+        applet_utility,
+        set_fatal_err_disp_mode,
+        get_applet_program_info,
+        hardware_reset_async,
+        set_application_cpu_time_limit,
+        get_application_cpu_time_limit,
+        get_startup_argument,
+        wrap1,
+        unwrap1,
+        unknown_0054,
+        set_screen_capture_post_permission,
+        get_screen_capture_post_permission,
+        wakeup_application2,
+        get_program_id = 0x0058,
+        get_target_platform = 0x0101,
+        check_new_3ds,
+        get_application_running_mode,
+        is_standard_memory_layout,
+        is_title_allowed,
+    };
 };
 
 const Applet = @This();
@@ -1041,6 +1014,7 @@ const environment = horizon.environment;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
 
+const Result = horizon.Result;
 const ResultCode = horizon.ResultCode;
 const Object = horizon.Object;
 const Session = horizon.ClientSession;

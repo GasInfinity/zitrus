@@ -4,8 +4,7 @@ pub const ThreadLocalData = extern struct {
     exception_sp_control: u32,
     exception_context_control: u32,
     undefined1: [0x34]u8,
-    ipc: IpcCommandBuffer,
-    ipc_static_buffers: [32]u32,
+    ipc: ipc.Buffer,
 };
 
 pub inline fn getThreadLocalStorage() *ThreadLocalData {
@@ -15,4 +14,3 @@ pub inline fn getThreadLocalStorage() *ThreadLocalData {
 }
 
 const ipc = @import("ipc.zig");
-const IpcCommandBuffer = ipc.CommandBuffer;

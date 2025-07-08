@@ -14,11 +14,8 @@ pub const linear_page_allocator: Allocator = .{
     .vtable = &LinearPageAllocator.vtable,
 };
 
-// XXX: This must use another interface as its not really allocating real memory
-pub const shared_memory_address_allocator = thread_safe_shared_memory_address_allocator.allocator();
-
-var non_thread_safe_shared_memory_address_allocator: SharedMemoryAddressAllocator = .init(@ptrFromInt(horizon.memory.shared_memory_begin));
-var thread_safe_shared_memory_address_allocator: std.heap.ThreadSafeAllocator = .{ .child_allocator = non_thread_safe_shared_memory_address_allocator.allocator() };
+// FIXME: This must use another interface as its not really allocating real memory and cannot be written!
+pub var non_thread_safe_shared_memory_address_allocator: SharedMemoryAddressAllocator = .init(@ptrFromInt(horizon.memory.shared_memory_begin));
 
 const SharedMemoryAddressAllocator = zalloc.bitmap.StaticBitmapAllocator(.fromByteUnits(page_size), (horizon.memory.shared_memory_end - horizon.memory.shared_memory_begin));
 const VRamBankAllocator = zalloc.bitmap.StaticBitmapAllocator(.fromByteUnits(page_size), zitrus.memory.vram_bank_size);

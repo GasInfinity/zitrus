@@ -12,12 +12,12 @@ pub const Id = enum(u16) {
     _,
 
     pub fn fromRegister(comptime internal_regs: *gpu.Registers.Internal, comptime register: *anyopaque) Id {
-        if(@intFromPtr(register) < @intFromPtr(internal_regs) or @intFromPtr(register) >= (@intFromPtr(internal_regs) + @sizeOf(gpu.Registers.Internal)))
+        if (@intFromPtr(register) < @intFromPtr(internal_regs) or @intFromPtr(register) >= (@intFromPtr(internal_regs) + @sizeOf(gpu.Registers.Internal)))
             @compileError("invalid internal register, pointer is not within the valid range");
 
         const offset = @intFromPtr(register) - @intFromPtr(internal_regs);
 
-        if((offset % @alignOf(u32)) != 0)
+        if ((offset % @alignOf(u32)) != 0)
             @compileError("invalid internal register, an ID must be aligned to 4 bytes");
 
         return @enumFromInt(@divExact(offset, @alignOf(u32)));
@@ -38,8 +38,7 @@ pub const Queue = struct {
     }
 
     // TODO: !
-    pub fn addCommand() void {
-    }
+    pub fn addCommand() void {}
 };
 
 const std = @import("std");

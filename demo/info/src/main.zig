@@ -1,5 +1,5 @@
 pub fn main() !void {
-    var srv = try ServiceManager.init("srv:");
+    var srv = try ServiceManager.init();
     defer srv.deinit();
 
     var apt = try Applet.init(srv);
@@ -39,17 +39,17 @@ pub fn main() !void {
     drawString(top, font_width + 1, 0, try std.fmt.bufPrint(&fmt_buffer, "Region: {s}", .{@tagName(try cfg.sendGetRegion())}), .{});
 
     var utf8_buf: [128]u8 = undefined;
-    const name = try cfg.getConfigU(.user_name);
+    const name = try cfg.getConfigUser(.user_name);
     const name_written = try std.unicode.utf16LeToUtf8(&utf8_buf, &name.name);
     drawString(top, 2 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Name: {s}", .{utf8_buf[0..name_written]}), .{});
 
-    const language = try cfg.getConfigU(.language);
+    const language = try cfg.getConfigUser(.language);
     drawString(top, 3 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Language: {s}", .{@tagName(language)}), .{});
 
-    const birthday = try cfg.getConfigU(.birthday);
+    const birthday = try cfg.getConfigUser(.birthday);
     drawString(top, 4 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Birthday: {}/{}", .{ birthday.day, birthday.month }), .{});
 
-    const country_info = try cfg.getConfigU(.country_info);
+    const country_info = try cfg.getConfigUser(.country_info);
     drawString(top, 5 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Country: {}/{}", .{ country_info.province_code, country_info.country_code }), .{});
 
     try framebuffer.flushBuffers(&gsp);
@@ -81,7 +81,7 @@ pub fn main() !void {
         const input = hid.readPadInput();
 
         if (input.current.start) {
-            break;
+            running = false;
         }
 
         while (true) {
@@ -100,7 +100,8 @@ const StringDrawingOptions = struct { wrap: bool = false };
 
 fn drawString(ctx: ScreenCtx, x: isize, y: isize, string: []const u8, options: StringDrawingOptions) void {
     const ctx_height = @divExact(ctx.framebuffer.len, ctx.width);
-    var cx: isize = x;
+    const ctx_width_i: isize = @intCast(ctx.width);
+    var cx: isize = (ctx_width_i - font_width) - x;
     var cy: isize = y;
 
     var i: usize = 0;

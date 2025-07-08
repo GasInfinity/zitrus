@@ -7,7 +7,7 @@ pub const PhysicalAddress = enum(usize) {
 };
 
 pub fn AlignedPhysicalAddress(comptime alignment: std.mem.Alignment) type {
-    if(alignment == .@"1") {
+    if (alignment == .@"1") {
         return PhysicalAddress;
     }
 

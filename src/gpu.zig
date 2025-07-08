@@ -135,11 +135,7 @@ pub const CullingMode = enum(u2) {
     back,
 };
 
-pub const ScissorMode = enum(u2) {
-    disable,
-    outside,
-    inside
-};
+pub const ScissorMode = enum(u2) { disable, outside, inside };
 
 pub const EarlyDepthFunction = enum(u2) {
     ge,
@@ -286,7 +282,7 @@ pub const AttributeArrayComponent = enum(u4) {
     attribute_9,
     attribute_10,
     attribute_11,
-    
+
     padding_4,
     padding_8,
     padding_12,
@@ -348,7 +344,7 @@ pub const Registers = struct {
         memory_copy_dst_writes: u32,
         memory_fill_dst_writes: [2]u32,
         cpu_reads_from_vram_a_b: u32,
-        cpu_writes_to_vram_a_b: u32, 
+        cpu_writes_to_vram_a_b: u32,
     };
 
     // XXX: Proper field names and structures
@@ -496,7 +492,10 @@ pub const Registers = struct {
         pub const Interrupt = extern struct {
             pub const Mask = packed struct(u64) { disabled: @Vector(64, bool) };
             pub const Stat = packed struct(u64) { match: @Vector(64, bool) };
-            pub const AutoStop = packed struct(u32) { stop_command_list: bool, _unused0: u31 = 0, };
+            pub const AutoStop = packed struct(u32) {
+                stop_command_list: bool,
+                _unused0: u31 = 0,
+            };
 
             ack: [64]u8,
             req: [64]u8,
@@ -514,7 +513,7 @@ pub const Registers = struct {
             };
 
             pub const OutputAttributeClock = packed struct(u32) {
-                position_z_present: bool, 
+                position_z_present: bool,
                 color_present: bool,
                 _unused0: u6 = 0,
                 texture_coordinates_0_present: bool,
@@ -965,7 +964,7 @@ pub const Registers = struct {
     _unknown5: u32,
     _unknown6: u32,
     _unused2: u32,
-    traffic: TrafficStatus, 
+    traffic: TrafficStatus,
     _backlight_or_so_1: u32,
     vram_a_base_address: [*]u8,
     vram_b_base_address: [*]u8,

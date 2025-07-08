@@ -7,8 +7,6 @@ pub const arm11 = struct {
     pub const gpu: *zitrus.gpu.Registers = @ptrFromInt(0x10400000);
 };
 
-pub const arm9 = struct {
-
-};
+pub const arm9 = struct {};
 
 const zitrus = @import("zitrus");

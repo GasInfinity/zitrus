@@ -16,7 +16,7 @@ pub fn alloc(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize)
 
     const aligned_len = std.mem.alignForward(usize, len, horizon.heap.page_size);
 
-    return switch(horizon.controlMemory(horizon.MemoryOperation{
+    return switch (horizon.controlMemory(horizon.MemoryOperation{
         .fundamental_operation = .commit,
         .area = .all,
         .linear = true,

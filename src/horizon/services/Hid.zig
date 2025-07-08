@@ -68,7 +68,7 @@ shm_memory_data: ?[]u8 = null,
 pub fn init(srv: ServiceManager) (error{OutOfMemory} || MemoryBlock.MapError || Error)!Hid {
     var last_error: Error = undefined;
     const hid_session = used: for (service_names) |service_name| {
-        const hid_session = srv.getService(service_name, true) catch |err| {
+        const hid_session = srv.getService(service_name, .wait) catch |err| {
             last_error = err;
             continue;
         };
@@ -84,7 +84,7 @@ pub fn init(srv: ServiceManager) (error{OutOfMemory} || MemoryBlock.MapError || 
     const input = try hid.sendGetIPCHandles();
     hid.input = input;
 
-    const shm_memory_data = try horizon.heap.shared_memory_address_allocator.alloc(u8, 0x2B0);
+    const shm_memory_data = try horizon.heap.non_thread_safe_shared_memory_address_allocator.alloc(0x2B0, .@"1");
     hid.shm_memory_data = shm_memory_data;
 
     try input.shm.map(@alignCast(shm_memory_data.ptr), .r, .dont_care);
@@ -95,7 +95,7 @@ pub fn deinit(hid: *Hid) void {
     if (hid.input) |*input| {
         if (hid.shm_memory_data) |shm_data| {
             input.shm.unmap(@alignCast(shm_data.ptr));
-            horizon.heap.shared_memory_address_allocator.free(shm_data);
+            horizon.heap.non_thread_safe_shared_memory_address_allocator.free(shm_data);
         }
 
         input.deinit();
@@ -134,74 +134,48 @@ const Handles = struct {
 
 pub fn sendGetIPCHandles(hid: Hid) Error!Handles {
     const data = tls.getThreadLocalStorage();
-    data.ipc.fillCommand(Command.get_ipc_handles, .{}, .{});
-
-    try hid.session.sendRequest();
-
-    return Handles{
-        .shm = @bitCast(data.ipc.parameters[2]),
-        .pad_0 = @bitCast(data.ipc.parameters[3]),
-        .pad_1 = @bitCast(data.ipc.parameters[4]),
-        .accelerometer = @bitCast(data.ipc.parameters[5]),
-        .gyroscope = @bitCast(data.ipc.parameters[6]),
-        .debug_pad = @bitCast(data.ipc.parameters[7]),
+    
+    return switch (try data.ipc.sendRequest(hid.session, command.GetIPCHandles, .{}, .{})) {
+        .success => |s| .{
+            .shm = @bitCast(@intFromEnum(s.value.response.handles[0])),
+            .pad_0 = @bitCast(@intFromEnum(s.value.response.handles[1])),
+            .pad_1 = @bitCast(@intFromEnum(s.value.response.handles[2])),
+            .accelerometer = @bitCast(@intFromEnum(s.value.response.handles[3])),
+            .gyroscope = @bitCast(@intFromEnum(s.value.response.handles[4])),
+            .debug_pad = @bitCast(@intFromEnum(s.value.response.handles[5])),
+        },
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub const Command = enum(u16) {
-    calibrate_touch_screen = 0x0001,
-    update_touch_config,
-    unknown0,
-    unknown1,
-    unknown2,
-    unknown3,
-    unknown4,
-    unknown5,
-    unknown7,
-    get_ipc_handles,
-    start_analog_stick_calibration,
-    stop_analog_stick_calibration,
-    set_analog_stick_calibrate_param,
-    get_analog_stick_calibrate_param,
-    unknown8,
-    unknown9,
-    enable_accelerometer,
-    disable_accelerometer,
-    enable_giroscope_low,
-    disable_giroscope_low,
-    get_giroscope_low_raw_to_dps_coefficient,
-    get_giroscope_low_calibrate_param,
-    get_sound_volume,
+pub const command = struct {
+    pub const GetIPCHandles = ipc.Command(Id, .get_ipc_handles, struct {}, struct { handles: [6]horizon.Object });
 
-    pub inline fn normalParameters(cmd: Command) u6 {
-        return switch (cmd) {
-            .calibrate_touch_screen => 8,
-            .get_ipc_handles => 0,
-            .enable_accelerometer => 0,
-            .disable_accelerometer => 0,
-            .enable_giroscope_low => 0,
-            .disable_giroscope_low => 0,
-            .get_giroscope_low_raw_to_dps_coefficient => 0,
-            .get_giroscope_low_calibrate_param => 0,
-            .get_sound_volume => 0,
-            else => @compileError("Not implemented"),
-        };
-    }
-
-    pub inline fn translateParameters(cmd: Command) u6 {
-        return switch (cmd) {
-            .calibrate_touch_screen => 0,
-            .get_ipc_handles => 0,
-            .enable_accelerometer => 0,
-            .disable_accelerometer => 0,
-            .enable_giroscope_low => 0,
-            .disable_giroscope_low => 0,
-            .get_giroscope_low_raw_to_dps_coefficient => 0,
-            .get_giroscope_low_calibrate_param => 0,
-            .get_sound_volume => 0,
-            else => @compileError("Not implemented"),
-        };
-    }
+    pub const Id = enum(u16) {
+        calibrate_touch_screen = 0x0001,
+        update_touch_config,
+        unknown0,
+        unknown1,
+        unknown2,
+        unknown3,
+        unknown4,
+        unknown5,
+        unknown7,
+        get_ipc_handles,
+        start_analog_stick_calibration,
+        stop_analog_stick_calibration,
+        set_analog_stick_calibrate_param,
+        get_analog_stick_calibrate_param,
+        unknown8,
+        unknown9,
+        enable_accelerometer,
+        disable_accelerometer,
+        enable_giroscope_low,
+        disable_giroscope_low,
+        get_giroscope_low_raw_to_dps_coefficient,
+        get_giroscope_low_calibrate_param,
+        get_sound_volume,
+    };
 };
 
 const Hid = @This();

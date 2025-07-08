@@ -76,7 +76,7 @@ I wanted to learn arm and always wanted to develop 3DS homebrew, also I searched
     - 🔴 Everything not listed here
 
 # HOS Coverage
-Zitrus is currently very work in progress, it's able to run basic homebrew but lots of things are missing (services, ports, syscalls, io, etc...)
+Zitrus is currently very work in progress, it's able to run basic homebrew but lots of things are missing (services, io, etc...)
 
 🟢 Fully implemented
 🟡 Partially implemented
@@ -95,12 +95,14 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 
 ## Port/Service Support
 
-- 🟡 `srv:`
+- 🟢 `srv:`
 - 🟢 `err:f`
 - 🟡 `APT:S/A/U`
 - 🟡 `hid:SPRV/USER`
+- 🟡 `fs:USER`
 - 🟡 `cfg:u/s/i`
-- 🟡 `gsp::Gpu`
+- 🟢 `gsp::Gpu`
+- 🟡 `gsp::Lcd`
 - 🔴 All other [services](https://www.3dbrew.org/wiki/Services_API) not listed here
 
 # Credits

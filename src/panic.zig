@@ -1,8 +1,16 @@
+// FIXME: check for recursve panics
+
 pub fn throw(msg: []const u8, ret_trace: ?*std.builtin.StackTrace) noreturn {
     @branchHint(.cold);
-    var errdisp = ErrorDisplayManager.init("err:f") catch {
-        // Ok, we're cooked if we cannot even connect...
+    defer {
+        while (true) {
+            horizon.breakExecution(.panic);
+        }
         horizon.exit();
+    }
+
+    var errdisp = ErrorDisplayManager.init() catch {
+        return;
     };
     defer errdisp.deinit();
 
@@ -28,9 +36,9 @@ pub fn throw(msg: []const u8, ret_trace: ?*std.builtin.StackTrace) noreturn {
 
     errdisp.sendSetUserString(stack_trace_stream.getWritten()) catch {};
 
-    const process_id: u32 = switch(horizon.getProcessId(.current)) {
+    const process_id: u32 = switch (horizon.getProcessId(.current)) {
         .success => |s| s.value,
-        .failure => |_| 0xDEADCAFE, 
+        .failure => |_| 0xDEADCAFE,
     };
 
     errdisp.sendThrow(ErrorDisplayManager.FatalErrorInfo{
@@ -53,9 +61,6 @@ pub fn throw(msg: []const u8, ret_trace: ?*std.builtin.StackTrace) noreturn {
     }) catch {
         // Bad luck? Try next time :D!
     };
-
-    horizon.breakExecution(.panic);
-    horizon.exit();
 }
 
 pub fn call(msg: []const u8, return_address: ?usize) noreturn {
@@ -183,6 +188,8 @@ pub fn memcpyAlias() noreturn {
 pub fn noreturnReturned() noreturn {
     call("'noreturn' function returned", @returnAddress());
 }
+
+const builtin = @import("builtin");
 
 const std = @import("std");
 const zitrus = @import("zitrus");
