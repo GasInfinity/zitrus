@@ -87,7 +87,6 @@ pub const ResetType = enum(u32) { oneshot, sticky, pulse };
 
 pub const Arbitration = union(Type) {
     pub const Type = enum(u32) { signal, wait_if_less_than, decrement_and_wait_if_less_than, wait_if_less_than_timeout, decrement_and_wait_if_less_than_timeout };
-
     pub const TimeoutValue = extern struct { value: i32, timeout_ns: i64 };
 
     signal: i32,

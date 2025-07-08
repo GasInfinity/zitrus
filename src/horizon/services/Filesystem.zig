@@ -46,8 +46,7 @@ pub const Directory = packed struct(u32) {
 };
 
 pub const command = struct {
-    pub const Id = enum(u16) {
-    };
+    pub const Id = enum(u16) {};
 };
 
 const std = @import("std");
@@ -58,4 +57,3 @@ const ipc = horizon.ipc;
 
 const ResultCode = horizon.ResultCode;
 const ClientSession = horizon.ClientSession;
-

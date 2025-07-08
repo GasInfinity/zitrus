@@ -356,7 +356,7 @@ pub fn waitEventTimeout(apt: *Applet, srv: ServiceManager, timeout_ns: i64, gsp:
         },
         1 => {
             const params = try apt.sendGlanceParameter(srv, environment.program_meta.app_id, &.{});
-            defer if(params.parameter_handle != .null) {
+            defer if (params.parameter_handle != .null) {
                 _ = horizon.closeHandle(params.parameter_handle);
             };
 
@@ -515,7 +515,7 @@ pub fn screenTransfer(apt: *Applet, srv: ServiceManager, gsp: *GspGpu, target_ap
         .response => {
             var handle: Object = .null;
             const params = try apt.sendReceiveParameter(srv, environment.program_meta.app_id, std.mem.asBytes(&handle));
-            defer if(params.parameter_handle.handle != .null) {
+            defer if (params.parameter_handle.handle != .null) {
                 _ = horizon.closeHandle(params.parameter_handle.handle);
             };
 
@@ -535,91 +535,91 @@ pub fn screenTransfer(apt: *Applet, srv: ServiceManager, gsp: *GspGpu, target_ap
 }
 
 pub fn sendInitialize(apt: Applet, srv: ServiceManager, id: AppId, attr: Attributes) Error![2]Event {
-    return switch(try apt.lockSendCommand(srv, command.Initialize, .{ .id = id, .attributes = attr }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.Initialize, .{ .id = id, .attributes = attr }, .{})) {
         .success => |s| s.value.response.notification_resume,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendEnable(apt: Applet, srv: ServiceManager, attr: Attributes) Error!void {
-    return switch(try apt.lockSendCommand(srv, command.Enable, .{ .attributes = attr }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.Enable, .{ .attributes = attr }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendFinalize(apt: Applet, srv: ServiceManager, id: AppId) !void {
-    return switch(try apt.lockSendCommand(srv, command.Finalize, .{ .id = id }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.Finalize, .{ .id = id }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendGetAppletManInfo(apt: Applet, srv: ServiceManager, position: Position) !command.GetAppletManInfo.Response {
-    return switch(try apt.lockSendCommand(srv, command.GetAppletManInfo, .{ .position = position }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.GetAppletManInfo, .{ .position = position }, .{})) {
         .success => |s| s.value.response,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendIsRegistered(apt: Applet, srv: ServiceManager, id: AppId) !bool {
-    return switch(try apt.lockSendCommand(srv, command.IsRegistered, .{ .id = id }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.IsRegistered, .{ .id = id }, .{})) {
         .success => |s| s.value.response.registered,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendInquireNotification(apt: Applet, srv: ServiceManager, id: AppId) !Notification {
-    return switch(try apt.lockSendCommand(srv, command.InquireNotification, .{ .id = id }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.InquireNotification, .{ .id = id }, .{})) {
         .success => |s| s.value.response.notification,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendSendParameter(apt: Applet, srv: ServiceManager, src: AppId, dst: AppId, cmd: Command, handle: Object, parameter: []const u8) !void {
-    return switch(try apt.lockSendCommand(srv, command.SendParameter, .{ .src_id = src, .dst_id = dst, .cmd = cmd, .parameter_size = parameter.len, .parameter_handle = handle, .parameter = .init(parameter) }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.SendParameter, .{ .src_id = src, .dst_id = dst, .cmd = cmd, .parameter_size = parameter.len, .parameter_handle = handle, .parameter = .init(parameter) }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendReceiveParameter(apt: Applet, srv: ServiceManager, id: AppId, parameter: []u8) !command.ReceiveParameter.Response {
-    return switch(try apt.lockSendCommand(srv, command.ReceiveParameter, .{ .id = id, .parameter_size = parameter.len }, .{ parameter })) {
+    return switch (try apt.lockSendCommand(srv, command.ReceiveParameter, .{ .id = id, .parameter_size = parameter.len }, .{parameter})) {
         .success => |s| s.value.response,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendGlanceParameter(apt: Applet, srv: ServiceManager, id: AppId, parameter: []u8) !command.GlanceParameter.Response {
-    return switch(try apt.lockSendCommand(srv, command.GlanceParameter, .{ .id = id, .parameter_size = parameter.len }, .{ parameter })) {
+    return switch (try apt.lockSendCommand(srv, command.GlanceParameter, .{ .id = id, .parameter_size = parameter.len }, .{parameter})) {
         .success => |s| s.value.response,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendCancelParameter(apt: Applet, srv: ServiceManager, src: AppId, dst: AppId) !bool {
-    return switch(try apt.lockSendCommand(srv, command.CancelParameter, .{ .check_sender = src != .none, .sender = src, .check_receiver = dst != .none, .receiver = dst }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.CancelParameter, .{ .check_sender = src != .none, .sender = src, .check_receiver = dst != .none, .receiver = dst }, .{})) {
         .success => |s| s.value.response.success,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendPrepareToCloseApplication(apt: Applet, srv: ServiceManager, cancel_preload: bool) !void {
-    return switch(try apt.lockSendCommand(srv, command.PrepareToCloseApplication, .{ .cancel_preload = cancel_preload }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.PrepareToCloseApplication, .{ .cancel_preload = cancel_preload }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendCloseApplication(apt: Applet, srv: ServiceManager, parameters: []const u8, handle: Object) !void {
-    return switch(try apt.lockSendCommand(srv, command.CloseApplication, .{ .parameters_size = parameters.len, .parameter_handle = handle, .parameters = .init(parameters) }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.CloseApplication, .{ .parameters_size = parameters.len, .parameter_handle = handle, .parameters = .init(parameters) }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendPrepareToJumpToHomeMenu(apt: Applet, srv: ServiceManager) !void {
-    return switch(try apt.lockSendCommand(srv, command.PrepareToJumpToHomeMenu, .{}, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.PrepareToJumpToHomeMenu, .{}, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -645,63 +645,63 @@ pub fn sendJumpToHomeMenu(apt: Applet, srv: ServiceManager, params: JumpToHomePa
         else => .{ 'A', 'S', 'H', 'P', @intFromEnum(params) },
     });
 
-    return switch(try apt.lockSendCommand(srv, command.JumpToHomeMenu, .{ .parameters_size = parameters.len, .parameter_handle = .null, .parameters = .init(parameters) }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.JumpToHomeMenu, .{ .parameters_size = parameters.len, .parameter_handle = .null, .parameters = .init(parameters) }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendPrepareToDoApplicationJump(apt: Applet, srv: ServiceManager, flags: command.PrepareToDoApplicationJump.Request.Flags, title_id: u64, media_type: Filesystem.MediaType) !void {
-    return switch(try apt.lockSendCommand(srv, command.PrepareToDoApplicationJump, .{ .flags = flags, .title_id = title_id, .media_type = media_type }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.PrepareToDoApplicationJump, .{ .flags = flags, .title_id = title_id, .media_type = media_type }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendDoApplicationJump(apt: Applet, srv: ServiceManager, parameters: []const u8, hmac: *const [0x20]u8) Error!void {
-    return switch(try apt.lockSendCommand(srv, command.DoApplicationJump, .{ .parameter_size = parameters.len, .hmac_size = hmac.len, .parameter = .init(parameters), .hmac = .init(hmac[0..20]) }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.DoApplicationJump, .{ .parameter_size = parameters.len, .hmac_size = hmac.len, .parameter = .init(parameters), .hmac = .init(hmac[0..20]) }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendSendDspSleep(apt: Applet, srv: ServiceManager, source: AppId, handle: Object) Error!void {
-    return switch(try apt.lockSendCommand(srv, command.SendDspSleep, .{ .source = source, .handle = handle }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.SendDspSleep, .{ .source = source, .handle = handle }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendSendDspWakeup(apt: Applet, srv: ServiceManager, source: AppId, handle: Object) Error!void {
-    return switch(try apt.lockSendCommand(srv, command.SendDspWakeup, .{ .source = source, .handle = handle }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.SendDspWakeup, .{ .source = source, .handle = handle }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendReplySleepQuery(apt: Applet, srv: ServiceManager, id: AppId, reply: QueryReply) Error!void {
-    return switch(try apt.lockSendCommand(srv, command.ReplySleepQuery, .{ .id = id, .reply = reply }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.ReplySleepQuery, .{ .id = id, .reply = reply }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendReplySleepNotificationComplete(apt: Applet, srv: ServiceManager, id: AppId) Error!void {
-    return switch(try apt.lockSendCommand(srv, command.ReplySleepNotificationComplete, .{ .id = id }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.ReplySleepNotificationComplete, .{ .id = id }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendSendCaptureBufferInfo(apt: Applet, srv: ServiceManager, info: *const CaptureBuffer) Error!void {
-    return switch(try apt.lockSendCommand(srv, command.SendCaptureBufferInfo, .{ .capture_size = @sizeOf(CaptureBuffer), .capture = .init(std.mem.asBytes(info)) }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.SendCaptureBufferInfo, .{ .capture_size = @sizeOf(CaptureBuffer), .capture = .init(std.mem.asBytes(info)) }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendNotifyToWait(apt: Applet, srv: ServiceManager, id: AppId) Error!void {
-    return switch(try apt.lockSendCommand(srv, command.NotifyToWait, .{ .id = id }, .{})) {
+    return switch (try apt.lockSendCommand(srv, command.NotifyToWait, .{ .id = id }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -709,7 +709,7 @@ pub fn sendNotifyToWait(apt: Applet, srv: ServiceManager, id: AppId) Error!void 
 
 pub fn sendAppletUtility(apt: Applet, srv: ServiceManager, utility: Utility, input: []const u8, output: []u8) Error!void {
     // TODO: return the ResultCode from applet_result in the Response, waiting for ziglang# #24231
-    return switch(try apt.lockSendCommand(srv, command.AppletUtility, .{ .utility = utility, .input_size = input.len, .output_size = output.len, .input = .init(input) }, .{ output })) {
+    return switch (try apt.lockSendCommand(srv, command.AppletUtility, .{ .utility = utility, .input_size = input.len, .output_size = output.len, .input = .init(input) }, .{output})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -768,7 +768,7 @@ pub const command = struct {
     pub const Enable = ipc.Command(Id, .enable, struct { attributes: Attributes }, struct {});
     pub const Finalize = ipc.Command(Id, .finalize, struct { id: AppId }, struct {});
     pub const GetAppletManInfo = ipc.Command(Id, .get_applet_man_info, struct {
-        position: Position, 
+        position: Position,
     }, struct {
         position: Position,
         requested: AppId,
@@ -828,12 +828,12 @@ pub const command = struct {
         success: bool,
     });
     // TODO: DebugFunc
-    // TODO: MapProgramIdForDebug 
-    // TODO: SetHomeMenuAppletIdForDebug 
-    // TODO: GetPreparationState 
-    // TODO: SetPreparationState 
+    // TODO: MapProgramIdForDebug
+    // TODO: SetHomeMenuAppletIdForDebug
+    // TODO: GetPreparationState
+    // TODO: SetPreparationState
     // TODO: PrepareToStartApplication
-    // TODO: PreloadLibraryApplet 
+    // TODO: PreloadLibraryApplet
     // TODO: FinishPreloadingLibraryApplet
     // TODO: PrepareToStartLibraryApplet
     // TODO: PrepareToStartSystemApplet
@@ -845,7 +845,7 @@ pub const command = struct {
     // TODO: StartSystemApplet
     // TODO: StartNewestHomeMenu
     // TODO: OrderToCloseApplcation
-    pub const PrepareToCloseApplication = ipc.Command(Id, .prepare_to_close_application, struct { cancel_preload: bool }, struct {}); 
+    pub const PrepareToCloseApplication = ipc.Command(Id, .prepare_to_close_application, struct { cancel_preload: bool }, struct {});
     // TODO: PrepareToJumpToApplication
     // TODO: JumpToApplication
     // TODO: PrepareToCloseLibraryApplet
@@ -854,8 +854,8 @@ pub const command = struct {
         parameters_size: usize,
         parameter_handle: horizon.Object,
         parameters: ipc.StaticSlice(0),
-    }, struct {}); 
-    // TODO: ... 
+    }, struct {});
+    // TODO: ...
     pub const PrepareToJumpToHomeMenu = ipc.Command(Id, .prepare_to_jump_to_home_menu, struct {}, struct {});
     pub const JumpToHomeMenu = ipc.Command(Id, .jump_to_home_menu, struct {
         parameters_size: usize,

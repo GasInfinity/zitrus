@@ -134,7 +134,7 @@ const Handles = struct {
 
 pub fn sendGetIPCHandles(hid: Hid) Error!Handles {
     const data = tls.getThreadLocalStorage();
-    
+
     return switch (try data.ipc.sendRequest(hid.session, command.GetIPCHandles, .{}, .{})) {
         .success => |s| .{
             .shm = @bitCast(@intFromEnum(s.value.response.handles[0])),

@@ -73,7 +73,7 @@ pub fn MoveHandle(comptime T: type) type {
         const MovHandle = @This();
         pub const Handle = T;
 
-        handle: Handle, 
+        handle: Handle,
 
         pub fn init(handle: Handle) MovHandle {
             return .{ .handle = handle };
@@ -89,7 +89,7 @@ pub fn StaticSlice(comptime index: u4) type {
 
         slice: []const u8,
 
-        pub fn init(slice: []const u8) StSlice{
+        pub fn init(slice: []const u8) StSlice {
             return .{ .slice = slice };
         }
     };
@@ -144,7 +144,7 @@ pub fn Command(comptime CommandId: type, comptime command_id: CommandId, comptim
 pub fn calculateParameters(comptime T: type) Buffer.PackedCommand.Header.Parameters {
     const t_info = @typeInfo(T).@"struct";
 
-    if(t_info.layout != .auto) {
+    if (t_info.layout != .auto) {
         return .{ .normal = (@sizeOf(T) + (@sizeOf(u32) - 1)) / @sizeOf(u32), .translate = 0 };
     }
 
@@ -190,8 +190,8 @@ pub fn calculateParameters(comptime T: type) Buffer.PackedCommand.Header.Paramet
                         continue :arr e.tag_type;
                     },
                     .@"struct" => |s| {
-                        if(s.layout == .@"packed" or s.layout == .@"extern") {
-                            if(@hasDecl(at, "Handle") and @bitSizeOf(@field(at, "Handle")) == @bitSizeOf(u32) and at == MoveHandle(@field(at, "Handle"))) {
+                        if (s.layout == .@"packed" or s.layout == .@"extern") {
+                            if (@hasDecl(at, "Handle") and @bitSizeOf(@field(at, "Handle")) == @bitSizeOf(u32) and at == MoveHandle(@field(at, "Handle"))) {
                                 translate += 1 + a.len;
                                 continue;
                             }
@@ -206,7 +206,7 @@ pub fn calculateParameters(comptime T: type) Buffer.PackedCommand.Header.Paramet
                         @compileError("cannot serialize struct with non-defined layout");
                     },
                     .@"union" => |u| {
-                        if(u.layout != .@"packed" or u.layout != .@"extern") {
+                        if (u.layout != .@"packed" or u.layout != .@"extern") {
                             @compileError("cannot serialize union with non-defined layout");
                         }
 
@@ -233,7 +233,7 @@ pub fn calculateParameters(comptime T: type) Buffer.PackedCommand.Header.Paramet
                     continue;
                 }
 
-                if(s.layout == .@"packed" or s.layout == .@"extern") {
+                if (s.layout == .@"packed" or s.layout == .@"extern") {
                     if (s.fields.len == 1) {
                         continue :ty s.fields[0].type;
                     }
@@ -244,10 +244,10 @@ pub fn calculateParameters(comptime T: type) Buffer.PackedCommand.Header.Paramet
                 @compileError("cannot serialize struct with non-defined layout");
             },
             .@"union" => |u| {
-                if(u.layout != .@"packed" or u.layout != .@"extern") {
+                if (u.layout != .@"packed" or u.layout != .@"extern") {
                     @compileError("cannot serialize union with non-defined layout");
                 }
-                
+
                 continue :ty std.meta.Int(.unsigned, @bitSizeOf(typ));
             },
             .@"fn" => @compileError("cannot serialize fn"),
@@ -318,7 +318,7 @@ pub const Buffer = extern struct {
 
         const T: type, const params: PackedCommand.Header.Parameters = switch (target) {
             .request => .{ DefinedCommand.Request, DefinedCommand.request },
-            .response => .{ DefinedCommand.Response , DefinedCommand.response },
+            .response => .{ DefinedCommand.Response, DefinedCommand.response },
         };
 
         buffer.packed_command.header = .{
@@ -330,7 +330,7 @@ pub const Buffer = extern struct {
 
         const t_info = @typeInfo(T).@"struct";
 
-        if(t_info.layout == .auto) {
+        if (t_info.layout == .auto) {
             const fields = @typeInfo(T).@"struct".fields;
 
             inline for (fields) |f| {
@@ -339,8 +339,8 @@ pub const Buffer = extern struct {
         } else {
             packType(buffer, &current_parameter, T, value);
         }
-        
-        inline for(0..DefinedCommand.input_static_buffers) |i| {
+
+        inline for (0..DefinedCommand.input_static_buffers) |i| {
             buffer.static_buffers[i * 2] = @bitCast(TranslationDescriptor.StaticBuffer{
                 .index = i,
                 .size = @intCast(static_buffers[i].len),
@@ -361,7 +361,7 @@ pub const Buffer = extern struct {
                 current_parameter.* += 1;
             },
             .int, .float => {
-                if(@bitSizeOf(T) < @bitSizeOf(u32)) {
+                if (@bitSizeOf(T) < @bitSizeOf(u32)) {
                     parameters[current_parameter.*] = value;
                     current_parameter.* += 1;
                     return;
@@ -389,7 +389,7 @@ pub const Buffer = extern struct {
                     .undefined, .void, .noreturn, .@"opaque" => {},
                     .@"struct" => |s| {
                         if (s.fields.len == 1) {
-                            if(@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32) and T == MoveHandle(@field(T, "Handle"))) {
+                            if (@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32) and T == MoveHandle(@field(T, "Handle"))) {
                                 parameters[current_parameter.*] = @bitCast(TranslationDescriptor.Handle{
                                     .extra_handles = (a.len - 1),
                                     .close_handles = true,
@@ -405,7 +405,7 @@ pub const Buffer = extern struct {
                             return packType(buffer, current_parameter, [a.len]s.fields[0].type, @bitCast(value));
                         }
 
-                        return packType(buffer, current_parameter, [a.len]std.meta.Int(.unsigned, @bitSizeOf(T)), @bitCast(value)); 
+                        return packType(buffer, current_parameter, [a.len]std.meta.Int(.unsigned, @bitSizeOf(T)), @bitCast(value));
                     },
                     .@"union", .bool, .int, .float => {
                         const total_byte_size = a.len * @sizeOf(at);
@@ -438,8 +438,8 @@ pub const Buffer = extern struct {
             },
             .@"union" => packType(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T)), @bitCast(value)),
             .@"struct" => |s| {
-                if(s.layout == .@"packed" or s.layout == .@"extern") {
-                    if(@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32) and T == MoveHandle(@field(T, "Handle"))) {
+                if (s.layout == .@"packed" or s.layout == .@"extern") {
+                    if (@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32) and T == MoveHandle(@field(T, "Handle"))) {
                         parameters[current_parameter.*] = @bitCast(TranslationDescriptor.Handle{
                             .extra_handles = 0,
                             .close_handles = true,
@@ -474,15 +474,15 @@ pub const Buffer = extern struct {
         };
     }
 
-    fn unpack(buffer: *Buffer, comptime DefinedCommand: type, comptime target: Target) (if(target == .request) DefinedCommand.Request else Result(Response(target.Type(DefinedCommand), DefinedCommand.output_static_buffers))) {
+    fn unpack(buffer: *Buffer, comptime DefinedCommand: type, comptime target: Target) (if (target == .request) DefinedCommand.Request else Result(Response(target.Type(DefinedCommand), DefinedCommand.output_static_buffers))) {
         const T: type, const params: PackedCommand.Header.Parameters = switch (target) {
             .request => .{ DefinedCommand.Request, DefinedCommand.request },
-            .response => .{ DefinedCommand.Response , DefinedCommand.response },
+            .response => .{ DefinedCommand.Response, DefinedCommand.response },
         };
 
-        const result: ResultCode = if(target == .request) .success else @bitCast(buffer.packed_command.parameters[0]);
+        const result: ResultCode = if (target == .request) .success else @bitCast(buffer.packed_command.parameters[0]);
 
-        if(!result.isSuccess()) {
+        if (!result.isSuccess()) {
             return .{ .failure = result };
         }
 
@@ -495,7 +495,7 @@ pub const Buffer = extern struct {
 
         const t_info = @typeInfo(T).@"struct";
 
-        const out: T = if(t_info.layout == .auto) auto: {
+        const out: T = if (t_info.layout == .auto) auto: {
             const fields = @typeInfo(T).@"struct".fields;
 
             var out: T = undefined;
@@ -506,9 +506,9 @@ pub const Buffer = extern struct {
 
             break :auto out;
         } else unpackType(buffer, &current_parameter, T);
-        
+
         var static_buffers: [DefinedCommand.output_static_buffers][]const u8 = undefined;
-        inline for(0..DefinedCommand.output_static_buffers) |i| {
+        inline for (0..DefinedCommand.output_static_buffers) |i| {
             const translation_descriptor: TranslationDescriptor.StaticBuffer = @bitCast(buffer.static_buffers[i * 2]);
             std.debug.assert(translation_descriptor.type == .static_buffer);
 
@@ -525,7 +525,7 @@ pub const Buffer = extern struct {
 
     fn unpackType(buffer: *Buffer, current_parameter: *u6, comptime T: type) T {
         const parameters: []u32 = &buffer.packed_command.parameters;
-        
+
         return switch (@typeInfo(T)) {
             .undefined, .void, .noreturn, .@"opaque" => {},
             .bool => b: {
@@ -533,7 +533,7 @@ pub const Buffer = extern struct {
                 break :b parameters[current_parameter.*] != 0;
             },
             .int, .float => fi: {
-                if(@bitSizeOf(T) < @bitSizeOf(u32)) {
+                if (@bitSizeOf(T) < @bitSizeOf(u32)) {
                     defer current_parameter.* += 1;
                     break :fi @truncate(parameters[current_parameter.*]);
                 }
@@ -561,7 +561,7 @@ pub const Buffer = extern struct {
                 else => |at| switch (@typeInfo(at)) {
                     .undefined, .void, .noreturn, .@"opaque" => {},
                     .@"struct" => |s| st: {
-                        if(@hasDecl(at, "Handle") and @bitSizeOf(@field(at, "Handle")) == @bitSizeOf(u32) and at == MoveHandle(@field(at, "Handle"))) {
+                        if (@hasDecl(at, "Handle") and @bitSizeOf(@field(at, "Handle")) == @bitSizeOf(u32) and at == MoveHandle(@field(at, "Handle"))) {
                             const handle_translation_descriptor: TranslationDescriptor.Handle = @bitCast(parameters[current_parameter.*]);
                             current_parameter.* += 1;
 
@@ -571,7 +571,7 @@ pub const Buffer = extern struct {
                             std.debug.assert(handle_translation_descriptor.close_handles == true);
 
                             defer current_parameter.* += a.len;
-                            break :st @bitCast(unpackType(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T)))); 
+                            break :st @bitCast(unpackType(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T))));
                         }
 
                         if (s.fields.len == 1) {
@@ -608,7 +608,7 @@ pub const Buffer = extern struct {
             },
             .@"union" => @bitCast(unpackType(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T)))),
             .@"struct" => |s| s: {
-                if(@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32) and T == MoveHandle(@field(T, "Handle"))) {
+                if (@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32) and T == MoveHandle(@field(T, "Handle"))) {
                     const handle_translation_descriptor: TranslationDescriptor.Handle = @bitCast(parameters[current_parameter.*]);
                     current_parameter.* += 1;
 
@@ -618,14 +618,14 @@ pub const Buffer = extern struct {
                     std.debug.assert(handle_translation_descriptor.close_handles == true);
 
                     defer current_parameter.* += 1;
-                    break :s @bitCast(parameters[current_parameter.*]); 
+                    break :s @bitCast(parameters[current_parameter.*]);
                 }
 
                 if (s.layout == .@"packed" or s.layout == .@"extern") {
                     if (s.fields.len == 1) {
                         const out = unpackType(buffer, current_parameter, s.fields[0].type);
 
-                        break :s @bitCast(if(@typeInfo(s.fields[0].type) == .@"enum") @intFromEnum(out) else out);
+                        break :s @bitCast(if (@typeInfo(s.fields[0].type) == .@"enum") @intFromEnum(out) else out);
                     }
 
                     break :s @bitCast(unpackType(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T))));
@@ -634,14 +634,14 @@ pub const Buffer = extern struct {
                 const translation_descriptor: TranslationDescriptor = @bitCast(parameters[current_parameter.*]);
                 const ptr: [*]u8 = @ptrFromInt(parameters[current_parameter.* + 1]);
                 current_parameter.* += 2;
-                
+
                 if (@hasDecl(T, "static_buffer_index")) {
                     std.debug.assert(translation_descriptor.static_buffer.type == .static_buffer);
                     break :s .init(ptr[0..translation_descriptor.static_buffer.size]);
                 } else {
                     std.debug.assert(translation_descriptor.buffer_mapping.type == 1);
                     break :s .init(ptr[0..translation_descriptor.buffer_mapping.size]);
-                } 
+                }
             },
             else => unreachable,
         };
