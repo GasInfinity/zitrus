@@ -63,29 +63,201 @@ pub const FramebufferInfo = extern struct {
     _unused0: u32 = 0,
 };
 
-pub const GxCommandQueue = extern struct {
-    pub const StatusFlags = packed struct(u8) {
-        halted: bool,
-        _unused: u6 = 0,
-        fatal_error: bool,
+pub const gx = struct {
+    pub const SubmitFlags = packed struct(u8) {
+        pub const none: SubmitFlags = .{};
+
+        stop_processing_queue: bool = false,
+        fail_if_busy: bool = false,
+        _: u6 = 0,
     };
 
-    pub const Header = packed struct(u32) {
-        current_command_index: u8,
-        total_commands: u8,
-        halted: bool,
-        _unused0: u6 = 0,
-        fatal_error: bool,
-        halt_processing: bool,
-        _unused1: u7 = 0,
+    pub const MemoryFill = struct {
+        pub const Value = union(gpu.PixelSize) {
+            @"16": u16,
+            @"24": u24,
+            @"32": u32,
+
+            pub fn fill16(value: u16) Value {
+                return .{ .@"16" = value };
+            }
+
+            pub fn fill24(value: u24) Value {
+                return .{ .@"24" = value };
+            }
+
+            pub fn fill32(value: u32) Value {
+                return .{ .@"32" = value };
+            }
+        };
+
+        buffer: []align(8) u8,
+        value: Value,
+
+        pub fn init(buffer: []align(8) u8, value: Value) MemoryFill {
+            return .{ .buffer = buffer, .value = value };
+        }
     };
 
-    pub const max_commands = 15;
+    pub const DisplayTransferFlags = packed struct(u8) {
+        pub const none: DisplayTransferFlags = .{};
+        pub const Mode = enum(u2) {
+            tiled_linear,
+            linear_tiled,
+            tiled_tiled,
+        };
 
-    header: Header,
-    last_result: ResultCode,
-    _unused0: [6]u32 = @splat(0),
-    commands: [max_commands]gx.Command,
+        flip_v: bool = false,
+        mode: Mode = .tiled_linear,
+        use_32x32: bool = false,
+        downscale: gpu.Registers.MemoryCopy.Flags.Downscale = .none,
+        _: u2 = 0,
+    };
+
+    pub const Command = extern struct {
+        pub const Id = enum(u8) {
+            request_dma,
+            process_command_list,
+            memory_fill,
+            display_transfer,
+            texture_copy,
+            flush_cache_regions,
+        };
+
+        pub const Header = packed struct(u32) {
+            command_id: Id,
+            _unused0: u8 = 0,
+            stop_processing_queue: bool = false,
+            _unused1: u7 = 0,
+            fail_if_busy: bool = false,
+            _unused2: u7 = 0,
+        };
+
+        pub const Flush = packed struct(u32) {
+            pub const none: Flush = .{};
+            pub const flush: Flush = .{ .should_flush = true };
+
+            should_flush: bool = false,
+            _: u31 = 0,
+        };
+
+        pub const DmaRequest = extern struct {
+            source: [*]const u8,
+            destination: [*]u8,
+            size: usize,
+            _unused0: [3]u32 = @splat(0),
+            flush: Flush,
+        };
+
+        pub const ProcessCommandList = extern struct {
+            pub const UpdateGasResults = packed struct(u32) {
+                pub const none: UpdateGasResults = .{};
+                pub const update_gas: UpdateGasResults = .{ .update_gas_results = true };
+
+                update_gas_results: bool = false,
+                _: u31 = 0,
+            };
+
+            address: [*]align(8) const u32,
+            byte_size: usize,
+            update_gas_results: UpdateGasResults,
+            _unused0: [3]u32 = @splat(0),
+            flush: Flush,
+        };
+
+        pub const MemoryFill = extern struct {
+            pub const Buffer = extern struct {
+                pub const none: Buffer = .{ .start = null, .value = 0, .end = null };
+
+                start: ?*anyopaque,
+                value: u32,
+                end: ?*anyopaque,
+
+                pub fn init(fill: gx.MemoryFill) Buffer {
+                    return .{
+                        .start = fill.buffer.ptr,
+                        .value = switch (fill.value) {
+                            inline else => |v| v,
+                        },
+                        .end = fill.buffer.ptr + fill.buffer.len,
+                    };
+                }
+            };
+
+            buffers: [2]Buffer,
+            controls: [2]gpu.Registers.MemoryFill.Control,
+        };
+
+        pub const DisplayTransfer = extern struct {
+            source: [*]const u8,
+            destination: [*]u8,
+            source_dimensions: gpu.Dimensions,
+            destination_dimensions: gpu.Dimensions,
+            flags: gpu.Registers.MemoryCopy.Flags,
+            _unused0: [2]u32 = @splat(0),
+        };
+
+        pub const TextureCopy = extern struct {
+            source: [*]const u8,
+            destination: [*]u8,
+            dimensions: gpu.Dimensions,
+            source_line_gap: gpu.Dimensions,
+            destination_line_gap: gpu.Dimensions,
+            flags: gpu.Registers.MemoryCopy.Flags,
+            _unused0: u32 = 0,
+        };
+
+        pub const FlushCacheRegions = extern struct {
+            pub const Buffer = extern struct {
+                pub const none: Buffer = .{ .address = null, .size = 0 };
+
+                address: ?*const anyopaque,
+                size: usize,
+
+                pub fn init(buffer: []const u8) Buffer {
+                    return .{ .address = buffer.ptr, .size = buffer.len };
+                }
+            };
+
+            buffers: [3]Buffer,
+            _unused0: u32 = 0,
+        };
+
+        header: Header,
+        data: extern union {
+            dma_request: DmaRequest,
+            process_command_list: ProcessCommandList,
+            memory_fill: Command.MemoryFill,
+            display_transfer: DisplayTransfer,
+            texture_copy: TextureCopy,
+            flush_cache_regions: FlushCacheRegions,
+        },
+    };
+
+    pub const Queue = extern struct {
+        pub const StatusFlags = packed struct(u8) {
+            halted: bool,
+            _unused: u6 = 0,
+            fatal_error: bool,
+        };
+
+        pub const Header = packed struct(u32) {
+            current_command_index: u8,
+            total_commands: u8,
+            halted: bool,
+            _unused0: u6 = 0,
+            fatal_error: bool,
+            halt_processing: bool,
+            _unused1: u7 = 0,
+        };
+
+        pub const max_commands = 15;
+
+        header: Header,
+        last_result: ResultCode,
+        _unused0: [6]u32 = @splat(0),
+        commands: [max_commands]Command,
+    };
 };
 
 pub const ScreenCapture = extern struct {
@@ -279,12 +451,112 @@ pub fn writeFramebufferInfo(gsp: *GspGpu, screen: Screen, info: FramebufferInfo.
     return framebuffer_header.flags.new_data;
 }
 
+pub fn submitRequestDma(gsp: *GspGpu, src: []const u8, dst: []u8, flush: gx.Command.Flush, submit_flags: gx.SubmitFlags) !void {
+    std.debug.assert(src.len == dst.len);
+
+    return gsp.submitGxCommand(gx.Command{
+        .header = .{
+            .command_id = .request_dma,
+            .stop_processing_queue = submit_flags.stop_processing_queue,
+            .fail_if_busy = submit_flags.fail_if_busy,
+        },
+        .data = .{ .dma_request = .{
+            .source = src.ptr,
+            .destination = dst.ptr,
+            .size = src.len,
+            .flush = flush,
+        } },
+    });
+}
+
+pub fn submitProcessCommandList(gsp: *GspGpu, command_list: []align(8) const u32, update_gas: gx.Command.ProcessCommandList.UpdateGasResults, flush: gx.Command.Flush, submit_flags: gx.SubmitFlags) !void {
+    std.debug.assert(std.mem.isAligned(command_list.len * @sizeOf(u32), 16));
+
+    return gsp.submitGxCommand(gx.Command{
+        .header = .{
+            .command_id = .process_command_list,
+            .stop_processing_queue = submit_flags.stop_processing_queue,
+            .fail_if_busy = submit_flags.fail_if_busy,
+        },
+        .data = .{ .process_command_list = .{
+            .address = command_list.ptr,
+            .byte_size = command_list.len * @sizeOf(u32),
+            .update_gas_results = update_gas,
+            .flush = flush,
+        } },
+    });
+}
+
+pub fn submitMemoryFill(gsp: *GspGpu, fills: [2]?gx.MemoryFill, submit_flags: gx.SubmitFlags) !void {
+    return gsp.submitGxCommand(gx.Command{
+        .header = .{
+            .command_id = .memory_fill,
+            .stop_processing_queue = submit_flags.stop_processing_queue,
+            .fail_if_busy = submit_flags.fail_if_busy,
+        },
+        .data = .{ .memory_fill = .{
+            .buffers = .{
+                if (fills[0]) |fill| .init(fill) else .none,
+                if (fills[1]) |fill| .init(fill) else .none,
+            },
+            .controls = .{
+                if (fills[0]) |fill| .init(std.meta.activeTag(fill.value)) else .none,
+                if (fills[1]) |fill| .init(std.meta.activeTag(fill.value)) else .none,
+            },
+        } },
+    });
+}
+
+pub fn submitDisplayTransfer(gsp: *GspGpu, src: [*]const u8, dst: [*]u8, src_color: gpu.ColorFormat, src_dimensions: gpu.Dimensions, dst_color: gpu.ColorFormat, dst_dimensions: gpu.Dimensions, flags: gx.DisplayTransferFlags, submit_flags: gx.SubmitFlags) !void {
+    return gsp.submitGxCommand(gx.Command{
+        .header = .{
+            .command_id = .display_transfer,
+            .stop_processing_queue = submit_flags.stop_processing_queue,
+            .fail_if_busy = submit_flags.fail_if_busy,
+        },
+        .data = .{ .display_transfer = .{
+            .source = src,
+            .destination = dst,
+            .source_dimensions = src_dimensions,
+            .destination_dimensions = dst_dimensions,
+            .flags = .{
+                .flip_v = flags.flip_v,
+                .output_width_less_than_input = src_dimensions.x > dst_dimensions.x,
+                .linear_tiled = flags.mode == .linear_tiled,
+                .tiled_tiled = flags.mode == .tiled_tiled,
+                .input_format = src_color,
+                .output_format = dst_color,
+                .use_32x32_tiles = flags.use_32x32,
+                .downscale = flags.downscale,
+                .texture_copy_mode = false,
+            },
+        } },
+    });
+}
+
+pub fn submitFlushCacheRegions(gsp: *GspGpu, buffers: [3]?[]const u8, submit_flags: gx.SubmitFlags) !void {
+    return gsp.submitGxCommand(gx.Command{
+        .header = .{
+            .command_id = .flush_cache_regions,
+            .stop_processing_queue = submit_flags.stop_processing_queue,
+            .fail_if_busy = submit_flags.fail_if_busy,
+        },
+        .data = .{ .flush_cache_regions = .{
+            .buffers = .{
+                if (buffers[0]) |buffer| .init(buffer) else .none,
+                if (buffers[1]) |buffer| .init(buffer) else .none,
+                if (buffers[2]) |buffer| .init(buffer) else .none,
+            },
+        } },
+    });
+}
+
 pub fn submitGxCommand(gsp: *GspGpu, cmd: gx.Command) !void {
     const gsp_data = gsp.shared_memory_data.?;
-    const gx_queue: *GxCommandQueue = @alignCast(std.mem.bytesAsValue(GxCommandQueue, gsp_data[0x800 + (gsp.thread_index * @sizeOf(GxCommandQueue)) ..][0..@sizeOf(GxCommandQueue)]));
-    const gx_header: GxCommandQueue.Header = @atomicLoad(GxCommandQueue.Header, &gx_queue.header, .monotonic);
+    const gx_queue: *gx.Queue = @alignCast(std.mem.bytesAsValue(gx.Queue, gsp_data[0x800 + (gsp.thread_index * 0x200) ..][0..@sizeOf(gx.Queue)]));
+    const gx_header: gx.Queue.Header = @atomicLoad(gx.Queue.Header, &gx_queue.header, .monotonic);
 
-    if (gx_header.total_commands >= GxCommandQueue.max_commands) {
+    if (gx_header.total_commands >= gx.Queue.max_commands) {
         return error.OutOfCommandSlots;
     }
 
@@ -309,7 +581,6 @@ pub fn submitGxCommand(gsp: *GspGpu, cmd: gx.Command) !void {
 pub fn initializeHardware(gsp: *GspGpu) Error!void {
     const gpu_registers: *gpu.Registers = memory.gpu_registers;
 
-    // XXX: Unknown, https://www.3dbrew.org/wiki/GPU/External_Registers#Map and libctru also just writes these values without knowing what they do
     try gsp.writeHwRegs(&gpu_registers.internal.irq.ack[0], std.mem.asBytes(&[_]u32{0x00}));
     try gsp.writeHwRegs(&gpu_registers.internal.irq.cmp[0], std.mem.asBytes(&[_]u32{0x12345678}));
     try gsp.writeHwRegs(&gpu_registers.internal.irq.mask, std.mem.asBytes(&[_]u32{ 0xFFFFFFF0, 0xFFFFFFFF }));
@@ -485,6 +756,16 @@ pub fn writeHwRegsWithMask(gsp: GspGpu, address: *anyopaque, buffer: []const u8,
     }
 }
 
+pub fn readHwRegs(gsp: GspGpu, address: *anyopaque, buffer: []u8) Error!void {
+    const offset = @intFromPtr(address) - 0x1EB00000;
+    var buffer_offset: usize = 0;
+    while (buffer_offset < buffer.len) : (buffer_offset += 0x80) {
+        const size = @min(buffer.len - buffer_offset, 0x80);
+
+        try gsp.sendReadHwRegs(offset, buffer[buffer_offset..][0..size]);
+    }
+}
+
 const InterrupRelayQueueResult = struct {
     should_initialize_hardware: bool,
     thread_index: u32,
@@ -516,7 +797,7 @@ pub fn sendWriteHwRegRepeat(gsp: GspGpu, offset: usize, buffer: []const u8) Erro
     std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
 
     const data = tls.getThreadLocalStorage();
-    return switch (data.ipc.unpackResponse(gsp.session, command.WriteHwRegRepeat, .{ .offset = offset, .size = buffer.len, .data = .init(buffer) }, .{})) {
+    return switch (data.ipc.sendRequest(gsp.session, command.WriteHwRegRepeat, .{ .offset = offset, .size = buffer.len, .data = .init(buffer) }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -803,7 +1084,6 @@ const GspGpu = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
 const gpu = zitrus.gpu;
-const gx = gpu.gx;
 
 const horizon = zitrus.horizon;
 const memory = horizon.memory;

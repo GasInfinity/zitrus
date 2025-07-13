@@ -432,13 +432,17 @@ pub const Registers = struct {
 
     pub const MemoryFill = extern struct {
         pub const Control = packed struct(u16) {
-            pub const none: Control = .{ .busy = false, .fill_width = .@"16" };
+            pub const none: Control = .{ .busy = false, .width = .@"16" };
 
             busy: bool,
             finished: bool = false,
             _unused0: u6 = 0,
             width: PixelSize,
             _unused1: u6 = 0,
+
+            pub fn init(width: PixelSize) Control {
+                return .{ .busy = true, .width = width };
+            }
         };
 
         start: AlignedPhysicalAddress(.@"16"),
@@ -453,11 +457,11 @@ pub const Registers = struct {
             pub const Downscale = enum(u2) { none, @"2x1", @"2x2" };
 
             flip_v: bool,
-            tiled: bool,
+            linear_tiled: bool,
             output_width_less_than_input: bool,
-            texturecopy_mode: bool,
+            texture_copy_mode: bool,
             _unwritable0: u1 = 0,
-            dont_convert: bool,
+            tiled_tiled: bool,
             _unwritable1: u2 = 0,
             input_format: ColorFormat,
             _unwritable2: u1 = 0,
@@ -550,7 +554,7 @@ pub const Registers = struct {
             _unknown6: [3]u32,
             _unknown7: u32,
             early_depth_function: packed struct(u32) { function: EarlyDepthFunction, _: u30 = 0 },
-            early_depth_test: packed struct(u32) { enable: bool, _: u31 = 0 },
+            early_depth_test_1: packed struct(u32) { enable: bool, _: u31 = 0 },
             early_depth_clear: packed struct(u32) { trigger: bool, _: u31 = 0 },
             shader_output_attribute_mode: OutputAttributeMode,
             scissor_config: packed struct(u32) { mode: ScissorMode, _: u30 = 0 },
@@ -729,7 +733,7 @@ pub const Registers = struct {
             depth_buffer_writing: u32,
             depth_buffer_format: u32,
             color_buffer_format: u32,
-            early_depth_test: packed struct(u32) { enable: bool, _: u31 = 0 },
+            early_depth_test_2: packed struct(u32) { enable: bool, _: u31 = 0 },
             _unknown4: u32,
             _unknown5: u32,
             render_buffer_block_size: u32,
@@ -791,9 +795,7 @@ pub const Registers = struct {
                 _unused2: u15 = 0,
             };
 
-            pub const AttributeBufferFormat = packed struct(u64) {
-                pub const Flags = enum(u1) { array, fixed };
-
+            pub const AttributeBufferFormatLow = packed struct(u32) {
                 attribute_0: AttributeFormat,
                 attribute_1: AttributeFormat,
                 attribute_2: AttributeFormat,
@@ -802,6 +804,11 @@ pub const Registers = struct {
                 attribute_5: AttributeFormat,
                 attribute_6: AttributeFormat,
                 attribute_7: AttributeFormat,
+            };
+
+            pub const AttributeBufferFormatHigh = packed struct(u32) {
+                pub const Flags = enum(u1) { array, fixed };
+
                 attribute_8: AttributeFormat,
                 attribute_9: AttributeFormat,
                 attribute_10: AttributeFormat,
@@ -824,7 +831,7 @@ pub const Registers = struct {
             };
 
             pub const AttributeBuffer = extern struct {
-                pub const Config = packed struct(u64) {
+                pub const ConfigLow = packed struct(u32) {
                     component_0: AttributeArrayComponent,
                     component_1: AttributeArrayComponent,
                     component_2: AttributeArrayComponent,
@@ -833,6 +840,9 @@ pub const Registers = struct {
                     component_5: AttributeArrayComponent,
                     component_6: AttributeArrayComponent,
                     component_7: AttributeArrayComponent,
+                };
+
+                pub const ConfigHigh = packed struct(u32) {
                     component_8: AttributeArrayComponent,
                     component_9: AttributeArrayComponent,
                     component_10: AttributeArrayComponent,
@@ -844,7 +854,8 @@ pub const Registers = struct {
                 };
 
                 offset: u32,
-                config: Config align(@alignOf(u32)),
+                config_low: ConfigLow,
+                config_high: ConfigHigh,
             };
 
             pub const AttributeIndexList = packed struct(u32) {
@@ -854,11 +865,12 @@ pub const Registers = struct {
             };
 
             attribute_buffer_base: AlignedPhysicalAddress(.@"16"),
-            attribute_buffer_format: AttributeBufferFormat align(@alignOf(u32)),
+            attribute_buffer_format_low: AttributeBufferFormatLow,
+            attribute_buffer_format_high: AttributeBufferFormatLow,
             attribute_buffer: [12]AttributeBuffer,
             attribute_buffer_index_list: AttributeIndexList,
             attribute_buffer_num_vertices: u32,
-            config_0: u32,
+            config: u32,
             attribute_buffer_first_index: u32,
             _unknown0: [2]u32,
             post_vertex_cache_num: u32,
@@ -878,11 +890,11 @@ pub const Registers = struct {
             vertex_shader_common_mode: u32,
             start_draw_function: u32,
             _unknown5: [4]u32,
-            vertex_shader_output_map_total_0: u32,
+            vertex_shader_output_map_total_2: u32,
             _unknown6: [6]u32,
             vertex_shader_output_map_total_1: u32,
             geometry_shader_misc0: u32,
-            config_1: u32,
+            config_2: u32,
             geometry_shader_misc1: u32,
             _unknown7: u32,
             _unknown8: [8]u32,
@@ -990,7 +1002,6 @@ comptime {
         @compileError(std.fmt.comptimePrint("(@sizeOf(MemoryCopy) == 0x{X}) and 0x{X} != 0x2C!", .{ @sizeOf(Registers.MemoryCopy), @sizeOf(Registers.MemoryCopy) }));
 }
 
-pub const gx = @import("gpu/gx.zig");
 pub const command = @import("gpu/command.zig");
 pub const Framebuffer = @import("gpu/Framebuffer.zig");
 

@@ -108,10 +108,11 @@ pub fn MappedSlice(comptime mapping_modifier: MappingModifier) type {
     return struct {
         const Mapped = @This();
         pub const modifier = mapping_modifier;
+        pub const Slice = if(modifier.write_only) []u8 else []const u8;
 
-        slice: []u8,
+        slice: Slice,
 
-        pub fn init(slice: []u8) Mapped {
+        pub fn init(slice: Slice) Mapped {
             return .{ .slice = slice };
         }
     };
@@ -550,7 +551,7 @@ pub const Buffer = extern struct {
                     std.debug.assert(handle_translation_descriptor.type == .handle);
                     std.debug.assert(handle_translation_descriptor.extra_handles == 0);
                     std.debug.assert(handle_translation_descriptor.replace_by_process_id == (T == ReplaceByProcessId));
-                    std.debug.assert(handle_translation_descriptor.close_handles == false);
+                    // std.debug.assert(handle_translation_descriptor.close_handles == false);
 
                     break :en @enumFromInt(parameters[current_parameter.* + 1]);
                 }
@@ -568,7 +569,7 @@ pub const Buffer = extern struct {
                             std.debug.assert(handle_translation_descriptor.type == .handle);
                             std.debug.assert(handle_translation_descriptor.extra_handles == (a.len - 1));
                             std.debug.assert(handle_translation_descriptor.replace_by_process_id == false);
-                            std.debug.assert(handle_translation_descriptor.close_handles == true);
+                            // std.debug.assert(handle_translation_descriptor.close_handles == true);
 
                             defer current_parameter.* += a.len;
                             break :st @bitCast(unpackType(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T))));
@@ -595,7 +596,7 @@ pub const Buffer = extern struct {
                             std.debug.assert(handle_translation_descriptor.type == .handle);
                             std.debug.assert(handle_translation_descriptor.extra_handles == (a.len - 1));
                             std.debug.assert(handle_translation_descriptor.replace_by_process_id == (T == ReplaceByProcessId));
-                            std.debug.assert(handle_translation_descriptor.close_handles == false);
+                            // std.debug.assert(handle_translation_descriptor.close_handles == false);
 
                             defer current_parameter.* += a.len;
                             break :e @bitCast(parameters[current_parameter.*..][0..a.len].*);
@@ -615,7 +616,8 @@ pub const Buffer = extern struct {
                     std.debug.assert(handle_translation_descriptor.type == .handle);
                     std.debug.assert(handle_translation_descriptor.extra_handles == 0);
                     std.debug.assert(handle_translation_descriptor.replace_by_process_id == false);
-                    std.debug.assert(handle_translation_descriptor.close_handles == true);
+                    // FIXME: remove when azahar fixes apt GlanceParameter
+                    // std.debug.assert(handle_translation_descriptor.close_handles == true);
 
                     defer current_parameter.* += 1;
                     break :s @bitCast(parameters[current_parameter.*]);
