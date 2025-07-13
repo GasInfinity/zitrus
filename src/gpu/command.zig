@@ -24,6 +24,7 @@ pub const Id = enum(u16) {
     }
 };
 
+// TODO: Do we want a real queue, don't we?
 pub const Queue = struct {
     buffer: []align(8) u32,
     current_index: usize,
@@ -37,8 +38,31 @@ pub const Queue = struct {
         };
     }
 
-    // TODO: !
-    pub fn addCommand() void {}
+    pub fn reset(queue: *Queue) void {
+        queue.current_index = 0;
+    }
+
+    pub fn addCommand(queue: *Queue, id: Id, value: u32) void {
+        queue.buffer[queue.current_index] = value;
+        queue.buffer[queue.current_index + 1] = @bitCast(Header{
+            .id = id,
+            .mask = 0b1111,
+            .extra = 0,
+            .consecutive_writing = false,
+        });
+        queue.current_index += 2;
+    }
+
+    pub fn finalize(queue: *Queue) void {
+        const internal = &zitrus.memory.arm11.gpu.internal;
+        const finalize_id: Id = .fromRegister(internal, &internal.irq.req[0]);
+
+        queue.addCommand(finalize_id, 0x12345678);
+
+        if (!std.mem.isAligned(queue.current_index, 4)) {
+            queue.addCommand(finalize_id, 0x12345678);
+        }
+    }
 };
 
 const std = @import("std");
