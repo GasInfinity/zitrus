@@ -1,18 +1,44 @@
+// TODO: Remove this somehow, the kernel COULD be able to provide us with a stack of X size if we could ask somehow in the 3dsx to luma/azahar
 pub const ZitrusOptions = struct {
     stack_size: u32,
 };
 
-pub const PhysicalAddress = enum(usize) {
-    _,
-};
+pub const PhysicalAddress = AlignedPhysicalAddress(.@"1", .@"1");
 
-pub fn AlignedPhysicalAddress(comptime alignment: std.mem.Alignment) type {
-    if (alignment == .@"1") {
-        return PhysicalAddress;
-    }
+pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, comptime address_shift: std.mem.Alignment) type {
+    std.debug.assert(address_alignment.order(address_shift) != .lt);
 
     return enum(usize) {
         _,
+
+        const AlignedPhysAddr = @This();
+        pub const alignment = address_alignment;
+        pub const shift = address_shift;
+
+        pub fn fromAddress(address: usize) AlignedPhysAddr {
+            return .of(@as(PhysicalAddress, @enumFromInt(address))); 
+        }
+
+        pub fn fromPhysical(aligned_address: anytype) AlignedPhysAddr {
+            const OtherAlignedPhysAddr = @TypeOf(aligned_address);
+            
+            if(@typeInfo(OtherAlignedPhysAddr) != .@"enum" or !@hasDecl(OtherAlignedPhysAddr, "alignment") or !@hasDecl(OtherAlignedPhysAddr, "shift"))
+                @compileError("please provide a valid AlignedPhysicalAddress to .of()");
+
+            const other_alignment = @field(OtherAlignedPhysAddr, "alignment");
+            const other_shift = @field(OtherAlignedPhysAddr, "shift");
+
+            if(@TypeOf(other_alignment) != std.mem.Alignment or @TypeOf(other_shift) != std.mem.Alignment or OtherAlignedPhysAddr != AlignedPhysicalAddress(other_alignment, other_shift))
+                @compileError("please provide a valid AlignedPhysicalAddress to .of()");
+
+            const address = @intFromEnum(aligned_address) << @intCast(std.math.log2(other_shift.toByteUnits()));
+
+            if(alignment.order(other_alignment) != .lt) {
+                std.debug.assert(alignment.check(address));
+            }
+
+            return @enumFromInt(address >> @intCast(std.math.log2(shift.toByteUnits())));
+        }
     };
 }
 

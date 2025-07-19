@@ -1,5 +1,7 @@
-const service_names = [_][]const u8{ "hid:USER", "hid:SPVR" };
+// XXX: We should try to connect first to SPRV, shouldn't we?
+const service_names = [_][]const u8{ "hid:USER", "hid:SPRV" };
 
+// TODO: Refactor and finish HID
 pub const Error = ClientSession.RequestError;
 
 pub const Pad = extern struct {
@@ -179,6 +181,7 @@ pub const command = struct {
 };
 
 const Hid = @This();
+
 const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;

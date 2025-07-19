@@ -540,7 +540,7 @@ pub const Primitive = enum(u1) { none, emmiting };
 
 pub const Winding = enum(u1) { ccw, cw };
 
-pub const Instruction = extern union {
+pub const Instruction = packed union {
     pub const Opcode = enum(u6) {
         pub const Mad = enum(u3) { _ };
         pub const Comparison = enum(u5) { _ };
@@ -628,9 +628,9 @@ pub const Instruction = extern union {
         pub fn Register(comptime inverted: bool) type {
             return packed struct(u32) {
                 operand_descriptor_id: u7,
-                src2: (if (inverted) SourceRegister else SourceRegister.Limited),
+                src2: (if (inverted) SourceRegister else SourceRegister.Limited) = .v0,
                 src1: (if (inverted) SourceRegister.Limited else SourceRegister),
-                address_index: RelativeComponent,
+                address_index: RelativeComponent = .none,
                 dst: DestinationRegister,
                 opcode: Opcode,
             };
@@ -640,7 +640,7 @@ pub const Instruction = extern union {
             operand_descriptor_id: u7,
             src2: SourceRegister.Limited,
             src1: SourceRegister,
-            address_index: RelativeComponent,
+            address_index: RelativeComponent = .none,
             x_operation: ComparisonOperation,
             y_operation: ComparisonOperation,
             opcode: Opcode.Comparison,
@@ -648,7 +648,7 @@ pub const Instruction = extern union {
 
         pub const ControlFlow = packed struct(u32) {
             num: u8,
-            _unused: u2 = 0,
+            _unused0: u2 = 0,
             dst_word_offset: i12,
             condition: Condition,
             ref_y: bool,
@@ -665,7 +665,7 @@ pub const Instruction = extern union {
         };
 
         pub const SetEmit = packed struct(u32) {
-            _unused: u22 = 0,
+            _unused0: u22 = 0,
             winding: Winding,
             primitive_emit: Primitive,
             vertex_id: u2,
@@ -685,31 +685,9 @@ pub const Instruction = extern union {
         }
     };
 
-    pub const Format = enum {
-        unparametized,
-        register,
-        register_inverted,
-        register_unary,
-        comparison,
-        control_flow,
-        constant_control_flow,
-        set_emit,
-        mad,
-        mad_inverted,
-
-        pub fn descriptorSize(fmt: Format) ?usize {
-            return switch (fmt) {
-                .unparametized, .control_flow, .constant_control_flow, .set_emit => null,
-                .mad, .mad_inverted => 5,
-                else => 7,
-            };
-        }
-    };
-
     unparametized: format.Unparametized,
     register: format.Register(false),
     register_inverted: format.Register(true),
-    register_unary: format.Register(false),
     comparison: format.Comparison,
     control_flow: format.ControlFlow,
     constant_control_flow: format.ConstantControlFlow,

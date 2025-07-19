@@ -172,7 +172,7 @@ pub const ResultCode = packed struct(i32) {
 
     description: ResultDescription = .success,
     module: ResultModule = .common,
-    _reserved: u3 = 0,
+    _reserved0: u3 = 0,
     summary: ResultSummary = .success,
     level: ResultLevel = .success,
 

@@ -61,20 +61,19 @@ pub fn main() !void {
     // const aligned_base = @intFromEnum(horizon.memory.toPhysical(@intFromPtr(at_buf.ptr))) >> 3;
 
     // For fixed attributes
-    const asb = std.mem.asBytes;
-    const f24 = gpu.F7_16.Float;
-    const vtx_buf = std.mem.bytesAsSlice(u32, &(
-                    asb(&f24.of(1))[0..3].* ++ asb(&f24.of(0))[0..3].* ++ asb(&f24.of(1))[0..3].* ++ asb(&f24.of(1))[0..3].* ++
-                    asb(&f24.of(-1))[0..3].* ++ asb(&f24.of(-1))[0..3].* ++ asb(&f24.of(0))[0..3].* ++ asb(&f24.of(1))[0..3].* ++
+    const as_fixed_attr: [8]F7_16x4 = .{
+        .pack(.of(1), .of(0), .of(1), .of(1)),
+        .pack(.of(-1), .of(-1), .of(0), .of(1)),
 
-                    asb(&f24.of(1))[0..3].* ++ asb(&f24.of(1))[0..3].* ++ asb(&f24.of(0))[0..3].* ++ asb(&f24.of(1))[0..3].* ++
-                    asb(&f24.of(1))[0..3].* ++ asb(&f24.of(-1))[0..3].* ++ asb(&f24.of(0))[0..3].* ++ asb(&f24.of(1))[0..3].* ++
+        .pack(.of(1),  .of(1), .of(0), .of(1)),
+        .pack(.of(1), .of(-1), .of(0), .of(1)),
 
-                    asb(&f24.of(0))[0..3].* ++ asb(&f24.of(1))[0..3].* ++ asb(&f24.of(1))[0..3].* ++ asb(&f24.of(1))[0..3].* ++
-                    asb(&f24.of(-1))[0..3].* ++ asb(&f24.of(1))[0..3].* ++ asb(&f24.of(0))[0..3].* ++ asb(&f24.of(1))[0..3].* ++
+        .pack(.of(0), .of(1), .of(1), .of(1)),
+        .pack(.of(-1), .of(1), .of(0), .of(1)),
 
-                    asb(&f24.of(0))[0..3].* ++ asb(&f24.of(1))[0..3].* ++ asb(&f24.of(0))[0..3].* ++ asb(&f24.of(1))[0..3].* ++
-                    asb(&f24.of(1))[0..3].* ++ asb(&f24.of(1))[0..3].* ++ asb(&f24.of(0))[0..3].* ++ asb(&f24.of(1))[0..3].*));
+        .pack(.of(0), .of(1), .of(0), .of(1)),
+        .pack(.of(1), .of(1), .of(0), .of(1)),
+    };
 
     // Learn the hard way that memory fills only work with vram.
     // 3dbrew GSP Shared memory: "Addresses should be aligned to 8 bytes and must be in linear, QTM or VRAM memory"
@@ -101,115 +100,184 @@ pub fn main() !void {
     var queue: command.Queue = .initBuffer(commandBuffer);
 
     // Adapted from https://problemkaputt.de/gbatek.htm#3dsgputriangledrawingsamplecode but writing through commandlists instead of doing it directly and some more fixes (texenv0, lighting disable)
-    // TODO: Obviously this is NOT an API. Abstracting this will be fun
-    const buf_phys = @intFromEnum(horizon.memory.toPhysical(@intFromPtr(bot_renderbuf.ptr))) >> 3;
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.render_buffer_invalidate), 1);
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.depth_buffer_location), buf_phys + bot_renderbuf.len);
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.color_buffer_location), buf_phys);
-    // We'll render to the bottom screen
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.render_buffer_dimensions), ((@as(u32, 1) << 24) + (320 - 1) * 0x1000 + 240));
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.render_buffer_dimensions_1), ((@as(u32, 1) << 24) + (320 - 1) * 0x1000 + 240));
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.faceculling_config), 0);
-    // 320 / 2 | 240 / 2 | 2 / 320 | 2 / 240
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.viewport_v_scale), 0x0045E000);
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.viewport_h_scale), 0x00464000);
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.viewport_v_step), 0x38111100);
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.viewport_h_step), 0x37999900);
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.viewport_xy), 0);
-    // Disable everything, only enable basic color (no alpha)
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.scissor_config), 0);
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.color_operation), 0x00E40100);
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.blend_config), 0x06020000);
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.fragment_operation_alpha), 0x00);
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.stencil_test), 0x00);
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.logic_operation), 0x00);
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.depth_color_mask), 0x1F00);
-    // Enable reading and writing rgba
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.color_buffer_reading), 0x0F);
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.color_buffer_writing), 0x0F);
-    // Don't write to the depth buffer
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.depth_buffer_reading), 0x00);
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.depth_buffer_writing), 0x00);
-    // rgba8 32bits pixel size
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.color_buffer_format), 0x02);
-    // irrelevant, we don't write to the depth buffer
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.depth_buffer_format), 0x03);
-    // 8x8 tile size
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.render_buffer_block_size), 0x00);
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.early_depth_test_2), 0x00);
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.early_depth_test_1), 0x00);
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.depth_map_enable), 0x01);
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.depth_map_scale), 0x00bf0000);
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.depth_map_offset), 0x00000000);
+    // TODO: This is VERY low level. Needs API
+    queue.add(internal, &internal.framebuffer.render_buffer_invalidate, .trigger);
+    queue.add(internal, &internal.framebuffer.depth_buffer_location, .fromPhysical(horizon.memory.toPhysical(@intFromPtr(bot_renderbuf.ptr))));
+    queue.add(internal, &internal.framebuffer.color_buffer_location, .fromPhysical(horizon.memory.toPhysical(@intFromPtr(bot_renderbuf.ptr))));
+    // We'll render to the bottom screen, thats why 320x240 (physically they are 240x320)
+    queue.add(internal, &internal.framebuffer.render_buffer_dimensions, .init(240, 320, true));
+    queue.add(internal, &internal.rasterizer.faceculling_config, .{ .mode = .none });
+    queue.add(internal, &internal.rasterizer.viewport_h_scale, .fromFloat(.of(240.0 / 2.0)));
+    queue.add(internal, &internal.rasterizer.viewport_v_scale, .fromFloat(.of(320.0 / 2.0)));
+    queue.add(internal, &internal.rasterizer.viewport_h_step, .fromFloat(.of(2.0 / 240.0)));
+    queue.add(internal, &internal.rasterizer.viewport_v_step, .fromFloat(.of(2.0 / 320.0)));
+    queue.add(internal, &internal.rasterizer.viewport_xy, .{ .x = 0, .y = 0 });
+    queue.add(internal, &internal.rasterizer.scissor_config, .{ .mode = .disable });
+    queue.add(internal, &internal.framebuffer.color_operation, .{
+        .fragment_operation = .default,
+        .mode = .blend,
+    });
+    // Basically replace the color: Ofb = 1*src + 0*dst
+    queue.add(internal, &internal.framebuffer.blend_config, .{
+        .rgb_equation = .add,
+        .alpha_equation = .add,
+        .rgb_src_function = .one,
+        .rgb_dst_function = .zero,
+        .alpha_src_function = .one,
+        .alpha_dst_function = .zero,
+    });
+    queue.add(internal, &internal.framebuffer.fragment_operation_alpha_test, .{
+        .enable = false,
+        .function = .never,
+        .reference_value = 0,
+    });
+    queue.add(internal, &internal.framebuffer.stencil_test, .{
+        .enable = false,
+        .function = .never,
+        .src_mask = 0,
+        .dst_mask = 0,
+        .value = 0,
+    });
+    queue.add(internal, &internal.framebuffer.logic_operation, .{ .operation = .clear });
+    queue.add(internal, &internal.framebuffer.depth_color_mask, .{
+        .enable_depth_test = false,
+        .depth_function = .never,
+        .r_write_enable = true,
+        .g_write_enable = true,
+        .b_write_enable = true,
+        .a_write_enable = true,
+        .depth_write_enable = false,
+    });
+    queue.add(internal, &internal.framebuffer.color_buffer_reading, .enable);
+    queue.add(internal, &internal.framebuffer.color_buffer_writing, .enable);
+    queue.add(internal, &internal.framebuffer.depth_buffer_reading, .disable);
+    queue.add(internal, &internal.framebuffer.depth_buffer_writing, .disable);
+    queue.add(internal, &internal.framebuffer.color_buffer_format, .{ .pixel_size = .@"32", .format = .abgr8 });
+    queue.add(internal, &internal.framebuffer.depth_buffer_format, .{ .format = .f16 });
+    queue.add(internal, &internal.framebuffer.render_buffer_block_size, .{ .mode = .@"8x8" });
+    queue.add(internal, &internal.framebuffer.early_depth_test_2, .disable);
+    queue.add(internal, &internal.rasterizer.early_depth_test_1, .disable);
+    queue.add(internal, &internal.rasterizer.depth_map_enable, .enable);
+    queue.add(internal, &internal.rasterizer.depth_map_scale, .fromFloat(.of(-1.0)));
+    queue.add(internal, &internal.rasterizer.depth_map_offset, .fromFloat(.of(0.0)));
     // Just in case, 
-    queue.addCommand(.fromRegister(internal, &internal.texturing.lighting_enable), 0);
-    queue.addCommand(.fromRegister(internal, &internal.fragment_lighting.disable), 1);
+    queue.add(internal, &internal.texturing.lighting_enable, .disable);
+    queue.add(internal, &internal.fragment_lighting.disable, .disable);
     // enable texture environment 0 to just replace the color. PLEASE, unless you want to get black output and debug it for 12h :D
-    queue.addCommand(.fromRegister(internal, &internal.texturing_environment.texture_environment_0.source), 0x00);
-    queue.addCommand(.fromRegister(internal, &internal.texturing_environment.texture_environment_0.combiner), 0x00);
-    queue.addCommand(.fromRegister(internal, &internal.texturing_environment.update_buffer), 0);
-
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.start_draw_function), 1);
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.shader_output_map_total), 2);
-    queue.addCommand(.fromRegister(internal, &internal.vertex_shader.output_map_mask), 0b11);
-    // color.rgba
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.shader_output_map_output[0]), 0x0B0A0908);
-    // position.xyzw
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.shader_output_map_output[1]), 0x03020100);
-    // position.z + color present
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.shader_output_attribute_clock), 0b11);
-    // don't use texture coordinates
-    queue.addCommand(.fromRegister(internal, &internal.rasterizer.shader_output_attribute_mode), 0x00);
-    // 2 regs (regs - 1)
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.vertex_shader_num_attributes), 1);
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.vertex_shader_output_map_total_1), 1);
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.vertex_shader_output_map_total_2), 1);
+    queue.add(internal, &internal.texturing_environment.texture_environment_0.source, .{
+        .rgb_source_0 = .primary_color,
+        .rgb_source_1 = .primary_color,
+        .rgb_source_2 = .primary_color,
+        .alpha_source_0 = .primary_color,
+        .alpha_source_1 = .primary_color,
+        .alpha_source_2 = .primary_color,
+    });
+    queue.add(internal, &internal.texturing_environment.texture_environment_0.combiner, .{
+        .rgb_combine = .replace,
+        .alpha_combine = .replace,
+    });
+    queue.add(internal, &internal.texturing_environment.update_buffer, .{
+        .fog_mode = .disabled,
+        .shading_density_source = .plain,
+        .tex_env_1_rgb_buffer_input = .previous_buffer,
+        .tex_env_2_rgb_buffer_input = .previous_buffer,
+        .tex_env_3_rgb_buffer_input = .previous_buffer,
+        .tex_env_4_rgb_buffer_input = .previous_buffer,
+        .tex_env_1_alpha_buffer_input = .previous_buffer,
+        .tex_env_2_alpha_buffer_input = .previous_buffer,
+        .tex_env_3_alpha_buffer_input = .previous_buffer,
+        .tex_env_4_alpha_buffer_input = .previous_buffer,
+        .z_flip  = false,
+    });
+    queue.add(internal, &internal.geometry_pipeline.start_draw_function, .config);
+    queue.add(internal, &internal.rasterizer.shader_output_map_total, .{ .num = 2 });
+    queue.add(internal, &internal.vertex_shader.output_map_mask, .{
+        .o0_enabled = true,
+        .o1_enabled = true,
+    });
+    queue.add(internal, &internal.rasterizer.shader_output_map_output[0..2].*, .{ .{
+        .x = .color_r,
+        .y = .color_g,
+        .z = .color_b,
+        .w = .color_a,
+    }, .{
+        .x = .position_x,
+        .y = .position_y,
+        .z = .position_z,
+        .w = .position_w,
+    }});
+    queue.add(internal, &internal.rasterizer.shader_output_attribute_clock, .{
+        .position_z_present = true,
+        .color_present = true,
+    });
+    queue.add(internal, &internal.rasterizer.shader_output_attribute_mode, .{ .use_texture_coordinates = false });
+    queue.add(internal, &internal.geometry_pipeline.vertex_shader_input_attributes, .initTotal(2 - 1));
+    queue.add(internal, &internal.geometry_pipeline.vertex_shader_output_map_total_1, .initTotal(2 - 1));
+    queue.add(internal, &internal.geometry_pipeline.vertex_shader_output_map_total_2, .initTotal(2 - 1));
 
     // don't use geometry shader + 2 input registers
-    queue.addCommand(.fromRegister(internal, &internal.vertex_shader.input_buffer_config), (@as(u32, 0xA0) << 24) | 1);
+    queue.add(internal, &internal.geometry_pipeline.enable_geometry_shader_configuration, .disable);
+    queue.add(internal, &internal.vertex_shader.input_buffer_config, .{
+        .num_input_attributes = (2 - 1),
+        .enabled_for_vertex_0 = true,
+        .enabled_for_vertex_1 = true,
+    });
 
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.vertex_shader_common_mode), 0);
-    // triangle strip + 2 output registers
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.primitive_config), (@as(u32, 1) << 8) | 1);
+    queue.add(internal, &internal.geometry_pipeline.primitive_config, .{
+        .total_vertex_outputs = (2 - 1),
+        .mode = .triangle_strip,
+    });
 
-    // identity map vtx attribute to input register index
-    queue.addCommand(.fromRegister(internal, &internal.vertex_shader.attribute_permutation_low), 0x76543210);
-    queue.addCommand(.fromRegister(internal, &internal.vertex_shader.attribute_permutation_high), 0xfedcba98);
+    // identity map attributes to input registers
+    queue.add(internal, &internal.vertex_shader.attribute_permutation_low, .{});
+    queue.add(internal, &internal.vertex_shader.attribute_permutation_high, .{});
+
     // enable o0 o1
-    queue.addCommand(.fromRegister(internal, &internal.vertex_shader.code_transfer_index), 0);
-    queue.addCommand(.fromRegister(internal, &internal.vertex_shader.code_transfer_data[0]), 0x4C000000); // mov o0, v0  color
-    queue.addCommand(.fromRegister(internal, &internal.vertex_shader.code_transfer_data[1]), 0x4C201000); // mov o1, v1  pos 
-    queue.addCommand(.fromRegister(internal, &internal.vertex_shader.code_transfer_data[2]), 0x88000000); // end
-    queue.addCommand(.fromRegister(internal, &internal.vertex_shader.code_transfer_end), 1);
+    queue.add(internal, &internal.vertex_shader.code_transfer_index, .initIndex(0));
+    queue.add(internal, &internal.vertex_shader.code_transfer_data[0..3].*, .{
+        .{ .register = .{
+            .operand_descriptor_id = 0,
+            .dst = .o0,
+            .src1 = .v0,
+            .src2 = .v0,
+            .opcode = .mov,
+        }},
+        .{ .register = .{
+            .operand_descriptor_id = 0,
+            .dst = .o1,
+            .src1 = .v1,
+            .src2 = .v0,
+            .opcode = .mov,
+        }},
+        .{ .unparametized = .{ .opcode = .end } },
+    });
+    queue.add(internal, &internal.vertex_shader.code_transfer_end, .trigger);
 
-    queue.addCommand(.fromRegister(internal, &internal.vertex_shader.operand_descriptors_index), 0);
+    queue.add(internal, &internal.vertex_shader.operand_descriptors_index, .initIndex(0));
     // mask xyzw, selector xyzw
-    queue.addCommand(.fromRegister(internal, &internal.vertex_shader.operand_descriptors_data[0]), 0x0000036F);
+    queue.add(internal, &internal.vertex_shader.operand_descriptors_data[0], .{});
     // lower 16 bits, entrypoint starts at instruction 0
-    queue.addCommand(.fromRegister(internal, &internal.vertex_shader.entrypoint), 0x7fff0000);
+    queue.add(internal, &internal.vertex_shader.entrypoint, .initEntry(0));
     
     // drawing triangle strips
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.config), (@as(u32, 1) << 8));
+    queue.add(internal, &internal.geometry_pipeline.config, .{});
     // drawing triangle strips + inputting vtx data
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.config_2), (@as(u32, 1) << 8) | 1);
+    queue.add(internal, &internal.geometry_pipeline.config_2, .{
+        .inputting_vertices_or_draw_arrays = true,
+    });
     // immediate mode start
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.restart_primitive), 1);
+    queue.add(internal, &internal.geometry_pipeline.restart_primitive, .trigger);
     // start drawing
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.start_draw_function), 0);
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.fixed_attribute_index), 0xF);
+    queue.add(internal, &internal.geometry_pipeline.start_draw_function, .drawing);
+    queue.add(internal, &internal.geometry_pipeline.fixed_attribute_index, .immediate_mode);
     inline for (0..8) |i| {
-        queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.fixed_attribute_data[0]), vtx_buf[i*3+2]);
-        queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.fixed_attribute_data[1]), vtx_buf[i*3+1]);
-        queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.fixed_attribute_data[2]), vtx_buf[i*3]);
+        queue.add(internal, &internal.geometry_pipeline.fixed_attribute_data, as_fixed_attr[i]);
     }
-    // in config again
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.start_draw_function), 1);
-    // Clear post vertex cache
-    queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.post_vertex_cache_num), 1);
-    // Flush changes to vram
-    queue.addCommand(.fromRegister(internal, &internal.framebuffer.render_buffer_flush), 1);
+    queue.add(internal, &internal.geometry_pipeline.start_draw_function, .config);
+    queue.add(internal, &internal.geometry_pipeline.clear_post_vertex_cache, .trigger);
+    queue.add(internal, &internal.framebuffer.render_buffer_flush, .trigger);
 
-    // Drawing to 
+    // TODO: use attribute buffers and rewrite with add()
     // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.attribute_buffer_base), aligned_base);
     // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.attribute_buffer_format_low), 0x9C); // low word
     // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.attribute_buffer_format_high), @as(u32, 1) << 28); // high word
@@ -299,6 +367,7 @@ const Hid = horizon.services.Hid;
 const Framebuffer = zitrus.gpu.Framebuffer;
 
 const gpu = zitrus.gpu;
+const F7_16x4 = gpu.F7_16x4;
 const command = gpu.command;
 
 pub const panic = zitrus.panic;

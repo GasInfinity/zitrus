@@ -1,3 +1,5 @@
+const service_names = [_][]const u8{ "fs:LDR", "fs:USER" };
+
 pub const CardType = enum(u8) {
     ctr,
     twl,
@@ -85,7 +87,7 @@ pub const ProgramInfo = extern struct {
 pub const File = packed struct(u32) {
     session: ClientSession,
 
-    pub fn openSubFile(file: File, offset: u64, size: u64) !File {
+    pub fn sendOpenSubFile(file: File, offset: u64, size: u64) !File {
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(file.session, File.command.OpenSubFile, .{ .offset = offset, .size = size }, .{})) {
             .success => |s| s.value.response.file,
@@ -93,7 +95,7 @@ pub const File = packed struct(u32) {
         };
     }
 
-    pub fn read(file: File, offset: u64, buffer: []u8) !usize {
+    pub fn sendRead(file: File, offset: u64, buffer: []u8) !usize {
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(file.session, File.command.Read, .{ .offset = offset, .size = buffer.len, .buffer = .init(buffer) }, .{})) {
             .success => |s| s.value.response.actual_read,
@@ -101,7 +103,7 @@ pub const File = packed struct(u32) {
         };
     }
 
-    pub fn write(file: File, offset: u64, buffer: []const u8, options: WriteOptions) !usize {
+    pub fn sendWrite(file: File, offset: u64, buffer: []const u8, options: WriteOptions) !usize {
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(file.session, File.command.Write, .{ .offset = offset, .size = buffer.len, .options = options, .buffer = .init(buffer) }, .{})) {
             .success => |s| s.value.response.actual_written,
@@ -109,7 +111,7 @@ pub const File = packed struct(u32) {
         };
     }
 
-    pub fn getSize(file: File) !u64 {
+    pub fn sendGetSize(file: File) !u64 {
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(file.session, File.command.GetSize, .{}, .{})) {
             .success => |s| s.value.response.size,
@@ -117,7 +119,7 @@ pub const File = packed struct(u32) {
         };
     }
 
-    pub fn setSize(file: File, size: u64) !void{
+    pub fn sendSetSize(file: File, size: u64) !void{
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(file.session, File.command.SetSize, .{ .size = size }, .{})) {
             .success => {},
@@ -125,7 +127,7 @@ pub const File = packed struct(u32) {
         };
     }
 
-    pub fn getAttributes(file: File) !Attributes {
+    pub fn sendGetAttributes(file: File) !Attributes {
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(file.session, File.command.GetAttributes, .{}, .{})) {
             .success => |s| s.value.response.attributes,
@@ -133,7 +135,7 @@ pub const File = packed struct(u32) {
         };
     }
 
-    pub fn setAttributes(file: File, attributes: Attributes) !void{
+    pub fn sendSetAttributes(file: File, attributes: Attributes) !void{
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(file.session, File.command.SetAttributes, .{ .attributes = attributes }, .{})) {
             .success => {},
@@ -151,7 +153,7 @@ pub const File = packed struct(u32) {
         file.* = undefined;
     }
 
-    pub fn flush(file: File) !void{
+    pub fn sendFlush(file: File) !void{
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(file.session, File.command.Flush, .{}, .{})) {
             .success => {},
@@ -159,7 +161,7 @@ pub const File = packed struct(u32) {
         };
     }
 
-    pub fn getPriority(file: File) !u32{
+    pub fn sendGetPriority(file: File) !u32{
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(file.session, File.command.GetPriority, .{}, .{})) {
             .success => |s| s.value.response.priority,
@@ -167,7 +169,7 @@ pub const File = packed struct(u32) {
         };
     }
 
-    pub fn setPriority(file: File, priority: u32) !void{
+    pub fn sendSetPriority(file: File, priority: u32) !void{
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(file.session, File.command.SetPriority, .{ .priority = priority }, .{})) {
             .success => {},
@@ -175,7 +177,7 @@ pub const File = packed struct(u32) {
         };
     }
 
-    pub fn openLinkFile(file: File) !File {
+    pub fn sendOpenLinkFile(file: File) !File {
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(file.session, File.command.OpenLinkFile, .{}, .{})) {
             .success => |s| s.value.response.clone,
@@ -183,7 +185,7 @@ pub const File = packed struct(u32) {
         };
     }
 
-    pub fn getAvailable(file: File, offset: u64, size: u64) !u64 {
+    pub fn sendGetAvailable(file: File, offset: u64, size: u64) !u64 {
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(file.session, File.command.GetAvailable, .{ .offset = offset, .size = size }, .{})) {
             .success => |s| s.value.response.available,
@@ -239,7 +241,7 @@ pub const Directory = packed struct(u32) {
 
     session: ClientSession,
 
-    pub fn read(dir: Directory, entries: []Entry) !usize {
+    pub fn sendRead(dir: Directory, entries: []Entry) !usize {
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(dir.session, Directory.command.Read, .{ .count = entries.len, .buffer = .init(std.mem.asBytes(entries)) }, .{})) {
             .success => |s| s.value.response.actual_entries,
@@ -257,7 +259,7 @@ pub const Directory = packed struct(u32) {
         dir.* = undefined;
     }
 
-    pub fn getPriority(dir: Directory) !u32 {
+    pub fn sendGetPriority(dir: Directory) !u32 {
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(dir.session, Directory.command.GetPriority, .{}, .{})) {
             .success => |s| s.value.response.priority,
@@ -265,7 +267,7 @@ pub const Directory = packed struct(u32) {
         };
     }
 
-    pub fn setPriority(dir: Directory, priority: u32) !void {
+    pub fn sendSetPriority(dir: Directory, priority: u32) !void {
         const data = tls.getThreadLocalStorage();
         return switch(try data.ipc.sendRequest(dir.session, Directory.command.SetPriority, .{ .priority = priority }, .{})) {
             .success => {},
@@ -291,6 +293,234 @@ pub const Directory = packed struct(u32) {
 };
 
 session: ClientSession,
+
+pub fn init(srv: ServiceManager) !Filesystem {
+    var last_error: anyerror = undefined;
+    const fs_session = used: for (service_names) |service_name| {
+        const fs_session = srv.getService(service_name, .wait) catch |err| {
+            last_error = err;
+            continue;
+        };
+
+        break :used fs_session;
+    } else return last_error;
+
+    return .{
+        .session = fs_session,
+    };
+}
+
+pub fn sendInitialize(fs: Filesystem) void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.Initialize, .{ .process_id = .{} }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, flags: OpenFlags, attributes: Attributes) !File {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.OpenFile, .{
+        .transaction = transaction,
+        .archive = archive,
+        .path_type = path_type,
+        .path_size = path.len,
+        .flags = flags,
+        .attributes = attributes,
+        .path = .init(path),
+    }, .{})) {
+        .success => |s| s.value.response.file,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendOpenFileDirectly(fs: Filesystem, transaction: usize, archive_id: ArchiveId, archive_path_type: PathType, archive_path: []const u8, file_path_type: PathType, file_path: []const u8, flags: OpenFlags, attributes: Attributes) !File {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.OpenFileDirectly, .{
+        .transaction = transaction,
+        .archive_id = archive_id,
+        .archive_path_type = archive_path_type,
+        .archive_path_size = archive_path.len,
+        .file_path_type = file_path_type,
+        .file_path_size = file_path.len,
+        .flags = flags,
+        .attributes = attributes,
+        .archive_path = .init(archive_path),
+        .file_path = .init(file_path),
+    }, .{})) {
+        .success => |s| s.value.response.file,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendDeleteFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.DeleteFile, .{
+        .transaction = transaction,
+        .archive = archive,
+        .path_type = path_type,
+        .path_size = path.len,
+        .path = .init(path),
+    }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) !void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.RenameFile, .{
+        .transaction = transaction,
+        .source_archive = src_archive,
+        .source_path_type = src_path_type,
+        .soruce_path_size = src_path.len,
+        .destination_archive = dst_archive,
+        .destination_path_type = dst_path_type,
+        .destination_path_size = dst_path.len,
+        .source_path = .init(src_path),
+        .destination_path = .init(dst_path),
+    }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendDeleteDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.DeleteDirectory, .{
+        .transaction = transaction,
+        .archive = archive,
+        .path_type = path_type,
+        .path_size = path.len,
+        .path = .init(path),
+    }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendDeleteDirectoryRecursively(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.DeleteDirectoryRecursively, .{
+        .transaction = transaction,
+        .archive = archive,
+        .path_type = path_type,
+        .path_size = path.len,
+        .path = .init(path),
+    }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendCreateFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, attributes: Attributes, size: u64) !void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.CreateFile, .{
+        .transaction = transaction,
+        .archive = archive,
+        .path_type = path_type,
+        .path_size = path.len,
+        .attributes = attributes,
+        .file_size = size,
+        .path = .init(path),
+    }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, attributes: Attributes) !void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.CreateDirectory, .{
+        .transaction = transaction,
+        .archive = archive,
+        .path_type = path_type,
+        .path_size = path.len,
+        .attributes = attributes,
+        .path = .init(path),
+    }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) !void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.RenameDirectory, .{
+        .transaction = transaction,
+        .source_archive = src_archive,
+        .source_path_type = src_path_type,
+        .soruce_path_size = src_path.len,
+        .destination_archive = dst_archive,
+        .destination_path_type = dst_path_type,
+        .destination_path_size = dst_path.len,
+        .source_path = .init(src_path),
+        .destination_path = .init(dst_path),
+    }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendOpenDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !Directory {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.OpenDirectory, .{
+        .transaction = transaction,
+        .archive = archive,
+        .path_type = path_type,
+        .path_size = path.len,
+        .path = .init(path),
+    }, .{})) {
+        .success => |s| s.value.response.directory,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendOpenArchive(fs: Filesystem, transaction: usize, archive_id: ArchiveId, path_type: PathType, path: []const u8) !Archive {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.OpenArchive, .{
+        .transaction = transaction,
+        .archive_id = archive_id,
+        .path_type = path_type,
+        .path_size = path.len,
+        .path = .init(path),
+    }, .{})) {
+        .success => |s| s.value.response.archive,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendControlArchive(fs: Filesystem, transaction: usize, archive: Archive, action: ControlArchiveAction, input: []const u8, output: []u8) !void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.ControlArchive, .{
+        .transaction = transaction,
+        .archive = archive,
+        .action = action,
+        .input_size = input.len,
+        .output_size = output.len,
+        .input = .init(input),
+        .output = .init(output),
+    }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendCloseArchive(fs: Filesystem, transaction: usize, archive: Archive) !void {
+    const data = tls.getThreadLocalStorage();
+    return switch(try data.ipc.sendRequest(fs.session, command.CloseArchive, .{
+        .transaction = transaction,
+        .archive = archive,
+    }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn deinit(fs: *Filesystem) void {
+    fs.session.deinit();
+    fs.* = undefined;
+}
 
 pub const command = struct {
     pub const Initialize = ipc.Command(Id, .initialize, struct { process_id: ipc.ReplaceByProcessId }, struct {});
@@ -396,7 +626,7 @@ pub const command = struct {
         input_size: usize,
         output_size: usize,
         input: ipc.MappedSlice(.read),
-        write: ipc.MappedSlice(.write),
+        output: ipc.MappedSlice(.write),
     }, struct {});
     pub const CloseArchive = ipc.Command(Id, .close_archive, struct {
         transaction: usize,
@@ -581,6 +811,8 @@ pub const command = struct {
     };
 };
 
+const Filesystem = @This();
+
 const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
@@ -589,3 +821,5 @@ const ipc = horizon.ipc;
 
 const ResultCode = horizon.ResultCode;
 const ClientSession = horizon.ClientSession;
+
+const ServiceManager = zitrus.horizon.ServiceManager;

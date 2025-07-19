@@ -7,6 +7,7 @@ pub const F3_12 = pica.F3_12;
 pub const F7_12 = pica.F7_12;
 pub const F7_16 = pica.F7_16;
 pub const F7_23 = pica.F7_23;
+pub const F7_16x4 = pica.F7_16x4;
 
 pub const Screen = enum(u1) {
     top,
@@ -42,6 +43,7 @@ pub const PixelSize = enum(u2) {
 };
 
 pub const ColorFormat = enum(u3) {
+    pub const Rgba8 = extern struct { r: u8, g: u8, b: u8, a:u8 };
     pub const Abgr8 = extern struct { a: u8, b: u8, g: u8, r: u8 };
     pub const Bgr8 = extern struct { b: u8, g: u8, r: u8 };
     pub const Bgr565 = packed struct(u16) { b: u5, g: u6, r: u5 };
@@ -291,8 +293,92 @@ pub const AttributeArrayComponent = enum(u4) {
 
 pub const IndexFormat = enum(u1) { u8, u16 };
 
+pub const ColorBufferFormat = enum(u3) { abgr8, a1_bgr5 = 2, bgr565, abgr4 };
+
+// XXX: well, i suppose they'd be floats?
+pub const DepthBufferFormat = enum(u2) { f16, f24 = 2, f24xi8 };
+
+pub const TextureEnvironmentSource = enum(u4) {
+    primary_color,
+    fragment_primary_color,
+    fragment_secondary_color,
+    texture_0,
+    texture_1,
+    texture_2,
+    texture_3,
+    previous_buffer = 0xD,
+    constant,
+    previous,
+};
+
+pub const TextureEnvironmentRgbOperand = enum(u4) {
+    source_color,
+    one_minus_source_color,
+    source_alpha,
+    one_minus_source_alpha,
+    source_red,
+    one_minus_source_red,
+    source_green = 8,
+    one_minus_source_green,
+    source_blue = 12,
+    one_minus_source_blue,
+};
+
+pub const TextureEnvironmentAlphaOperand = enum(u3) {
+    source_alpha,
+    one_minus_source_alpha,
+    source_red,
+    one_minus_source_red,
+    source_green,
+    one_minus_source_green,
+    source_blue,
+    one_minus_source_blue,
+};
+
+pub const TextureEnvironmentCombiner = enum(u4) {
+    replace,
+    modulate,
+    add,
+    add_signed,
+    interpolate,
+    subtract,
+    dot3_rgb,
+    dot3_rgba,
+    multiply_add,
+    add_multiply,
+};
+
+pub const TextureEnvironmentFogMode = enum(u3) {
+    disabled,
+    fog = 5,
+    gas = 7,
+};
+
+pub const TextureEnvironmentShadingDensity = enum(u1) {
+    plain,
+    depth,
+};
+
 // TODO: Properly finish this
 pub const Registers = struct {
+    pub const WrappedF7_23 = packed struct(u32) {
+        _: u1 = 0,
+        value: F7_23,
+
+        pub fn fromFloat(value: F7_23) WrappedF7_23 {
+            return .{ .value = value };
+        }
+    };
+
+    pub const WrappedF7_16 = packed struct(u32) {
+        value: F7_16,
+        _: u8 = 0,
+
+        pub fn fromFloat(value: F7_16) WrappedF7_16 {
+            return .{ .value = value };
+        }
+    };
+
     pub const VRamPower = packed struct(u32) {
         _unknown0: u8,
         power_off_a_low: bool,
@@ -445,8 +531,8 @@ pub const Registers = struct {
             }
         };
 
-        start: AlignedPhysicalAddress(.@"16"),
-        end: AlignedPhysicalAddress(.@"16"),
+        start: AlignedPhysicalAddress(.@"16", .@"8"),
+        end: AlignedPhysicalAddress(.@"16", .@"8"),
         value: u32,
         control: Control,
         _padding0: u16 = 0,
@@ -473,8 +559,8 @@ pub const Registers = struct {
             _unwritable5: u6 = 0,
         };
 
-        input: AlignedPhysicalAddress(.@"16"),
-        output: AlignedPhysicalAddress(.@"16"),
+        input: AlignedPhysicalAddress(.@"16", .@"8"),
+        output: AlignedPhysicalAddress(.@"16", .@"8"),
         output_dimensions: Dimensions,
         input_dimensions: Dimensions,
         flags: Flags,
@@ -491,8 +577,31 @@ pub const Registers = struct {
         texture_dst_dimensions: Dimensions,
     };
 
-    // TODO: get PICA command id at comptime with this struct
+    // FIXME: Remove usages of @Vector() in packed structs!
     pub const Internal = extern struct {
+        pub const Trigger = packed struct(u32) {
+            pub const trigger: Trigger = .{ .start = true };
+
+            start: bool = false,
+            _: u31 = 0,
+        };
+
+        pub const EnableBit = packed struct(u32) {
+            pub const disable: EnableBit = .{ .enable_bit = false };
+            pub const enable: EnableBit = .{ .enable_bit = true };
+
+            enable_bit: bool = false,
+            _: u31 = 0,
+        };
+
+        pub const DisableBit = packed struct(u32) {
+            pub const disable: DisableBit = .{ .disable_bit = true };
+            pub const enable: DisableBit = .{};
+
+            disable_bit: bool = false,
+            _: u31 = 0,
+        };
+
         pub const Interrupt = extern struct {
             pub const Mask = packed struct(u64) { disabled: @Vector(64, bool) };
             pub const Stat = packed struct(u64) { match: @Vector(64, bool) };
@@ -505,44 +614,49 @@ pub const Registers = struct {
             req: [64]u8,
             cmp: [64]u8,
             mask: Mask align(@alignOf(u32)),
-            stat: Stat,
+            stat: Stat align(@alignOf(u32)),
             autostop: AutoStop,
             fixed_0x00010002: u32,
         };
 
         pub const Rasterizer = extern struct {
             pub const OutputAttributeMode = packed struct(u32) {
-                use_texture_coordinates: bool,
-                _: u31,
+                use_texture_coordinates: bool = false,
+                _: u31 = 0,
             };
 
             pub const OutputAttributeClock = packed struct(u32) {
-                position_z_present: bool,
-                color_present: bool,
+                position_z_present: bool = false,
+                color_present: bool = false,
                 _unused0: u6 = 0,
-                texture_coordinates_0_present: bool,
-                texture_coordinates_1_present: bool,
-                texture_coordinates_2_present: bool,
+                texture_coordinates_0_present: bool = false,
+                texture_coordinates_1_present: bool = false,
+                texture_coordinates_2_present: bool = false,
                 _unknown0: u4 = 0,
-                texture_coordinates_0_w_present: bool,
+                texture_coordinates_0_w_present: bool = false,
                 _unknown1: u1 = 0,
                 _unused1: u6 = 0,
-                normal_quaternion_or_view_present: bool,
+                normal_quaternion_or_view_present: bool = false,
                 _unused2: u8 = 0,
             };
 
-            faceculling_config: packed struct(u32) { mode: CullingMode, _: u30 = 0 },
-            viewport_v_scale: F7_16,
-            viewport_v_step: F7_23,
-            viewport_h_scale: F7_16,
-            viewport_h_step: F7_23,
+            pub const FacecullingConfig = packed struct(u32) {
+                mode: CullingMode,
+                _: u30 = 0,
+            };
+
+            faceculling_config: FacecullingConfig,
+            viewport_h_scale: WrappedF7_16,
+            viewport_h_step: WrappedF7_23,
+            viewport_v_scale: WrappedF7_16,
+            viewport_v_step: WrappedF7_23,
             _unknown0: u32,
             _unknown1: u32,
-            fragment_operation_clip: packed struct(u32) { enable: bool, _: u31 = 0 },
-            fragment_operation_clip_data: [4]F7_16,
+            fragment_operation_clip: EnableBit,
+            fragment_operation_clip_data: [4]WrappedF7_16,
             _unknown2: u32,
-            depth_map_scale: F7_16,
-            depth_map_offset: F7_16,
+            depth_map_scale: WrappedF7_16,
+            depth_map_offset: WrappedF7_16,
             shader_output_map_total: packed struct(u32) { num: u3, _: u29 = 0 },
             shader_output_map_output: [7]OutputMap,
             _unknown3: u32,
@@ -554,8 +668,8 @@ pub const Registers = struct {
             _unknown6: [3]u32,
             _unknown7: u32,
             early_depth_function: packed struct(u32) { function: EarlyDepthFunction, _: u30 = 0 },
-            early_depth_test_1: packed struct(u32) { enable: bool, _: u31 = 0 },
-            early_depth_clear: packed struct(u32) { trigger: bool, _: u31 = 0 },
+            early_depth_test_1: EnableBit,
+            early_depth_clear: Trigger,
             shader_output_attribute_mode: OutputAttributeMode,
             scissor_config: packed struct(u32) { mode: ScissorMode, _: u30 = 0 },
             scissor_start: Dimensions,
@@ -565,8 +679,9 @@ pub const Registers = struct {
             early_depth_data: u32,
             _unknown9: u32,
             _unknown10: u32,
-            depth_map_enable: packed struct(u32) { enable: bool, _: u31 = 0 },
-            render_buffer_dimensions_1: u32,
+            depth_map_enable: EnableBit,
+            /// Does not seem to have an effect but it's still documented like this
+            _unused_render_buffer_dimensions: u32,
             shader_output_attribute_clock: OutputAttributeClock,
         };
 
@@ -594,7 +709,7 @@ pub const Registers = struct {
 
             config: u32,
             texture_0: Main,
-            lighting_enable: u32,
+            lighting_enable: EnableBit,
             _unknown0: u32,
             texture_1: Sub,
             _unknown1: [2]u32,
@@ -615,11 +730,59 @@ pub const Registers = struct {
 
         pub const TexturingEnvironment = extern struct {
             pub const Main = extern struct {
-                source: u32,
-                operand: u32,
-                combiner: u32,
-                color: u32,
+                pub const Source = packed struct(u32) {
+                    rgb_source_0: TextureEnvironmentSource,
+                    rgb_source_1: TextureEnvironmentSource,
+                    rgb_source_2: TextureEnvironmentSource,
+                    _unused0: u4 = 0,
+                    alpha_source_0: TextureEnvironmentSource,
+                    alpha_source_1: TextureEnvironmentSource,
+                    alpha_source_2: TextureEnvironmentSource,
+                    _unused1: u4 = 0,
+                };
+                
+                pub const Operand = packed struct(u32) {
+                    rgb_operand_0: TextureEnvironmentRgbOperand,
+                    rgb_operand_1: TextureEnvironmentRgbOperand,
+                    rgb_operand_2: TextureEnvironmentRgbOperand,
+                    alpha_operand_0: TextureEnvironmentAlphaOperand,
+                    alpha_operand_1: TextureEnvironmentAlphaOperand,
+                    alpha_operand_2: TextureEnvironmentAlphaOperand,
+                    _unused0: u11 = 0,
+                };
+
+                pub const Combiner = packed struct(u32) {
+                    rgb_combine: TextureEnvironmentCombiner,
+                    _unused0: u12 = 0,
+                    alpha_combine: TextureEnvironmentCombiner,
+                    _unused1: u12 = 0,
+                };
+
+                source: Source,
+                operand: Operand,
+                combiner: Combiner,
+                color: ColorFormat.Rgba8,
                 scale: u32,
+            };
+
+            pub const UpdateBuffer = packed struct(u32) {
+                pub const Previous = enum(u1) { previous_buffer, previous };
+
+                fog_mode: TextureEnvironmentFogMode,
+                shading_density_source: TextureEnvironmentShadingDensity,
+                _unused0: u4 = 0,
+                tex_env_1_rgb_buffer_input: Previous,
+                tex_env_2_rgb_buffer_input: Previous,
+                tex_env_3_rgb_buffer_input: Previous,
+                tex_env_4_rgb_buffer_input: Previous,
+                tex_env_1_alpha_buffer_input: Previous,
+                tex_env_2_alpha_buffer_input: Previous,
+                tex_env_3_alpha_buffer_input: Previous,
+                tex_env_4_alpha_buffer_input: Previous,
+                z_flip: bool,
+                _unused1: u7 = 0,
+                _unknown0: u2 = 0,
+                _unused2: u6 = 0,
             };
 
             texture_environment_0: Main,
@@ -630,8 +793,8 @@ pub const Registers = struct {
             _unknown2: [3]u32,
             texture_environment_3: Main,
             _unknown3: [3]u32,
-            update_buffer: u32,
-            fog_color: u32,
+            update_buffer: UpdateBuffer,
+            fog_color: ColorFormat.Rgba8,
             _unknown4: u32,
             _unknown5: u32,
             gas_attenuation: u32,
@@ -642,12 +805,12 @@ pub const Registers = struct {
             texture_environment_4: Main,
             _unknown7: [3]u32,
             texture_environment_5: Main,
-            buffer_color: u32,
+            buffer_color: ColorFormat.Rgba8,
         };
 
         pub const Framebuffer = extern struct {
             pub const ColorOperation = packed struct(u32) {
-                pub const FragmentOperation = enum(u2) { default, gas, unknown, shadow };
+                pub const FragmentOperation = enum(u2) { default, gas, shadow = 3 };
                 pub const BlendMode = enum(u1) { logic, blend };
                 pub const RenderLines = enum(u1) { all, even };
 
@@ -657,8 +820,8 @@ pub const Registers = struct {
                 mode: BlendMode,
                 _unused1: u7 = 0,
                 _unknown0: u8 = 0,
-                render_lines: RenderLines,
-                render_nothing: bool,
+                render_lines: RenderLines = .all,
+                render_nothing: bool = false,
                 _unused2: u6 = 0,
             };
 
@@ -713,11 +876,47 @@ pub const Registers = struct {
                 _unused1: u20 = 0,
             };
 
+            pub const ColorRwMask = packed struct(u32) {
+                pub const disable: ColorRwMask = .{};
+                pub const enable: ColorRwMask = .{ .enable_all = 0xF };
+
+                // NOTE: really weird that it doesn't trigger separate r g b a?
+                enable_all: u4 = 0,
+                _unused0: u28 = 0, 
+            };
+
+            pub const DepthStencilRwMask = packed struct(u32) {
+                pub const disable: DepthStencilRwMask = .{};
+                pub const enable: DepthStencilRwMask = .{ .depth_enable = true, .stencil_enable = true };
+
+                stencil_enable: bool = false,
+                depth_enable: bool = false,
+                _unused0: u30 = 0,
+            };
+            
+            pub const RenderBufferDimensions = packed struct(u32) {
+                width: u11,
+                _unused0: u1 = 0,
+                height_end: u10,
+                _unused1: u2 = 0,
+                flip_vertically: bool = false,
+                _unused2: u7 = 0,
+
+                pub fn init(width: u11, height: u10, flip_vertically: bool) RenderBufferDimensions {
+                    return .{ .width = width, .height_end = height - 1, .flip_vertically = flip_vertically };
+                } 
+            };
+
+            pub const RenderBufferBlockSize = enum(u1) {
+                @"8x8",
+                @"32x32",
+            };
+
             color_operation: ColorOperation,
             blend_config: BlendConfig,
             logic_operation: packed struct(u32) { operation: LogicOperation, _: u28 = 0 },
-            blend_color: ColorFormat.Abgr8,
-            fragment_operation_alpha: AlphaTestConfig,
+            blend_color: ColorFormat.Rgba8,
+            fragment_operation_alpha_test: AlphaTestConfig,
             stencil_test: StencilTestConfig,
             stencil_operation: StencilOperationConfig,
             depth_color_mask: DepthColorMaskConfig,
@@ -725,21 +924,29 @@ pub const Registers = struct {
             _unknown1: u32,
             _unknown2: u32,
             _unknown3: u32,
-            render_buffer_invalidate: packed struct(u32) { trigger: bool, _: u31 = 0 },
-            render_buffer_flush: packed struct(u32) { trigger: bool, _: u31 = 0 },
-            color_buffer_reading: u32,
-            color_buffer_writing: u32,
-            depth_buffer_reading: u32,
-            depth_buffer_writing: u32,
-            depth_buffer_format: u32,
-            color_buffer_format: u32,
-            early_depth_test_2: packed struct(u32) { enable: bool, _: u31 = 0 },
+            render_buffer_invalidate: Trigger,
+            render_buffer_flush: Trigger, 
+            color_buffer_reading: ColorRwMask,
+            color_buffer_writing: ColorRwMask,
+            depth_buffer_reading: DepthStencilRwMask,
+            depth_buffer_writing: DepthStencilRwMask,
+            depth_buffer_format: packed struct(u32) {
+                format: DepthBufferFormat,
+                _unused0: u30 = 0,
+            },
+            color_buffer_format: packed struct(u32) {
+                pixel_size: PixelSize,
+                _unused0: u14 = 0,
+                format: ColorBufferFormat,
+                _unused1: u13 = 0,
+            },
+            early_depth_test_2: EnableBit,
             _unknown4: u32,
             _unknown5: u32,
-            render_buffer_block_size: u32,
-            depth_buffer_location: AlignedPhysicalAddress(.@"16"),
-            color_buffer_location: AlignedPhysicalAddress(.@"16"),
-            render_buffer_dimensions: u32,
+            render_buffer_block_size: packed struct(u32) { mode: RenderBufferBlockSize, _: u31 = 0 },
+            depth_buffer_location: AlignedPhysicalAddress(.@"64", .@"8"),
+            color_buffer_location: AlignedPhysicalAddress(.@"64", .@"8"),
+            render_buffer_dimensions: RenderBufferDimensions,
             _unknown6: u32,
             gas_light_xy: u32,
             gas_light_z: u32,
@@ -776,7 +983,7 @@ pub const Registers = struct {
             config_0: u32,
             config_1: u32,
             lut_index: u32,
-            disable: u32,
+            disable: DisableBit,
             lut_data: [8]u32,
             lut_input_absolute: u32,
             lut_input_select: u32,
@@ -853,7 +1060,7 @@ pub const Registers = struct {
                     num_components: u4,
                 };
 
-                offset: u32,
+                offset: usize,
                 config_low: ConfigLow,
                 config_high: ConfigHigh,
             };
@@ -864,63 +1071,202 @@ pub const Registers = struct {
                 size: IndexFormat,
             };
 
-            attribute_buffer_base: AlignedPhysicalAddress(.@"16"),
+            pub const DrawFunction = packed struct(u32) {
+                pub const drawing: DrawFunction = .{ .mode = .drawing };
+                pub const config: DrawFunction = .{ .mode = .config };
+                pub const Mode = enum(u1) { drawing, config };
+
+                mode: Mode,
+                _: u31 = 0,
+            };
+
+            pub const AttributesTotal = packed struct(u32) {
+                num: u4,
+                _: u28 = 0,
+
+                pub fn initTotal(num: u4) AttributesTotal {
+                    return .{ .num = num };
+                }
+            };
+
+            pub const FixedAttributeIndex = packed struct(u32) {
+                pub const immediate_mode: FixedAttributeIndex = .{ .index = 0xF };
+
+                index: u4,
+                _unused0: u28 = 0,
+
+                pub fn initIndex(index: u4) FixedAttributeIndex {
+                    std.debug.assert(index <= 11);
+                    return .{ .index = index };
+                }
+            };
+
+            pub const Config = packed struct(u32) {    
+                pub const GeometryUsage = enum(u2) { disabled, enabled = 2 }; 
+
+                geometry_shader_usage: GeometryUsage = .disabled,
+                _unused0: u6 = 0,
+                drawing_triangles: bool = false,
+                _unknown0: u1 = 0,
+                _unused1: u6 = 0,
+                _unknown1: u4 = 0,
+                _unused2: u11 = 0,
+                use_reserved_geometry_subdivision: bool = false,
+            };
+
+            pub const Config2 = packed struct(u32) {
+                inputting_vertices_or_draw_arrays: bool = false,
+                _unused0: u7 = 0,
+                drawing_triangles: bool = false,
+                _unused1: u23 = 0,
+            };
+
+            attribute_buffer_base: AlignedPhysicalAddress(.@"16", .@"8"),
             attribute_buffer_format_low: AttributeBufferFormatLow,
             attribute_buffer_format_high: AttributeBufferFormatLow,
             attribute_buffer: [12]AttributeBuffer,
             attribute_buffer_index_list: AttributeIndexList,
             attribute_buffer_num_vertices: u32,
-            config: u32,
+            config: Config,
             attribute_buffer_first_index: u32,
             _unknown0: [2]u32,
             post_vertex_cache_num: u32,
-            attribute_buffer_draw_arrays: u32,
-            attribute_buffer_draw_elements: u32,
+            attribute_buffer_draw_arrays: Trigger,
+            attribute_buffer_draw_elements: Trigger,
             _unknown1: u32,
-            vertex_function: u32,
-            fixed_attribute_index: u32,
-            fixed_attribute_data: [3]u32,
+            clear_post_vertex_cache: Trigger,
+            fixed_attribute_index: FixedAttributeIndex,
+            fixed_attribute_data: F7_16x4,
             _unknown2: [2]u32,
             command_buffer_size: [2]u32,
             command_buffer_address: [2]u32,
             command_buffer_jump: [2]u32,
             _unknown3: [4]u32,
-            vertex_shader_num_attributes: u32,
+            vertex_shader_input_attributes: AttributesTotal,
             _unknown4: u32,
-            vertex_shader_common_mode: u32,
-            start_draw_function: u32,
+            enable_geometry_shader_configuration: EnableBit,
+            start_draw_function: DrawFunction,
             _unknown5: [4]u32,
-            vertex_shader_output_map_total_2: u32,
+            vertex_shader_output_map_total_2: AttributesTotal,
             _unknown6: [6]u32,
-            vertex_shader_output_map_total_1: u32,
+            vertex_shader_output_map_total_1: AttributesTotal,
             geometry_shader_misc0: u32,
-            config_2: u32,
+            config_2: Config2,
             geometry_shader_misc1: u32,
             _unknown7: u32,
             _unknown8: [8]u32,
             primitive_config: PrimitiveConfig,
-            restart_primitive: u32,
+            restart_primitive: Trigger,
         };
 
         pub const Shader = extern struct {
+            pub const Entry = packed struct(u32) {
+                entry: u16,
+                _: u16 = 0x7FFF,
+
+                pub fn initEntry(entry: u16) Entry {
+                    return .{ .entry = entry };
+                }
+            };
+
+            pub const InputBufferConfig = packed struct(u32) {
+                num_input_attributes: u4,
+                _unused0: u4 = 0,
+                use_geometry_shader_subdivision: bool = false,
+                _unused1: u18 = 0,
+                enabled_for_geometry_0: bool = false,
+                _unknown0: u1 = 0,
+                enabled_for_vertex_0: bool = false,
+                _unused2: u1 = 0,
+                enabled_for_vertex_1: bool = false,
+            };
+            
+            pub const OutputMask = packed struct(u32) {
+                o0_enabled: bool = false,
+                o1_enabled: bool = false,
+                o2_enabled: bool = false,
+                o3_enabled: bool = false,
+                o4_enabled: bool = false,
+                o5_enabled: bool = false,
+                o6_enabled: bool = false,
+                o7_enabled: bool = false,
+                o8_enabled: bool = false,
+                o9_enabled: bool = false,
+                o10_enabled: bool = false,
+                o11_enabled: bool = false,
+                o12_enabled: bool = false,
+                o13_enabled: bool = false,
+                o14_enabled: bool = false,
+                o15_enabled: bool = false,
+                _unknown0: u16 = 0,
+            };
+
+            pub const CodeTransferIndex = packed struct(u32) {
+                index: u12,
+                _: u20 = 0,
+
+                pub fn initIndex(index: u12) CodeTransferIndex {
+                    return .{ .index = index };
+                }
+            };
+
+            pub const OperandDescriptorsIndex = packed struct(u32) {
+                index: u7,
+                _: u25 = 0,
+
+                pub fn initIndex(index: u7) OperandDescriptorsIndex {
+                    return .{ .index = index };
+                }
+            };
+
+            pub const FloatUniformConfig = packed struct(u32) {
+                pub const Mode = enum(u1) { f8_23, f7_16 };
+
+                index: FloatConstantRegister,
+                _unused0: u24 = 0,
+                mode: Mode,
+            };
+
+            pub const AttributePermutationLow = packed struct(u32) {
+                attribute_0: InputRegister = .v0,
+                attribute_1: InputRegister = .v1,
+                attribute_2: InputRegister = .v2,
+                attribute_3: InputRegister = .v3,
+                attribute_4: InputRegister = .v4,
+                attribute_5: InputRegister = .v5,
+                attribute_6: InputRegister = .v6,
+                attribute_7: InputRegister = .v7,
+            };
+
+            pub const AttributePermutationHigh = packed struct(u32) {
+                attribute_8: InputRegister = .v8,
+                attribute_9: InputRegister = .v9,
+                attribute_10: InputRegister = .v10,
+                attribute_11: InputRegister = .v11,
+                attribute_12: InputRegister = .v12,
+                attribute_13: InputRegister = .v13,
+                attribute_14: InputRegister = .v14,
+                attribute_15: InputRegister = .v15,
+            };
+
             bool_uniform: u32,
             int_uniform: [4]u32,
             _unused0: [4]u32,
-            input_buffer_config: u32,
-            entrypoint: u32,
-            attribute_permutation_low: u32,
-            attribute_permutation_high: u32,
-            output_map_mask: u32,
+            input_buffer_config: InputBufferConfig,
+            entrypoint: Entry,
+            attribute_permutation_low: AttributePermutationLow,
+            attribute_permutation_high: AttributePermutationHigh,
+            output_map_mask: OutputMask,
             _unused1: u32,
-            code_transfer_end: u32,
-            float_uniform_index: u32,
+            code_transfer_end: Trigger,
+            float_uniform_index: FloatUniformConfig,
             float_uniform_data: [8]u32,
             _unused2: [2]u32,
-            code_transfer_index: u32,
-            code_transfer_data: [8]u32,
+            code_transfer_index: CodeTransferIndex,
+            code_transfer_data: [8]Instruction,
             _unused3: u32,
-            operand_descriptors_index: u32,
-            operand_descriptors_data: [8]u32,
+            operand_descriptors_index: OperandDescriptorsIndex,
+            operand_descriptors_data: [8]OperandDescriptor,
         };
 
         irq: Interrupt,
@@ -1008,7 +1354,12 @@ pub const Framebuffer = @import("gpu/Framebuffer.zig");
 const std = @import("std");
 const zitrus = @import("zitrus");
 const zitrus_tooling = @import("zitrus-tooling");
+
 const pica = zitrus_tooling.pica;
+const OperandDescriptor = pica.encoding.OperandDescriptor;
+const Instruction = pica.encoding.Instruction;
+const FloatConstantRegister = pica.register.SourceRegister.Constant;
+const InputRegister = pica.register.SourceRegister.Input;
 
 const AlignedPhysicalAddress = zitrus.AlignedPhysicalAddress;
 const PhysicalAddress = zitrus.PhysicalAddress;

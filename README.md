@@ -91,7 +91,7 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 
 - 🟢 Software rendering with Framebuffers
 - 🟡 GX Commands
-- 🔴 2D/3D Acceleration (a.k.a: REALLY using the Gpu to do things)
+- 🟡 2D/3D Acceleration (a.k.a: REALLY using the Gpu to do things)
 
 ## Port/Service Support
 

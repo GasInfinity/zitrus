@@ -2,6 +2,7 @@
 // TODO: Refactor this (some things could be moved around, etc...)
 const service_names = [_][]const u8{ "APT:S", "APT:A", "APT:U" };
 
+// TODO: Refactor APT to make it not recursive
 pub const Error = Mutex.WaitError || Event.WaitError || Session.RequestError;
 
 pub const AppId = enum(u32) {

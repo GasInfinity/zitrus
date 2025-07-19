@@ -69,7 +69,7 @@ fn unary(encoder: *Encoder, alloc: Allocator, comptime opcode: Instruction.Opcod
         .src1_selector = src1_selector,
     });
 
-    return encoder.addInstruction(alloc, .{ .register_unary = .{
+    return encoder.addInstruction(alloc, .{ .register = .{
         .operand_descriptor_id = descriptor_id,
         .src1 = src1,
         .src2 = .v0,
