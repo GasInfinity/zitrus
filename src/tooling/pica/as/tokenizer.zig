@@ -99,11 +99,10 @@ pub const Token = struct {
 
         pub fn lexeme(tag: Tag) ?[:0]const u8 {
             return switch (tag) {
-                .comma => ',',
-                .l_paren => '(',
-                .r_paren => ')',
-                .colon => ':',
-
+                .comma => ",",
+                .l_paren => "(",
+                .r_paren => ")",
+                .colon => ":",
                 
                 else => null,
             };
@@ -335,7 +334,7 @@ pub const Tokenizer = struct {
 const testing = std.testing;
 
 test "tokenize label" {
-    try testTokenize("a.label:", &.{ .label });
+    try testTokenize("a.label:", &.{ .identifier, .colon });
 }
 
 test "tokenize directive" {
@@ -343,7 +342,7 @@ test "tokenize directive" {
 }
 
 test "tokenize 'mov r0, v0'" {
-    try testTokenize("mov r0, v0", &.{ .identifier, .identifier, .comma, .identifier });
+    try testTokenize("mov r0, v0", &.{ .mnemonic_mov, .identifier, .comma, .identifier });
 }
 
 test "tokenize multiple instructions" {
@@ -352,8 +351,8 @@ test "tokenize multiple instructions" {
         \\ add r0, v1
     , &.{
         // zig fmt: off
-        .identifier, .identifier, .comma, .identifier, .newline,
-        .identifier, .identifier, .comma, .identifier,
+        .mnemonic_mov, .identifier, .comma, .identifier, .newline,
+        .mnemonic_add, .identifier, .comma, .identifier,
         // zig fmt: on 
     });
 }
@@ -365,9 +364,9 @@ test "tokenize multiple instructions with comments in-between" {
         \\ add r0, v1 ; this is another comment
     , &.{
         // zig fmt: off
-        .identifier, .identifier, .comma, .identifier, .newline,
+        .mnemonic_mov, .identifier, .comma, .identifier, .newline,
         .newline,
-        .identifier, .identifier, .comma, .identifier,
+        .mnemonic_add, .identifier, .comma, .identifier,
         // zig fmt: on 
     });
 }
