@@ -55,6 +55,8 @@ const AppletSubcommandArguments = union(AppletSubCommand) {
     @"3dsx": applets.@"3dsx".Arguments,
     smdh: applets.smdh.Arguments,
     pica: applets.pica.Arguments,
+    explain: applets.explain.Arguments,
+    ncch: applets.ncch.Arguments,
 };
 
 const Arguments = struct {

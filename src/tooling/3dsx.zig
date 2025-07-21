@@ -436,6 +436,6 @@ const std = @import("std");
 const elf = std.elf;
 
 const zitrus_tooling = @import("zitrus-tooling");
-const smdh = zitrus_tooling.smdh;
+const smdh = zitrus_tooling.horizon.smdh;
 
 const log = std.log.scoped(.@"3dsx");

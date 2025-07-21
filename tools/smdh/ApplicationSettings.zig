@@ -324,4 +324,4 @@ test ApplicationSettings {
 const std = @import("std");
 const ziggy = @import("ziggy");
 const zitrus_tooling = @import("zitrus-tooling");
-const smdh = zitrus_tooling.smdh;
+const smdh = zitrus_tooling.horizon.smdh;

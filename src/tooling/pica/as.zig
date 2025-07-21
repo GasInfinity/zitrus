@@ -1030,12 +1030,17 @@ test Assembler {
     );
 }
 
+const tokenizer = @import("as/tokenizer.zig");
+
+pub const Tokenizer = tokenizer.Tokenizer;
+pub const Token = tokenizer.Token;
+
 const std = @import("std");
 const mem = std.mem;
 
 const zitrus_tooling = @import("zitrus-tooling");
 
-const shbin = zitrus_tooling.shbin;
+const shbin = zitrus_tooling.horizon.shbin;
 const Semantic = shbin.Dvle.OutputEntry.Semantic;
 
 const pica = zitrus_tooling.pica;

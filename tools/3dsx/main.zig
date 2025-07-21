@@ -142,4 +142,4 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 
 const std = @import("std");
 const zitrus_tooling = @import("zitrus-tooling");
-const smdh = zitrus_tooling.smdh;
+const smdh = zitrus_tooling.horizon.smdh;

@@ -138,15 +138,16 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                 try out_buffered_writer.flush();
             }
 
-            if (dump.@"48x48") |large_icon_path| {
-                _ = large_icon_path;
-                @panic("TODO");
-            }
+            inline for(&.{ dump.@"24x24", dump.@"48x48" }, &.{ &input_smdh.icons.small, &input_smdh.icons.large }, &.{ smdh.Icons.small_size,smdh.Icons.large_size }) |out_icon_path, icon, icon_size| if(out_icon_path) |path| {
+                var out = try zigimg.ImageUnmanaged.create(arena, icon_size, icon_size, .rgb565);
+                defer out.deinit(arena);
 
-            if (dump.@"24x24") |small_icon_path| {
-                _ = small_icon_path;
-                @panic("TODO");
-            }
+                // XXX: we allocate too much, shouldn't we able to convert in-place also here?
+                processImage(.untile, icon_size, @ptrCast(out.pixels.rgb565), std.mem.bytesAsSlice(Bgr565, icon));
+
+                try out.convert(arena, .rgb24);
+                try out.writeToFilePath(arena, path, .{ .png = .{} }); 
+            };
 
             break :d 0;
         },
@@ -155,42 +156,42 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 
 const Bgr565 = packed struct(u16) { b: u5, g: u6, r: u5 };
 
-fn loadIcons(arena: std.mem.Allocator, large_path: []const u8, small_path: ?[]const u8) !smdh.Icons {
-    var icons: smdh.Icons = std.mem.zeroes(smdh.Icons);
-
-    var large_image = zigimg.ImageUnmanaged.fromFilePath(arena, large_path) catch |err| {
-        std.debug.print("could not open large icon file '{s}': {s}\n", .{ large_path, @errorName(err) });
+// XXX: this allocates too much when we could just convert it once...
+fn loadIconWithSize(size: usize, arena: std.mem.Allocator, path: []const u8) !zigimg.ImageUnmanaged {
+    var img = zigimg.ImageUnmanaged.fromFilePath(arena, path) catch |err| {
+        std.debug.print("could not open icon file '{s}': {s}\n", .{ path, @errorName(err) });
         return err;
     };
-    defer large_image.deinit(arena);
+    errdefer img.deinit(arena);
 
-    if (large_image.width != large_image.height or large_image.width != smdh.Icons.large_size) {
+    if (img.width != img.height or img.width != size) {
         return error.InvalidIconDimensions;
     }
 
-    try large_image.convert(arena, .rgb24);
-    mortonTile(smdh.Icons.large_size, @alignCast(std.mem.bytesAsSlice(Bgr565, &icons.large)), large_image.pixels.rgb24);
+    try img.convert(arena, .rgb565);
+    return img;
+}
+
+fn loadIcons(arena: std.mem.Allocator, large_path: []const u8, small_path: ?[]const u8) !smdh.Icons {
+    var icons: smdh.Icons = std.mem.zeroes(smdh.Icons);
+
+    var large_image = try loadIconWithSize(smdh.Icons.large_size, arena, large_path);
+    defer large_image.deinit(arena);
+
+    processImage(.tile, smdh.Icons.large_size, @alignCast(std.mem.bytesAsSlice(Bgr565, &icons.large)), @ptrCast(large_image.pixels.rgb565));
 
     if (small_path) |path| {
-        var small_image = zigimg.ImageUnmanaged.fromFilePath(arena, path) catch |err| {
-            std.debug.print("could not open small icon file '{s}': {s}\n", .{ path, @errorName(err) });
-            return err;
-        };
+        var small_image = try loadIconWithSize(smdh.Icons.small_size, arena, path);
         defer small_image.deinit(arena);
 
-        if (small_image.width != small_image.height or small_image.width != smdh.Icons.small_size) {
-            return error.InvalidIconDimensions;
-        }
-
-        try small_image.convert(arena, .rgb24);
-        mortonTile(smdh.Icons.small_size, @alignCast(std.mem.bytesAsSlice(Bgr565, &icons.small)), small_image.pixels.rgb24);
+        processImage(.tile, smdh.Icons.small_size, @alignCast(std.mem.bytesAsSlice(Bgr565, &icons.small)), @ptrCast(small_image.pixels.rgb565));
     } else {
-        var downsampled = try zigimg.ImageUnmanaged.create(arena, smdh.Icons.small_size, smdh.Icons.small_size, .rgb24);
+        var downsampled = try zigimg.ImageUnmanaged.create(arena, smdh.Icons.small_size, smdh.Icons.small_size, .rgb565);
         defer downsampled.deinit(arena);
 
         // XXX: I think zigimg should have a resize function, I'll cook something when I have time if nothing is done
-        const image_pixels = large_image.pixels.rgb24;
-        const downsampled_pixels = downsampled.pixels.rgb24;
+        const image_pixels: []Bgr565 = @ptrCast(large_image.pixels.rgb565);
+        const downsampled_pixels: []Bgr565 = @ptrCast(downsampled.pixels.rgb565);
         for (0..smdh.Icons.small_size) |y| {
             for (0..smdh.Icons.small_size) |x| {
                 const px1 = image_pixels[(2 * y) * smdh.Icons.large_size + (2 * x)];
@@ -198,7 +199,7 @@ fn loadIcons(arena: std.mem.Allocator, large_path: []const u8, small_path: ?[]co
                 const px3 = image_pixels[((2 * y) + 1) * smdh.Icons.large_size + (2 * x)];
                 const px4 = image_pixels[((2 * y) + 1) * smdh.Icons.large_size + (2 * x) + 1];
 
-                const downsampled_pixel = zigimg.color.Rgb24{
+                const downsampled_pixel = Bgr565{
                     .r = @intCast((@as(usize, px1.r) + px2.r + px3.r + px4.r) / 4),
                     .g = @intCast((@as(usize, px1.g) + px2.g + px3.g + px4.g) / 4),
                     .b = @intCast((@as(usize, px1.b) + px2.b + px3.b + px4.b) / 4),
@@ -208,7 +209,7 @@ fn loadIcons(arena: std.mem.Allocator, large_path: []const u8, small_path: ?[]co
             }
         }
 
-        mortonTile(smdh.Icons.small_size, @alignCast(std.mem.bytesAsSlice(Bgr565, &icons.small)), downsampled.pixels.rgb24);
+        processImage(.tile, smdh.Icons.small_size, @alignCast(std.mem.bytesAsSlice(Bgr565, &icons.small)), downsampled_pixels);
     }
 
     return icons;
@@ -217,7 +218,9 @@ fn loadIcons(arena: std.mem.Allocator, large_path: []const u8, small_path: ?[]co
 // https://3dbrew.org/wiki/SMDH#Icon_graphics
 const tile_size = 8;
 
-fn mortonTile(comptime size: usize, target_pixels: []Bgr565, pixels: []zigimg.color.Rgb24) void {
+const TilingStrategy = enum { tile, untile };
+
+fn processImage(comptime strategy: TilingStrategy, size: usize, dst_pixels: []Bgr565, src_pixels: []const Bgr565) void {
     const tiles = @divExact(size, tile_size);
 
     var i: u16 = 0;
@@ -229,14 +232,12 @@ fn mortonTile(comptime size: usize, target_pixels: []Bgr565, pixels: []zigimg.co
             for (0..(tile_size * tile_size)) |tile| {
                 // NOTE: We know the max size is 63 so we can squeeze it into 6 bits
                 const x, const y = morton.toDimensions(u6, 2, @intCast(tile));
-                const pixel = pixels[(y_start + y) * size + x_start + x];
-
-                target_pixels[i] = Bgr565{
-                    .r = @intCast(@as(usize, pixel.r) * std.math.maxInt(u5) / std.math.maxInt(u8)),
-                    .g = @intCast(@as(usize, pixel.g) * std.math.maxInt(u6) / std.math.maxInt(u8)),
-                    .b = @intCast(@as(usize, pixel.b) * std.math.maxInt(u5) / std.math.maxInt(u8)),
+                const src_pixel, const dst_pixel = switch(strategy) {
+                    .tile => .{ &src_pixels[(y_start + y) * size + x_start + x], &dst_pixels[i] },
+                    .untile => .{ &src_pixels[i], &dst_pixels[(y_start + y) * size + x_start + x] },
                 };
 
+                dst_pixel.* = src_pixel.*;
                 i += 1;
             }
         }
@@ -276,4 +277,4 @@ const std = @import("std");
 const ziggy = @import("ziggy");
 const zigimg = @import("zigimg");
 const zitrus_tooling = @import("zitrus-tooling");
-const smdh = zitrus_tooling.smdh;
+const smdh = zitrus_tooling.horizon.smdh;

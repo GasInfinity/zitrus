@@ -267,8 +267,8 @@ pub const AttributeFormat = packed struct(u4) {
     pub const Type = enum(u2) { i8, u8, i16, f32 };
     pub const Size = enum(u2) { x, xy, xyz, xyzw };
 
-    type: Type,
-    size: Size,
+    type: Type = .i8,
+    size: Size = .x,
 };
 
 pub const AttributeArrayComponent = enum(u4) {
@@ -1003,59 +1003,59 @@ pub const Registers = struct {
             };
 
             pub const AttributeBufferFormatLow = packed struct(u32) {
-                attribute_0: AttributeFormat,
-                attribute_1: AttributeFormat,
-                attribute_2: AttributeFormat,
-                attribute_3: AttributeFormat,
-                attribute_4: AttributeFormat,
-                attribute_5: AttributeFormat,
-                attribute_6: AttributeFormat,
-                attribute_7: AttributeFormat,
+                attribute_0: AttributeFormat = .{},
+                attribute_1: AttributeFormat = .{},
+                attribute_2: AttributeFormat = .{},
+                attribute_3: AttributeFormat = .{},
+                attribute_4: AttributeFormat = .{},
+                attribute_5: AttributeFormat = .{},
+                attribute_6: AttributeFormat = .{},
+                attribute_7: AttributeFormat = .{},
             };
 
             pub const AttributeBufferFormatHigh = packed struct(u32) {
                 pub const Flags = enum(u1) { array, fixed };
 
-                attribute_8: AttributeFormat,
-                attribute_9: AttributeFormat,
-                attribute_10: AttributeFormat,
-                attribute_11: AttributeFormat,
+                attribute_8: AttributeFormat = .{},
+                attribute_9: AttributeFormat = .{},
+                attribute_10: AttributeFormat = .{},
+                attribute_11: AttributeFormat = .{},
 
-                flags_0: Flags,
-                flags_1: Flags,
-                flags_2: Flags,
-                flags_3: Flags,
-                flags_4: Flags,
-                flags_5: Flags,
-                flags_6: Flags,
-                flags_7: Flags,
-                flags_8: Flags,
-                flags_9: Flags,
-                flags_10: Flags,
-                flags_11: Flags,
+                flags_0: Flags = .array,
+                flags_1: Flags = .array,
+                flags_2: Flags = .array,
+                flags_3: Flags = .array,
+                flags_4: Flags = .array,
+                flags_5: Flags = .array,
+                flags_6: Flags = .array,
+                flags_7: Flags = .array,
+                flags_8: Flags = .array,
+                flags_9: Flags = .array,
+                flags_10: Flags = .array,
+                flags_11: Flags = .array,
 
                 attributes_end: u4,
             };
 
             pub const AttributeBuffer = extern struct {
                 pub const ConfigLow = packed struct(u32) {
-                    component_0: AttributeArrayComponent,
-                    component_1: AttributeArrayComponent,
-                    component_2: AttributeArrayComponent,
-                    component_3: AttributeArrayComponent,
-                    component_4: AttributeArrayComponent,
-                    component_5: AttributeArrayComponent,
-                    component_6: AttributeArrayComponent,
-                    component_7: AttributeArrayComponent,
+                    component_0: AttributeArrayComponent = .attribute_0,
+                    component_1: AttributeArrayComponent = .attribute_1,
+                    component_2: AttributeArrayComponent = .attribute_2,
+                    component_3: AttributeArrayComponent = .attribute_3,
+                    component_4: AttributeArrayComponent = .attribute_4,
+                    component_5: AttributeArrayComponent = .attribute_5,
+                    component_6: AttributeArrayComponent = .attribute_6,
+                    component_7: AttributeArrayComponent = .attribute_7,
                 };
 
                 pub const ConfigHigh = packed struct(u32) {
-                    component_8: AttributeArrayComponent,
-                    component_9: AttributeArrayComponent,
-                    component_10: AttributeArrayComponent,
-                    component_11: AttributeArrayComponent,
+                    component_8: AttributeArrayComponent = .attribute_8,
+                    component_9: AttributeArrayComponent = .attribute_9,
+                    component_10: AttributeArrayComponent = .attribute_10,
+                    component_11: AttributeArrayComponent = .attribute_11,
 
-                    entry_size: u8,
+                    bytes_per_vertex: u8,
                     _unused0: u4 = 0,
                     num_components: u4,
                 };
@@ -1123,7 +1123,7 @@ pub const Registers = struct {
 
             attribute_buffer_base: AlignedPhysicalAddress(.@"16", .@"8"),
             attribute_buffer_format_low: AttributeBufferFormatLow,
-            attribute_buffer_format_high: AttributeBufferFormatLow,
+            attribute_buffer_format_high: AttributeBufferFormatHigh,
             attribute_buffer: [12]AttributeBuffer,
             attribute_buffer_index_list: AttributeIndexList,
             attribute_buffer_num_vertices: u32,

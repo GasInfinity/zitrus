@@ -1,7 +1,7 @@
 pub const ResultLevel = enum(u5) {
     success,
     info,
-    status,
+    status = 25,
     temporary,
     permanent,
     usage,
@@ -132,7 +132,9 @@ pub const ResultModule = enum(u8) {
 
 pub const ResultDescription = enum(u10) {
     success,
-    invalid_selection = 0x3E8,
+
+    // common
+    invalid_selection = 1000,
     too_large,
     not_authorized,
     already_done,
@@ -180,18 +182,3 @@ pub const ResultCode = packed struct(i32) {
         return @as(i32, @bitCast(code)) >= 0;
     }
 };
-
-pub fn Result(T: type) type {
-    return union(enum) {
-        const Res = @This();
-
-        pub const Success = struct { code: ResultCode, value: T };
-
-        success: Success,
-        failure: ResultCode,
-
-        pub inline fn of(code: ResultCode, value: T) Res {
-            return if (code.isSuccess()) .{ .success = .{ .code = code, .value = value } } else .{ .failure = code };
-        }
-    };
-}

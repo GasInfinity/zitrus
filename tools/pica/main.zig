@@ -226,4 +226,4 @@ const pica = zitrus_tooling.pica;
 const as = pica.as;
 const Assembler = as.Assembler;
 
-const shbin = zitrus_tooling.shbin;
+const shbin = zitrus_tooling.horizon.shbin;

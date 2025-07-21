@@ -43,38 +43,6 @@ pub fn main() !void {
     const commandBuffer = try horizon.heap.linear_page_allocator.alignedAlloc(u32, 8, 4096);
     defer horizon.heap.linear_page_allocator.free(commandBuffer);
 
-    const at_buf = try horizon.heap.linear_page_allocator.alignedAlloc(u8, 16, 8 * 4);
-    defer horizon.heap.linear_page_allocator.free(at_buf);
-
-    // For rendering with arrays
-    const s_at_buf: []i8 = @ptrCast(at_buf);
-    s_at_buf[0..4].* = .{ -0x7F, -0x7F, 0, 0x7F };
-    at_buf[4..7].* = .{ 255, 0, 0 };
-    s_at_buf[7..11].* = .{ 0x7F, -0x7F, 0, 0x7F };
-    at_buf[11..14].* = .{ 0, 255, 0 };
-    s_at_buf[14..18].* = .{ -0x7F, 0x7F, 0, 0x7F };
-    at_buf[18..21].* = .{ 0, 0, 255 };
-    s_at_buf[21..25].* = .{ 0x7F, 0x7F, 0, 0x7F };
-    at_buf[25..28].* = .{ 0, 255, 255 };
-
-    try gsp.sendFlushDataCache(at_buf);
-    // const aligned_base = @intFromEnum(horizon.memory.toPhysical(@intFromPtr(at_buf.ptr))) >> 3;
-
-    // For fixed attributes
-    const as_fixed_attr: [8]F7_16x4 = .{
-        .pack(.of(1), .of(0), .of(1), .of(1)),
-        .pack(.of(-1), .of(-1), .of(0), .of(1)),
-
-        .pack(.of(1),  .of(1), .of(0), .of(1)),
-        .pack(.of(1), .of(-1), .of(0), .of(1)),
-
-        .pack(.of(0), .of(1), .of(1), .of(1)),
-        .pack(.of(-1), .of(1), .of(0), .of(1)),
-
-        .pack(.of(0), .of(1), .of(0), .of(1)),
-        .pack(.of(1), .of(1), .of(0), .of(1)),
-    };
-
     // Learn the hard way that memory fills only work with vram.
     // 3dbrew GSP Shared memory: "Addresses should be aligned to 8 bytes and must be in linear, QTM or VRAM memory"
     // 3dbrew MemoryFill registers: "The addresses must be part of VRAM."
@@ -100,7 +68,7 @@ pub fn main() !void {
     var queue: command.Queue = .initBuffer(commandBuffer);
 
     // Adapted from https://problemkaputt.de/gbatek.htm#3dsgputriangledrawingsamplecode but writing through commandlists instead of doing it directly and some more fixes (texenv0, lighting disable)
-    // TODO: This is VERY low level. Needs API
+    // TODO: This is VERY low level. Needs an API
     queue.add(internal, &internal.framebuffer.render_buffer_invalidate, .trigger);
     queue.add(internal, &internal.framebuffer.depth_buffer_location, .fromPhysical(horizon.memory.toPhysical(@intFromPtr(bot_renderbuf.ptr))));
     queue.add(internal, &internal.framebuffer.color_buffer_location, .fromPhysical(horizon.memory.toPhysical(@intFromPtr(bot_renderbuf.ptr))));
@@ -263,33 +231,75 @@ pub fn main() !void {
     queue.add(internal, &internal.geometry_pipeline.config, .{});
     // drawing triangle strips + inputting vtx data
     queue.add(internal, &internal.geometry_pipeline.config_2, .{
+        .drawing_triangles = true,
         .inputting_vertices_or_draw_arrays = true,
     });
-    // immediate mode start
     queue.add(internal, &internal.geometry_pipeline.restart_primitive, .trigger);
-    // start drawing
+
+    // draw a colored quad in immediate mode
+
+    // const as_fixed_attr: [8]F7_16x4 = .{
+    //     .pack(.of(1), .of(0), .of(1), .of(1)),
+    //     .pack(.of(-1), .of(-1), .of(0), .of(1)),
+    //
+    //     .pack(.of(1),  .of(1), .of(0), .of(1)),
+    //     .pack(.of(1), .of(-1), .of(0), .of(1)),
+    //
+    //     .pack(.of(0), .of(1), .of(1), .of(1)),
+    //     .pack(.of(-1), .of(1), .of(0), .of(1)),
+    //
+    //     .pack(.of(0), .of(1), .of(0), .of(1)),
+    //     .pack(.of(1), .of(1), .of(0), .of(1)),
+    // };
+    //
+    // // start drawing
+    // queue.add(internal, &internal.geometry_pipeline.start_draw_function, .drawing);
+    // queue.add(internal, &internal.geometry_pipeline.fixed_attribute_index, .immediate_mode);
+    // inline for (0..8) |i| {
+    //     queue.add(internal, &internal.geometry_pipeline.fixed_attribute_data, as_fixed_attr[i]);
+    // }
+    // queue.add(internal, &internal.geometry_pipeline.clear_post_vertex_cache, .trigger);
+    // queue.add(internal, &internal.framebuffer.render_buffer_flush, .trigger);
+
+
+    // draw a colored quad with vertex buffers
+    const Vertex = extern struct {
+        color: [3]u8,
+        pos: [4]i8,
+    };
+
+    const at_buf = try horizon.heap.linear_page_allocator.alignedAlloc(Vertex, 16, 4);
+    defer horizon.heap.linear_page_allocator.free(at_buf);
+
+    at_buf[0] = .{ .pos = .{ -1, -1, 0, 1 }, .color = .{ 1, 0, 1 } };
+    at_buf[1] = .{ .pos = .{ 1, -1, 0, 1 }, .color = .{ 1, 1, 0 } };
+    at_buf[2] = .{ .pos = .{ -1, 1, 0, 1 }, .color = .{ 0, 1, 1 } };
+    at_buf[3] = .{ .pos = .{ 1, 1, 0, 1 }, .color = .{ 0, 1, 0 } };
+
+    try gsp.sendFlushDataCache(std.mem.sliceAsBytes(at_buf));
+
+    queue.add(internal, &internal.geometry_pipeline.attribute_buffer_base, .fromPhysical(horizon.memory.toPhysical(@intFromPtr(at_buf.ptr))));
+    queue.add(internal, &internal.geometry_pipeline.attribute_buffer_format_low, .{
+        .attribute_0 = .{ .type = .u8, .size = .xyz },
+        .attribute_1 = .{ .type = .i8, .size = .xyzw },
+    });
+    queue.add(internal, &internal.geometry_pipeline.attribute_buffer_format_high, .{
+        .attributes_end = (2 - 1),
+    });
+    queue.add(internal, &internal.geometry_pipeline.attribute_buffer[0].offset, 0);
+    // Identity mapping attributes -> components 
+    queue.add(internal, &internal.geometry_pipeline.attribute_buffer[0].config_low, .{});
+    queue.add(internal, &internal.geometry_pipeline.attribute_buffer[0].config_high, .{
+        .bytes_per_vertex = 7,
+        .num_components = 2,
+    });
+    queue.add(internal, &internal.geometry_pipeline.attribute_buffer_num_vertices, 4);
     queue.add(internal, &internal.geometry_pipeline.start_draw_function, .drawing);
-    queue.add(internal, &internal.geometry_pipeline.fixed_attribute_index, .immediate_mode);
-    inline for (0..8) |i| {
-        queue.add(internal, &internal.geometry_pipeline.fixed_attribute_data, as_fixed_attr[i]);
-    }
+    queue.add(internal, &internal.geometry_pipeline.attribute_buffer_first_index, 0);
+    queue.add(internal, &internal.geometry_pipeline.attribute_buffer_draw_arrays, .trigger);
     queue.add(internal, &internal.geometry_pipeline.start_draw_function, .config);
     queue.add(internal, &internal.geometry_pipeline.clear_post_vertex_cache, .trigger);
     queue.add(internal, &internal.framebuffer.render_buffer_flush, .trigger);
-
-    // TODO: use attribute buffers and rewrite with add()
-    // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.attribute_buffer_base), aligned_base);
-    // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.attribute_buffer_format_low), 0x9C); // low word
-    // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.attribute_buffer_format_high), @as(u32, 1) << 28); // high word
-    // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.attribute_buffer[0].offset), 0);
-    // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.attribute_buffer[0].config_low), 0x76543210); // low word
-    // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.attribute_buffer[0].config_high), (@as(u32, 2) << 28) + (@as(u32, 4 + 3) << 16) + 0xBA98); // low word
-    
-    // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.attribute_buffer_num_vertices), 4);
-    // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.attribute_buffer_first_index), 0);
-    // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.start_draw_function), 0);
-    // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.attribute_buffer_draw_arrays), 1);
-    // queue.addCommand(.fromRegister(internal, &internal.geometry_pipeline.start_draw_function), 1);
     queue.finalize();
 
     // TODO: This is currently not that great...

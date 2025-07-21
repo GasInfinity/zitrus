@@ -1,8 +1,23 @@
 pub const ResultCode = result.ResultCode;
-pub const Result = result.Result;
+
+pub fn Result(T: type) type {
+    return union(enum) {
+        const Res = @This();
+
+        pub const Success = struct { code: ResultCode, value: T };
+
+        success: Success,
+        failure: ResultCode,
+
+        pub inline fn of(code: ResultCode, value: T) Res {
+            return if (code.isSuccess()) .{ .success = .{ .code = code, .value = value } } else .{ .failure = code };
+        }
+    };
+}
 
 pub const LimitableResource = enum(u32) {
-    priority,
+
+
     commit,
     thread,
     event,
@@ -1315,7 +1330,7 @@ comptime {
 
 pub const heap = @import("horizon/heap.zig");
 pub const environment = @import("horizon/environment.zig");
-pub const result = @import("horizon/result.zig");
+pub const result = zitrus_tooling.horizon.result;
 pub const memory = @import("horizon/memory.zig");
 pub const config = @import("horizon/config.zig");
 pub const ipc = @import("horizon/ipc.zig");
@@ -1327,3 +1342,4 @@ pub const ErrorDisplayManager = @import("horizon/ErrorDisplayManager.zig");
 pub const services = @import("horizon/services.zig");
 
 const std = @import("std");
+const zitrus_tooling = @import("zitrus-tooling");
