@@ -527,17 +527,9 @@ pub const OperandDescriptor = packed struct(u32) {
     }
 };
 
-pub const ComparisonOperation = enum(u3) { eq, ne, lt, le, gt, ge, true0, true1 };
-
-pub const Condition = enum(u2) {
-    @"or",
-    @"and",
-    x,
-    y,
-};
-
+pub const ComparisonOperation = enum(u3) { eq, ne, lt, le, gt, ge, true_0, true_1 };
+pub const Condition = enum(u2) { @"or", @"and", x, y };
 pub const Primitive = enum(u1) { none, emmiting };
-
 pub const Winding = enum(u1) { ccw, cw };
 
 pub const Instruction = packed union {
@@ -698,9 +690,11 @@ pub const Instruction = packed union {
 
 const std = @import("std");
 const testing = std.testing;
-const register = @import("register.zig");
 
-const RelativeComponent = register.RelativeComponent;
-const SourceRegister = register.SourceRegister;
-const DestinationRegister = register.DestinationRegister;
-const IntegralRegister = register.IntegralRegister;
+const zitrus_tooling = @import("zitrus-tooling");
+const pica = zitrus_tooling.pica;
+
+const RelativeComponent = pica.RelativeComponent;
+const SourceRegister = pica.SourceRegister;
+const DestinationRegister = pica.DestinationRegister;
+const IntegralRegister = pica.IntegralRegister;

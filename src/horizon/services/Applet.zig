@@ -1,8 +1,8 @@
 // https://www.3dbrew.org/wiki/NS_and_APT_Services
-// TODO: Refactor this (some things could be moved around, etc...)
+pub const Application = @import("Applet/Application.zig");
+
 const service_names = [_][]const u8{ "APT:S", "APT:A", "APT:U" };
 
-// TODO: Refactor APT to make it not recursive
 pub const Error = Mutex.WaitError || Event.WaitError || Session.RequestError;
 
 pub const AppId = enum(u32) {
@@ -148,46 +148,8 @@ pub const CaptureBuffer = extern struct {
     }
 };
 
-pub const TransitionState = enum {
-    active,
-    enable,
-    jump_to_menu,
-    sys_applet,
-    lib_applet,
-    cancel_lib,
-    close_app,
-    app_jump,
-};
-
-pub const EventResult = union(enum) {
-    success,
-    request,
-    request_for_sys_applet,
-    response,
-    message,
-
-    /// Internal, should be unreachable to user code
-    transition_completed: Command,
-    sleep_wakeup,
-};
-
-pub const State = packed struct(u8) {
-    pub const default: State = .{ .allow_home = true, .allow_sleep = true };
-    pub const safe: State = .{ .allow_home = false, .allow_sleep = true };
-
-    allow_home: bool = false,
-    allow_sleep: bool = false,
-
-    sleeping: bool = false,
-    power_requested: bool = false,
-
-    should_close: bool = false,
-
-    _: u3 = 0,
-};
-
 pub const ChainloadTarget = union(enum) {
-    pub const Application = struct {
+    pub const OtherApplication = struct {
         program_id: u64,
         media_type: Filesystem.MediaType,
         arguments: []const u8,
@@ -197,15 +159,11 @@ pub const ChainloadTarget = union(enum) {
     none,
     caller,
     soft_reset,
-    application: Application,
+    application: OtherApplication,
 };
 
 lock: Mutex,
 available_service_name: []const u8,
-events: ?[2]Event = null,
-current_transition: TransitionState,
-flags: State,
-chainload: ChainloadTarget = .none,
 
 pub fn init(srv: ServiceManager) !Applet {
     var last_error: anyerror = undefined;
@@ -220,319 +178,24 @@ pub fn init(srv: ServiceManager) !Applet {
 
     const data = tls.getThreadLocalStorage();
 
-    var lock: Mutex = lock: {
+    const lock: Mutex = lock: {
         defer available_service.deinit();
 
         break :lock switch (try data.ipc.sendRequest(available_service, command.GetLockHandle, .{ .flags = 0x0 }, .{})) {
             .success => |s| s.value.response.lock,
-            .failure => |code| return horizon.unexpectedResult(code),
+            .failure => |_| unreachable,
         };
     };
 
-    errdefer lock.deinit();
-
-    var apt = Applet{
+    return Applet{
         .lock = lock,
         .available_service_name = available_service_name,
-        .current_transition = .active,
-        // TODO: Handle safe firm (just an if)
-        .flags = .default,
     };
-
-    const attr = Applet.Attributes{ .pos = .app, .acquire_gpu = false, .acquire_dsp = false };
-    apt.events = try apt.sendInitialize(srv, environment.program_meta.app_id, attr);
-
-    try apt.sendEnable(srv, attr);
-    apt.chainload = if (environment.program_meta.runtime_flags.apt_chainload) .soft_reset else .none;
-
-    // XXX: Here we don't need the gsp to wakeup
-    _ = try apt.waitForWakeup(srv, .enable, null);
-    return apt;
 }
 
-pub fn deinit(apt: *Applet, srv: ServiceManager) void {
-    const perform_apt_exit = if (apt.flags.should_close)
-        true
-    else if (environment.program_meta.runtime_flags.apt_reinit) ri: {
-        apt.sendFinalize(srv, environment.program_meta.app_id) catch unreachable;
-        break :ri false;
-    } else switch (apt.chainload) {
-        .none => true,
-        else => close: {
-            const program_id: u64, const media_type: Filesystem.MediaType, const flags: command.PrepareToDoApplicationJump.Request.Flags, const parameters: []const u8, const hmac: *const [0x20]u8 = switch (apt.chainload) {
-                .caller => .{ 0x00, .nand, .use_ns_parameters, &.{}, &@splat(0) },
-                .soft_reset => .{ 0x00, .nand, .use_app_id_parameters, &.{}, &@splat(0) },
-                else => @panic("TODO: chainload"),
-            };
-
-            const man_info = apt.sendGetAppletManInfo(srv, .none) catch unreachable;
-
-            if ((apt.sendIsRegistered(srv, man_info.home_menu) catch false)) {
-                apt.sendPrepareToDoApplicationJump(srv, flags, program_id, media_type) catch unreachable;
-                apt.sendDoApplicationJump(srv, parameters, hmac) catch unreachable;
-            } else {
-                apt.sendFinalize(srv, man_info.home_menu) catch unreachable;
-                @panic("TODO: 'Dirty' Luma3DS chainloading");
-            }
-
-            environment.exit_fn = null;
-            break :close false;
-        },
-    };
-
-    if (perform_apt_exit) {
-        apt.sendPrepareToCloseApplication(srv, true) catch {};
-        apt.sendCloseApplication(srv, &.{}, .null) catch {};
-    }
-
+pub fn deinit(apt: *Applet) void {
     apt.lock.deinit();
-
-    var events = apt.events.?;
-    inline for (&events) |*ev| {
-        ev.deinit();
-    }
-
     apt.* = undefined;
-}
-
-pub fn waitEvent(apt: *Applet, srv: ServiceManager, gsp: ?*GspGpu) Error!EventResult {
-    return (try apt.waitEventTimeout(srv, -1, gsp)).?;
-}
-
-pub fn pollEvent(apt: *Applet, srv: ServiceManager, gsp: ?*GspGpu) Error!?EventResult {
-    return apt.waitEventTimeout(srv, 0, gsp);
-}
-
-pub fn waitEventTimeout(apt: *Applet, srv: ServiceManager, timeout_ns: i64, gsp: ?*GspGpu) Error!?EventResult {
-    const events = apt.events.?;
-
-    const id = Event.waitMultiple(&events, false, timeout_ns) catch |err| switch (err) {
-        error.Timeout => return null,
-        else => return err,
-    };
-
-    switch (id) {
-        0 => {
-            notif_handling: switch (try apt.sendInquireNotification(srv, environment.program_meta.app_id)) {
-                .none => {},
-                .home_button_1, .home_button_2 => {
-                    if (apt.current_transition != .active) {
-                        break :notif_handling;
-                    } else if (!apt.flags.allow_home) {
-                        try apt.clearJumpToHome(srv);
-                    } else {
-                        try apt.jumpToHome(srv, gsp.?, .none);
-                    }
-                },
-                .sleep_query => {
-                    const reply: QueryReply = if (apt.current_transition != .active or apt.flags.allow_sleep)
-                        .accept
-                    else
-                        .reject;
-
-                    try apt.sendReplySleepQuery(srv, environment.program_meta.app_id, reply);
-                },
-                .sleep_accepted => {
-                    // sleep dsp if needed
-                    try apt.acceptSleep(srv, gsp.?.*);
-                },
-                .sleep_canceled_by_open => continue :notif_handling .sleep_wakeup,
-                .sleep_wakeup => {
-                    // wakeup dsp
-                    if (apt.current_transition != .active) {
-                        break :notif_handling;
-                    }
-
-                    if (apt.flags.sleeping) {
-                        return .sleep_wakeup;
-                    }
-                },
-                .shutdown => try apt.jumpToHome(srv, gsp.?, .none),
-                .power_button_click => try apt.jumpToHome(srv, gsp.?, .none),
-                .power_button_clear => {},
-                .try_sleep => {},
-                .order_to_close => apt.flags.should_close = true,
-                else => {},
-            }
-        },
-        1 => {
-            const params = try apt.sendGlanceParameter(srv, environment.program_meta.app_id, &.{});
-            defer if (params.parameter_handle != .null) {
-                _ = horizon.closeHandle(params.parameter_handle);
-            };
-
-            const cmd = params.cmd;
-
-            sw: switch (cmd) {
-                .dsp_sleep => {},
-                .dsp_wakeup => {},
-                .wakeup_by_pause => {
-                    // Handle hax 2.0 spurious wakeup
-                    continue :sw .wakeup;
-                },
-                .wakeup, .wakeup_by_exit, .wakeup_by_cancel, .wakeup_by_cancelall, .wakeup_by_power_button_click, .wakeup_to_jump_home, .wakeup_to_launch_application => {
-                    const handling_transition = apt.current_transition;
-                    apt.current_transition = .active;
-
-                    // XXX: How?
-                    if (handling_transition == .active) {
-                        unreachable;
-                    }
-
-                    _ = try apt.sendCancelParameter(srv, .none, environment.program_meta.app_id);
-
-                    // This only if its not cancel_lib
-                    if (handling_transition != .cancel_lib and cmd != .wakeup and cmd != .wakeup_by_cancel) {
-                        // NOTE: Give a name to these flags, investigate/debug in the future
-                        const valid_gsp = gsp.?;
-
-                        try valid_gsp.acquireRight(0);
-                        try valid_gsp.sendRestoreVRAMSysArea();
-                    }
-
-                    switch (cmd) {
-                        .wakeup_by_cancel, .wakeup_by_cancelall => {
-                            // dsp cancel/sleep
-
-                            if (cmd == .wakeup_by_cancel) {
-                                apt.flags.should_close = true;
-                            }
-                        },
-                        else => |v| if (v != .wakeup_to_launch_application) {
-                            // dsp wakeup
-                        },
-                    }
-
-                    if (cmd != .wakeup_to_jump_home) {
-                        try apt.sendUnlockTransition(srv, .unlock_resume);
-                        try apt.sendSleepIfShellClosed(srv);
-
-                        switch (handling_transition) {
-                            .jump_to_menu, .lib_applet, .sys_applet, .app_jump => try apt.clearJumpToHome(srv),
-                            else => {},
-                        }
-                    } else {
-                        try apt.sendLockTransition(srv, .jump_home, true);
-                        try apt.jumpToHome(srv, gsp.?, .none);
-                    }
-
-                    return .{ .transition_completed = cmd };
-                },
-                .request => return .request,
-                .request_for_sys_applet => return .request_for_sys_applet,
-                .response => return .response,
-                .message => return .message,
-                else => unreachable,
-            }
-        },
-        else => unreachable,
-    }
-
-    return .success;
-}
-
-pub fn waitForWakeup(apt: *Applet, srv: ServiceManager, transition: TransitionState, gsp: ?*GspGpu) Error!void {
-    std.debug.assert(transition != .active);
-
-    try apt.sendNotifyToWait(srv, environment.program_meta.app_id);
-    apt.current_transition = transition;
-
-    if (transition != .enable) {
-        try apt.sendSleepIfShellClosed(srv);
-    }
-
-    while (true) switch (try apt.waitEvent(srv, gsp)) {
-        .transition_completed => |_| return,
-        else => {},
-    };
-}
-
-pub fn jumpToHome(apt: *Applet, srv: ServiceManager, gsp: *GspGpu, params: JumpToHomeParameters) Error!void {
-    const last_allow_sleep = apt.flags.allow_sleep;
-
-    try apt.setSleepAllowed(srv, false);
-    try apt.sendPrepareToJumpToHomeMenu(srv);
-
-    try gsp.sendSaveVRAMSysArea();
-
-    const home_app_id = (try apt.sendGetAppletManInfo(srv, .none)).home_menu;
-    try apt.screenTransfer(srv, gsp, home_app_id, false);
-
-    // Sleep dsp
-    try gsp.releaseRight();
-    try apt.sendJumpToHomeMenu(srv, params);
-
-    _ = try apt.waitForWakeup(srv, .jump_to_menu, gsp);
-    try apt.setSleepAllowed(srv, last_allow_sleep);
-}
-
-pub fn acceptSleep(apt: *Applet, srv: ServiceManager, gsp: GspGpu) Error!void {
-    apt.sendReplySleepNotificationComplete(srv, environment.program_meta.app_id) catch unreachable;
-
-    // We're already waiting, we'll eventually wake up
-    if (apt.current_transition != .active) {
-        return;
-    }
-
-    apt.flags.sleeping = true;
-    while (true) switch (try apt.waitEvent(srv, null)) {
-        .sleep_wakeup => break,
-        else => {},
-    };
-
-    try gsp.sendSetLcdForceBlack(false);
-}
-
-pub fn setSleepAllowed(apt: *Applet, srv: ServiceManager, allow: bool) Error!void {
-    const was_allowed = apt.flags.allow_sleep;
-    apt.flags.allow_sleep = allow;
-
-    if (!was_allowed and allow) {
-        try apt.sendSleepIfShellClosed(srv);
-    } else if (was_allowed and !allow) {
-        try apt.sendReplySleepQuery(srv, environment.program_meta.app_id, .reject);
-    }
-}
-
-pub fn clearJumpToHome(apt: Applet, srv: ServiceManager) Error!void {
-    try apt.sendUnlockTransition(srv, .jump_home);
-    try apt.sendSleepIfShellClosed(srv);
-}
-
-// NOTE: This is just straight up taken from libctru. I didn't know why jumping to home was not working, now I know :p
-pub fn screenTransfer(apt: *Applet, srv: ServiceManager, gsp: *GspGpu, target_app_id: AppId, is_library_applet: bool) Error!void {
-    const gsp_capture_info = try gsp.sendImportDisplayCaptureInfo();
-    const apt_capture_info = CaptureBuffer.init(gsp_capture_info);
-
-    while (!(try apt.sendIsRegistered(srv, target_app_id))) {
-        // XXX: Maybe this could be adjusted? Currently it follows the same behaviour as libctru
-        horizon.sleepThread(10000000);
-    }
-
-    try apt.sendSendParameter(srv, environment.program_meta.app_id, target_app_id, if (is_library_applet) .request else .request_for_sys_applet, .null, std.mem.asBytes(&apt_capture_info));
-
-    // NOTE: Recursion here!
-    const capture_memory_handle = capture_handle_wait: while (true) switch (try apt.waitEvent(srv, gsp)) {
-        .response => {
-            var handle: Object = .null;
-            const params = try apt.sendReceiveParameter(srv, environment.program_meta.app_id, std.mem.asBytes(&handle));
-            defer if (params.parameter_handle.handle != .null) {
-                _ = horizon.closeHandle(params.parameter_handle.handle);
-            };
-
-            break :capture_handle_wait handle;
-        },
-        else => unreachable,
-    } else unreachable;
-    defer if (capture_memory_handle != .null) {
-        _ = horizon.closeHandle(capture_memory_handle);
-    };
-
-    if (is_library_applet) {
-        // TODO: Do the conversion ourselves
-    }
-
-    try apt.sendSendCaptureBufferInfo(srv, &apt_capture_info);
 }
 
 pub fn sendInitialize(apt: Applet, srv: ServiceManager, id: AppId, attr: Attributes) Error![2]Event {
@@ -559,7 +222,7 @@ pub fn sendFinalize(apt: Applet, srv: ServiceManager, id: AppId) !void {
 pub fn sendGetAppletManInfo(apt: Applet, srv: ServiceManager, position: Position) !command.GetAppletManInfo.Response {
     return switch (try apt.lockSendCommand(srv, command.GetAppletManInfo, .{ .position = position }, .{})) {
         .success => |s| s.value.response,
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |_| unreachable,
     };
 }
 
@@ -584,16 +247,48 @@ pub fn sendSendParameter(apt: Applet, srv: ServiceManager, src: AppId, dst: AppI
     };
 }
 
-pub fn sendReceiveParameter(apt: Applet, srv: ServiceManager, id: AppId, parameter: []u8) !command.ReceiveParameter.Response {
+pub const ParameterResult = struct {
+    sender: AppId,
+    cmd: Command,
+    handle: horizon.Object,
+    actual: []const u8,
+
+    pub fn initReceive(parameter: command.ReceiveParameter.Response) ParameterResult {
+        return .{
+            .sender = parameter.sender,
+            .cmd = parameter.cmd,
+            .handle = parameter.parameter_handle.handle,
+            .actual = parameter.actual_parameter.slice,
+        };
+    }
+
+    pub fn initGlance(parameter: command.GlanceParameter.Response) ParameterResult {
+        return .{
+            .sender = parameter.sender,
+            .cmd = parameter.cmd,
+            .handle = parameter.parameter_handle,
+            .actual = parameter.actual_parameter.slice,
+        };
+    }
+
+    pub fn deinit(parameter: *ParameterResult) void {
+        if(parameter.handle != .null) {
+            _ = horizon.closeHandle(parameter.handle);
+        }
+        parameter.* = undefined;
+    }
+};
+
+pub fn sendReceiveParameter(apt: Applet, srv: ServiceManager, id: AppId, parameter: []u8) !ParameterResult {
     return switch (try apt.lockSendCommand(srv, command.ReceiveParameter, .{ .id = id, .parameter_size = parameter.len }, .{parameter})) {
-        .success => |s| s.value.response,
+        .success => |s| .initReceive(s.value.response),
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendGlanceParameter(apt: Applet, srv: ServiceManager, id: AppId, parameter: []u8) !command.GlanceParameter.Response {
+pub fn sendGlanceParameter(apt: Applet, srv: ServiceManager, id: AppId, parameter: []u8) !ParameterResult {
     return switch (try apt.lockSendCommand(srv, command.GlanceParameter, .{ .id = id, .parameter_size = parameter.len }, .{parameter})) {
-        .success => |s| s.value.response,
+        .success => |s| .initGlance(s.value.response),
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -612,6 +307,7 @@ pub fn sendPrepareToCloseApplication(apt: Applet, srv: ServiceManager, cancel_pr
     };
 }
 
+// Errors: 0xc8a0cff0
 pub fn sendCloseApplication(apt: Applet, srv: ServiceManager, parameters: []const u8, handle: Object) !void {
     return switch (try apt.lockSendCommand(srv, command.CloseApplication, .{ .parameters_size = parameters.len, .parameter_handle = handle, .parameters = .init(parameters) }, .{})) {
         .success => {},
@@ -622,7 +318,7 @@ pub fn sendCloseApplication(apt: Applet, srv: ServiceManager, parameters: []cons
 pub fn sendPrepareToJumpToHomeMenu(apt: Applet, srv: ServiceManager) !void {
     return switch (try apt.lockSendCommand(srv, command.PrepareToJumpToHomeMenu, .{}, .{})) {
         .success => {},
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |_| unreachable,
     };
 }
 
@@ -680,6 +376,7 @@ pub fn sendSendDspWakeup(apt: Applet, srv: ServiceManager, source: AppId, handle
     };
 }
 
+// Possible errors: 0xc880cffa
 pub fn sendReplySleepQuery(apt: Applet, srv: ServiceManager, id: AppId, reply: QueryReply) Error!void {
     return switch (try apt.lockSendCommand(srv, command.ReplySleepQuery, .{ .id = id, .reply = reply }, .{})) {
         .success => {},
@@ -687,6 +384,7 @@ pub fn sendReplySleepQuery(apt: Applet, srv: ServiceManager, id: AppId, reply: Q
     };
 }
 
+// Possible errors: 0xc880cffa
 pub fn sendReplySleepNotificationComplete(apt: Applet, srv: ServiceManager, id: AppId) Error!void {
     return switch (try apt.lockSendCommand(srv, command.ReplySleepNotificationComplete, .{ .id = id }, .{})) {
         .success => {},
@@ -701,6 +399,7 @@ pub fn sendSendCaptureBufferInfo(apt: Applet, srv: ServiceManager, info: *const 
     };
 }
 
+// No errors, stub
 pub fn sendNotifyToWait(apt: Applet, srv: ServiceManager, id: AppId) Error!void {
     return switch (try apt.lockSendCommand(srv, command.NotifyToWait, .{ .id = id }, .{})) {
         .success => {},
@@ -708,6 +407,7 @@ pub fn sendNotifyToWait(apt: Applet, srv: ServiceManager, id: AppId) Error!void 
     };
 }
 
+// No errors
 pub fn sendAppletUtility(apt: Applet, srv: ServiceManager, utility: Utility, input: []const u8, output: []u8) Error!void {
     // TODO: return the ResultCode from applet_result in the Response, waiting for ziglang# #24231
     return switch (try apt.lockSendCommand(srv, command.AppletUtility, .{ .utility = utility, .input_size = input.len, .output_size = output.len, .input = .init(input) }, .{output})) {
@@ -749,6 +449,7 @@ pub fn lockSendCommand(apt: Applet, srv: ServiceManager, comptime DefinedCommand
 }
 
 pub const command = struct {
+    /// Errors: <none>
     pub const GetLockHandle = ipc.Command(Id, .get_lock_handle, struct { flags: u32 = 0 }, struct {
         pub const Flags = packed struct(u32) {
             power_button: bool,
@@ -760,14 +461,18 @@ pub const command = struct {
         state: Flags,
         lock: Mutex,
     });
+    /// Errors: 0xc8a0cffc
     pub const Initialize = ipc.Command(Id, .initialize, struct {
         id: AppId,
         attributes: Attributes,
     }, struct {
         notification_resume: [2]Event,
     });
+    /// Errors: 0xc8a0cc04
     pub const Enable = ipc.Command(Id, .enable, struct { attributes: Attributes }, struct {});
+    /// Errors: 0xc880cffa
     pub const Finalize = ipc.Command(Id, .finalize, struct { id: AppId }, struct {});
+    /// Errors: None
     pub const GetAppletManInfo = ipc.Command(Id, .get_applet_man_info, struct {
         position: Position,
     }, struct {
@@ -776,6 +481,7 @@ pub const command = struct {
         home_menu: AppId,
         current: AppId,
     });
+    /// Errors: 0xc880cffa
     pub const GetAppletInfo = ipc.Command(Id, .get_applet_info, struct {
         id: AppId,
     }, struct {
@@ -789,6 +495,7 @@ pub const command = struct {
     pub const CountRegisteredApplet = ipc.Command(Id, .count_registered_applet, struct {}, struct { registered: u32 });
     pub const IsRegistered = ipc.Command(Id, .is_registered, struct { id: AppId }, struct { registered: bool });
     pub const GetAttribute = ipc.Command(Id, .get_attribute, struct { id: AppId }, struct { attributes: Attributes });
+    /// Errors: 0xc880cffa
     pub const InquireNotification = ipc.Command(Id, .inquire_notification, struct { id: AppId }, struct { notification: Notification });
     pub const SendParameter = ipc.Command(Id, .send_parameter, struct {
         src_id: AppId,
@@ -840,12 +547,15 @@ pub const command = struct {
     // TODO: PrepareToStartSystemApplet
     // TODO: PrepareToStartNewestHomeMenu
     // TODO: StartApplication
-    // TODO: WakeupApplication
+
+    /// Errors: 0xc8a0cc04, 
+    pub const WakeupApplication = ipc.Command(Id, .wakeup_application, struct {}, struct {});
     // TODO: CancelApplication
     // TODO: StartLibraryApplet
     // TODO: StartSystemApplet
     // TODO: StartNewestHomeMenu
     // TODO: OrderToCloseApplcation
+    /// 
     pub const PrepareToCloseApplication = ipc.Command(Id, .prepare_to_close_application, struct { cancel_preload: bool }, struct {});
     // TODO: PrepareToJumpToApplication
     // TODO: JumpToApplication
@@ -858,6 +568,7 @@ pub const command = struct {
     }, struct {});
     // TODO: ...
     pub const PrepareToJumpToHomeMenu = ipc.Command(Id, .prepare_to_jump_to_home_menu, struct {}, struct {});
+    // Errors: none
     pub const JumpToHomeMenu = ipc.Command(Id, .jump_to_home_menu, struct {
         parameters_size: usize,
         parameter_handle: horizon.Object,

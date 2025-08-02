@@ -201,10 +201,10 @@ pub const DestinationRegister = enum(u5) {
     }
 };
 
-pub const BooleanRegister = enum(u4) { b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15 };
-pub const IntegerRegister = enum(u2) { i0, i1, i2, i3 };
-
 pub const IntegralRegister = packed union {
+    pub const BooleanRegister = enum(u4) { b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15 };
+    pub const IntegerRegister = enum(u2) { i0, i1, i2, i3 };
+
     bool: BooleanRegister,
 
     // See ziglang/zig#19754
@@ -253,8 +253,8 @@ comptime {
     std.debug.assert(@typeInfo(RelativeComponent).@"enum".is_exhaustive);
     std.debug.assert(@typeInfo(SourceRegister).@"enum".is_exhaustive);
     std.debug.assert(@typeInfo(DestinationRegister).@"enum".is_exhaustive);
-    std.debug.assert(@typeInfo(BooleanRegister).@"enum".is_exhaustive);
-    std.debug.assert(@typeInfo(IntegerRegister).@"enum".is_exhaustive);
+    std.debug.assert(@typeInfo(IntegralRegister.BooleanRegister).@"enum".is_exhaustive);
+    std.debug.assert(@typeInfo(IntegralRegister.IntegerRegister).@"enum".is_exhaustive);
 
     std.debug.assert(@typeInfo(SourceRegister.Input).@"enum".fields.len == 16);
     std.debug.assert(@typeInfo(TemporaryRegister).@"enum".fields.len == 16);

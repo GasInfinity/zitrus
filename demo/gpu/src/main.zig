@@ -1,16 +1,15 @@
-// XXX: THIS IS A PLAYGROUND, NOT EVEN USABLE UNLESS YOU KNOW WHAT YOU'RE DOING!
-// MISSING APT HOME AND SLEEP HANDLING, DON'T TRY TO GO HOME NOR PUT THE 3DS TO SLEEP
-// EXIT THE APP FIRST
-// Won't happen anything to you 3ds but you'll loose 30secs of your life hard-resetting your console
-
-// TODO: Rewrite this when the assembler is finished and a basic abstraction is written :D
+// NOTE: mango is not finished. It is designed with a vulkan-like api
+// TODO: Document everything when finished
 
 pub fn main() !void {
     var srv = try ServiceManager.init();
     defer srv.deinit();
 
     var apt = try Applet.init(srv);
-    defer apt.deinit(srv);
+    defer apt.deinit();
+
+    var app = try Applet.Application.init(apt, srv);
+    defer app.deinit(apt, srv);
 
     var hid = try Hid.init(srv);
     defer hid.deinit();
@@ -18,14 +17,15 @@ pub fn main() !void {
     var gsp = try GspGpu.init(srv);
     defer gsp.deinit();
 
+    // TODO: Keep framebuffer for software rendering, use mango for everything else.
     var framebuffer = try Framebuffer.init(.{
         .double_buffer = .init(.{
             .top = false,
             .bottom = false,
         }),
         .color_format = .init(.{
-            .top = .bgr8,
-            .bottom = .bgr8,
+            .top = .bgr888,
+            .bottom = .bgr888,
         }),
         .phys_linear_allocator = horizon.heap.linear_page_allocator,
     });
@@ -36,127 +36,159 @@ pub fn main() !void {
     @memset(top, 0xFF);
     @memset(bottom, 0xFF);
 
+    // TODO: How do we approach allocating memory
     const bot_renderbuf = @as([*]align(8) u8, @ptrFromInt(horizon.memory.vram_a_begin))[0 .. 320 * 240 * 4];
     // defer horizon.heap.linear_page_allocator.free(bot_renderbuf);
 
     const internal = &horizon.memory.gpu_registers.internal;
-    const commandBuffer = try horizon.heap.linear_page_allocator.alignedAlloc(u32, 8, 4096);
-    defer horizon.heap.linear_page_allocator.free(commandBuffer);
+    const raw_command_queue = try horizon.heap.linear_page_allocator.alignedAlloc(u32, 8, 4096);
+    defer horizon.heap.linear_page_allocator.free(raw_command_queue);
 
     // Learn the hard way that memory fills only work with vram.
     // 3dbrew GSP Shared memory: "Addresses should be aligned to 8 bytes and must be in linear, QTM or VRAM memory"
     // 3dbrew MemoryFill registers: "The addresses must be part of VRAM."
+    // TODO: use mango.
     try gsp.submitMemoryFill(.{ .init(bot_renderbuf, .fill32(0xCCAACCFF)), null }, .none);
     while (true) {
         const interrupts = try gsp.waitInterrupts();
 
-        if (interrupts.contains(.psc0)) {
+        if (interrupts.get(.psc0) > 0) {
             break;
         }
     }
 
     // Initial display transfer (only used for debugging purposes). You cannot draw directly to the framebuffer as you must do a tiled->linear transformation.
-    try gsp.submitDisplayTransfer(bot_renderbuf.ptr, bottom.ptr, .abgr8, .{ .x = 240, .y = 320 }, .bgr8, .{ .x = 240, .y = 320 }, .none, .none);
+    // TODO: use mango.
+    try gsp.submitDisplayTransfer(bot_renderbuf.ptr, bottom.ptr, .abgr8888, .{ .x = 240, .y = 320 }, .bgr888, .{ .x = 240, .y = 320 }, .none, .none);
     while (true) {
         const interrupts = try gsp.waitInterrupts();
 
-        if (interrupts.contains(.ppf)) {
+        if (interrupts.get(.ppf) > 0) {
             break;
         }
     }
 
-    var queue: command.Queue = .initBuffer(commandBuffer);
+    var cmdbuf: mango.CommandBuffer = .{
+        .queue = .initBuffer(raw_command_queue),
+    };
 
+    const queue: *cmd3d.Queue = &cmdbuf.queue;
     // Adapted from https://problemkaputt.de/gbatek.htm#3dsgputriangledrawingsamplecode but writing through commandlists instead of doing it directly and some more fixes (texenv0, lighting disable)
     // TODO: This is VERY low level. Needs an API
-    queue.add(internal, &internal.framebuffer.render_buffer_invalidate, .trigger);
-    queue.add(internal, &internal.framebuffer.depth_buffer_location, .fromPhysical(horizon.memory.toPhysical(@intFromPtr(bot_renderbuf.ptr))));
-    queue.add(internal, &internal.framebuffer.color_buffer_location, .fromPhysical(horizon.memory.toPhysical(@intFromPtr(bot_renderbuf.ptr))));
-    // We'll render to the bottom screen, thats why 320x240 (physically they are 240x320)
-    queue.add(internal, &internal.framebuffer.render_buffer_dimensions, .init(240, 320, true));
-    queue.add(internal, &internal.rasterizer.faceculling_config, .{ .mode = .none });
-    queue.add(internal, &internal.rasterizer.viewport_h_scale, .fromFloat(.of(240.0 / 2.0)));
-    queue.add(internal, &internal.rasterizer.viewport_v_scale, .fromFloat(.of(320.0 / 2.0)));
-    queue.add(internal, &internal.rasterizer.viewport_h_step, .fromFloat(.of(2.0 / 240.0)));
-    queue.add(internal, &internal.rasterizer.viewport_v_step, .fromFloat(.of(2.0 / 320.0)));
-    queue.add(internal, &internal.rasterizer.viewport_xy, .{ .x = 0, .y = 0 });
-    queue.add(internal, &internal.rasterizer.scissor_config, .{ .mode = .disable });
-    queue.add(internal, &internal.framebuffer.color_operation, .{
-        .fragment_operation = .default,
-        .mode = .blend,
-    });
-    // Basically replace the color: Ofb = 1*src + 0*dst
-    queue.add(internal, &internal.framebuffer.blend_config, .{
-        .rgb_equation = .add,
-        .alpha_equation = .add,
-        .rgb_src_function = .one,
-        .rgb_dst_function = .zero,
-        .alpha_src_function = .one,
-        .alpha_dst_function = .zero,
-    });
-    queue.add(internal, &internal.framebuffer.fragment_operation_alpha_test, .{
-        .enable = false,
-        .function = .never,
-        .reference_value = 0,
-    });
-    queue.add(internal, &internal.framebuffer.stencil_test, .{
-        .enable = false,
-        .function = .never,
-        .src_mask = 0,
-        .dst_mask = 0,
-        .value = 0,
-    });
-    queue.add(internal, &internal.framebuffer.logic_operation, .{ .operation = .clear });
-    queue.add(internal, &internal.framebuffer.depth_color_mask, .{
-        .enable_depth_test = false,
-        .depth_function = .never,
-        .r_write_enable = true,
-        .g_write_enable = true,
-        .b_write_enable = true,
-        .a_write_enable = true,
-        .depth_write_enable = false,
-    });
-    queue.add(internal, &internal.framebuffer.color_buffer_reading, .enable);
-    queue.add(internal, &internal.framebuffer.color_buffer_writing, .enable);
-    queue.add(internal, &internal.framebuffer.depth_buffer_reading, .disable);
-    queue.add(internal, &internal.framebuffer.depth_buffer_writing, .disable);
-    queue.add(internal, &internal.framebuffer.color_buffer_format, .{ .pixel_size = .@"32", .format = .abgr8 });
-    queue.add(internal, &internal.framebuffer.depth_buffer_format, .{ .format = .f16 });
-    queue.add(internal, &internal.framebuffer.render_buffer_block_size, .{ .mode = .@"8x8" });
-    queue.add(internal, &internal.framebuffer.early_depth_test_2, .disable);
-    queue.add(internal, &internal.rasterizer.early_depth_test_1, .disable);
-    queue.add(internal, &internal.rasterizer.depth_map_enable, .enable);
-    queue.add(internal, &internal.rasterizer.depth_map_scale, .fromFloat(.of(-1.0)));
-    queue.add(internal, &internal.rasterizer.depth_map_offset, .fromFloat(.of(0.0)));
-    // Just in case, 
-    queue.add(internal, &internal.texturing.lighting_enable, .disable);
-    queue.add(internal, &internal.fragment_lighting.disable, .disable);
-    // enable texture environment 0 to just replace the color. PLEASE, unless you want to get black output and debug it for 12h :D
-    queue.add(internal, &internal.texturing_environment.texture_environment_0.source, .{
-        .rgb_source_0 = .primary_color,
-        .rgb_source_1 = .primary_color,
-        .rgb_source_2 = .primary_color,
-        .alpha_source_0 = .primary_color,
-        .alpha_source_1 = .primary_color,
-        .alpha_source_2 = .primary_color,
-    });
-    queue.add(internal, &internal.texturing_environment.texture_environment_0.combiner, .{
-        .rgb_combine = .replace,
-        .alpha_combine = .replace,
-    });
-    queue.add(internal, &internal.texturing_environment.update_buffer, .{
-        .fog_mode = .disabled,
-        .shading_density_source = .plain,
-        .tex_env_1_rgb_buffer_input = .previous_buffer,
-        .tex_env_2_rgb_buffer_input = .previous_buffer,
-        .tex_env_3_rgb_buffer_input = .previous_buffer,
-        .tex_env_4_rgb_buffer_input = .previous_buffer,
-        .tex_env_1_alpha_buffer_input = .previous_buffer,
-        .tex_env_2_alpha_buffer_input = .previous_buffer,
-        .tex_env_3_alpha_buffer_input = .previous_buffer,
-        .tex_env_4_alpha_buffer_input = .previous_buffer,
-        .z_flip  = false,
-    });
+    
+    // NOTE: Pipelines are really good as they could cache commands efficiently and binding them would be only one memcpy
+    // however, everything will be as dynamic as possible
+    const pipeline_create: mango.Pipeline.CreateGraphics = .{
+        .rendering_info = .{
+            .color_attachment_format = .a8b8g8r8_unorm,
+            .depth_stencil_attachment_format = .undefined,
+        },
+        .vertex_input_state = &.init(
+            &.{
+                .{
+                    .stride = 7,
+                },
+            },
+            &.{
+                .{
+                    .location = .v0,
+                    .binding = .@"0",
+                    .format = .r8g8b8_uscaled,
+                    .offset = 0,
+                },
+                .{
+                    .location = .v1,
+                    .binding = .@"0",
+                    .format = .r8g8b8a8_sscaled,
+                    .offset = 3,
+                },
+            },
+            &.{}
+        ),
+        .input_assembly_state = &.{
+            .topology = .triangle_strip,
+        },
+        .viewport_state = &.{
+            .scissor = &.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 320 } }),
+            .viewport = &.{
+                .x = 0,
+                .y = 0,
+                .width = 240.0,
+                .height = 320.0,
+                .min_depth = 0.0,
+                .max_depth = 1.0,
+            },
+        },
+        .rasterization_state = &.{
+            .front_face = .ccw,
+            .cull_mode = .none,
+
+            .depth_mode = .z_buffer,
+            .depth_bias_enable = false,
+            .depth_bias_constant = 0.0,
+        },
+        .alpha_depth_stencil_state = &.{
+            .alpha_test_enable = false,
+            .alpha_test_compare_op = .never,
+            .alpha_test_reference = 0,
+
+            .depth_test_enable = false,
+            .depth_write_enable = false,
+            .depth_compare_op = .gt,
+
+            .stencil_test_enable = false,
+            .back_front = std.mem.zeroes(mango.Pipeline.CreateGraphics.AlphaDepthStencilState.StencilOperationState),
+        },
+        .lighting_state = &.{}, 
+        .texture_combiner_state = &.init(&.{
+            .{
+                .color_src = @splat(.primary_color),
+                .alpha_src = @splat(.primary_color),
+                .color_factor = @splat(.src_color),
+                .alpha_factor = @splat(.src_alpha),
+                .color_op = .replace,
+                .alpha_op = .replace,
+
+                .color_scale = .@"1x",
+                .alpha_scale = .@"1x",
+
+                .constant = @splat(0),
+            }
+        }, &.{}),
+        .color_blend_state = &.{
+            .logic_op_enable = false,
+            .logic_op = .clear,
+            
+            .attachment = .{
+                .blend_enable = false,
+                .src_color_blend_factor = .one,
+                .dst_color_blend_factor = .zero,
+                .color_blend_op = .add,
+                .src_alpha_blend_factor = .one,
+                .dst_alpha_blend_factor = .zero,
+                .alpha_blend_op = .add,
+
+                .color_write_mask = .rgba,
+                .color_write_enable = true, 
+            },
+            .blend_constants = .{ 0, 0, 0, 0 },
+        },
+        .dynamic_state = .{},
+    };
+
+    // TODO: create pipelines and cache their static state for command buffers
+    pipeline_create.writeStaticState(queue);
+
+    // TODO: What to do with early depth?
+    queue.add(internal, &internal.rasterizer.early_depth_test_enable_1, .init(false));
+    queue.add(internal, &internal.framebuffer.early_depth_test_enable_2, .init(false));
+    
+    // TODO: Lighting in pipelines
+    queue.add(internal, &internal.texturing.lighting_enable, .init(false));
+    queue.add(internal, &internal.fragment_lighting.disable, .init(true));
+
+    // TODO: specialized shader format. shbins are not that great? they need to be parsed, we're homebrew, we don't have to abide by the rules.
+    // TODO: Shaders in pipeline
     queue.add(internal, &internal.geometry_pipeline.start_draw_function, .config);
     queue.add(internal, &internal.rasterizer.shader_output_map_total, .{ .num = 2 });
     queue.add(internal, &internal.vertex_shader.output_map_mask, .{
@@ -179,26 +211,20 @@ pub fn main() !void {
         .color_present = true,
     });
     queue.add(internal, &internal.rasterizer.shader_output_attribute_mode, .{ .use_texture_coordinates = false });
-    queue.add(internal, &internal.geometry_pipeline.vertex_shader_input_attributes, .initTotal(2 - 1));
-    queue.add(internal, &internal.geometry_pipeline.vertex_shader_output_map_total_1, .initTotal(2 - 1));
-    queue.add(internal, &internal.geometry_pipeline.vertex_shader_output_map_total_2, .initTotal(2 - 1));
+    queue.add(internal, &internal.geometry_pipeline.vertex_shader_output_map_total_1, .init(2 - 1));
+    queue.add(internal, &internal.geometry_pipeline.vertex_shader_output_map_total_2, .init(2 - 1));
 
     // don't use geometry shader + 2 input registers
-    queue.add(internal, &internal.geometry_pipeline.enable_geometry_shader_configuration, .disable);
+    queue.add(internal, &internal.geometry_pipeline.enable_geometry_shader_configuration, .init(false));
     queue.add(internal, &internal.vertex_shader.input_buffer_config, .{
         .num_input_attributes = (2 - 1),
         .enabled_for_vertex_0 = true,
         .enabled_for_vertex_1 = true,
     });
-
-    queue.add(internal, &internal.geometry_pipeline.primitive_config, .{
+    queue.addMasked(internal, &internal.geometry_pipeline.primitive_config, .{
         .total_vertex_outputs = (2 - 1),
-        .mode = .triangle_strip,
-    });
-
-    // identity map attributes to input registers
-    queue.add(internal, &internal.vertex_shader.attribute_permutation_low, .{});
-    queue.add(internal, &internal.vertex_shader.attribute_permutation_high, .{});
+        .topology = .triangle_list,
+    }, 0b0001);
 
     // enable o0 o1
     queue.add(internal, &internal.vertex_shader.code_transfer_index, .initIndex(0));
@@ -219,48 +245,18 @@ pub fn main() !void {
         }},
         .{ .unparametized = .{ .opcode = .end } },
     });
-    queue.add(internal, &internal.vertex_shader.code_transfer_end, .trigger);
+    queue.add(internal, &internal.vertex_shader.code_transfer_end, .init(.trigger));
 
     queue.add(internal, &internal.vertex_shader.operand_descriptors_index, .initIndex(0));
-    // mask xyzw, selector xyzw
     queue.add(internal, &internal.vertex_shader.operand_descriptors_data[0], .{});
-    // lower 16 bits, entrypoint starts at instruction 0
     queue.add(internal, &internal.vertex_shader.entrypoint, .initEntry(0));
     
-    // drawing triangle strips
-    queue.add(internal, &internal.geometry_pipeline.config, .{});
-    // drawing triangle strips + inputting vtx data
-    queue.add(internal, &internal.geometry_pipeline.config_2, .{
-        .drawing_triangles = true,
-        .inputting_vertices_or_draw_arrays = true,
-    });
-    queue.add(internal, &internal.geometry_pipeline.restart_primitive, .trigger);
-
-    // draw a colored quad in immediate mode
-
-    // const as_fixed_attr: [8]F7_16x4 = .{
-    //     .pack(.of(1), .of(0), .of(1), .of(1)),
-    //     .pack(.of(-1), .of(-1), .of(0), .of(1)),
-    //
-    //     .pack(.of(1),  .of(1), .of(0), .of(1)),
-    //     .pack(.of(1), .of(-1), .of(0), .of(1)),
-    //
-    //     .pack(.of(0), .of(1), .of(1), .of(1)),
-    //     .pack(.of(-1), .of(1), .of(0), .of(1)),
-    //
-    //     .pack(.of(0), .of(1), .of(0), .of(1)),
-    //     .pack(.of(1), .of(1), .of(0), .of(1)),
-    // };
-    //
-    // // start drawing
-    // queue.add(internal, &internal.geometry_pipeline.start_draw_function, .drawing);
-    // queue.add(internal, &internal.geometry_pipeline.fixed_attribute_index, .immediate_mode);
-    // inline for (0..8) |i| {
-    //     queue.add(internal, &internal.geometry_pipeline.fixed_attribute_data, as_fixed_attr[i]);
-    // }
-    // queue.add(internal, &internal.geometry_pipeline.clear_post_vertex_cache, .trigger);
-    // queue.add(internal, &internal.framebuffer.render_buffer_flush, .trigger);
-
+    // We'll render to the bottom screen, thats why 320x240 (physically they are 240x320)
+    // queue.add(internal, &internal.rasterizer.scissor_config, .{ .mode = .disable });
+    // Basically replace the color: Ofb = 1*src + 0*dst
+    // NOTE: mango doesn't expect ANY gpu state in a command buffer (its only local to the cmdbuf), previous state is undefined for us, however here we're writing to the queue directly :p
+    queue.add(internal, &internal.geometry_pipeline.start_draw_function, .drawing);
+    // TODO: Shaders in pipeline
 
     // draw a colored quad with vertex buffers
     const Vertex = extern struct {
@@ -271,42 +267,68 @@ pub fn main() !void {
     const at_buf = try horizon.heap.linear_page_allocator.alignedAlloc(Vertex, 16, 4);
     defer horizon.heap.linear_page_allocator.free(at_buf);
 
-    at_buf[0] = .{ .pos = .{ -1, -1, 0, 1 }, .color = .{ 1, 0, 1 } };
+    at_buf[0] = .{ .pos = .{ -1, -1, 0, 1 }, .color = .{ 0, 0, 0 } };
     at_buf[1] = .{ .pos = .{ 1, -1, 0, 1 }, .color = .{ 1, 1, 0 } };
     at_buf[2] = .{ .pos = .{ -1, 1, 0, 1 }, .color = .{ 0, 1, 1 } };
     at_buf[3] = .{ .pos = .{ 1, 1, 0, 1 }, .color = .{ 0, 1, 0 } };
 
     try gsp.sendFlushDataCache(std.mem.sliceAsBytes(at_buf));
 
-    queue.add(internal, &internal.geometry_pipeline.attribute_buffer_base, .fromPhysical(horizon.memory.toPhysical(@intFromPtr(at_buf.ptr))));
-    queue.add(internal, &internal.geometry_pipeline.attribute_buffer_format_low, .{
-        .attribute_0 = .{ .type = .u8, .size = .xyz },
-        .attribute_1 = .{ .type = .i8, .size = .xyzw },
-    });
-    queue.add(internal, &internal.geometry_pipeline.attribute_buffer_format_high, .{
-        .attributes_end = (2 - 1),
-    });
-    queue.add(internal, &internal.geometry_pipeline.attribute_buffer[0].offset, 0);
-    // Identity mapping attributes -> components 
-    queue.add(internal, &internal.geometry_pipeline.attribute_buffer[0].config_low, .{});
-    queue.add(internal, &internal.geometry_pipeline.attribute_buffer[0].config_high, .{
-        .bytes_per_vertex = 7,
-        .num_components = 2,
-    });
-    queue.add(internal, &internal.geometry_pipeline.attribute_buffer_num_vertices, 4);
-    queue.add(internal, &internal.geometry_pipeline.start_draw_function, .drawing);
-    queue.add(internal, &internal.geometry_pipeline.attribute_buffer_first_index, 0);
-    queue.add(internal, &internal.geometry_pipeline.attribute_buffer_draw_arrays, .trigger);
+    // TODO: mango.Buffer objects
+    cmdbuf.bindVertexBuffersSlice(0, &.{horizon.memory.toPhysical(@intFromPtr(at_buf.ptr))}, &.{0});
+
+    {
+        // We'll render to the bottom screen, thats why 320x240 (physically they are 240x320)
+        cmdbuf.beginRendering(&.{
+            // TODO: As we still dont have resources this must be done.
+            .todo_image_view_extents = .{
+                .width = 240,
+                .height = 320,
+            },
+
+            .color_attachment = horizon.memory.toPhysical(@intFromPtr(bot_renderbuf.ptr)),
+            .depth_stencil_attachment = .fromAddress(0),
+        });
+        defer cmdbuf.endRendering();
+
+        // TODO: How do we approach drawing in immediate mode with mango?
+        // Its different from attributes as you can input up to 16 registers instead of 12 so maybe it could have its use cases.
+
+        // const as_fixed_attr: [8]F7_16x4 = .{
+        //     .pack(.of(1), .of(0), .of(1), .of(1)),
+        //     .pack(.of(-1), .of(-1), .of(0), .of(1)),
+        //
+        //     .pack(.of(1),  .of(1), .of(0), .of(1)),
+        //     .pack(.of(1), .of(-1), .of(0), .of(1)),
+        //
+        //     .pack(.of(0), .of(1), .of(1), .of(1)),
+        //     .pack(.of(-1), .of(1), .of(0), .of(1)),
+        //
+        //     .pack(.of(0), .of(1), .of(0), .of(1)),
+        //     .pack(.of(1), .of(1), .of(0), .of(1)),
+        // };
+        //
+        // // start drawing
+        // queue.add(internal, &internal.geometry_pipeline.restart_primitive, .init(.trigger));
+        // queue.add(internal, &internal.geometry_pipeline.fixed_attribute_index, .immediate_mode);
+        // inline for (0..8) |i| {
+        //     queue.add(internal, &internal.geometry_pipeline.fixed_attribute_data, as_fixed_attr[i]);
+        // }
+        // queue.add(internal, &internal.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
+        cmdbuf.draw(4, 0);
+    }
+
+    // XXX: Homebrew apps expect start_draw_function to start in configuration mode. Or you have a dreaded black screen of death x-x
     queue.add(internal, &internal.geometry_pipeline.start_draw_function, .config);
-    queue.add(internal, &internal.geometry_pipeline.clear_post_vertex_cache, .trigger);
-    queue.add(internal, &internal.framebuffer.render_buffer_flush, .trigger);
     queue.finalize();
+
+    // TODO: Say goodbye to using the gsp directly, use mango.
 
     // TODO: This is currently not that great...
     while (true) {
         const interrupts = try gsp.waitInterrupts();
 
-        if (interrupts.contains(.vblank_top)) {
+        if (interrupts.get(.vblank_top) > 0) {
             break;
         }
     }
@@ -320,37 +342,49 @@ pub fn main() !void {
     try gsp.sendSetLcdForceBlack(false);
     defer if (gsp.has_right) gsp.sendSetLcdForceBlack(true) catch {};
 
-    var running = true;
-    while (running) {
+    main_loop: while (true) {
         while (try srv.pollNotification()) |notif| switch (notif) {
-            .must_terminate => running = false,
+            .must_terminate => break :main_loop,
             else => {},
         };
 
-        while (try apt.pollEvent(srv, &gsp)) |e| switch (e) {
+        while (try app.pollNotification(apt, srv)) |n| switch (n) {
+            .jump_home, .jump_home_by_power => {
+                j_h: switch(try app.jumpToHome(apt, srv, &gsp, .none)) {
+                    .resumed => {},
+                    .jump_home => continue :j_h (try app.jumpToHome(apt, srv, &gsp, .none)),
+                    .must_close => break :main_loop,
+                }
+            },
+            .sleeping => {
+                while (try app.waitNotification(apt, srv) != .sleep_wakeup) {}
+                try gsp.sendSetLcdForceBlack(false);
+            },
+            .must_close, .must_close_by_shutdown => break :main_loop,
+            .jump_home_rejected => {},
             else => {},
         };
 
         const input = hid.readPadInput();
 
         if (input.current.start) {
-            break;
+            break :main_loop;
         }
 
         try gsp.submitProcessCommandList(@alignCast(queue.buffer[0..queue.current_index]), .none, .flush, .none);
         while (true) {
             const interrupts = try gsp.waitInterrupts();
 
-            if (interrupts.contains(.p3d)) {
+            if (interrupts.get(.p3d) > 0) {
                 break;
             }
         }
 
-        try gsp.submitDisplayTransfer(bot_renderbuf.ptr, bottom.ptr, .abgr8, .{ .x = 240, .y = 320 }, .bgr8, .{ .x = 240, .y = 320 }, .none, .none);
+        try gsp.submitDisplayTransfer(bot_renderbuf.ptr, bottom.ptr, .abgr8888, .{ .x = 240, .y = 320 }, .bgr888, .{ .x = 240, .y = 320 }, .none, .none);
         while (true) {
             const interrupts = try gsp.waitInterrupts();
 
-            if (interrupts.contains(.ppf)) {
+            if (interrupts.get(.ppf) > 0) {
                 break;
             }
         }
@@ -360,12 +394,10 @@ pub fn main() !void {
         while (true) {
             const interrupts = try gsp.waitInterrupts();
 
-            if (interrupts.contains(.vblank_top)) {
+            if (interrupts.get(.vblank_top) > 0) {
                 break;
             }
         }
-
-        running = running and !apt.flags.should_close;
     }
 }
 
@@ -378,7 +410,8 @@ const Framebuffer = zitrus.gpu.Framebuffer;
 
 const gpu = zitrus.gpu;
 const F7_16x4 = gpu.F7_16x4;
-const command = gpu.command;
+const cmd3d = gpu.cmd3d;
+const mango = gpu.mango;
 
 pub const panic = zitrus.panic;
 const zitrus = @import("zitrus");
@@ -386,4 +419,5 @@ const std = @import("std");
 
 comptime {
     _ = zitrus;
+    std.testing.refAllDeclsRecursive(mango.Pipeline);
 }

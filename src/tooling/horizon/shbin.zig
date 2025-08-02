@@ -125,4 +125,4 @@ pub const Dvle = extern struct {
 
 const zitrus_tooling = @import("zitrus-tooling");
 const pica = zitrus_tooling.pica;
-const UniformRegister = pica.register.UniformRegister;
+const UniformRegister = pica.UniformRegister;

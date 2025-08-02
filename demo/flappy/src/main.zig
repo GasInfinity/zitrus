@@ -1,10 +1,10 @@
 // 3 bird images here
-const bird_sheet = std.mem.bytesAsSlice(Bgr8, @embedFile("bird"));
-const pipes_sheet = std.mem.bytesAsSlice(Bgr8, @embedFile("pipes"));
-const ground = std.mem.bytesAsSlice(Bgr8, @embedFile("ground"));
+const bird_sheet = std.mem.bytesAsSlice(Bgr888, @embedFile("bird"));
+const pipes_sheet = std.mem.bytesAsSlice(Bgr888, @embedFile("pipes"));
+const ground = std.mem.bytesAsSlice(Bgr888, @embedFile("ground"));
 
 // Firstly "Game Over", then "Flappy Bird" and then "Get Ready!"
-const titles_sheet = std.mem.bytesAsSlice(Bgr8, @embedFile("titles"));
+const titles_sheet = std.mem.bytesAsSlice(Bgr888, @embedFile("titles"));
 
 const get_ready_image_height = 92;
 const flappy_bird_image_height = 89;
@@ -25,9 +25,9 @@ const pipe_image_height = 26;
 const ground_image_width = 10;
 const ground_image_height = 12;
 
-const sky_color = Bgr8{ .r = 111, .g = 195, .b = 205 };
-const ground_color = Bgr8{ .r = 222, .g = 216, .b = 148 };
-const transparent_color = Bgr8{ .r = 255, .g = 0, .b = 255 };
+const sky_color = Bgr888{ .r = 111, .g = 195, .b = 205 };
+const ground_color = Bgr888{ .r = 222, .g = 216, .b = 148 };
+const transparent_color = Bgr888{ .r = 255, .g = 0, .b = 255 };
 
 const full_pipe_width = 40;
 const pipe_velocity = 100;
@@ -247,7 +247,10 @@ pub fn main() !void {
     defer srv.deinit();
 
     var apt = try Applet.init(srv);
-    defer apt.deinit(srv);
+    defer apt.deinit();
+
+    var app = try Applet.Application.init(apt, srv);
+    defer app.deinit(apt, srv);
 
     var hid = try Hid.init(srv);
     defer hid.deinit();
@@ -267,25 +270,25 @@ pub fn main() !void {
 
     @memset(framebuffer.currentFramebuffer(.top), 0x00);
     {
-        const bottom_fb = std.mem.bytesAsSlice(Bgr8, framebuffer.currentFramebuffer(.bottom));
+        const bottom_fb = std.mem.bytesAsSlice(Bgr888, framebuffer.currentFramebuffer(.bottom));
         @memset(bottom_fb, ground_color);
 
         const bottom = ScreenCtx.init(bottom_fb, Screen.bottom.width());
         bottom.drawSprite(.transparent_bitmap, 2 * (Screen.bottom.width() / 3), (Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ .transparent = transparent_color }, .{});
     }
+
     try framebuffer.flushBuffers(&gsp);
     try framebuffer.swapBuffers(&gsp);
-
     while (true) {
         const interrupts = try gsp.waitInterrupts();
 
-        if (interrupts.contains(.vblank_top)) {
+        if (interrupts.get(.vblank_top) > 0) {
             break;
         }
     }
 
     try gsp.sendSetLcdForceBlack(false);
-    defer if (gsp.has_right) gsp.sendSetLcdForceBlack(true) catch {};
+    defer if (gsp.has_right) gsp.sendSetLcdForceBlack(true) catch unreachable;
 
     var app_state: AppState = .{};
 
@@ -294,14 +297,26 @@ pub fn main() !void {
 
     var last_current: Hid.Pad.State = std.mem.zeroes(Hid.Pad.State);
 
-    var running = true;
-    while (running) {
+    main_loop: while (true) {
         while (try srv.pollNotification()) |notif| switch (notif) {
-            .must_terminate => running = false,
+            .must_terminate => break :main_loop,
             else => {},
         };
 
-        while (try apt.pollEvent(srv, &gsp)) |e| switch (e) {
+        while (try app.pollNotification(apt, srv)) |n| switch (n) {
+            .jump_home, .jump_home_by_power => {
+                j_h: switch(try app.jumpToHome(apt, srv, &gsp, .none)) {
+                    .resumed => {},
+                    .jump_home => continue :j_h (try app.jumpToHome(apt, srv, &gsp, .none)),
+                    .must_close => break :main_loop,
+                }
+            },
+            .sleeping => {
+                while (try app.waitNotification(apt, srv) != .sleep_wakeup) {}
+                try gsp.sendSetLcdForceBlack(false);
+            },
+            .must_close, .must_close_by_shutdown => break :main_loop,
+            .jump_home_rejected => {},
             else => {},
         };
 
@@ -312,7 +327,7 @@ pub fn main() !void {
         const pressed = changed.same(input.current);
 
         if (input.current.start) {
-            running = false;
+            break :main_loop;
         }
 
         const top = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.top), Screen.top.width());
@@ -325,12 +340,10 @@ pub fn main() !void {
         while (true) {
             const interrupts = try gsp.waitInterrupts();
 
-            if (interrupts.contains(.vblank_top)) {
+            if (interrupts.get(.vblank_top) > 0) {
                 break;
             }
         }
-
-        running = running and !apt.flags.should_close;
     }
 }
 
@@ -339,11 +352,11 @@ fn collides(x11: f32, y11: f32, x12: f32, y12: f32, x21: f32, y21: f32, x22: f32
 }
 
 const zoftblit = @import("zoftblit.zig");
-const ScreenCtx = zoftblit.Context(Bgr8);
+const ScreenCtx = zoftblit.Context(Bgr888);
 
 const gpu = zitrus.gpu;
 const Screen = gpu.Screen;
-const Bgr8 = gpu.ColorFormat.Bgr8;
+const Bgr888 = gpu.ColorFormat.Bgr888;
 
 const horizon = zitrus.horizon;
 const ServiceManager = horizon.ServiceManager;

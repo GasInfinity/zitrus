@@ -46,11 +46,12 @@ b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "homebrew.3dsx").st
 ```
 
 ## Examples / Demos
-Currently there are 4 examples in the `demo/` directory, only basic software blitting is implemented for graphics and we're missing almost all the services:
+Currently there are 5 examples in the `demo/` directory, only basic software blitting is implemented for graphics and we're missing almost all the services:
 - [panic](demo/panic/) is a simple example that panics when opened to test panics and traces.
 - [info](demo/info) is a simple app that currently shows the console region and model (will be updated to show more info over time).
 - [bitmap](demo/bitmap/) is a port of the bitmap example in libctru's 3ds-examples.
 - [flappy](demo/flappy) is a simple fully functional flappy bird clone written entirely with software blitting.
+- [gpu](demo/gpu/) is a WIP playground for [mango](src/gpu/mango.zig).
 
 ## Why?
 I wanted to learn arm and always wanted to develop 3DS homebrew, also I searched and I haven't found any kind of zig package that doesn't use libctru, so I just started reading a lot and doing things. Furthermore, using only zig has a lot of advantages:
@@ -72,7 +73,7 @@ I wanted to learn arm and always wanted to develop 3DS homebrew, also I searched
     - 🔴 elf -> ExeFS .code
 - 🔴 Everything not listed here
 - 🟡 Dumping, a.k.a: 3dsx/exefs --> bin/elf, smdh -> config + icons, etc... (Reverse engineering mainly, lowest priority overall)
-    - 🟡 smdh -> config + ~icons~
+    - 🟢 smdh -> config + icons
     - 🔴 Everything not listed here
 
 # HOS Coverage
@@ -90,8 +91,9 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 ## Gpu Support
 
 - 🟢 Software rendering with Framebuffers
-- 🟡 GX Commands
+- 🟢 GX Commands
 - 🟡 2D/3D Acceleration (a.k.a: REALLY using the Gpu to do things)
+- 🟡 mango, a low-level, vulkan-like graphics api for the PICA200.
 
 ## Port/Service Support
 
@@ -105,8 +107,12 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 - 🟡 `gsp::Lcd`
 - 🔴 All other [services](https://www.3dbrew.org/wiki/Services_API) not listed here
 
+# Planned
+- 🔴 C API
+
 # Credits
-- [3dbrew](https://www.3dbrew.org/wiki/Main_Page) is seriously the best resource if you need info about the 3DS hardware/software
+- [3dbrew](https://www.3dbrew.org/wiki/Main_Page) is seriously the best resource if you need info about the 3DS hardware/software.
+- [gbatek](https://problemkaputt.de/gbatek.htm#3dsreference) is the second best resource for low level info about the 3DS hardware.
 - @devkitPro for the tooling, a starting point/reference for this project and reference for unknown/undocumented/unspecified things (e.g: libctru and how tf jumping to home menu worked).
 - @azahar-emu/[azahar](https://github.com/azahar-emu/azahar) for providing an emulator to quickly test changes and the initial iterations.
 - @LumaTeam/[Luma3DS](https://github.com/LumaTeam/Luma3DS/) for literally saving my life when trying to debug things in my 2DS.

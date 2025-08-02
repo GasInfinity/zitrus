@@ -16,7 +16,7 @@ pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, com
         pub const shift = address_shift;
 
         pub fn fromAddress(address: usize) AlignedPhysAddr {
-            return .of(@as(PhysicalAddress, @enumFromInt(address))); 
+            return .fromPhysical(@as(PhysicalAddress, @enumFromInt(address))); 
         }
 
         pub fn fromPhysical(aligned_address: anytype) AlignedPhysAddr {

@@ -1,3 +1,5 @@
+// TODO: Deprecate this or make it handle one screen only (one framebuffer per screen), or use mango instead
+
 pub const Error = error{};
 
 pub const Config = struct {
@@ -6,7 +8,7 @@ pub const Config = struct {
 
     double_buffer: ScreenDoubleBuffer = .initFill(true),
     top_mode: TopFramebufferMode = .@"2d",
-    color_format: ScreenColorFormat = .initFill(.bgr8),
+    color_format: ScreenColorFormat = .initFill(.bgr888),
     dma_size: DmaSize = .@"128",
     phys_linear_allocator: Allocator = horizon.heap.linear_page_allocator,
 };

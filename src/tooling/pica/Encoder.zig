@@ -354,7 +354,10 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayListUnmanaged;
 
-const encoding = @import("encoding.zig");
+const zitrus_tooling = @import("zitrus-tooling");
+const pica = zitrus_tooling.pica;
+
+const encoding = pica.encoding;
 const Instruction = encoding.Instruction;
 const OperandDescriptor = encoding.OperandDescriptor;
 const Condition = encoding.Condition;
@@ -365,11 +368,10 @@ const Primitive = encoding.Primitive;
 const Mask = encoding.Component.Mask;
 const Selector = encoding.Component.Selector;
 
-const register = @import("register.zig");
-const RelativeComponent = register.RelativeComponent;
-const SourceRegister = register.SourceRegister;
-const DestinationRegister = register.DestinationRegister;
+const RelativeComponent = pica.RelativeComponent;
+const SourceRegister = pica.SourceRegister;
+const DestinationRegister = pica.DestinationRegister;
 
-const IntegralRegister = register.IntegralRegister;
-const BooleanRegister = register.BooleanRegister;
-const IntegerRegister = register.IntegerRegister;
+const IntegralRegister = pica.IntegralRegister;
+const BooleanRegister = IntegralRegister.BooleanRegister;
+const IntegerRegister = IntegralRegister.IntegerRegister;

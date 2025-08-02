@@ -2,7 +2,26 @@
 
 const service_name = "gsp::Gpu";
 
-pub const Error = Session.RequestError;
+pub const Error = ClientSession.RequestError;
+
+pub const Shared = extern struct {
+    interrupt_queue: [4]Interrupt.Queue,
+    _unknown0: [0x100]u8,
+    framebuffers: [4][2]FramebufferInfo,
+    _unknown1: [0x400]u8,
+    command_queue: [4]gx.Queue,
+
+    comptime {
+        std.debug.assert(@offsetOf(Shared, "interrupt_queue") == 0x000);
+        std.debug.assert(@sizeOf(Interrupt.Queue) == 0x40);
+
+        std.debug.assert(@offsetOf(Shared, "framebuffers") == 0x200);
+        std.debug.assert(@sizeOf([2]FramebufferInfo) == 0x80);
+
+        std.debug.assert(@offsetOf(Shared, "command_queue") == 0x800);
+        std.debug.assert(@sizeOf(gx.Queue) == 0x200);
+    }
+};
 
 // https://www.3dbrew.org/wiki/GSP_Shared_Memory#Interrupt%20Queue
 pub const Interrupt = enum(u8) {
@@ -14,7 +33,7 @@ pub const Interrupt = enum(u8) {
     p3d,
     dma,
 
-    pub const Set = std.EnumSet(Interrupt);
+    pub const Set = std.EnumArray(Interrupt, u32);
 
     pub const Queue = extern struct {
         pub const Header = packed struct(u32) {
@@ -191,8 +210,8 @@ pub const gx = struct {
         pub const DisplayTransfer = extern struct {
             source: [*]const u8,
             destination: [*]u8,
-            source_dimensions: gpu.Dimensions,
-            destination_dimensions: gpu.Dimensions,
+            source_dimensions: gpu.U16x2,
+            destination_dimensions: gpu.U16x2,
             flags: gpu.Registers.MemoryCopy.Flags,
             _unused0: [2]u32 = @splat(0),
         };
@@ -200,9 +219,9 @@ pub const gx = struct {
         pub const TextureCopy = extern struct {
             source: [*]const u8,
             destination: [*]u8,
-            dimensions: gpu.Dimensions,
-            source_line_gap: gpu.Dimensions,
-            destination_line_gap: gpu.Dimensions,
+            size: usize,
+            source_line_gap: gpu.U16x2,
+            destination_line_gap: gpu.U16x2,
             flags: gpu.Registers.MemoryCopy.Flags,
             _unused0: u32 = 0,
         };
@@ -285,20 +304,20 @@ pub const PerfLogInfo = extern struct {
     dma: Measurements,
 };
 
-session: Session,
+session: ClientSession,
 has_right: bool = false,
-interrupt_event: ?Event = null,
+interrupt_event: Event = @bitCast(@intFromEnum(Object.null)),
 thread_index: u32 = 0,
-shared_memory: ?MemoryBlock = null,
-shared_memory_data: ?[]u8 = null,
+shared_memory_block: MemoryBlock = @bitCast(@intFromEnum(Object.null)),
+shared_memory: ?*Shared = null,
 
 pub fn init(srv: ServiceManager) !GspGpu {
     const gsp_handle = try srv.getService(service_name, .wait);
 
     var gsp = GspGpu{ .session = gsp_handle };
-    // gpu.session = gsp_handle; // compiling with ReleaseSmall doesn't set the session above?
     errdefer gsp.deinit();
-    try gsp.acquireRight(0);
+
+    try gsp.acquireRight(0x0);
 
     const interrupt_event = try Event.create(.oneshot);
     gsp.interrupt_event = interrupt_event;
@@ -311,30 +330,31 @@ pub fn init(srv: ServiceManager) !GspGpu {
     }
 
     gsp.thread_index = queue_result.response.thread_index;
-    gsp.shared_memory = queue_result.response.gsp_memory;
+    gsp.shared_memory_block = queue_result.response.gsp_memory;
 
-    const shared_memory_data = try horizon.heap.non_thread_safe_shared_memory_address_allocator.alloc(4096, .@"1");
-    gsp.shared_memory_data = shared_memory_data;
+    const shared_memory = try horizon.heap.non_thread_safe_shared_memory_address_allocator.alloc(@sizeOf(Shared), .fromByteUnits(4096));
+    gsp.shared_memory = std.mem.bytesAsValue(Shared, shared_memory);
 
-    try queue_result.response.gsp_memory.map(@alignCast(shared_memory_data.ptr), .rw, .dont_care);
+    try queue_result.response.gsp_memory.map(@alignCast(shared_memory.ptr), .rw, .dont_care);
     return gsp;
 }
 
 pub fn deinit(gsp: *GspGpu) void {
-    if (gsp.shared_memory) |*shm_handle| {
-        if (gsp.shared_memory_data) |shm| {
-            shm_handle.unmap(@alignCast(shm.ptr));
-            horizon.heap.non_thread_safe_shared_memory_address_allocator.free(shm);
+    if (gsp.shared_memory_block.obj != .null) {
+        if (gsp.shared_memory) |shm| {
+            gsp.shared_memory_block.unmap(@alignCast(@ptrCast(shm)));
+            // TODO: change this when we find a solution to shared memory
+            horizon.heap.non_thread_safe_shared_memory_address_allocator.free(std.mem.asBytes(shm));
         }
 
-        shm_handle.deinit();
+        gsp.shared_memory_block.deinit();
     }
 
     gsp.sendUnregisterInterruptRelayQueue() catch unreachable;
     gsp.releaseRight() catch unreachable;
 
-    if (gsp.interrupt_event) |*int_ev| {
-        int_ev.deinit();
+    if (gsp.interrupt_event.int.sync.obj != .null) {
+        gsp.interrupt_event.deinit();
     }
 
     gsp.session.deinit();
@@ -350,25 +370,25 @@ pub fn pollInterrupts(gsp: *GspGpu) Error!?Interrupt.Set {
 }
 
 pub fn waitInterruptsTimeout(gsp: *GspGpu, timeout_ns: i64) Error!?Interrupt.Set {
-    const int_ev = gsp.interrupt_event.?;
+    const int_ev = gsp.interrupt_event;
 
     int_ev.wait(timeout_ns) catch |err| switch (err) {
         error.Timeout => return null,
         else => |e| return e,
     };
 
-    var interrupts = Interrupt.Set.initEmpty();
+    var interrupts = Interrupt.Set.initFill(0);
 
     while (gsp.dequeueInterrupt()) |int| {
-        interrupts.setPresent(int, true);
+        interrupts.set(int, interrupts.get(int) + 1);
     }
 
     return interrupts;
 }
 
 pub fn dequeueInterrupt(gsp: *GspGpu) ?Interrupt {
-    const gsp_data = gsp.shared_memory_data.?;
-    const interrupt_queue: *Interrupt.Queue = @alignCast(std.mem.bytesAsValue(Interrupt.Queue, gsp_data[(gsp.thread_index * @sizeOf(Interrupt.Queue))..][0..@sizeOf(Interrupt.Queue)]));
+    const gsp_data = gsp.shared_memory.?;
+    const interrupt_queue: *Interrupt.Queue = &gsp_data.interrupt_queue[gsp.thread_index];
 
     const int = i: while (true) {
         const interrupt_header = @atomicLoad(Interrupt.Queue.Header, &interrupt_queue.header, .monotonic);
@@ -429,8 +449,8 @@ pub fn presentFramebuffer(gsp: *GspGpu, comptime screen: Screen, present: Frameb
 }
 
 pub fn writeFramebufferInfo(gsp: *GspGpu, screen: Screen, info: FramebufferInfo.Framebuffer) Error!bool {
-    const gsp_data = gsp.shared_memory_data.?;
-    const framebuffer_info: *FramebufferInfo = @alignCast(std.mem.bytesAsValue(FramebufferInfo, gsp_data[0x200 + (@as(usize, @intFromEnum(screen)) * @sizeOf(FramebufferInfo)) + (gsp.thread_index * 0x80) ..][0..@sizeOf(FramebufferInfo)]));
+    const gsp_data = gsp.shared_memory.?;
+    const framebuffer_info: *FramebufferInfo = &gsp_data.framebuffers[gsp.thread_index][@intFromEnum(screen)];
     const initial_framebuffer_header: FramebufferInfo.Header = @atomicLoad(FramebufferInfo.Header, &framebuffer_info.header, .monotonic);
 
     const next_active = initial_framebuffer_header.index +% 1;
@@ -507,7 +527,7 @@ pub fn submitMemoryFill(gsp: *GspGpu, fills: [2]?gx.MemoryFill, submit_flags: gx
     });
 }
 
-pub fn submitDisplayTransfer(gsp: *GspGpu, src: [*]const u8, dst: [*]u8, src_color: gpu.ColorFormat, src_dimensions: gpu.Dimensions, dst_color: gpu.ColorFormat, dst_dimensions: gpu.Dimensions, flags: gx.DisplayTransferFlags, submit_flags: gx.SubmitFlags) !void {
+pub fn submitDisplayTransfer(gsp: *GspGpu, src: [*]const u8, dst: [*]u8, src_color: gpu.ColorFormat, src_dimensions: gpu.U16x2, dst_color: gpu.ColorFormat, dst_dimensions: gpu.U16x2, flags: gx.DisplayTransferFlags, submit_flags: gx.SubmitFlags) !void {
     return gsp.submitGxCommand(gx.Command{
         .header = .{
             .command_id = .display_transfer,
@@ -534,6 +554,34 @@ pub fn submitDisplayTransfer(gsp: *GspGpu, src: [*]const u8, dst: [*]u8, src_col
     });
 }
 
+pub fn submitTextureCopy(gsp: *GspGpu, src: [*]const u8, dst: [*]u8, size: usize, src_gaps: gpu.U16x2, dst_gaps: gpu.U16x2, submit_flags: gx.SubmitFlags) !void {
+    return gsp.submitGxCommand(gx.Command{
+        .header = .{
+            .command_id = .display_transfer,
+            .stop_processing_queue = submit_flags.stop_processing_queue,
+            .fail_if_busy = submit_flags.fail_if_busy,
+        },
+        .data = .{ .texture_copy = .{
+            .source = src,
+            .destination = dst,
+            .size = size,
+            .source_line_gap = src_gaps,
+            .destination_line_gap = dst_gaps,
+            .flags = .{
+                .flip_v = false,
+                .output_width_less_than_input = src_gaps.x > dst_gaps.x,
+                .linear_tiled = false, 
+                .tiled_tiled = false,
+                .input_format = .bgra8888,
+                .output_format = .bgra8888,
+                .use_32x32_tiles = false,
+                .downscale = .none,
+                .texture_copy_mode = true,
+            },
+        } },
+    });
+}
+
 pub fn submitFlushCacheRegions(gsp: *GspGpu, buffers: [3]?[]const u8, submit_flags: gx.SubmitFlags) !void {
     return gsp.submitGxCommand(gx.Command{
         .header = .{
@@ -552,8 +600,8 @@ pub fn submitFlushCacheRegions(gsp: *GspGpu, buffers: [3]?[]const u8, submit_fla
 }
 
 pub fn submitGxCommand(gsp: *GspGpu, cmd: gx.Command) !void {
-    const gsp_data = gsp.shared_memory_data.?;
-    const gx_queue: *gx.Queue = @alignCast(std.mem.bytesAsValue(gx.Queue, gsp_data[0x800 + (gsp.thread_index * 0x200) ..][0..@sizeOf(gx.Queue)]));
+    const gsp_data = gsp.shared_memory.?;
+    const gx_queue: *gx.Queue = &gsp_data.command_queue[gsp.thread_index];
     const gx_header: gx.Queue.Header = @atomicLoad(gx.Queue.Header, &gx_queue.header, .monotonic);
 
     if (gx_header.total_commands >= gx.Queue.max_commands) {
@@ -614,20 +662,20 @@ pub fn initializeHardware(gsp: *GspGpu) Error!void {
     }));
     try gsp.writeHwRegs(&gpu_registers.pdc[0]._unknown1, std.mem.asBytes(&@as(u32, 0x00)));
     try gsp.writeHwRegs(&gpu_registers.pdc[0].disable_sync, std.mem.asBytes(&@as(u32, 0x00)));
-    try gsp.writeHwRegs(&gpu_registers.pdc[0].pixel_dimensions, std.mem.asBytes(&gpu.Dimensions{
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].pixel_dimensions, std.mem.asBytes(&gpu.U16x2{
         .x = Screen.top.width(),
         .y = Screen.top.height(),
     }));
-    try gsp.writeHwRegs(&gpu_registers.pdc[0].horizontal_border, std.mem.asBytes(&gpu.Dimensions{
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].horizontal_border, std.mem.asBytes(&gpu.U16x2{
         .x = 209,
         .y = 449,
     }));
-    try gsp.writeHwRegs(&gpu_registers.pdc[0].vertical_border, std.mem.asBytes(&gpu.Dimensions{
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].vertical_border, std.mem.asBytes(&gpu.U16x2{
         .x = 2,
         .y = 402,
     }));
     try gsp.writeHwRegs(&gpu_registers.pdc[0].framebuffer_format, std.mem.asBytes(&FramebufferFormat{
-        .color_format = .abgr8,
+        .color_format = .abgr8888,
         .interlacing_mode = .none,
         .alternative_pixel_output = false,
         .unknown0 = 1,
@@ -669,20 +717,20 @@ pub fn initializeHardware(gsp: *GspGpu) Error!void {
     }));
     try gsp.writeHwRegs(&gpu_registers.pdc[1]._unknown1, std.mem.asBytes(&@as(u32, 0x00)));
     try gsp.writeHwRegs(&gpu_registers.pdc[1].disable_sync, std.mem.asBytes(&@as(u32, 0x11)));
-    try gsp.writeHwRegs(&gpu_registers.pdc[1].pixel_dimensions, std.mem.asBytes(&gpu.Dimensions{
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].pixel_dimensions, std.mem.asBytes(&gpu.U16x2{
         .x = Screen.bottom.width(),
         .y = Screen.bottom.height(),
     }));
-    try gsp.writeHwRegs(&gpu_registers.pdc[1].horizontal_border, std.mem.asBytes(&gpu.Dimensions{
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].horizontal_border, std.mem.asBytes(&gpu.U16x2{
         .x = 209,
         .y = 449,
     }));
-    try gsp.writeHwRegs(&gpu_registers.pdc[1].vertical_border, std.mem.asBytes(&gpu.Dimensions{
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].vertical_border, std.mem.asBytes(&gpu.U16x2{
         .x = 82,
         .y = 402,
     }));
     try gsp.writeHwRegs(&gpu_registers.pdc[1].framebuffer_format, std.mem.asBytes(&FramebufferFormat{
-        .color_format = .abgr8,
+        .color_format = .abgr8888,
         .interlacing_mode = .none,
         .alternative_pixel_output = false,
         .unknown0 = 1,
@@ -916,7 +964,7 @@ pub fn sendAcquireRight(gsp: GspGpu, init_hw: u8) Error!void {
     // FIXME: WHY DOES THIS NOT WORK WITHOUT NOINLINE????
     // What happens is that the event for gsp interrupts never signals after for example returning from home or in rare cases after continuing from a break while debugging...
     // It doesn't make any sense as it happens EVEN if this is not called (e.f: after breaking from debugging somewhere unrelated)
-    try @call(.never_inline, Session.sendRequest, .{gsp.session});
+    try @call(.never_inline, ClientSession.sendRequest, .{gsp.session});
     return switch (data.ipc.unpackResponse(command.AcquireRight)) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -1097,9 +1145,10 @@ const TopFramebufferMode = gpu.TopFramebufferMode;
 const FramebufferFormat = gpu.FramebufferFormat;
 
 const ResultCode = horizon.ResultCode;
+const Object = horizon.Object;
 const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;
-const Session = horizon.ClientSession;
+const ClientSession = horizon.ClientSession;
 const ServiceManager = zitrus.horizon.ServiceManager;
 
 const SharedMemoryAddressAllocator = horizon.SharedMemoryAddressAllocator;

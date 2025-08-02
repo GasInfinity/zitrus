@@ -1,3 +1,11 @@
+//! PICA200 datatype and register definitions.
+//!
+//! Useful info:
+//! - Clipping volumes:
+//!     - X: [-W, W]
+//!     - Y: [-W, W]
+//!     - Z: [0, -W]
+
 // Taken from / Credits:
 // https://problemkaputt.de/gbatek.htm#3dsgpuinternalregisteroverview
 // https://www.3dbrew.org/wiki/GPU/External_Registers
@@ -8,6 +16,10 @@ pub const F7_12 = pica.F7_12;
 pub const F7_16 = pica.F7_16;
 pub const F7_23 = pica.F7_23;
 pub const F7_16x4 = pica.F7_16x4;
+
+pub const I8x4 = pica.I8x4;
+pub const U16x2 = pica.U16x2;
+pub const I16x2 = pica.I16x2;
 
 pub const Screen = enum(u1) {
     top,
@@ -25,9 +37,6 @@ pub const Screen = enum(u1) {
     }
 };
 
-pub const Dimensions = packed struct(u32) { x: u16, y: u16 };
-pub const SignedDimensions = packed struct(u32) { x: i16, y: i16 };
-
 pub const PixelSize = enum(u2) {
     @"16",
     @"24",
@@ -43,26 +52,30 @@ pub const PixelSize = enum(u2) {
 };
 
 pub const ColorFormat = enum(u3) {
-    pub const Rgba8 = extern struct { r: u8, g: u8, b: u8, a:u8 };
-    pub const Abgr8 = extern struct { a: u8, b: u8, g: u8, r: u8 };
-    pub const Bgr8 = extern struct { b: u8, g: u8, r: u8 };
-    pub const Bgr565 = packed struct(u16) { b: u5, g: u6, r: u5 };
-    pub const A1Bgr5 = packed struct(u16) { a: u1, b: u5, g: u5, r: u5 };
-    pub const ABgr4 = packed struct(u16) { a: u4, b: u4, g: u4, r: u4 };
+    pub const Abgr8888 = extern struct { a: u8, b: u8, g: u8, r: u8 };
+    pub const Bgr888 = extern struct { b: u8, g: u8, r: u8 };
+    pub const Rgb565 = packed struct(u16) { b: u5, g: u6, r: u5 };
+    pub const Rgba5551 = packed struct(u16) { a: u1, b: u5, g: u5, r: u5 };
+    pub const Rgba4444 = packed struct(u16) { a: u4, b: u4, g: u4, r: u4 };
 
-    abgr8,
-    bgr8,
-    bgr565,
-    a1_bgr5,
-    abgr4,
+    /// 4 bytes, `A B G R`.
+    abgr8888,
+    /// 3 bytes, `B G R`.
+    bgr888,
+    /// Packed, 2 bytes, `RRRRRGGGGGGBBBBB`.
+    rgb565,
+    /// Packed, 2 bytes, `RRRRRGGGGGBBBBBA`.
+    rgba5551,
+    /// Packed, 2 bytes, `RRRRGGGGBBBBAAAA`.
+    rgba4444,
 
     pub inline fn Pixel(comptime format: ColorFormat) type {
         return switch (format) {
-            .abgr8 => Abgr8,
-            .bgr8 => Bgr8,
-            .bgr565 => Bgr565,
-            .a1_bgr5 => A1Bgr5,
-            .abgr4 => ABgr4,
+            .abgr8888 => Abgr8888,
+            .bgr888 => Bgr888,
+            .rgb565 => Rgb565,
+            .rgba5551=> Rgba5551,
+            .rgba4444 => Rgba4444,
         };
     }
 
@@ -88,10 +101,14 @@ pub const ColorFormat = enum(u3) {
     }
 };
 
-pub const DepthFormat = enum(u2) {
-    @"16",
-    @"24" = 2,
-    @"24_depth_8_stencil",
+/// Depth values are stored as normalized integers.
+pub const DepthStencilFormat = enum(u2) {
+    /// 2 bytes for depth, `0xDDDD`.
+    d16,
+    /// 3 bytes for depthm `0xDDDDDD`.
+    d24 = 2,
+    /// 3 bytes for depth and 1 byte for stencil `0xSSDDDDDD`.
+    d24_s8,
 };
 
 pub const FramebufferInterlacingMode = enum(u2) {
@@ -131,15 +148,26 @@ pub const FramebufferFormat = packed struct(u32) {
     }
 };
 
-pub const CullingMode = enum(u2) {
+/// The front face is always counter-clockwise and cannot be changed.
+pub const CullMode = enum(u2) {
+    /// No triangles are discarded. 
     none,
-    front,
-    back,
+    /// The front-facing triangles are culled where their front face is counter-clockwise.
+    front_ccw,
+    /// The back-facing triangles are culled where their front face is counter-clockwise.
+    back_ccw,
 };
 
-pub const ScissorMode = enum(u2) { disable, outside, inside };
+pub const ScissorMode = enum(u2) {
+    /// No pixels will be discarded.
+    disable,
+    /// The pixels outside the scissor area will be rendered.
+    outside,
+    /// The pixels inside the scissor area will be rendered.
+    inside = 3
+};
 
-pub const EarlyDepthFunction = enum(u2) {
+pub const EarlyDepthCompareOperation = enum(u2) {
     ge,
     gt,
     le,
@@ -189,15 +217,20 @@ pub const OutputMap = packed struct(u32) {
     _unusd3: u3 = 0,
 };
 
-pub const BlendEquation = enum(u3) {
+pub const BlendOperation = enum(u3) {
+    /// `src_factor * src + dst_factor * dst`
     add,
+    /// `src_factor * src - dst_factor * dst`
     sub,
+    /// `dst_factor * dst - src_factor * src`
     reverse_sub,
+    /// `min(src_factor * src, dst_factor * dst)`
     min,
+    /// `max(src_factor * src, dst_factor * dst)`
     max,
 };
 
-pub const BlendFunction = enum(u4) {
+pub const BlendFactor = enum(u4) {
     zero,
     one,
     src_color,
@@ -221,7 +254,7 @@ pub const LogicOperation = enum(u4) {
     reverse_and,
     copy,
     set,
-    inverted_copy,
+    copy_inverted,
     nop,
     invert,
     nand,
@@ -229,12 +262,12 @@ pub const LogicOperation = enum(u4) {
     nor,
     xor,
     equivalent,
-    inverted_and,
-    reverse_or,
-    inverted_or,
+    and_inverted,
+    or_reverse,
+    or_inverted,
 };
 
-pub const CompareFunction = enum(u3) {
+pub const CompareOperation = enum(u3) {
     never,
     always,
     eq,
@@ -246,59 +279,74 @@ pub const CompareFunction = enum(u3) {
 };
 
 pub const StencilOperation = enum(u3) {
+    /// Keep the current value.
     keep,
+    /// Sets the value to `0`.
     zero,
+    /// Sets the value to `reference`.
     replace,
+    /// Increments the current value and clamps to the maximum representable unsigned value.
     increment,
+    /// Decrements the current value and clamps to `0`.
     decrement,
+    /// Bitwise-inverts the current value.
     invert,
+    /// Increments the current value and clamps to `0` when the maximum value would have exceeded.
     increment_wrap,
+    /// Decrements the current value and clamps to the maximum possible value when the value would go below `0`.
     decrement_wrap,
 };
 
-pub const PrimitiveMode = enum(u2) {
-    triangle,
+/// The PICA200 supports only triangle-based primitive topologies.
+pub const PrimitiveTopology = enum(u2) {
+    /// Specifies a series of separate triangle primitives.
+    /// The number of primitives generated is `(vertexCount / 3)`
+    triangle_list,
+    /// Specifies a series of connected triangle primitives with consecutive triangles sharing an edge.
+    /// The number of primitives generated is `max(0, vertexCount - 2)`
     triangle_strip,
+    /// Specifies a series of connected triangle primitives with all triangles sharing a common vertex.
+    /// The number of primitives generated is `max(0, vertexCount - 2)`
     triangle_fan,
+    /// Specifies a series of triangle primitives which are to be defined by the geometry shader.
+    /// The number of primitives generated depends on the shader implementation.
     geometry,
 };
 
 pub const AttributeFormat = packed struct(u4) {
-    pub const Type = enum(u2) { i8, u8, i16, f32 };
+    pub const Type = enum(u2) {
+        i8,
+        u8,
+        i16,
+        f32,
+
+        pub fn byteSize(typ: Type) usize {
+            return switch (typ) {
+                .i8, .u8 => @sizeOf(u8),
+                .i16  => @sizeOf(i16),
+                .f32 => @sizeOf(f32),
+            };
+        }
+    };
+
     pub const Size = enum(u2) { x, xy, xyz, xyzw };
 
     type: Type = .i8,
     size: Size = .x,
+
+    pub fn byteSize(fmt: AttributeFormat) usize {
+        return fmt.type.byteSize() * (@intFromEnum(fmt.size) + 1);
+    } 
 };
 
-pub const AttributeArrayComponent = enum(u4) {
-    attribute_0,
-    attribute_1,
-    attribute_2,
-    attribute_3,
-    attribute_4,
-    attribute_5,
-    attribute_6,
-    attribute_7,
-    attribute_8,
-    attribute_9,
-    attribute_10,
-    attribute_11,
-
-    padding_4,
-    padding_8,
-    padding_12,
-    padding_16,
+pub const IndexFormat = enum(u1) {
+    /// Specifies that indices are unsigned 8-bit numbers.
+    u8,
+    /// Specifies that indices are unsigned 16-bit numbers.
+    u16,
 };
 
-pub const IndexFormat = enum(u1) { u8, u16 };
-
-pub const ColorBufferFormat = enum(u3) { abgr8, a1_bgr5 = 2, bgr565, abgr4 };
-
-// XXX: well, i suppose they'd be floats?
-pub const DepthBufferFormat = enum(u2) { f16, f24 = 2, f24xi8 };
-
-pub const TextureEnvironmentSource = enum(u4) {
+pub const TextureCombinerSource = enum(u4) {
     primary_color,
     fragment_primary_color,
     fragment_secondary_color,
@@ -311,74 +359,123 @@ pub const TextureEnvironmentSource = enum(u4) {
     previous,
 };
 
-pub const TextureEnvironmentRgbOperand = enum(u4) {
-    source_color,
-    one_minus_source_color,
+pub const TextureCombinerColorFactor = enum(u4) {
+    src_color,
+    one_minus_src_color,
     source_alpha,
-    one_minus_source_alpha,
-    source_red,
-    one_minus_source_red,
+    one_minus_src_alpha,
+    src_red,
+    one_minus_src_red,
     source_green = 8,
-    one_minus_source_green,
-    source_blue = 12,
-    one_minus_source_blue,
+    one_minus_src_green,
+    src_blue = 12,
+    one_minus_src_blue,
 };
 
-pub const TextureEnvironmentAlphaOperand = enum(u3) {
-    source_alpha,
-    one_minus_source_alpha,
-    source_red,
-    one_minus_source_red,
-    source_green,
-    one_minus_source_green,
-    source_blue,
-    one_minus_source_blue,
+pub const TextureCombinerAlphaFactor = enum(u3) {
+    src_alpha,
+    one_minus_src_alpha,
+    src_red,
+    one_minus_src_red,
+    src_green,
+    one_minus_src_green,
+    src_blue,
+    one_minus_src_blue,
 };
 
-pub const TextureEnvironmentCombiner = enum(u4) {
+pub const TextureCombinerOperation = enum(u4) {
+    /// `src0`
     replace,
+    /// `src0 * src1`
     modulate,
+    /// `src0 + src1`
     add,
+    /// `src0 + src1 - 0.5`
     add_signed,
+    /// `src0 * src2 + src1 * (1 - src2)`
     interpolate,
+    /// `src0 - src1`
     subtract,
+    /// `4 * ((src0r − 0.5) * (src1r − 0.5) + (src0g − 0.5) * (src1g − 0.5) + (src0b − 0.5) * (src1b − 0.5))`
     dot3_rgb,
+    /// `4 * ((src0r − 0.5) * (src1r − 0.5) + (src0g − 0.5) * (src1g − 0.5) + (src0b − 0.5) * (src1b − 0.5))`
     dot3_rgba,
+    /// `src0 * src1 + src2` (?)
     multiply_add,
+    /// `src0 + src1 * src2` (?)
     add_multiply,
 };
 
-pub const TextureEnvironmentFogMode = enum(u3) {
+pub const TextureCombinerScale = enum(u2) {
+    @"1x",
+    @"2x",
+    @"3x",
+};
+
+pub const TextureCombinerBufferSource = enum(u1) {
+    previous_buffer,
+    previous
+};
+
+pub const TextureCombinerFogMode = enum(u3) {
     disabled,
     fog = 5,
     gas = 7,
 };
 
-pub const TextureEnvironmentShadingDensity = enum(u1) {
+pub const TextureCombinerShadingDensity = enum(u1) {
     plain,
     depth,
 };
 
+pub const DepthMapMode = enum(u1) {
+    /// Precision is evenly distributed.
+    w_buffer,
+
+    /// Precision is higher close to the near plane.
+    z_buffer,
+};
+
+pub const TextureUnitFilter = enum(u1) {
+    nearest,
+    linear,
+};
+
+pub const TextureUnitAddressMode = enum(u3) {
+    clamp_to_edge,
+    clamp_to_border,
+    repeat,
+    mirrored_repeat,
+};
+
+pub const TextureUnitType = enum(u3) {
+    @"2d",
+    cube_map,
+    shadow_2d,
+    projection,
+    shadow_cube,
+    disabled,
+};
+
+pub const TextureUnitFormat = enum(u4) {
+    abgr8888,
+    bgr888,
+    rgba5551,
+    rgb565,
+    rgba4444,
+    ia88,
+    hilo88,
+    i8,
+    a8,
+    ia44,
+    i4,
+    a4,
+    etc1,
+    etc1a4,
+};
+
 // TODO: Properly finish this
 pub const Registers = struct {
-    pub const WrappedF7_23 = packed struct(u32) {
-        _: u1 = 0,
-        value: F7_23,
-
-        pub fn fromFloat(value: F7_23) WrappedF7_23 {
-            return .{ .value = value };
-        }
-    };
-
-    pub const WrappedF7_16 = packed struct(u32) {
-        value: F7_16,
-        _: u8 = 0,
-
-        pub fn fromFloat(value: F7_16) WrappedF7_16 {
-            return .{ .value = value };
-        }
-    };
-
     pub const VRamPower = packed struct(u32) {
         _unknown0: u8,
         power_off_a_low: bool,
@@ -478,9 +575,9 @@ pub const Registers = struct {
         hcount: u32,
         vcount: u32,
         _unknown2: u32 = 0,
-        pixel_dimensions: Dimensions,
-        horizontal_border: Dimensions,
-        vertical_border: Dimensions,
+        pixel_dimensions: U16x2,
+        horizontal_border: U16x2,
+        vertical_border: U16x2,
         framebuffer_a_first: usize,
         framebuffer_a_second: usize,
         framebuffer_format: FramebufferFormat,
@@ -561,8 +658,8 @@ pub const Registers = struct {
 
         input: AlignedPhysicalAddress(.@"16", .@"8"),
         output: AlignedPhysicalAddress(.@"16", .@"8"),
-        output_dimensions: Dimensions,
-        input_dimensions: Dimensions,
+        output_dimensions: U16x2,
+        input_dimensions: U16x2,
         flags: Flags,
         write_0_before_display_transfer: u32,
         control: packed struct(u32) {
@@ -573,34 +670,46 @@ pub const Registers = struct {
         },
         _unknown0: u32 = 0,
         texture_size: usize,
-        texture_src_dimensions: Dimensions,
-        texture_dst_dimensions: Dimensions,
+        texture_src_dimensions: U16x2,
+        texture_dst_dimensions: U16x2,
     };
 
     // FIXME: Remove usages of @Vector() in packed structs!
     pub const Internal = extern struct {
-        pub const Trigger = packed struct(u32) {
-            pub const trigger: Trigger = .{ .start = true };
+        pub const Trigger = enum(u1) { trigger = 1 };
 
-            start: bool = false,
-            _: u31 = 0,
-        };
+        pub fn RightPaddedRegister(comptime T: type) type {
+            std.debug.assert(@bitSizeOf(T) < @bitSizeOf(u32));
 
-        pub const EnableBit = packed struct(u32) {
-            pub const disable: EnableBit = .{ .enable_bit = false };
-            pub const enable: EnableBit = .{ .enable_bit = true };
+            return packed struct(u32) {
+                const Rpr = @This();
 
-            enable_bit: bool = false,
-            _: u31 = 0,
-        };
+                value: T,
+                _: std.meta.Int(.unsigned, @bitSizeOf(u32) - @bitSizeOf(T)) = 0,
 
-        pub const DisableBit = packed struct(u32) {
-            pub const disable: DisableBit = .{ .disable_bit = true };
-            pub const enable: DisableBit = .{};
+                pub fn init(value: T) Rpr {
+                    return .{ .value = value };
+                }
+            };
+        }
 
-            disable_bit: bool = false,
-            _: u31 = 0,
-        };
+        pub fn LeftPaddedRegister(comptime T: type) type {
+            std.debug.assert(@bitSizeOf(T) < @bitSizeOf(u32));
+
+            return packed struct(u32) {
+                const Lpr = @This();
+
+                _: std.meta.Int(.unsigned, @bitSizeOf(u32) - @bitSizeOf(T)) = 0,
+                value: T,
+
+                pub fn init(value: T) Lpr {
+                    return .{ .value = value };
+                }
+            };
+        }
+
+        pub const AttributeIndex = enum(u4) { @"0", @"1", @"2", @"3", @"4", @"5", @"6", @"7", @"8", @"9", @"10", @"11" };
+        pub const ArrayComponentIndex = enum(u4) { @"0", @"1", @"2", @"3", @"4", @"5", @"6", @"7", @"8", @"9", @"10", @"11" };
 
         pub const Interrupt = extern struct {
             pub const Mask = packed struct(u64) { disabled: @Vector(64, bool) };
@@ -640,23 +749,27 @@ pub const Registers = struct {
                 _unused2: u8 = 0,
             };
 
-            pub const FacecullingConfig = packed struct(u32) {
-                mode: CullingMode,
+            pub const ScissorConfig = packed struct(u32) {
+                mode: ScissorMode,
                 _: u30 = 0,
+
+                pub fn initMode(mode: ScissorMode) ScissorConfig {
+                    return .{ .mode = mode };
+                }
             };
 
-            faceculling_config: FacecullingConfig,
-            viewport_h_scale: WrappedF7_16,
-            viewport_h_step: WrappedF7_23,
-            viewport_v_scale: WrappedF7_16,
-            viewport_v_step: WrappedF7_23,
+            faceculling_config: RightPaddedRegister(CullMode),
+            viewport_h_scale: RightPaddedRegister(F7_16),
+            viewport_h_step: LeftPaddedRegister(F7_23),
+            viewport_v_scale: RightPaddedRegister(F7_16),
+            viewport_v_step: LeftPaddedRegister(F7_23),
             _unknown0: u32,
             _unknown1: u32,
-            fragment_operation_clip: EnableBit,
-            fragment_operation_clip_data: [4]WrappedF7_16,
+            fragment_operation_clip: RightPaddedRegister(bool),
+            fragment_operation_clip_data: [4]RightPaddedRegister(F7_16),
             _unknown2: u32,
-            depth_map_scale: WrappedF7_16,
-            depth_map_offset: WrappedF7_16,
+            depth_map_scale: RightPaddedRegister(F7_16),
+            depth_map_offset: RightPaddedRegister(F7_16),
             shader_output_map_total: packed struct(u32) { num: u3, _: u29 = 0 },
             shader_output_map_output: [7]OutputMap,
             _unknown3: u32,
@@ -667,56 +780,100 @@ pub const Registers = struct {
             status_num_triangles_displayed: u32,
             _unknown6: [3]u32,
             _unknown7: u32,
-            early_depth_function: packed struct(u32) { function: EarlyDepthFunction, _: u30 = 0 },
-            early_depth_test_1: EnableBit,
-            early_depth_clear: Trigger,
+            early_depth_function: packed struct(u32) { function: EarlyDepthCompareOperation, _: u30 = 0 },
+            early_depth_test_enable_1: RightPaddedRegister(bool),
+            early_depth_clear: RightPaddedRegister(Trigger),
             shader_output_attribute_mode: OutputAttributeMode,
-            scissor_config: packed struct(u32) { mode: ScissorMode, _: u30 = 0 },
-            scissor_start: Dimensions,
-            scissor_end: Dimensions,
-            viewport_xy: SignedDimensions,
+            scissor_config: ScissorConfig,
+            scissor_start: U16x2,
+            scissor_end: U16x2,
+            viewport_xy: U16x2,
             _unknown8: u32,
             early_depth_data: u32,
             _unknown9: u32,
             _unknown10: u32,
-            depth_map_enable: EnableBit,
+            depth_map_mode: RightPaddedRegister(DepthMapMode),
             /// Does not seem to have an effect but it's still documented like this
             _unused_render_buffer_dimensions: u32,
             shader_output_attribute_clock: OutputAttributeClock,
         };
 
-        pub const Texturing = extern struct {
+        pub const TextureUnits = extern struct {
+            pub const TextureDimensions = packed struct(u32) {
+                height: u11,
+                _unused0: u5 = 0,
+                width: u11 = 0,
+                _unused1: u5 = 0,
+            };
+
+            pub const TextureParameters = packed struct(u32) {
+                pub const Etc1Flag = enum(u2) { none, etc1 = 2 };
+
+                _unknown0: u1 = 0,
+                mag_filter: TextureUnitFilter,
+                min_filter: TextureUnitFilter,
+                _unknown1: u1 = 0,
+                etc1: Etc1Flag,
+                _unknown2: u2 = 0,
+                wrap_t: TextureUnitAddressMode,
+                _unknown3: u1 = 0,
+                wrap_s: TextureUnitAddressMode,
+                _unknown4: u5 = 0,
+                is_shadow: bool,
+                _unknown5: u3 = 0,
+                mip_filter: TextureUnitFilter,
+                _unused0: u3 = 0,
+                type: TextureUnitType,
+                _unused1: u1 = 0,
+            };
+
+            pub const TextureLevelOfDetail = packed struct(u32) {
+                // TODO: Fixed point numbers (this is a fixed1.4.8)
+                bias: u13,
+                _unknown0: u3 = 0,
+                max_level_of_detail: u4,
+                _unknown1: u4 = 0,
+                min_level_of_detail: u4,
+                _unused0: u4 = 0,
+            };
+
+            pub const TextureShadow = packed struct(u32) {
+                orthogonal: bool,
+                z_bias: u24,
+                _unknown0: u7 = 0,
+            };
+
             pub const Main = extern struct {
-                border_color: u32,
-                dimensions: u32,
-                param: u32,
-                lod: u32,
-                address: [6]u32,
+                border_color: [4]u8,
+                dimensions: TextureDimensions,
+                parameters: TextureParameters,
+                lod: TextureLevelOfDetail,
+                address: [6]usize,
                 shadow: u32,
                 _unknown0: u32,
                 _unknown1: u32,
-                type: u32,
+                format: RightPaddedRegister(TextureUnitFormat),
             };
 
             pub const Sub = extern struct {
-                border_color: u32,
-                dimensions: u32,
-                param: u32,
-                lod: u32,
-                addr: u32,
-                type: u32,
+                border_color: [4]u8,
+                dimensions: TextureDimensions,
+                parameters: TextureParameters,
+                lod: TextureLevelOfDetail,
+                address: usize,
+                format: RightPaddedRegister(TextureUnitFormat),
             };
 
             config: u32,
             texture_0: Main,
-            lighting_enable: EnableBit,
+            lighting_enable: RightPaddedRegister(bool),
             _unknown0: u32,
             texture_1: Sub,
             _unknown1: [2]u32,
             texture_2: Sub,
         };
 
-        pub const TexturingProcedural = extern struct {
+        pub const ProceduralTextureUnit = extern struct {
             pub const Main = extern struct {
                 procedural_texture: [5]u32,
                 procedural_texture_5_low: u32,
@@ -728,73 +885,88 @@ pub const Registers = struct {
             lut_data: [8]u32,
         };
 
-        pub const TexturingEnvironment = extern struct {
-            pub const Main = extern struct {
-                pub const Source = packed struct(u32) {
-                    rgb_source_0: TextureEnvironmentSource,
-                    rgb_source_1: TextureEnvironmentSource,
-                    rgb_source_2: TextureEnvironmentSource,
+        pub const TextureCombiners = extern struct {
+            pub const Combiner = extern struct {
+                pub const Sources = packed struct(u32) {
+                    color_src_0: TextureCombinerSource,
+                    color_src_1: TextureCombinerSource,
+                    color_src_2: TextureCombinerSource,
                     _unused0: u4 = 0,
-                    alpha_source_0: TextureEnvironmentSource,
-                    alpha_source_1: TextureEnvironmentSource,
-                    alpha_source_2: TextureEnvironmentSource,
+                    alpha_src_0: TextureCombinerSource,
+                    alpha_src_1: TextureCombinerSource,
+                    alpha_src_2: TextureCombinerSource,
                     _unused1: u4 = 0,
                 };
                 
-                pub const Operand = packed struct(u32) {
-                    rgb_operand_0: TextureEnvironmentRgbOperand,
-                    rgb_operand_1: TextureEnvironmentRgbOperand,
-                    rgb_operand_2: TextureEnvironmentRgbOperand,
-                    alpha_operand_0: TextureEnvironmentAlphaOperand,
-                    alpha_operand_1: TextureEnvironmentAlphaOperand,
-                    alpha_operand_2: TextureEnvironmentAlphaOperand,
+                pub const Factors = packed struct(u32) {
+                    color_factor_0: TextureCombinerColorFactor,
+                    color_factor_1: TextureCombinerColorFactor,
+                    color_factor_2: TextureCombinerColorFactor,
+                    alpha_factor_0: TextureCombinerAlphaFactor,
+                    alpha_factor_1: TextureCombinerAlphaFactor,
+                    alpha_factor_2: TextureCombinerAlphaFactor,
                     _unused0: u11 = 0,
                 };
 
-                pub const Combiner = packed struct(u32) {
-                    rgb_combine: TextureEnvironmentCombiner,
+                pub const Operations = packed struct(u32) {
+                    color_op: TextureCombinerOperation,
                     _unused0: u12 = 0,
-                    alpha_combine: TextureEnvironmentCombiner,
+                    alpha_op: TextureCombinerOperation,
                     _unused1: u12 = 0,
                 };
 
-                source: Source,
-                operand: Operand,
-                combiner: Combiner,
-                color: ColorFormat.Rgba8,
-                scale: u32,
+                pub const Scales = packed struct(u32) {
+                    color_scale: TextureCombinerScale,
+                    _unused0: u14 = 0,
+                    alpha_scale: TextureCombinerScale,
+                    _unused1: u14 = 0,
+                };
+
+                sources: Sources,
+                factors: Factors,
+                operations: Operations,
+                color: [4]u8,
+                scales: Scales,
             };
 
             pub const UpdateBuffer = packed struct(u32) {
-                pub const Previous = enum(u1) { previous_buffer, previous };
-
-                fog_mode: TextureEnvironmentFogMode,
-                shading_density_source: TextureEnvironmentShadingDensity,
+                fog_mode: TextureCombinerFogMode,
+                shading_density_source: TextureCombinerShadingDensity,
                 _unused0: u4 = 0,
-                tex_env_1_rgb_buffer_input: Previous,
-                tex_env_2_rgb_buffer_input: Previous,
-                tex_env_3_rgb_buffer_input: Previous,
-                tex_env_4_rgb_buffer_input: Previous,
-                tex_env_1_alpha_buffer_input: Previous,
-                tex_env_2_alpha_buffer_input: Previous,
-                tex_env_3_alpha_buffer_input: Previous,
-                tex_env_4_alpha_buffer_input: Previous,
+                tex_combiner_1_color_buffer_src: TextureCombinerBufferSource,
+                tex_combiner_2_color_buffer_src: TextureCombinerBufferSource,
+                tex_combiner_3_color_buffer_src: TextureCombinerBufferSource,
+                tex_combiner_4_color_buffer_src: TextureCombinerBufferSource,
+                tex_combiner_1_alpha_buffer_src: TextureCombinerBufferSource,
+                tex_combiner_2_alpha_buffer_src: TextureCombinerBufferSource,
+                tex_combiner_3_alpha_buffer_src: TextureCombinerBufferSource,
+                tex_combiner_4_alpha_buffer_src: TextureCombinerBufferSource,
                 z_flip: bool,
                 _unused1: u7 = 0,
                 _unknown0: u2 = 0,
                 _unused2: u6 = 0,
+
+                pub const TextureCombinerBufferIndex = enum(u3) { @"1", @"2", @"3", @"4" };
+
+                pub fn setColorBufferSource(update_buffer: *UpdateBuffer, index: TextureCombinerBufferIndex, buffer_src: TextureCombinerBufferSource) void {
+                    std.mem.writePackedIntNative(u1, std.mem.asBytes(update_buffer), @as(usize, 8) + @intFromEnum(index), @intFromEnum(buffer_src));
+                }
+
+                pub fn setAlphaBufferSource(update_buffer: *UpdateBuffer, index: TextureCombinerBufferIndex, buffer_src: TextureCombinerBufferSource) void {
+                    std.mem.writePackedIntNative(u1, std.mem.asBytes(update_buffer), @as(usize, 12) + @intFromEnum(index), @intFromEnum(buffer_src));
+                }
             };
 
-            texture_environment_0: Main,
+            texture_combiner_0: Combiner,
             _unknown0: [3]u32,
-            texture_environment_1: Main,
+            texture_combiner_1: Combiner,
             _unknown1: [3]u32,
-            texture_environment_2: Main,
+            texture_combiner_2: Combiner,
             _unknown2: [3]u32,
-            texture_environment_3: Main,
+            texture_combiner_3: Combiner,
             _unknown3: [3]u32,
             update_buffer: UpdateBuffer,
-            fog_color: ColorFormat.Rgba8,
+            fog_color: [4]u8,
             _unknown4: u32,
             _unknown5: u32,
             gas_attenuation: u32,
@@ -802,10 +974,10 @@ pub const Registers = struct {
             fog_lut_index: u32,
             _unknown6: u32,
             fog_lut_data: [8]u32,
-            texture_environment_4: Main,
+            texture_combiner_4: Combiner,
             _unknown7: [3]u32,
-            texture_environment_5: Main,
-            buffer_color: ColorFormat.Rgba8,
+            texture_combiner_5: Combiner,
+            buffer_color: [4]u8,
         };
 
         pub const Framebuffer = extern struct {
@@ -826,48 +998,48 @@ pub const Registers = struct {
             };
 
             pub const BlendConfig = packed struct(u32) {
-                rgb_equation: BlendEquation,
+                color_op: BlendOperation,
                 _unused0: u5 = 0,
-                alpha_equation: BlendEquation,
+                alpha_op: BlendOperation,
                 _unused1: u5 = 0,
-                rgb_src_function: BlendFunction,
-                rgb_dst_function: BlendFunction,
-                alpha_src_function: BlendFunction,
-                alpha_dst_function: BlendFunction,
+                color_src_factor: BlendFactor,
+                color_dst_factor: BlendFactor,
+                alpha_src_factor: BlendFactor,
+                alpha_dst_factor: BlendFactor,
             };
 
             pub const AlphaTestConfig = packed struct(u32) {
                 enable: bool,
                 _unused0: u3 = 0,
-                function: CompareFunction,
+                op: CompareOperation,
                 _unused1: u1 = 0,
-                reference_value: u8,
+                reference: u8,
                 _unused3: u16 = 0,
             };
 
             pub const StencilTestConfig = packed struct(u32) {
                 enable: bool,
                 _unused0: u3 = 0,
-                function: CompareFunction,
+                op: CompareOperation,
                 _unused1: u1 = 0,
-                src_mask: u8,
-                value: i8,
-                dst_mask: u8,
+                compare_mask: u8,
+                reference: u8,
+                write_mask: u8,
             };
 
             pub const StencilOperationConfig = packed struct(u32) {
-                fail_operation: StencilOperation,
+                fail_op: StencilOperation,
                 _unused0: u1 = 0,
-                z_fail_operation: StencilOperation,
+                depth_fail_op: StencilOperation,
                 _unused1: u1 = 0,
-                z_pass_operation: StencilOperation,
+                pass_op: StencilOperation,
                 _unused2: u21 = 0,
             };
 
             pub const DepthColorMaskConfig = packed struct(u32) {
                 enable_depth_test: bool,
                 _unused0: u3 = 0,
-                depth_function: CompareFunction,
+                depth_op: CompareOperation,
                 r_write_enable: bool,
                 g_write_enable: bool,
                 b_write_enable: bool,
@@ -907,6 +1079,20 @@ pub const Registers = struct {
                 } 
             };
 
+            pub const ColorBufferFormat = packed struct(u32) {
+                pixel_size: PixelSize,
+                _unused0: u14 = 0,
+                format: ColorFormat,
+                _unused1: u13 = 0,
+
+                pub fn init(format: ColorFormat) ColorBufferFormat {
+                    return .{
+                        .pixel_size = format.pixelSize(),
+                        .format = format,
+                    };
+                }
+            };
+
             pub const RenderBufferBlockSize = enum(u1) {
                 @"8x8",
                 @"32x32",
@@ -914,8 +1100,8 @@ pub const Registers = struct {
 
             color_operation: ColorOperation,
             blend_config: BlendConfig,
-            logic_operation: packed struct(u32) { operation: LogicOperation, _: u28 = 0 },
-            blend_color: ColorFormat.Rgba8,
+            logic_operation: RightPaddedRegister(LogicOperation),
+            blend_color: [4]u8,
             fragment_operation_alpha_test: AlphaTestConfig,
             stencil_test: StencilTestConfig,
             stencil_operation: StencilOperationConfig,
@@ -924,23 +1110,15 @@ pub const Registers = struct {
             _unknown1: u32,
             _unknown2: u32,
             _unknown3: u32,
-            render_buffer_invalidate: Trigger,
-            render_buffer_flush: Trigger, 
+            render_buffer_invalidate: RightPaddedRegister(Trigger),
+            render_buffer_flush: RightPaddedRegister(Trigger), 
             color_buffer_reading: ColorRwMask,
             color_buffer_writing: ColorRwMask,
             depth_buffer_reading: DepthStencilRwMask,
             depth_buffer_writing: DepthStencilRwMask,
-            depth_buffer_format: packed struct(u32) {
-                format: DepthBufferFormat,
-                _unused0: u30 = 0,
-            },
-            color_buffer_format: packed struct(u32) {
-                pixel_size: PixelSize,
-                _unused0: u14 = 0,
-                format: ColorBufferFormat,
-                _unused1: u13 = 0,
-            },
-            early_depth_test_2: EnableBit,
+            depth_buffer_format: RightPaddedRegister(DepthStencilFormat),
+            color_buffer_format: ColorBufferFormat,
+            early_depth_test_enable_2: RightPaddedRegister(bool),
             _unknown4: u32,
             _unknown5: u32,
             render_buffer_block_size: packed struct(u32) { mode: RenderBufferBlockSize, _: u31 = 0 },
@@ -983,7 +1161,7 @@ pub const Registers = struct {
             config_0: u32,
             config_1: u32,
             lut_index: u32,
-            disable: DisableBit,
+            disable: RightPaddedRegister(bool),
             lut_data: [8]u32,
             lut_input_absolute: u32,
             lut_input_select: u32,
@@ -996,79 +1174,133 @@ pub const Registers = struct {
             pub const PrimitiveConfig = packed struct(u32) {
                 total_vertex_outputs: u4,
                 _unused0: u4 = 0,
-                mode: PrimitiveMode,
+                topology: PrimitiveTopology,
                 _unused1: u6 = 0,
                 _unknown0: u1 = 0,
                 _unused2: u15 = 0,
             };
 
-            pub const AttributeBufferFormatLow = packed struct(u32) {
-                attribute_0: AttributeFormat = .{},
-                attribute_1: AttributeFormat = .{},
-                attribute_2: AttributeFormat = .{},
-                attribute_3: AttributeFormat = .{},
-                attribute_4: AttributeFormat = .{},
-                attribute_5: AttributeFormat = .{},
-                attribute_6: AttributeFormat = .{},
-                attribute_7: AttributeFormat = .{},
-            };
-
-            pub const AttributeBufferFormatHigh = packed struct(u32) {
+            pub const AttributeConfig = extern struct {
                 pub const Flags = enum(u1) { array, fixed };
 
-                attribute_8: AttributeFormat = .{},
-                attribute_9: AttributeFormat = .{},
-                attribute_10: AttributeFormat = .{},
-                attribute_11: AttributeFormat = .{},
+                pub const Low = packed struct(u32) {
+                    attribute_0: AttributeFormat = .{},
+                    attribute_1: AttributeFormat = .{},
+                    attribute_2: AttributeFormat = .{},
+                    attribute_3: AttributeFormat = .{},
+                    attribute_4: AttributeFormat = .{},
+                    attribute_5: AttributeFormat = .{},
+                    attribute_6: AttributeFormat = .{},
+                    attribute_7: AttributeFormat = .{},
+                };
 
-                flags_0: Flags = .array,
-                flags_1: Flags = .array,
-                flags_2: Flags = .array,
-                flags_3: Flags = .array,
-                flags_4: Flags = .array,
-                flags_5: Flags = .array,
-                flags_6: Flags = .array,
-                flags_7: Flags = .array,
-                flags_8: Flags = .array,
-                flags_9: Flags = .array,
-                flags_10: Flags = .array,
-                flags_11: Flags = .array,
+                pub const High = packed struct(u32) {
 
-                attributes_end: u4,
+                    attribute_8: AttributeFormat = .{},
+                    attribute_9: AttributeFormat = .{},
+                    attribute_10: AttributeFormat = .{},
+                    attribute_11: AttributeFormat = .{},
+
+                    flags_0: Flags = .array,
+                    flags_1: Flags = .array,
+                    flags_2: Flags = .array,
+                    flags_3: Flags = .array,
+                    flags_4: Flags = .array,
+                    flags_5: Flags = .array,
+                    flags_6: Flags = .array,
+                    flags_7: Flags = .array,
+                    flags_8: Flags = .array,
+                    flags_9: Flags = .array,
+                    flags_10: Flags = .array,
+                    flags_11: Flags = .array,
+
+                    attributes_end: u4,
+                };
+
+                low: Low,
+                high: High,
+
+                pub fn setAttribute(config: *AttributeConfig, index: AttributeIndex, value: AttributeFormat) void {
+                    std.mem.writePackedIntNative(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(AttributeFormat), @bitCast(value));
+                }
+
+                pub fn getAttribute(config: *AttributeConfig, index: AttributeIndex) void {
+                    return @bitCast(std.mem.readPackedIntNative(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(AttributeFormat)));
+                }
+
+                pub fn setFlag(config: *AttributeConfig, index: AttributeIndex, value: Flags) void {
+                    std.mem.writePackedIntNative(u1, std.mem.asBytes(config), (12 * @bitSizeOf(AttributeFormat)) + @intFromEnum(index) * @bitSizeOf(Flags), @bitCast(value));
+                }
+
+                pub fn getFlag(config: *AttributeConfig, index: AttributeIndex) void {
+                    return @bitCast(std.mem.readPackedIntNative(u1, std.mem.asBytes(config), (12 * @bitSizeOf(AttributeFormat)) + @intFromEnum(index) * @bitSizeOf(Flags)));
+                }
             };
 
             pub const AttributeBuffer = extern struct {
-                pub const ConfigLow = packed struct(u32) {
-                    component_0: AttributeArrayComponent = .attribute_0,
-                    component_1: AttributeArrayComponent = .attribute_1,
-                    component_2: AttributeArrayComponent = .attribute_2,
-                    component_3: AttributeArrayComponent = .attribute_3,
-                    component_4: AttributeArrayComponent = .attribute_4,
-                    component_5: AttributeArrayComponent = .attribute_5,
-                    component_6: AttributeArrayComponent = .attribute_6,
-                    component_7: AttributeArrayComponent = .attribute_7,
+                pub const ArrayComponent = enum(u4) {
+                    attribute_0,
+                    attribute_1,
+                    attribute_2,
+                    attribute_3,
+                    attribute_4,
+                    attribute_5,
+                    attribute_6,
+                    attribute_7,
+                    attribute_8,
+                    attribute_9,
+                    attribute_10,
+                    attribute_11,
+
+                    padding_4,
+                    padding_8,
+                    padding_12,
+                    padding_16,
                 };
 
-                pub const ConfigHigh = packed struct(u32) {
-                    component_8: AttributeArrayComponent = .attribute_8,
-                    component_9: AttributeArrayComponent = .attribute_9,
-                    component_10: AttributeArrayComponent = .attribute_10,
-                    component_11: AttributeArrayComponent = .attribute_11,
+                pub const Config = extern struct {
+                    pub const Low = packed struct(u32) {
+                        component_0: ArrayComponent = .attribute_0,
+                        component_1: ArrayComponent = .attribute_1,
+                        component_2: ArrayComponent = .attribute_2,
+                        component_3: ArrayComponent = .attribute_3,
+                        component_4: ArrayComponent = .attribute_4,
+                        component_5: ArrayComponent = .attribute_5,
+                        component_6: ArrayComponent = .attribute_6,
+                        component_7: ArrayComponent = .attribute_7,
+                    };
 
-                    bytes_per_vertex: u8,
-                    _unused0: u4 = 0,
-                    num_components: u4,
+                    pub const High = packed struct(u32) {
+                        component_8: ArrayComponent = .attribute_8,
+                        component_9: ArrayComponent = .attribute_9,
+                        component_10: ArrayComponent = .attribute_10,
+                        component_11: ArrayComponent = .attribute_11,
+
+                        bytes_per_vertex: u8,
+                        _unused0: u4 = 0,
+                        num_components: u4,
+                    };
+
+                    low: Low,
+                    high: High,
+
+                    pub fn setComponent(config: *AttributeBuffer.Config, index: ArrayComponentIndex, value: ArrayComponent) void {
+                        std.mem.writePackedIntNative(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(ArrayComponent), @intFromEnum(value));
+                    }
+
+                    pub fn getComponent(config: *AttributeBuffer.Config, index: ArrayComponentIndex) ArrayComponent {
+                        return @enumFromInt(std.mem.readPackedIntNative(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(ArrayComponent)));
+                    }
                 };
 
-                offset: usize,
-                config_low: ConfigLow,
-                config_high: ConfigHigh,
+                offset: u32,
+                config: AttributeBuffer.Config,
             };
 
-            pub const AttributeIndexList = packed struct(u32) {
+            pub const AttributeIndexBuffer = packed struct(u32) {
                 base_offset: u28,
                 _unused0: u3 = 0,
-                size: IndexFormat,
+                format: IndexFormat,
             };
 
             pub const DrawFunction = packed struct(u32) {
@@ -1078,15 +1310,6 @@ pub const Registers = struct {
 
                 mode: Mode,
                 _: u31 = 0,
-            };
-
-            pub const AttributesTotal = packed struct(u32) {
-                num: u4,
-                _: u28 = 0,
-
-                pub fn initTotal(num: u4) AttributesTotal {
-                    return .{ .num = num };
-                }
             };
 
             pub const FixedAttributeIndex = packed struct(u32) {
@@ -1101,7 +1324,7 @@ pub const Registers = struct {
                 }
             };
 
-            pub const Config = packed struct(u32) {    
+            pub const PipelineConfig = packed struct(u32) {
                 pub const GeometryUsage = enum(u2) { disabled, enabled = 2 }; 
 
                 geometry_shader_usage: GeometryUsage = .disabled,
@@ -1114,7 +1337,7 @@ pub const Registers = struct {
                 use_reserved_geometry_subdivision: bool = false,
             };
 
-            pub const Config2 = packed struct(u32) {
+            pub const PipelineConfig2 = packed struct(u32) {
                 inputting_vertices_or_draw_arrays: bool = false,
                 _unused0: u7 = 0,
                 drawing_triangles: bool = false,
@@ -1122,19 +1345,18 @@ pub const Registers = struct {
             };
 
             attribute_buffer_base: AlignedPhysicalAddress(.@"16", .@"8"),
-            attribute_buffer_format_low: AttributeBufferFormatLow,
-            attribute_buffer_format_high: AttributeBufferFormatHigh,
+            attribute_config: AttributeConfig,
             attribute_buffer: [12]AttributeBuffer,
-            attribute_buffer_index_list: AttributeIndexList,
+            attribute_buffer_index_buffer: AttributeIndexBuffer,
             attribute_buffer_num_vertices: u32,
-            config: Config,
+            config: PipelineConfig,
             attribute_buffer_first_index: u32,
             _unknown0: [2]u32,
             post_vertex_cache_num: u32,
-            attribute_buffer_draw_arrays: Trigger,
-            attribute_buffer_draw_elements: Trigger,
+            attribute_buffer_draw_arrays: RightPaddedRegister(Trigger),
+            attribute_buffer_draw_elements: RightPaddedRegister(Trigger),
             _unknown1: u32,
-            clear_post_vertex_cache: Trigger,
+            clear_post_vertex_cache: RightPaddedRegister(Trigger),
             fixed_attribute_index: FixedAttributeIndex,
             fixed_attribute_data: F7_16x4,
             _unknown2: [2]u32,
@@ -1142,21 +1364,21 @@ pub const Registers = struct {
             command_buffer_address: [2]u32,
             command_buffer_jump: [2]u32,
             _unknown3: [4]u32,
-            vertex_shader_input_attributes: AttributesTotal,
+            vertex_shader_input_attributes: RightPaddedRegister(u4),
             _unknown4: u32,
-            enable_geometry_shader_configuration: EnableBit,
+            enable_geometry_shader_configuration: RightPaddedRegister(bool),
             start_draw_function: DrawFunction,
             _unknown5: [4]u32,
-            vertex_shader_output_map_total_2: AttributesTotal,
+            vertex_shader_output_map_total_2: RightPaddedRegister(u4),
             _unknown6: [6]u32,
-            vertex_shader_output_map_total_1: AttributesTotal,
+            vertex_shader_output_map_total_1: RightPaddedRegister(u4),
             geometry_shader_misc0: u32,
-            config_2: Config2,
+            config_2: PipelineConfig2,
             geometry_shader_misc1: u32,
             _unknown7: u32,
             _unknown8: [8]u32,
             primitive_config: PrimitiveConfig,
-            restart_primitive: Trigger,
+            restart_primitive: RightPaddedRegister(Trigger),
         };
 
         pub const Shader = extern struct {
@@ -1227,26 +1449,39 @@ pub const Registers = struct {
                 mode: Mode,
             };
 
-            pub const AttributePermutationLow = packed struct(u32) {
-                attribute_0: InputRegister = .v0,
-                attribute_1: InputRegister = .v1,
-                attribute_2: InputRegister = .v2,
-                attribute_3: InputRegister = .v3,
-                attribute_4: InputRegister = .v4,
-                attribute_5: InputRegister = .v5,
-                attribute_6: InputRegister = .v6,
-                attribute_7: InputRegister = .v7,
-            };
+            pub const AttributePermutation = extern struct {
+                pub const Low = packed struct(u32) {
+                    attribute_0: InputRegister = .v0,
+                    attribute_1: InputRegister = .v1,
+                    attribute_2: InputRegister = .v2,
+                    attribute_3: InputRegister = .v3,
+                    attribute_4: InputRegister = .v4,
+                    attribute_5: InputRegister = .v5,
+                    attribute_6: InputRegister = .v6,
+                    attribute_7: InputRegister = .v7,
+                };
 
-            pub const AttributePermutationHigh = packed struct(u32) {
-                attribute_8: InputRegister = .v8,
-                attribute_9: InputRegister = .v9,
-                attribute_10: InputRegister = .v10,
-                attribute_11: InputRegister = .v11,
-                attribute_12: InputRegister = .v12,
-                attribute_13: InputRegister = .v13,
-                attribute_14: InputRegister = .v14,
-                attribute_15: InputRegister = .v15,
+                pub const High = packed struct(u32) {
+                    attribute_8: InputRegister = .v8,
+                    attribute_9: InputRegister = .v9,
+                    attribute_10: InputRegister = .v10,
+                    attribute_11: InputRegister = .v11,
+                    attribute_12: InputRegister = .v12,
+                    attribute_13: InputRegister = .v13,
+                    attribute_14: InputRegister = .v14,
+                    attribute_15: InputRegister = .v15,
+                };
+
+                low: Low = .{},
+                high: High = .{},
+
+                pub fn setAttribute(config: *AttributePermutation, index: AttributeIndex, value: InputRegister) void {
+                    std.mem.writePackedIntNative(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(InputRegister), @intFromEnum(value));
+                }
+
+                pub fn getAttribute(config: *AttributePermutation, index: AttributeIndex) InputRegister {
+                    return @bitCast(std.mem.readPackedIntNative(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(InputRegister)));
+                }
             };
 
             bool_uniform: u32,
@@ -1254,11 +1489,10 @@ pub const Registers = struct {
             _unused0: [4]u32,
             input_buffer_config: InputBufferConfig,
             entrypoint: Entry,
-            attribute_permutation_low: AttributePermutationLow,
-            attribute_permutation_high: AttributePermutationHigh,
+            attribute_permutation: AttributePermutation,
             output_map_mask: OutputMask,
             _unused1: u32,
-            code_transfer_end: Trigger,
+            code_transfer_end: RightPaddedRegister(Trigger),
             float_uniform_index: FloatUniformConfig,
             float_uniform_data: [8]u32,
             _unused2: [2]u32,
@@ -1273,11 +1507,11 @@ pub const Registers = struct {
         _unused0: [40]u8,
         rasterizer: Rasterizer,
         _unused1: [64]u8,
-        texturing: Texturing,
+        texturing: TextureUnits,
         _unused2: [36]u8,
-        texturing_procedural: TexturingProcedural,
+        texturing_procedural: ProceduralTextureUnit,
         _unused3: [32]u8,
-        texturing_environment: TexturingEnvironment,
+        texture_combiners: TextureCombiners,
         _unused4: [8]u8,
         framebuffer: Internal.Framebuffer,
         fragment_lighting: FragmentLighting,
@@ -1293,7 +1527,7 @@ pub const Registers = struct {
             std.debug.assert(@offsetOf(Internal, "rasterizer") == 0x100);
             std.debug.assert(@offsetOf(Internal, "texturing") == 0x200);
             std.debug.assert(@offsetOf(Internal, "texturing_procedural") == 0x2A0);
-            std.debug.assert(@offsetOf(Internal, "texturing_environment") == 0x300);
+            std.debug.assert(@offsetOf(Internal, "texture_combiners") == 0x300);
             std.debug.assert(@offsetOf(Internal, "framebuffer") == 0x400);
             std.debug.assert(@offsetOf(Internal, "fragment_lighting") == 0x500);
             std.debug.assert(@offsetOf(Internal, "geometry_pipeline") == 0x800);
@@ -1348,8 +1582,9 @@ comptime {
         @compileError(std.fmt.comptimePrint("(@sizeOf(MemoryCopy) == 0x{X}) and 0x{X} != 0x2C!", .{ @sizeOf(Registers.MemoryCopy), @sizeOf(Registers.MemoryCopy) }));
 }
 
-pub const command = @import("gpu/command.zig");
 pub const Framebuffer = @import("gpu/Framebuffer.zig");
+pub const cmd3d = @import("gpu/cmd3d.zig");
+pub const mango = @import("gpu/mango.zig");
 
 const std = @import("std");
 const zitrus = @import("zitrus");
@@ -1358,8 +1593,8 @@ const zitrus_tooling = @import("zitrus-tooling");
 const pica = zitrus_tooling.pica;
 const OperandDescriptor = pica.encoding.OperandDescriptor;
 const Instruction = pica.encoding.Instruction;
-const FloatConstantRegister = pica.register.SourceRegister.Constant;
-const InputRegister = pica.register.SourceRegister.Input;
+const FloatConstantRegister = pica.SourceRegister.Constant;
+const InputRegister = pica.SourceRegister.Input;
 
 const AlignedPhysicalAddress = zitrus.AlignedPhysicalAddress;
 const PhysicalAddress = zitrus.PhysicalAddress;

@@ -6,7 +6,10 @@ pub fn main() !void {
     defer srv.deinit();
 
     var apt = try Applet.init(srv);
-    defer apt.deinit(srv);
+    defer apt.deinit();
+
+    var app = try Applet.Application.init(apt, srv);
+    defer app.deinit(apt, srv);
 
     var hid = try Hid.init(srv);
     defer hid.deinit();
@@ -20,8 +23,8 @@ pub fn main() !void {
             .bottom = false,
         }),
         .color_format = .init(.{
-            .top = .bgr8,
-            .bottom = .bgr8,
+            .top = .bgr888,
+            .bottom = .bgr888,
         }),
         .phys_linear_allocator = horizon.heap.linear_page_allocator,
     });
@@ -39,7 +42,7 @@ pub fn main() !void {
     while (true) {
         const interrupts = try gsp.waitInterrupts();
 
-        if (interrupts.contains(.vblank_top)) {
+        if (interrupts.get(.vblank_top) > 0) {
             break;
         }
     }
@@ -47,32 +50,42 @@ pub fn main() !void {
     try gsp.sendSetLcdForceBlack(false);
     defer if (gsp.has_right) gsp.sendSetLcdForceBlack(true) catch {};
 
-    var running = true;
-    while (running) {
+    main_loop: while (true) {
         while (try srv.pollNotification()) |notif| switch (notif) {
-            .must_terminate => running = false,
+            .must_terminate => break :main_loop,
             else => {},
         };
 
-        while (try apt.pollEvent(srv, &gsp)) |e| switch (e) {
+        while (try app.pollNotification(apt, srv)) |n| switch (n) {
+            .jump_home, .jump_home_by_power => {
+                j_h: switch(try app.jumpToHome(apt, srv, &gsp, .none)) {
+                    .resumed => {},
+                    .jump_home => continue :j_h (try app.jumpToHome(apt, srv, &gsp, .none)),
+                    .must_close => break :main_loop,
+                }
+            },
+            .sleeping => {
+                while (try app.waitNotification(apt, srv) != .sleep_wakeup) {}
+                try gsp.sendSetLcdForceBlack(false);
+            },
+            .must_close, .must_close_by_shutdown => break :main_loop,
+            .jump_home_rejected => {},
             else => {},
         };
 
         const input = hid.readPadInput();
 
         if (input.current.start) {
-            running = false;
+            break :main_loop;
         }
 
         while (true) {
             const interrupts = try gsp.waitInterrupts();
 
-            if (interrupts.contains(.vblank_top)) {
+            if (interrupts.get(.vblank_top) > 0) {
                 break;
             }
         }
-
-        running = running and !apt.flags.should_close;
     }
 }
 
