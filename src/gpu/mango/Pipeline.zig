@@ -457,7 +457,7 @@ pub const CreateGraphics = extern struct {
 
             queue.add(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{
                 .total_vertex_outputs = 0, // TODO: shaders
-                .topology = @enumFromInt(@intFromEnum(topo)),
+                .topology = topo.native(),
             });
 
             queue.add(internal_regs, &internal_regs.geometry_pipeline.config, .{
@@ -477,6 +477,8 @@ pub const CreateGraphics = extern struct {
 
         if(!dyn.viewport) {
             const static_viewport = create.viewport_state.?.viewport.?;
+            const flt_width: f32 = @floatFromInt(static_viewport.rect.extent.width);
+            const flt_height: f32 = @floatFromInt(static_viewport.rect.extent.height);
 
             if(!dyn.scissor) {
                 const static_scissor = create.viewport_state.?.scissor.?;
@@ -492,10 +494,10 @@ pub const CreateGraphics = extern struct {
                         &internal_regs.rasterizer.viewport_v_step,
                     }, .{
                         .init(raster_state.cull_mode.native(raster_state.front_face)),
-                        .init(.of(static_viewport.width / 2.0)),
-                        .init(.of(2.0 / static_viewport.width)),
-                        .init(.of(static_viewport.height / 2.0)),
-                        .init(.of(2.0 / static_viewport.height)),
+                        .init(.of(flt_width / 2.0)),
+                        .init(.of(2.0 / flt_width)),
+                        .init(.of(flt_height / 2.0)),
+                        .init(.of(2.0 / flt_height)),
                     });
                 } else {
                     static_viewport.writeViewportParameters(queue);
@@ -507,16 +509,19 @@ pub const CreateGraphics = extern struct {
                     &internal_regs.rasterizer.scissor_end,
                     &internal_regs.rasterizer.viewport_xy,
                 }, .{
-                    .initMode(static_scissor.mode.native()),
+                    .init(static_scissor.mode.native()),
                     @bitCast(static_scissor.rect.offset),
                     .{ .x = static_scissor.rect.offset.x + static_scissor.rect.extent.width, .y = static_scissor.rect.offset.y + static_scissor.rect.extent.height },
-                    .{ .x = static_viewport.x, .y = static_viewport.y },
+                    .{ .x = static_viewport.rect.offset.x, .y = static_viewport.rect.offset.y },
                 });
             } else static_viewport.writeViewportParameters(queue);
 
-            if((!dyn.depth_bias_enable and !create.rasterization_state.?.depth_bias_enable) or !dyn.depth_bias) {
+            if(!dyn.depth_bias_enable and !dyn.depth_bias) {
                 const depth_map_scale = (static_viewport.min_depth - static_viewport.max_depth); 
-                const depth_map_offset = static_viewport.min_depth + create.rasterization_state.?.depth_bias_constant;
+                const depth_map_offset = static_viewport.min_depth + (if(create.rasterization_state.?.depth_bias_enable)
+                    create.rasterization_state.?.depth_bias_constant
+                else
+                    0);
 
                 queue.addIncremental(internal_regs, .{
                     &internal_regs.rasterizer.depth_map_scale,

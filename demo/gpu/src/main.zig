@@ -68,12 +68,65 @@ pub fn main() !void {
         }
     }
 
+    const Vertex = extern struct {
+        color: [3]u8,
+        pos: [4]i8,
+    };
+
+    // XXX: Little hack for allocating mango.DeviceMemory. This must NEVER be done.
+    const vtx_buffer_memory_va = try horizon.heap.linear_page_allocator.alignedAlloc(Vertex, 16, 4);
+    defer horizon.heap.linear_page_allocator.free(vtx_buffer_memory_va);
+
+    vtx_buffer_memory_va[0] = .{ .pos = .{ -1, -1, 0, 1 }, .color = .{ 0, 0, 0 } };
+    vtx_buffer_memory_va[1] = .{ .pos = .{ 1, -1, 0, 1 }, .color = .{ 1, 1, 0 } };
+    vtx_buffer_memory_va[2] = .{ .pos = .{ -1, 1, 0, 1 }, .color = .{ 0, 1, 1 } };
+    vtx_buffer_memory_va[3] = .{ .pos = .{ 1, 1, 0, 1 }, .color = .{ 0, 1, 0 } };
+
+    try gsp.sendFlushDataCache(std.mem.sliceAsBytes(vtx_buffer_memory_va));
+
+    const index_buffer_memory_va = try horizon.heap.linear_page_allocator.alloc(u8, 4);
+    defer horizon.heap.linear_page_allocator.free(index_buffer_memory_va);
+    index_buffer_memory_va[0..4].* = .{ 0, 1, 2, 3 };
+
+    try gsp.sendFlushDataCache(std.mem.sliceAsBytes(index_buffer_memory_va));
+
+    var index_buffer_memory: mango.DeviceMemory = .{
+        .virtual = index_buffer_memory_va.ptr,
+        .physical = horizon.memory.toPhysical(@intFromPtr(index_buffer_memory_va.ptr)),
+        .size = 4,
+    };
+
+    var vtx_buffer_memory: mango.DeviceMemory = .{
+        .virtual = vtx_buffer_memory_va.ptr,
+        .physical = horizon.memory.toPhysical(@intFromPtr(vtx_buffer_memory_va.ptr)),
+        .size = @sizeOf(Vertex) * 4,
+    };
+
+    var device: mango.Device = .{};
+    const index_buffer = try device.createBuffer(.{
+        .size = 0x4,
+        .usage = .{
+            .index_buffer = true,
+        },
+    }, horizon.heap.linear_page_allocator);
+    defer device.destroyBuffer(index_buffer, horizon.heap.linear_page_allocator);
+    try device.bindBufferMemory(index_buffer, &index_buffer_memory, 0);
+
+    const vtx_buffer = try device.createBuffer(.{
+        .size = @sizeOf(Vertex) * 4,
+        .usage = .{
+            .vertex_buffer = true,
+        },
+    }, horizon.heap.linear_page_allocator);
+    defer device.destroyBuffer(vtx_buffer, horizon.heap.linear_page_allocator);
+    try device.bindBufferMemory(vtx_buffer, &vtx_buffer_memory, 0);
+
     var cmdbuf: mango.CommandBuffer = .{
         .queue = .initBuffer(raw_command_queue),
     };
 
     const queue: *cmd3d.Queue = &cmdbuf.queue;
-    // Adapted from https://problemkaputt.de/gbatek.htm#3dsgputriangledrawingsamplecode but writing through commandlists instead of doing it directly and some more fixes (texenv0, lighting disable)
+    // Initially adapted from https://problemkaputt.de/gbatek.htm#3dsgputriangledrawingsamplecode but writing through commandlists instead of doing it directly and some more fixes (texenv0, lighting disable)
     // TODO: This is VERY low level. Needs an API
     
     // NOTE: Pipelines are really good as they could cache commands efficiently and binding them would be only one memcpy
@@ -106,15 +159,16 @@ pub fn main() !void {
             &.{}
         ),
         .input_assembly_state = &.{
-            .topology = .triangle_strip,
+            // NOTE: Ignored as its dynamic state
+            .topology = undefined,
         },
         .viewport_state = &.{
             .scissor = &.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 320 } }),
             .viewport = &.{
-                .x = 0,
-                .y = 0,
-                .width = 240.0,
-                .height = 320.0,
+                .rect = .{
+                    .offset = .{ .x = 0, .y = 0 },
+                    .extent = .{ .width = 240, .height = 320 },
+                },
                 .min_depth = 0.0,
                 .max_depth = 1.0,
             },
@@ -173,7 +227,9 @@ pub fn main() !void {
             },
             .blend_constants = .{ 0, 0, 0, 0 },
         },
-        .dynamic_state = .{},
+        .dynamic_state = .{
+            .primitive_topology = true,
+        },
     };
 
     // TODO: create pipelines and cache their static state for command buffers
@@ -258,66 +314,63 @@ pub fn main() !void {
     queue.add(internal, &internal.geometry_pipeline.start_draw_function, .drawing);
     // TODO: Shaders in pipeline
 
-    // draw a colored quad with vertex buffers
-    const Vertex = extern struct {
-        color: [3]u8,
-        pos: [4]i8,
-    };
-
-    const at_buf = try horizon.heap.linear_page_allocator.alignedAlloc(Vertex, 16, 4);
-    defer horizon.heap.linear_page_allocator.free(at_buf);
-
-    at_buf[0] = .{ .pos = .{ -1, -1, 0, 1 }, .color = .{ 0, 0, 0 } };
-    at_buf[1] = .{ .pos = .{ 1, -1, 0, 1 }, .color = .{ 1, 1, 0 } };
-    at_buf[2] = .{ .pos = .{ -1, 1, 0, 1 }, .color = .{ 0, 1, 1 } };
-    at_buf[3] = .{ .pos = .{ 1, 1, 0, 1 }, .color = .{ 0, 1, 0 } };
-
-    try gsp.sendFlushDataCache(std.mem.sliceAsBytes(at_buf));
-
-    // TODO: mango.Buffer objects
-    cmdbuf.bindVertexBuffersSlice(0, &.{horizon.memory.toPhysical(@intFromPtr(at_buf.ptr))}, &.{0});
-
+    // draw a colored quad with vertex and index buffers
+   
     {
-        // We'll render to the bottom screen, thats why 320x240 (physically they are 240x320)
-        cmdbuf.beginRendering(&.{
-            // TODO: As we still dont have resources this must be done.
-            .todo_image_view_extents = .{
-                .width = 240,
-                .height = 320,
-            },
+        cmdbuf.begin();
+        defer cmdbuf.end();
 
-            .color_attachment = horizon.memory.toPhysical(@intFromPtr(bot_renderbuf.ptr)),
-            .depth_stencil_attachment = .fromAddress(0),
-        });
-        defer cmdbuf.endRendering();
+        cmdbuf.bindIndexBuffer(index_buffer, 0, .u8);
+        cmdbuf.bindVertexBuffersSlice(0, &.{vtx_buffer}, &.{0});
 
-        // TODO: How do we approach drawing in immediate mode with mango?
-        // Its different from attributes as you can input up to 16 registers instead of 12 so maybe it could have its use cases.
+        // Redundant, just to show that dynamic state is supported
+        cmdbuf.setPrimitiveTopology(.triangle_strip);
 
-        // const as_fixed_attr: [8]F7_16x4 = .{
-        //     .pack(.of(1), .of(0), .of(1), .of(1)),
-        //     .pack(.of(-1), .of(-1), .of(0), .of(1)),
-        //
-        //     .pack(.of(1),  .of(1), .of(0), .of(1)),
-        //     .pack(.of(1), .of(-1), .of(0), .of(1)),
-        //
-        //     .pack(.of(0), .of(1), .of(1), .of(1)),
-        //     .pack(.of(-1), .of(1), .of(0), .of(1)),
-        //
-        //     .pack(.of(0), .of(1), .of(0), .of(1)),
-        //     .pack(.of(1), .of(1), .of(0), .of(1)),
-        // };
-        //
-        // // start drawing
-        // queue.add(internal, &internal.geometry_pipeline.restart_primitive, .init(.trigger));
-        // queue.add(internal, &internal.geometry_pipeline.fixed_attribute_index, .immediate_mode);
-        // inline for (0..8) |i| {
-        //     queue.add(internal, &internal.geometry_pipeline.fixed_attribute_data, as_fixed_attr[i]);
-        // }
-        // queue.add(internal, &internal.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
-        cmdbuf.draw(4, 0);
+        {
+            // We'll render to the bottom screen, thats why 320x240 (physically they are 240x320)
+            cmdbuf.beginRendering(&.{
+                // TODO: As we still dont have resources this must be done.
+                .todo_image_view_extents = .{
+                    .width = 240,
+                    .height = 320,
+                },
+
+                // TODO: Image and ImageView
+                .color_attachment = horizon.memory.toPhysical(@intFromPtr(bot_renderbuf.ptr)),
+                .depth_stencil_attachment = .fromAddress(0),
+            });
+            defer cmdbuf.endRendering();
+
+            // index_count, first_index, vertex_offset
+            cmdbuf.drawIndexed(4, 0, 0);
+
+            // TODO: How do we approach drawing in immediate mode with mango?
+            // Its different from attributes as you can input up to 16 registers instead of 12 so maybe it could have its use cases.
+
+            // const as_fixed_attr: [8]F7_16x4 = .{
+            //     .pack(.of(1), .of(0), .of(1), .of(1)),
+            //     .pack(.of(-1), .of(-1), .of(0), .of(1)),
+            //
+            //     .pack(.of(1),  .of(1), .of(0), .of(1)),
+            //     .pack(.of(1), .of(-1), .of(0), .of(1)),
+            //
+            //     .pack(.of(0), .of(1), .of(1), .of(1)),
+            //     .pack(.of(-1), .of(1), .of(0), .of(1)),
+            //
+            //     .pack(.of(0), .of(1), .of(0), .of(1)),
+            //     .pack(.of(1), .of(1), .of(0), .of(1)),
+            // };
+            //
+            // // start drawing
+            // queue.add(internal, &internal.geometry_pipeline.restart_primitive, .init(.trigger));
+            // queue.add(internal, &internal.geometry_pipeline.fixed_attribute_index, .immediate_mode);
+            // inline for (0..8) |i| {
+            //     queue.add(internal, &internal.geometry_pipeline.fixed_attribute_data, as_fixed_attr[i]);
+            // }
+            // queue.add(internal, &internal.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
+        }
+
     }
-
     // XXX: Homebrew apps expect start_draw_function to start in configuration mode. Or you have a dreaded black screen of death x-x
     queue.add(internal, &internal.geometry_pipeline.start_draw_function, .config);
     queue.finalize();

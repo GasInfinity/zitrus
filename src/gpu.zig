@@ -749,15 +749,6 @@ pub const Registers = struct {
                 _unused2: u8 = 0,
             };
 
-            pub const ScissorConfig = packed struct(u32) {
-                mode: ScissorMode,
-                _: u30 = 0,
-
-                pub fn initMode(mode: ScissorMode) ScissorConfig {
-                    return .{ .mode = mode };
-                }
-            };
-
             faceculling_config: RightPaddedRegister(CullMode),
             viewport_h_scale: RightPaddedRegister(F7_16),
             viewport_h_step: LeftPaddedRegister(F7_23),
@@ -784,7 +775,7 @@ pub const Registers = struct {
             early_depth_test_enable_1: RightPaddedRegister(bool),
             early_depth_clear: RightPaddedRegister(Trigger),
             shader_output_attribute_mode: OutputAttributeMode,
-            scissor_config: ScissorConfig,
+            scissor_config: RightPaddedRegister(ScissorMode),
             scissor_start: U16x2,
             scissor_end: U16x2,
             viewport_xy: U16x2,

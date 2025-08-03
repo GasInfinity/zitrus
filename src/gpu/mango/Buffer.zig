@@ -6,11 +6,19 @@ pub const Usage = packed struct(u8) {
     /// Specifies that the buffer can be used as an index buffer.
     index_buffer: bool = false,
     /// Specifies that the buffer can be used as a vertex buffer.
-    vertex_buffer: bool,
+    vertex_buffer: bool = false,
+    _: u4 = 0,
 };
 
 pub const CreateInfo = extern struct {
+    size: usize,
+    usage: Usage,
 };
+
+// NOTE: Buffers are not mapped directly so we don't need their virtual address.
+address: zitrus.PhysicalAddress,
+size: usize,
+usage: Usage,
 
 const std = @import("std");
 const zitrus = @import("zitrus");

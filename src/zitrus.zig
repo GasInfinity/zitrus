@@ -9,6 +9,7 @@ pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, com
     std.debug.assert(address_alignment.order(address_shift) != .lt);
 
     return enum(usize) {
+        zero = 0x00,
         _,
 
         const AlignedPhysAddr = @This();

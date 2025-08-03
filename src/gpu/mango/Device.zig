@@ -12,6 +12,63 @@
 pub const CreateInfo = extern struct {
 };
 
+pub fn createBuffer(device: *Device, create_info: mango.Buffer.CreateInfo, allocator: std.mem.Allocator) !*mango.Buffer {
+    _ = device;
+
+    const buffer = try allocator.create(mango.Buffer);
+    errdefer allocator.destroy(buffer);
+
+    buffer.* = .{
+        .address = .zero,
+        .size = create_info.size,
+        .usage = create_info.usage,
+    };
+
+    return buffer;
+}
+
+pub fn destroyBuffer(device: *Device, buffer: *mango.Buffer, allocator: std.mem.Allocator) void {
+    _ = device;
+    allocator.destroy(buffer);
+}
+
+pub fn bindBufferMemory(device: *Device, buffer: *mango.Buffer, memory: *mango.DeviceMemory, memory_offset: usize) !void {
+    _ = device;
+    std.debug.assert(buffer.address == .zero);
+    std.debug.assert(memory_offset + buffer.size <= memory.size);
+
+    buffer.address = .fromAddress(@intFromEnum(memory.physical) + memory_offset);
+}
+
+pub fn createImage(device: *Device, create_info: mango.Image.CreateInfo, allocator: std.mem.Allocator) !*mango.Image {
+    _ = device;
+    _ = create_info;
+    _ = allocator;
+    @panic("TODO");
+}
+
+pub fn destroyImage(device: *Device, image: *mango.Image, allocator: std.mem.Allocator) void {
+    _ = device;
+    _ = image;
+    _ = allocator;
+    @panic("TODO");
+}
+
+pub fn bindImageMemory(device: *Device, image: *mango.Image, memory: *mango.DeviceMemory, memory_offset: usize) !void {
+    _ = device;
+    _ = image;
+    _ = memory;
+    _ = memory_offset;
+    @panic("TODO");
+}
+
+pub fn createGraphicsPipeline(device: *Device, create_info: mango.Pipeline.CreateGraphics, allocator: std.mem.Allocator) !*mango.Pipeline {
+    _ = device;
+    _ = create_info;
+    _ = allocator;
+    @panic("TODO");
+}
+
 pub const BufferCopy = extern struct {
     src_offset: usize,
     dst_offset: usize,

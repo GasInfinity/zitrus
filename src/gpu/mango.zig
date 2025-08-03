@@ -13,7 +13,10 @@
 //!
 //! For more info see the top-level comments of each resource.
 
-/// All index / vertex buffers are relative to this address.
+// TODO: Have validation-layer behaviour with a toggle at the expense of more checks and more memory usage.
+// TODO: Move to a Handle based API. Internal implementation MUST not be exposed as it could be misused.
+
+/// All index / vertex buffers provided to the gpu are relative to this address.
 pub const global_attribute_buffer_base: zitrus.PhysicalAddress = .fromAddress(zitrus.memory.arm11.vram_begin);
 
 pub const Offset2D = extern struct { x: u16, y: u16 };
@@ -165,7 +168,6 @@ pub const PrimitiveTopology = enum(u8) {
             .triangle_strip => .triangle_strip,
             .triangle_fan => .triangle_fan,
             .geometry => .geometry,
-            else => unreachable,
         };
     }
 };
@@ -175,6 +177,13 @@ pub const IndexType = enum(u8) {
     u8,
     /// Specifies that indices are unsigned 16-bit numbers.
     u16,
+
+    pub fn native(fmt: IndexType) gpu.IndexFormat {
+        return switch (fmt) {
+            .u8 => .u8,
+            .u16 => .u16,
+        };
+    }
 };
 
 // TODO: Don't @enumFromInt(@intFromEnum()), use a function.
@@ -417,7 +426,7 @@ pub const Scissor = extern struct {
             &internal_regs.rasterizer.scissor_start,
             &internal_regs.rasterizer.scissor_end,
         }, .{
-            .initMode(scissor.mode.native()),
+            .init(scissor.mode.native()),
             @bitCast(scissor.rect.offset),
             .{ .x = scissor.rect.offset.x + scissor.rect.extent.width - 1, .y = scissor.rect.offset.y + scissor.rect.extent.height - 1 },
         });
@@ -425,29 +434,29 @@ pub const Scissor = extern struct {
 };
 
 pub const Viewport = extern struct {
-    x: u16,
-    y: u16,
-    width: f32,
-    height: f32,
+    rect: Rect2D,
     min_depth: f32,
     max_depth: f32,
 
     pub fn writeViewportParameters(viewport: Viewport, queue: *cmd3d.Queue) void {
+        const flt_width: f32 = @floatFromInt(viewport.rect.extent.width);
+        const flt_height: f32 = @floatFromInt(viewport.rect.extent.height);
+
         queue.addIncremental(internal_regs, .{
             &internal_regs.rasterizer.viewport_h_scale,
             &internal_regs.rasterizer.viewport_h_step,
             &internal_regs.rasterizer.viewport_v_scale,
             &internal_regs.rasterizer.viewport_v_step,
         }, .{
-            .init(.of(viewport.width / 2.0)),
-            .init(.of(2.0 / viewport.width)),
-            .init(.of(viewport.height / 2.0)),
-            .init(.of(2.0 / viewport.height)),
+            .init(.of(flt_width / 2.0)),
+            .init(.of(2.0 / flt_width)),
+            .init(.of(flt_height / 2.0)),
+            .init(.of(2.0 / flt_height)),
         });
 
         queue.add(internal_regs, &internal_regs.rasterizer.viewport_xy, .{
-            .x = viewport.x,
-            .y = viewport.y,
+            .x = viewport.rect.offset.x,
+            .y = viewport.rect.offset.y,
         });
     }
 };
@@ -488,12 +497,48 @@ pub const TextureCombiner = extern struct {
     constant: [4]u8,
 };
 
+// TODO: Make this interface a lot better for C interop
+pub const AllocationCallbacks = extern struct {
+    ctx: *anyopaque,
+    raw_alloc: fn(ctx: *anyopaque, len: usize, alignment: usize, ret_addr: usize) callconv(.c) ?[*]u8,
+    raw_remap: fn(ctx: *anyopaque, memory: [*]u8, memory_len: usize, alignment: usize, new_len: usize, ret_addr: usize) callconv(.c) ?[*]u8,
+    raw_free: fn(ctx: *anyopaque, memory: [*]u8, memory_len: usize, alignment: usize, ret_addr: usize) callconv(.c) void,
+
+    pub fn allocator(callbacks: *AllocationCallbacks) std.mem.Allocator {
+        return .{
+            .ptr = callbacks,
+            .vtable = .{
+                .alloc = &AllocationCallbacks.alloc,
+                .remap = &AllocationCallbacks.remap,
+                .resize = &std.mem.Allocator.noResize,
+                .free = &AllocationCallbacks.free,
+            },
+        };
+    }
+
+    fn alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
+        const callbacks: *AllocationCallbacks = @alignCast(@ptrCast(ctx));
+        return callbacks.raw_alloc(callbacks.ctx, len, alignment.toByteUnits(), ret_addr);
+    }
+
+    fn remap(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+        const callbacks: *AllocationCallbacks = @alignCast(@ptrCast(ctx));
+        return callbacks.raw_remap(callbacks.ctx, memory.ptr, memory.len, alignment.toByteUnits(), new_len, ret_addr);
+    }
+
+    fn free(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
+        const callbacks: *AllocationCallbacks = @alignCast(@ptrCast(ctx));
+        return callbacks.raw_remap(callbacks.ctx, memory.ptr, memory.len, alignment.toByteUnits(), ret_addr);
+    }
+};
+
 pub const Device = @import("mango/Device.zig");
+pub const DeviceMemory = @import("mango/DeviceMemory.zig");
+pub const Image = @import("mango/Image.zig");
+pub const ImageView = @import("mango/ImageView.zig");
 pub const Buffer = @import("mango/Buffer.zig");
 pub const Pipeline = @import("mango/Pipeline.zig");
 pub const CommandBuffer = @import("mango/CommandBuffer.zig");
-pub const Image = @import("mango/Image.zig");
-pub const ImageView = @import("mango/ImageView.zig");
 pub const Sampler = @import("mango/Sampler.zig");
 pub const Swapchain = @import("mango/Swapchain.zig");
 

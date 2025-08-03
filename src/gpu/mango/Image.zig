@@ -55,8 +55,12 @@ pub const CreateInfo = extern struct {
     array_layers: u8,
 };
 
-
 pub const Data = packed struct {
+    width_minus_one: u10,
+    height_minus_one: u10,
+    usage: Usage,
+    optimally_tiled: bool,
+    _: u3 = 0,
 };
 
 const std = @import("std");
