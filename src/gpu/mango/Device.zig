@@ -42,24 +42,59 @@ pub fn bindBufferMemory(device: *Device, buffer: *mango.Buffer, memory: *mango.D
 
 pub fn createImage(device: *Device, create_info: mango.Image.CreateInfo, allocator: std.mem.Allocator) !*mango.Image {
     _ = device;
-    _ = create_info;
-    _ = allocator;
-    @panic("TODO");
+
+    std.debug.assert(create_info.extent.width >= 8 and create_info.extent.width <= 1024 and std.mem.isAligned(create_info.extent.width, 8) and create_info.extent.height >= 8 and create_info.extent.height <= 1024 and std.mem.isAligned(create_info.extent.height, 8));
+
+    if(create_info.usage.sampled) {
+        std.debug.assert(std.math.isPowerOfTwo(create_info.extent.width) and std.math.isPowerOfTwo(create_info.extent.width) and create_info.tiling == .optimal);
+    }
+
+    if(create_info.usage.color_attachment or create_info.usage.depth_stencil_attachment or create_info.usage.shadow_attachment) {
+        std.debug.assert(create_info.tiling == .optimal);
+    }
+
+    const image = try allocator.create(mango.Image);
+    errdefer allocator.destroy(image);
+
+    image.* = .{
+        .address = .zero,
+        .info = .init(create_info),
+    };
+
+    return image;
 }
 
 pub fn destroyImage(device: *Device, image: *mango.Image, allocator: std.mem.Allocator) void {
     _ = device;
-    _ = image;
-    _ = allocator;
-    @panic("TODO");
+    allocator.destroy(image);
 }
 
 pub fn bindImageMemory(device: *Device, image: *mango.Image, memory: *mango.DeviceMemory, memory_offset: usize) !void {
     _ = device;
-    _ = image;
-    _ = memory;
-    _ = memory_offset;
-    @panic("TODO");
+
+    std.debug.assert(image.address == .zero);
+    // TODO: std.debug.assert(memory_offset + image.size() <= memory.size);
+
+    image.address = .fromAddress(@intFromEnum(memory.physical) + memory_offset);
+}
+
+pub fn createImageView(device: *Device, create_info: mango.ImageView.CreateInfo, allocator: std.mem.Allocator) !*mango.ImageView {
+    _ = device;
+    const image_view = try allocator.create(mango.ImageView);
+    errdefer allocator.destroy(image_view);
+
+    image_view.* = .{
+        .type = create_info.type,
+        .format = create_info.format,
+        .image = create_info.image,
+    };
+
+    return image_view;
+}
+
+pub fn destroyImageView(device: *Device, image_view: *mango.ImageView, allocator: std.mem.Allocator) void {
+    _ = device;
+    allocator.destroy(image_view);
 }
 
 pub fn createGraphicsPipeline(device: *Device, create_info: mango.Pipeline.CreateGraphics, allocator: std.mem.Allocator) !*mango.Pipeline {

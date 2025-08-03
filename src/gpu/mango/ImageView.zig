@@ -16,6 +16,10 @@ pub const CreateInfo = extern struct {
     // TODO: subresource range with the mip levels and array layers (for cubemaps)
 };
 
+type: Type,
+format: mango.Format,
+image: *mango.Image,
+
 const std = @import("std");
 const zitrus = @import("zitrus");
 const gpu = zitrus.gpu;

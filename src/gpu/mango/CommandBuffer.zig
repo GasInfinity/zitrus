@@ -4,11 +4,9 @@
 //! things like clearing an `Image` or copying data is done with the `Device`.
 
 pub const RenderingInfo = extern struct {
-    todo_image_view_extents: mango.Extent2D,
-    
-    // Use image views for these
-    color_attachment: zitrus.PhysicalAddress,
-    depth_stencil_attachment: zitrus.PhysicalAddress,
+    // TODO: This is why we want handles
+    color_attachment: ?*mango.ImageView,
+    depth_stencil_attachment: ?*mango.ImageView,
 };
 
 pub const MultiDrawInfo = extern struct {
@@ -22,12 +20,17 @@ pub const MultiDrawIndexedInfo = extern struct {
     vertex_offset: i32,
 };
 
-pub const State = enum(u8) {
+pub const State = enum {
     initial,
     recording,
     executable,
     pending,
     invalid,
+};
+
+pub const Scope = enum {
+    none,
+    render_pass,
 };
 
 const DirtyDynamicFlags = packed struct(u32) {
@@ -86,6 +89,7 @@ queue: cmd3d.Queue,
 dynamic_state: DynamicData = .{},
 dirty: DirtyDynamicFlags = .{},
 state: State = .initial,
+scope: Scope = .none,
 
 pub fn begin(cmd: *CommandBuffer) void {
     std.debug.assert(cmd.state == .initial);
@@ -97,10 +101,22 @@ pub fn end(cmd: *CommandBuffer) void {
     cmd.state = .executable;
 }
 
-// TODO: this MUST use a mango.ImageView
-// TODO: don't set registers here, have an updateDrawState for dynamic states also
+// TODO: should we cache this also?
 pub fn beginRendering(cmd: *CommandBuffer, rendering_info: *const RenderingInfo) void {
     std.debug.assert(cmd.state == .recording);
+    std.debug.assert(cmd.scope == .none);
+
+    if(rendering_info.depth_stencil_attachment) |depth_stencil| {
+        if(rendering_info.color_attachment) |color| {
+            std.debug.assert(depth_stencil.image.info.width() == color.image.info.width() and depth_stencil.image.info.height() == color.image.info.height());
+        }
+    }
+
+    const width, const height = if(rendering_info.color_attachment) |color| 
+        .{ color.image.info.width(), color.image.info.height() }
+    else if(rendering_info.depth_stencil_attachment) |depth_stencil|
+        .{ depth_stencil.image.info.width(), depth_stencil.image.info.height() }
+    else unreachable;
 
     const queue = &cmd.queue;
 
@@ -110,25 +126,26 @@ pub fn beginRendering(cmd: *CommandBuffer, rendering_info: *const RenderingInfo)
         &internal_regs.framebuffer.color_buffer_location,
         &internal_regs.framebuffer.render_buffer_dimensions,
     }, .{
-        .fromPhysical(rendering_info.depth_stencil_attachment),
-        .fromPhysical(rendering_info.color_attachment),
+        .fromPhysical(if(rendering_info.depth_stencil_attachment) |depth_stencil| depth_stencil.image.address else .zero),
+        .fromPhysical(if(rendering_info.color_attachment) |color| color.image.address else .zero),
         .{
-            .width = @intCast(rendering_info.todo_image_view_extents.width),
-            .height_end = @intCast(rendering_info.todo_image_view_extents.height - 1),
+            .width = @intCast(width),
+            .height_end = @intCast(height - 1),
             // TODO: Expose a flag for flipping?
             .flip_vertically = true,
         }
     });
+    cmd.scope = .render_pass;
 }
 
 pub fn endRendering(cmd: *CommandBuffer) void {
     std.debug.assert(cmd.state == .recording);
+    std.debug.assert(cmd.scope == .render_pass);
     const queue = &cmd.queue;
 
     queue.add(internal_regs, &internal_regs.framebuffer.render_buffer_flush, .init(.trigger));
+    cmd.scope = .none;
 }
-
-// TODO: use mango.Buffer
 
 pub fn bindVertexBuffersSlice(cmd: *CommandBuffer, first_binding: u32, buffers: []const *mango.Buffer, offsets: []const u32) void {
     std.debug.assert(cmd.state == .recording);
@@ -191,6 +208,8 @@ pub fn drawMultiSlice(cmd: *CommandBuffer, vertex_info: []const MultiDrawInfo) v
 
 pub fn drawMulti(cmd: *CommandBuffer, draw_count: usize, vertex_info: [*]const MultiDrawInfo, stride: usize) void {
     std.debug.assert(cmd.state == .recording);
+    std.debug.assert(cmd.scope == .render_pass);
+
     if(draw_count == 0) {
         return;
     }
@@ -256,6 +275,8 @@ pub fn drawMultiIndexedSlice(cmd: *CommandBuffer, index_info: []const MultiDrawI
 
 pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: usize, index_info: [*]const MultiDrawIndexedInfo, stride: usize) void {
     std.debug.assert(cmd.state == .recording);
+    std.debug.assert(cmd.scope == .render_pass);
+
     if(draw_count == 0) {
         return;
     }

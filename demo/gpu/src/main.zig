@@ -102,6 +102,12 @@ pub fn main() !void {
         .size = @sizeOf(Vertex) * 4,
     };
 
+    var color_attachment_image_memory: mango.DeviceMemory = .{
+        .virtual = bot_renderbuf.ptr,
+        .physical = horizon.memory.toPhysical(@intFromPtr(bot_renderbuf.ptr)),
+        .size = bot_renderbuf.len,
+    };
+
     var device: mango.Device = .{};
     const index_buffer = try device.createBuffer(.{
         .size = 0x4,
@@ -120,6 +126,32 @@ pub fn main() !void {
     }, horizon.heap.linear_page_allocator);
     defer device.destroyBuffer(vtx_buffer, horizon.heap.linear_page_allocator);
     try device.bindBufferMemory(vtx_buffer, &vtx_buffer_memory, 0);
+
+    const color_attachment_image = try device.createImage(.{
+        .flags = .{},
+        .type = .@"2d",
+        .tiling = .optimal,
+        .usage = .{
+            .color_attachment = true,
+        },
+        .extent = .{
+            .width = 240,
+            .height = 320,
+        },
+        .format = .a8b8g8r8_unorm,
+        // FIXME: These values are currently ignored
+        .mip_levels = 1,
+        .array_layers = 1,
+    }, horizon.heap.linear_page_allocator);
+    defer device.destroyImage(color_attachment_image, horizon.heap.linear_page_allocator);
+    try device.bindImageMemory(color_attachment_image, &color_attachment_image_memory, 0);
+
+    const color_attachment_image_view = try device.createImageView(.{
+        .type = .@"2d",
+        .format = .a8b8g8r8_unorm,
+        .image = color_attachment_image,
+    }, horizon.heap.linear_page_allocator);
+    defer device.destroyImageView(color_attachment_image_view, horizon.heap.linear_page_allocator);
 
     var cmdbuf: mango.CommandBuffer = .{
         .queue = .initBuffer(raw_command_queue),
@@ -327,21 +359,13 @@ pub fn main() !void {
         cmdbuf.setPrimitiveTopology(.triangle_strip);
 
         {
-            // We'll render to the bottom screen, thats why 320x240 (physically they are 240x320)
+            // We'll render to the bottom screen, images are 240x320 physically.
             cmdbuf.beginRendering(&.{
-                // TODO: As we still dont have resources this must be done.
-                .todo_image_view_extents = .{
-                    .width = 240,
-                    .height = 320,
-                },
-
-                // TODO: Image and ImageView
-                .color_attachment = horizon.memory.toPhysical(@intFromPtr(bot_renderbuf.ptr)),
-                .depth_stencil_attachment = .fromAddress(0),
+                .color_attachment = color_attachment_image_view,
+                .depth_stencil_attachment = null,
             });
             defer cmdbuf.endRendering();
 
-            // index_count, first_index, vertex_offset
             cmdbuf.drawIndexed(4, 0, 0);
 
             // TODO: How do we approach drawing in immediate mode with mango?

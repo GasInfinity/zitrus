@@ -33,15 +33,15 @@ pub const Usage = packed struct(u8) {
     depth_stencil_attachment: bool = false,
     /// Specifies that the image can be used to create an ImageView suitable for use as a shadow attachment.
     shadow_attachment: bool = false,
-    _: u4 = 0,
+    _: u2 = 0,
 };
 
 pub const CreateInfo = extern struct {
     pub const Flags = packed struct(u8) {
         /// Specifies that the image can be used to create an ImageView with a different format from the image.
-        mutable_format: bool,
+        mutable_format: bool = false,
         /// Specifies that the image can be used to create an ImageView of type `cube`
-        cube_compatible: bool,
+        cube_compatible: bool = false,
         _: u6 = 0,
     };
 
@@ -55,13 +55,39 @@ pub const CreateInfo = extern struct {
     array_layers: u8,
 };
 
-pub const Data = packed struct {
+pub const Info = packed struct {
     width_minus_one: u10,
     height_minus_one: u10,
     usage: Usage,
     optimally_tiled: bool,
-    _: u3 = 0,
+    mutable_format: bool,
+    cube_compatible: bool,
+
+    pub fn init(create_info: CreateInfo) Info {
+        return .{
+            .width_minus_one = @intCast(create_info.extent.width - 1),
+            .height_minus_one = @intCast(create_info.extent.height - 1),
+            .usage = create_info.usage,
+            .optimally_tiled = switch (create_info.tiling) {
+                .optimal => true,
+                .linear => false,
+            },
+            .mutable_format = create_info.flags.mutable_format,
+            .cube_compatible = create_info.flags.cube_compatible,
+        };
+    }
+
+    pub fn width(info: Info) usize {
+        return @as(usize, info.width_minus_one) + 1;
+    }
+
+    pub fn height(info: Info) usize {
+        return @as(usize, info.height_minus_one) + 1;
+    }
 };
+
+info: Info,
+address: PhysicalAddress,
 
 const std = @import("std");
 const zitrus = @import("zitrus");
