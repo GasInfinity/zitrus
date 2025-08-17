@@ -1,23 +1,19 @@
-pub const ResultCode = result.ResultCode;
-
 pub fn Result(T: type) type {
     return union(enum) {
         const Res = @This();
 
-        pub const Success = struct { code: ResultCode, value: T };
+        pub const Success = struct { code: result.Code, value: T };
 
         success: Success,
-        failure: ResultCode,
+        failure: result.Code,
 
-        pub inline fn of(code: ResultCode, value: T) Res {
+        pub inline fn of(code: result.Code, value: T) Res {
             return if (code.isSuccess()) .{ .success = .{ .code = code, .value = value } } else .{ .failure = code };
         }
     };
 }
 
 pub const LimitableResource = enum(u32) {
-
-
     commit,
     thread,
     event,
@@ -191,14 +187,14 @@ pub const Synchronization = packed struct(u32) {
     pub fn checkResult(comptime T: type, res: Result(T)) CreationError!T {
         return switch (res) {
             .success => |s| s.value,
-            .failure => |code| if (code == ResultCode.out_of_sync_objects) error.OutOfSynchronizationObjects else unexpectedResult(code),
+            .failure => |code| if (code == result.Code.out_of_sync_objects) error.OutOfSynchronizationObjects else unexpectedResult(code),
         };
     }
 
     pub fn wait(sync: Synchronization, timeout_ns: i64) WaitError!void {
         const sync_result = waitSynchronization(sync, timeout_ns);
 
-        if (sync_result == ResultCode.timeout) {
+        if (sync_result == result.Code.timeout) {
             return error.Timeout;
         }
 
@@ -209,7 +205,7 @@ pub const Synchronization = packed struct(u32) {
 
     pub fn waitMultiple(syncs: []const Synchronization, wait_all: bool, timeout_ns: i64) WaitError!usize {
         return switch (waitSynchronizationMultiple(@ptrCast(syncs), wait_all, timeout_ns)) {
-            .success => |s| if (s.code == ResultCode.timeout) error.Timeout else s.value,
+            .success => |s| if (s.code == result.Code.timeout) error.Timeout else s.value,
             .failure => |code| unexpectedResult(code),
         };
     }
@@ -352,7 +348,7 @@ pub const MemoryBlock = packed struct(u32) {
     pub fn create(address: *align(heap.page_size) anyopaque, size: usize, this: MemoryPermission, other: MemoryPermission) CreationError!MemoryBlock {
         return switch (createMemoryBlock(address, size, this, other)) {
             .success => |s| s.value,
-            .failure => |code| if (code == ResultCode.out_of_memory_blocks) error.OutOfMemoryBlocks else unexpectedResult(code),
+            .failure => |code| if (code == result.Code.out_of_memory_blocks) error.OutOfMemoryBlocks else unexpectedResult(code),
         };
     }
 
@@ -397,7 +393,7 @@ pub const ClientSession = packed struct(u32) {
     pub fn connect(port: [:0]const u8) ConnectionError!ClientSession {
         return switch (connectToPort(port)) {
             .success => |s| s.value,
-            .failure => |code| if (code == ResultCode.port_not_found) error.NotFound else unexpectedResult(code),
+            .failure => |code| if (code == result.Code.port_not_found) error.NotFound else unexpectedResult(code),
         };
     }
 
@@ -405,7 +401,7 @@ pub const ClientSession = packed struct(u32) {
         const req_result = sendSyncRequest(session);
 
         if (!req_result.isSuccess()) {
-            if (req_result == ResultCode.session_closed) {
+            if (req_result == result.Code.session_closed) {
                 return error.ConnectionClosed;
             }
 
@@ -520,7 +516,7 @@ pub fn controlMemory(operation: MemoryOperation, addr0: ?*anyopaque, addr1: ?*an
     var mapped_addr: [*]u8 = undefined;
 
     const code = asm volatile ("svc 0x01"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [mapped_addr] "={r1}" (mapped_addr),
         : [operation] "{r0}" (operation),
           [addr0] "{r1}" (addr0),
@@ -541,7 +537,7 @@ pub fn queryMemory(address: *anyopaque) Result(MemoryQuery) {
     var page_flags: PageFlags = undefined;
 
     const code = asm volatile ("svc 0x02"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [base_vaddr] "={r1}" (base_vaddr),
           [size] "={r2}" (size),
           [permission] "={r3}" (permission),
@@ -563,7 +559,7 @@ pub fn getProcessAffinityMask(process: Process, processor_count: i32) Result(u8)
     var affinity_mask: u8 = undefined;
 
     const code = asm volatile ("svc 0x04"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [affinity_mask] "{r0}" (&affinity_mask),
           [process] "{r1}" (process),
           [processor_count] "{r2}" (processor_count),
@@ -573,9 +569,9 @@ pub fn getProcessAffinityMask(process: Process, processor_count: i32) Result(u8)
     return .of(code, affinity_mask);
 }
 
-pub fn setProcessAffinityMask(process: Process, affinity_mask: *const u8, processor_count: i32) ResultCode {
+pub fn setProcessAffinityMask(process: Process, affinity_mask: *const u8, processor_count: i32) result.Code {
     return asm volatile ("svc 0x05"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [process] "{r0}" (process),
           [affinity_mask] "{r1}" (affinity_mask),
           [processor_count] "{r2}" (processor_count),
@@ -587,7 +583,7 @@ pub fn getProcessIdealProcessor(process: Process) Result(i32) {
     var ideal_processor: i32 = undefined;
 
     const code = asm volatile ("svc 0x06"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [ideal_processor] "={r1}" (ideal_processor),
         : [process] "{r1}" (process),
         : "r2", "r3", "r12", "cc", "memory"
@@ -596,9 +592,9 @@ pub fn getProcessIdealProcessor(process: Process) Result(i32) {
     return .of(code, ideal_processor);
 }
 
-pub fn setProcessIdealProcessor(process: Process, ideal_processor: i32) ResultCode {
+pub fn setProcessIdealProcessor(process: Process, ideal_processor: i32) result.Code {
     return asm volatile ("svc 0x07"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [process] "{r0}" (process),
           [ideal_processor] "{r1}" (ideal_processor),
         : "r1", "r2", "r3", "r12", "cc", "memory"
@@ -610,7 +606,7 @@ pub fn createThread(entry: *fn (ctx: *anyopaque) void, ctx: *anyopaque, stack_to
     var handle: Thread = undefined;
 
     const code = asm volatile ("svc 0x08"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [handle] "={r1}" (handle),
         : [priority] "{r0}" (priority),
           [entry] "{r1}" (entry),
@@ -643,7 +639,7 @@ pub fn getThreadPriority(thread: Thread) Result(u6) {
     var priority: u6 = undefined;
 
     const code = asm volatile ("svc 0x0B"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [priority] "={r1}" (priority),
         : [thread] "{r1}" (thread),
         : "r2", "r3", "r12", "cc", "memory"
@@ -652,9 +648,9 @@ pub fn getThreadPriority(thread: Thread) Result(u6) {
     return .of(code, priority);
 }
 
-pub fn setThreadPriority(thread: Thread, priority: u6) ResultCode {
+pub fn setThreadPriority(thread: Thread, priority: u6) result.Code {
     return asm volatile ("svc 0x0C"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [thread] "{r0}" (thread),
           [priority] "{r1}" (priority),
         : "r1", "r2", "r3", "r12", "cc", "memory"
@@ -665,7 +661,7 @@ pub fn getThreadAffinityMask(thread: Thread, processor_count: i32) Result(u8) {
     var affinity_mask: u8 = undefined;
 
     const code = asm volatile ("svc 0x0D"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [affinity_mask] "{r0}" (&affinity_mask),
           [thread] "{r1}" (thread),
           [processor_count] "{r2}" (processor_count),
@@ -675,9 +671,9 @@ pub fn getThreadAffinityMask(thread: Thread, processor_count: i32) Result(u8) {
     return .of(code, affinity_mask);
 }
 
-pub fn setThreadAffinityMask(thread: Thread, affinity_mask: u8, processor_count: i32) ResultCode {
+pub fn setThreadAffinityMask(thread: Thread, affinity_mask: u8, processor_count: i32) result.Code {
     return asm volatile ("svc 0x0E"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [thread] "{r0}" (thread),
           [affinity_mask] "{r1}" (&affinity_mask),
           [processor_count] "{r2}" (processor_count),
@@ -689,7 +685,7 @@ pub fn getThreadIdealProcessor(thread: Thread) Result(i32) {
     var ideal_processor: i32 = undefined;
 
     const code = asm volatile ("svc 0x0F"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [ideal_processor] "={r1}" (ideal_processor),
         : [thread] "{r1}" (thread),
         : "r2", "r3", "r12", "cc", "memory"
@@ -698,9 +694,9 @@ pub fn getThreadIdealProcessor(thread: Thread) Result(i32) {
     return .of(code, ideal_processor);
 }
 
-pub fn setThreadIdealProcessor(thread: Process, ideal_processor: i32) ResultCode {
+pub fn setThreadIdealProcessor(thread: Process, ideal_processor: i32) result.Code {
     return asm volatile ("svc 0x10"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [thread] "{r0}" (thread),
           [ideal_processor] "{r1}" (ideal_processor),
         : "r1", "r2", "r3", "r12", "cc", "memory"
@@ -715,9 +711,9 @@ pub fn getCurrentProcessorNumber() i32 {
     );
 }
 
-pub fn run(process: Process, startup_info: *const StartupInfo) ResultCode {
+pub fn run(process: Process, startup_info: *const StartupInfo) result.Code {
     return asm volatile ("svc 0x12"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [process] "{r0}" (process),
           [startup_info] "{r1}" (startup_info),
         : "r1", "r2", "r3", "r12", "cc", "memory"
@@ -728,7 +724,7 @@ pub fn createMutex(initial_locked: bool) Result(Mutex) {
     var mutex: Mutex = undefined;
 
     const code = asm volatile ("svc 0x13"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [mutex] "={r1}" (mutex),
         : [initial_locked] "{r0}" (initial_locked),
         : "r2", "r3", "r12", "cc", "memory"
@@ -737,9 +733,9 @@ pub fn createMutex(initial_locked: bool) Result(Mutex) {
     return .of(code, mutex);
 }
 
-pub fn releaseMutex(handle: Mutex) ResultCode {
+pub fn releaseMutex(handle: Mutex) result.Code {
     return asm volatile ("svc 0x14"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [handle] "{r0}" (handle),
         : "r1", "r2", "r3", "r12", "cc", "memory"
     );
@@ -749,7 +745,7 @@ pub fn createSemaphore(initial_count: usize, max_count: usize) Result(Semaphore)
     var semaphore: Semaphore = undefined;
 
     const code = asm volatile ("svc 0x15"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [semaphore] "={r1}" (semaphore),
         : [initial_count] "{r0}" (initial_count),
           [max_count] "{r1}" (max_count),
@@ -763,7 +759,7 @@ pub fn releaseSemaphore(semaphore: Semaphore, release_count: usize) Result(usize
     var count: usize = undefined;
 
     const code = asm volatile ("svc 0x16"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [count] "={r1}" (count),
         : [semaphore] "{r0}" (semaphore),
           [release_count] "{r1}" (release_count),
@@ -777,7 +773,7 @@ pub fn createEvent(reset_type: ResetType) Result(Event) {
     var event: u32 = undefined;
 
     const code = asm volatile ("svc 0x17"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [event] "={r1}" (event),
         : [reset_type] "{r0}" (reset_type),
         : "r2", "r3", "r12", "cc", "memory"
@@ -786,17 +782,17 @@ pub fn createEvent(reset_type: ResetType) Result(Event) {
     return .of(code, @bitCast(event));
 }
 
-pub fn signalEvent(event: Event) ResultCode {
+pub fn signalEvent(event: Event) result.Code {
     return asm volatile ("svc 0x18"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [event] "{r0}" (event),
         : "r1", "r2", "r3", "r12", "cc", "memory"
     );
 }
 
-pub fn clearEvent(event: Event) ResultCode {
+pub fn clearEvent(event: Event) result.Code {
     return asm volatile ("svc 0x19"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [event] "{r0}" (event),
         : "r1", "r2", "r3", "r12", "cc", "memory"
     );
@@ -806,7 +802,7 @@ pub fn createTimer(reset_type: ResetType) Result(Timer) {
     var timer: Timer = undefined;
 
     const code = asm volatile ("svc 0x1A"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [timer] "={r1}" (timer),
         : [reset_type] "{r0}" (reset_type),
         : "r2", "r3", "r12", "cc", "memory"
@@ -815,12 +811,12 @@ pub fn createTimer(reset_type: ResetType) Result(Timer) {
     return .of(code, timer);
 }
 
-pub fn setTimer(timer: Timer, initial_ns: i64, interval: i64) ResultCode {
+pub fn setTimer(timer: Timer, initial_ns: i64, interval: i64) result.Code {
     const initial_ns_u: u64 = @bitCast(initial_ns);
     const interval_u: u64 = @bitCast(interval);
 
     return asm volatile ("svc 0x1B"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [timer] "{r0}" (timer),
           [initial_ns_low] "{r2}" (@as(u32, @truncate(initial_ns_u))),
           [initial_ns_high] "{r3}" (@as(u32, @truncate(initial_ns_u >> 32))),
@@ -830,17 +826,17 @@ pub fn setTimer(timer: Timer, initial_ns: i64, interval: i64) ResultCode {
     );
 }
 
-pub fn cancelTimer(timer: Timer) ResultCode {
+pub fn cancelTimer(timer: Timer) result.Code {
     return asm volatile ("svc 0x1C"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [timer] "{r0}" (timer),
         : "r1", "r2", "r3", "r12", "cc", "memory"
     );
 }
 
-pub fn clearTimer(timer: Timer) ResultCode {
+pub fn clearTimer(timer: Timer) result.Code {
     return asm volatile ("svc 0x1D"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [timer] "{r0}" (timer),
         : "r1", "r2", "r3", "r12", "cc", "memory"
     );
@@ -850,7 +846,7 @@ pub fn createMemoryBlock(address: [*]align(heap.page_size) u8, size: usize, this
     var memory_block: MemoryBlock = undefined;
 
     const code = asm volatile ("svc 0x1E"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [memory_block] "={r1}" (memory_block),
         : [address] "{r0}" (address),
           [size] "{r1}" (size),
@@ -862,9 +858,9 @@ pub fn createMemoryBlock(address: [*]align(heap.page_size) u8, size: usize, this
     return .{ .code = code, .value = memory_block };
 }
 
-pub fn mapMemoryBlock(memory_block: MemoryBlock, address: [*]align(heap.page_size) u8, this: MemoryPermission, other: MemoryPermission) ResultCode {
+pub fn mapMemoryBlock(memory_block: MemoryBlock, address: [*]align(heap.page_size) u8, this: MemoryPermission, other: MemoryPermission) result.Code {
     return asm volatile ("svc 0x1F"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [memory_block] "{r0}" (memory_block),
           [address] "{r1}" (address),
           [permissions] "{r2}" (this),
@@ -873,9 +869,9 @@ pub fn mapMemoryBlock(memory_block: MemoryBlock, address: [*]align(heap.page_siz
     );
 }
 
-pub fn unmapMemoryBlock(memory_block: MemoryBlock, address: [*]align(heap.page_size) u8) ResultCode {
+pub fn unmapMemoryBlock(memory_block: MemoryBlock, address: [*]align(heap.page_size) u8) result.Code {
     return asm volatile ("svc 0x20"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [memory_block] "{r0}" (memory_block),
           [address] "{r1}" (address),
         : "r1", "r2", "r3", "r12", "cc", "memory"
@@ -886,7 +882,7 @@ pub fn createAddressArbiter() Result(AddressArbiter) {
     var arbiter: AddressArbiter = undefined;
 
     const code = asm volatile ("svc 0x21"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [arbiter] "={r1}" (arbiter),
         :
         : "r2", "r3", "r12", "cc", "memory"
@@ -895,11 +891,11 @@ pub fn createAddressArbiter() Result(AddressArbiter) {
     return .of(code, arbiter);
 }
 
-pub fn arbitrateAddress(arbiter: AddressArbiter, address: *i32, arbitration_type: Arbitration.Type, value: i32, timeout_ns: i64) ResultCode {
+pub fn arbitrateAddress(arbiter: AddressArbiter, address: *i32, arbitration_type: Arbitration.Type, value: i32, timeout_ns: i64) result.Code {
     const timeout_ns_u: u64 = @bitCast(timeout_ns);
 
     return asm volatile ("svc 0x22"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [arbiter] "{r0}" (arbiter),
           [address] "{r1}" (address),
           [type] "{r2}" (arbitration_type),
@@ -910,19 +906,19 @@ pub fn arbitrateAddress(arbiter: AddressArbiter, address: *i32, arbitration_type
     );
 }
 
-pub fn closeHandle(handle: Object) ResultCode {
+pub fn closeHandle(handle: Object) result.Code {
     return asm volatile ("svc 0x23"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [handle] "{r0}" (handle),
         : "r1", "r2", "r3", "r12", "cc", "memory"
     );
 }
 
-pub fn waitSynchronization(sync: Synchronization, timeout_ns: i64) ResultCode {
+pub fn waitSynchronization(sync: Synchronization, timeout_ns: i64) result.Code {
     const timeout_ns_u: u64 = @bitCast(timeout_ns);
 
     return asm volatile ("svc 0x24"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [sync] "{r0}" (sync),
           [timeout_low] "{r2}" (@as(u32, @truncate(timeout_ns_u))),
           [timeout_high] "{r3}" (@as(u32, @truncate(timeout_ns_u >> 32))),
@@ -935,7 +931,7 @@ pub fn waitSynchronizationMultiple(handles: []const Synchronization, wait_all: b
     var id: usize = 0;
 
     const code = asm volatile ("svc 0x25"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [id] "={r1}" (id),
         : [handles] "{r1}" (handles.ptr),
           [handles_len] "{r2}" (handles.len),
@@ -954,7 +950,7 @@ pub fn duplicateHandle(original: Object) Result(Object) {
     var duplicated: Object = undefined;
 
     const code = asm volatile ("svc 0x27"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [duplicated] "={r1}" (duplicated),
         : [original] "{r0}" (original),
         : "r2", "r3", "r12", "cc", "memory"
@@ -984,7 +980,7 @@ pub fn getSystemInfo(info: SystemInfo.Type, param: u32) Result(i64) {
     var hi: u32 = undefined;
 
     const code = asm volatile ("svc 0x2A"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [lo] "={r1}" (lo),
           [hi] "={r2}" (hi),
         : [type] "{r1}" (info),
@@ -1000,7 +996,7 @@ pub fn getProcessInfo(process: Process, info: ProcessInfoType) Result(i64) {
     var hi: u32 = undefined;
 
     const code = asm volatile ("svc 0x2B"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [lo] "={r1}" (lo),
           [hi] "={r2}" (hi),
         : [process] "{r1}" (process),
@@ -1017,7 +1013,7 @@ pub fn connectToPort(port: [:0]const u8) Result(ClientSession) {
     var session: ClientSession = undefined;
 
     const code = asm volatile ("svc 0x2D"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [session] "={r1}" (session),
         : [unknown] "{r0}" (0),
           [port] "{r1}" (port.ptr),
@@ -1032,9 +1028,9 @@ pub fn connectToPort(port: [:0]const u8) Result(ClientSession) {
 // svc sendSyncRequest3() stubbed 0x30
 // svc sendSyncRequest4() stubbed 0x31
 
-pub fn sendSyncRequest(session: ClientSession) ResultCode {
+pub fn sendSyncRequest(session: ClientSession) result.Code {
     return asm volatile ("svc 0x32"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [session] "{r0}" (session),
         : "r1", "r2", "r3", "r12", "cc", "memory"
     );
@@ -1044,7 +1040,7 @@ pub fn openProcess(process_id: u32) Result(Process) {
     var process: Process = undefined;
 
     const code = asm volatile ("svc 0x33"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [process] "={r1}" (process),
         : [process_id] "{r1}" (process_id),
         : "r2", "r3", "r12", "cc", "memory"
@@ -1057,7 +1053,7 @@ pub fn openThread(process: Process, thread_id: u32) Result(Thread) {
     var thread: Thread = undefined;
 
     const code = asm volatile ("svc 0x34"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [thread] "={r1}" (thread),
         : [process] "{r1}" (process),
           [thread_id] "{r2}" (thread_id),
@@ -1071,7 +1067,7 @@ pub fn getProcessId(process: Process) Result(u32) {
     var id: u32 = undefined;
 
     const code = asm volatile ("svc 0x35"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [id] "={r1}" (id),
         : [process] "{r1}" (process),
         : "r2", "r3", "r12", "cc", "memory"
@@ -1084,7 +1080,7 @@ pub fn getThreadProcessId(thread: Thread) Result(u32) {
     var id: u32 = undefined;
 
     const code = asm volatile ("svc 0x36"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [id] "={r1}" (id),
         : [thread] "{r1}" (thread),
         : "r2", "r3", "r12", "cc", "memory"
@@ -1097,7 +1093,7 @@ pub fn getThreadId(thread: Thread) Result(u32) {
     var id: u32 = undefined;
 
     const code = asm volatile ("svc 0x37"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [id] "={r1}" (id),
         : [thread] "{r1}" (thread),
         : "r2", "r3", "r12", "cc", "memory"
@@ -1110,7 +1106,7 @@ pub fn getResourceLimit(process: Process) Result(ResouceLimit) {
     var resource_limit: ResouceLimit = undefined;
 
     const code = asm volatile ("svc 0x38"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [resource_limit] "={r1}" (resource_limit),
         : [process] "{r1}" (process),
         : "r2", "r3", "r12", "cc", "memory"
@@ -1119,11 +1115,11 @@ pub fn getResourceLimit(process: Process) Result(ResouceLimit) {
     return .of(code, resource_limit);
 }
 
-pub fn getResourceLimitLimitValues(values: []i64, resource_limit: ResouceLimit, names: []LimitableResource) ResultCode {
+pub fn getResourceLimitLimitValues(values: []i64, resource_limit: ResouceLimit, names: []LimitableResource) result.Code {
     std.debug.assert(values.len == names.len);
 
     return asm volatile ("svc 0x39"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [values_ptr] "{r0}" (values.ptr),
           [resource_limit] "{r1}" (resource_limit),
           [names_ptr] "{r2}" (names.ptr),
@@ -1132,11 +1128,11 @@ pub fn getResourceLimitLimitValues(values: []i64, resource_limit: ResouceLimit, 
     );
 }
 
-pub fn getResourceLimitCurrentValues(values: []i64, resource_limit: ResouceLimit, names: []LimitableResource) ResultCode {
+pub fn getResourceLimitCurrentValues(values: []i64, resource_limit: ResouceLimit, names: []LimitableResource) result.Code {
     std.debug.assert(values.len == names.len);
 
     return asm volatile ("svc 0x3A"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [values_ptr] "{r0}" (values.ptr),
           [resource_limit] "{r1}" (resource_limit),
           [names_ptr] "{r2}" (names.ptr),
@@ -1181,7 +1177,7 @@ pub fn createPort(name: [:0]const u8, max_sessions: i16) Result(Port) {
     var client_port: ClientPort = undefined;
 
     const code = asm volatile ("svc 0x47"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [server_port] "={r1}" (server_port),
           [client_port] "={r2}" (client_port),
         : [name] "{r2}" (name),
@@ -1196,7 +1192,7 @@ pub fn createSessionToPort(port: ClientPort) Result(ClientSession) {
     var session: ClientSession = undefined;
 
     const code = asm volatile ("svc 0x48"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [session] "={r1}" (session),
         : [port] "{r1}" (port),
         : "r2", "r3", "r12", "cc", "memory"
@@ -1210,7 +1206,7 @@ pub fn createSession() Result(Session) {
     var client_session: ClientSession = undefined;
 
     const code = asm volatile ("svc 0x49"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [server_session] "={r1}" (server_session),
           [client_session] "={r2}" (client_session),
         :
@@ -1224,7 +1220,7 @@ pub fn acceptSession(port: ServerPort) Result(ServerSession) {
     var session: ServerSession = undefined;
 
     const code = asm volatile ("svc 0x4A"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [session] "={r1}" (session),
         : [port] "{r1}" (port),
         : "r2", "r3", "r12", "cc", "memory"
@@ -1242,7 +1238,7 @@ pub fn replyAndReceive(port_sessions: []Object, reply_target: ServerSession) Res
     var index: i32 = undefined;
 
     const code = asm volatile ("svc 0x4F"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
           [index] "={r1}" (index),
         : [port_sessions] "{r1}" (port_sessions.ptr),
           [port_sessions_len] "{r2}" (port_sessions.len),
@@ -1253,9 +1249,9 @@ pub fn replyAndReceive(port_sessions: []Object, reply_target: ServerSession) Res
     return .of(code, index);
 }
 
-pub fn bindInterrupt(id: InterruptId, int: Interruptable, priority: i32, isHighActive: bool) ResultCode {
+pub fn bindInterrupt(id: InterruptId, int: Interruptable, priority: i32, isHighActive: bool) result.Code {
     return asm volatile ("svc 0x50"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [id] "{r0}" (id),
           [int] "{r1}" (int),
           [priority] "{r2}" (priority),
@@ -1264,18 +1260,18 @@ pub fn bindInterrupt(id: InterruptId, int: Interruptable, priority: i32, isHighA
     );
 }
 
-pub fn unbindInterrupt(id: InterruptId, int: Interruptable) ResultCode {
+pub fn unbindInterrupt(id: InterruptId, int: Interruptable) result.Code {
     return asm volatile ("svc 0x51"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [id] "{r0}" (id),
           [int] "{r1}" (int),
         : "r1", "r2", "r3", "r12", "cc", "memory"
     );
 }
 
-pub fn invalidateProcessDataCache(process: Process, data: []u8) ResultCode {
+pub fn invalidateProcessDataCache(process: Process, data: []u8) result.Code {
     return asm volatile ("svc 0x52"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [process] "{r0}" (process),
           [data_ptr] "{r1}" (data.ptr),
           [data_len] "{r2}" (data.len),
@@ -1283,9 +1279,9 @@ pub fn invalidateProcessDataCache(process: Process, data: []u8) ResultCode {
     );
 }
 
-pub fn storeProcessDataCache(process: Process, data: []const u8) ResultCode {
+pub fn storeProcessDataCache(process: Process, data: []const u8) result.Code {
     return asm volatile ("svc 0x53"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [process] "{r0}" (process),
           [data_ptr] "{r1}" (data.ptr),
           [data_len] "{r2}" (data.len),
@@ -1293,9 +1289,9 @@ pub fn storeProcessDataCache(process: Process, data: []const u8) ResultCode {
     );
 }
 
-pub fn flushProcessDataCache(process: Process, data: []const u8) ResultCode {
+pub fn flushProcessDataCache(process: Process, data: []const u8) result.Code {
     return asm volatile ("svc 0x54"
-        : [code] "={r0}" (-> ResultCode),
+        : [code] "={r0}" (-> result.Code),
         : [process] "{r0}" (process),
           [data_ptr] "{r1}" (data.ptr),
           [data_len] "{r2}" (data.len),
@@ -1315,8 +1311,25 @@ pub fn breakpoint() noreturn {
     asm volatile ("svc 0xFF" ::: "r0", "r1", "r2", "r3", "r12", "cc", "memory");
 }
 
+var sbrk_heap_top: usize = memory.heap_begin;
+
+pub fn sbrk(n: usize) usize {
+    const aligned_n = std.mem.alignForward(usize, n, heap.page_size);
+    const current_heap_top = sbrk_heap_top;
+
+    sbrk_heap_top += aligned_n;
+    return switch(controlMemory(.{
+        .area = .all,
+        .fundamental_operation = .commit,
+        .linear = false,
+    }, @ptrFromInt(current_heap_top), null, aligned_n, .rw)) {
+        .failure => 0,
+        .success => current_heap_top,
+    };
+}
+
 pub const UnexpectedError = error{Unexpected};
-pub fn unexpectedResult(code: ResultCode) UnexpectedError {
+pub fn unexpectedResult(code: result.Code) UnexpectedError {
     // OutputDebugString?
     _ = code;
     return error.Unexpected;
@@ -1329,12 +1342,13 @@ comptime {
 }
 
 pub const heap = @import("horizon/heap.zig");
+pub const result = @import("horizon/result.zig");
 pub const environment = @import("horizon/environment.zig");
-pub const result = zitrus_tooling.horizon.result;
 pub const memory = @import("horizon/memory.zig");
 pub const config = @import("horizon/config.zig");
 pub const ipc = @import("horizon/ipc.zig");
 pub const tls = @import("horizon/tls.zig");
+pub const fmt = @import("horizon/fmt.zig");
 
 pub const ServiceManager = @import("horizon/ServiceManager.zig");
 pub const ErrorDisplayManager = @import("horizon/ErrorDisplayManager.zig");
@@ -1342,4 +1356,3 @@ pub const ErrorDisplayManager = @import("horizon/ErrorDisplayManager.zig");
 pub const services = @import("horizon/services.zig");
 
 const std = @import("std");
-const zitrus_tooling = @import("zitrus-tooling");

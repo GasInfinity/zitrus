@@ -81,4 +81,4 @@ const ipc = horizon.ipc;
 const Event = horizon.Event;
 const Semaphore = horizon.Semaphore;
 const Session = horizon.ClientSession;
-const ResultCode = horizon.ResultCode;
+const ResultCode = horizon.result.Code;

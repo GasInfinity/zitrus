@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
-        .target = zitrus_mod.resolved_target,
+        .target = b.resolveTargetQuery(zitrus.target.horizon_arm11),
         .optimize = optimize,
         .single_threaded = true,
     });
@@ -24,7 +24,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 
     const panic_smdh = zitrus.addMakeSmdh(b, .{
-        .name = "panic.smdh",
+        .name = "panic.icn",
         .settings = b.path("smdh-settings.ziggy"),
     });
 

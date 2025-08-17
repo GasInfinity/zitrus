@@ -1,11 +1,12 @@
 const Self = @This();
 
 const Subcommand = enum { @"asm", disasm };
-const OutputFormat = enum { bin, shbin };
+const OutputFormat = enum {
+    zpsh,
+};
 
 pub const description =
-    \\assemble / dissassemble PICA200 zitrus shader assembly.
-    // \\compile PICA200 zitrus shader lang. TODO
+    \\assemble / dissassemble zitrus PICA200 shader assembly.
 ;
 
 pub const Arguments = struct {
@@ -13,22 +14,21 @@ pub const Arguments = struct {
 
     command: union(Subcommand) {
         pub const descriptions = .{
-            .@"asm" = "assemble a PICA200 zitrus shader assembly file",
+            .@"asm" = "assemble a zpsm file",
             .disasm = "TODO: disassemble PICA200 shader assembly",
         };
 
         @"asm": struct {
             pub const descriptions = .{
-                .summary = "(DEBUG) Show a summary of the state of the assembled file",
-                .ofmt = "TODO: output format",
+                .ofmt = "output binary format",
             };
 
             pub const switches = .{
-                .summary = 's',
+                .output = 'o',
             };
 
-            summary: bool = false,
-            ofmt: OutputFormat = .shbin,
+            ofmt: OutputFormat = .zpsh,
+            output: []const u8,
 
             positional: struct {
                 pub const descriptions = .{
@@ -36,31 +36,186 @@ pub const Arguments = struct {
                 };
 
                 file: []const u8,
-                trailing: []const []const u8,
+                // trailing: []const []const u8,
             },
         },
         disasm: struct {},
     },
 };
 
+const Diagnostic = struct {
+    pub const Location = struct {
+        start: u32,
+        end: u32,
+    };
+
+    const unknown_directive: Diagnostic = .init("unknown directive");
+    const invalid_register: Diagnostic = .init("invalid register");
+    const expected_address_register: Diagnostic = .init("expected address register (a)");
+    const invalid_address_register_mask: Diagnostic = .init("invalid address register mask (xy)");
+    const expected_src_register: Diagnostic = .init("expected source register (v0-v15, r0-r15, f0-f95)");
+    const expected_limited_src_register: Diagnostic = .init("expected limited source register (v0-v15, r0-r15)");
+    const expected_dst_register: Diagnostic = .init("expected destination register (o0-o15, r0-r15)");
+    const expected_bool_register: Diagnostic = .init("expected boolean register (b0-b15)");
+    const expected_int_register: Diagnostic = .init("expected integer register (i0-i3)");
+    const expected_output_register: Diagnostic = .init("expected output register (o0-o15)");
+    const expected_uniform_register: Diagnostic = .init("expected uniform constant register (f0-f95, i0-i3, b0-b15)");
+    const invalid_mask: Diagnostic = .init("invalid destination mask (xyzw)");
+    const swizzled_mask: Diagnostic = .init("destination mask is swizzled");
+    const invalid_swizzle: Diagnostic = .init("invalid swizzle");
+    const cannot_swizzle: Diagnostic = .init("cannot swizzle register in alias");
+    const expected_number: Diagnostic = .init("expected a valid number");
+    const number_too_big: Diagnostic = .init("expected a smaller number");
+
+    const expected_semantic: Diagnostic = .init("expected a semantic (position, normal_quaternion, color, texture_coordinate_x, view, dummy)");
+    const invalid_semantic_component: Diagnostic = .init("swizzled a semantic component that does not exist");
+    const output_has_semantic: Diagnostic = .init("output register component already has a semantic component");
+    const expected_primitive: Diagnostic = .init("expected a primitive operation (none, emmiting)");
+    const expected_winding: Diagnostic = .init("expected a winding (ccw, cw)");
+    const expected_comparison: Diagnostic = .init("expected a comparison (eq, ne, lt, le, gt, ge)");
+    const expected_condition: Diagnostic = .init("expected a condition (x, y, and, or)");
+    const expected_bool: Diagnostic = .init("expected a boolean value (true, false)");
+    const expected_shader_type: Diagnostic = .init("expected a shader type (vertex, geometry)");
+
+    const undefined_label: Diagnostic = .init("undefined label");
+    const redefined_label: Diagnostic = .init("redefined label");
+    const label_too_far: Diagnostic = .init("label is too far from current instruction");
+    const label_range_too_big: Diagnostic = .init("label range has too many instructions");
+    const redefined_entry: Diagnostic = .init("redefined entrypoint");
+
+    const expected_directive_or_label_or_mnemonic: Diagnostic = .init("expected a directive, label or mnemonic");
+    const expected_token: Diagnostic = .init("expected a specific token");
+
+    message: []const u8,
+    tok_ctx: ?shader.as.Token.Tag = null,
+    loc: ?Location = null,
+
+    pub fn init(message: []const u8) Diagnostic {
+        return .{ .message = message };
+    }
+
+    pub fn withTokenContext(diagnostic: Diagnostic, tok_ctx: shader.as.Token.Tag) Diagnostic {
+        return .{
+            .message = diagnostic.message,
+            .tok_ctx = tok_ctx,
+            .loc = diagnostic.loc,
+        };
+    }
+
+    pub fn withLocation(diagnostic: Diagnostic, loc: Location) Diagnostic {
+        return .{
+            .message = diagnostic.message,
+            .tok_ctx = diagnostic.tok_ctx,
+            .loc = loc,
+        };
+    }
+
+    pub fn report(diagnostic: Diagnostic, writer: std.io.AnyWriter, tty_cfg: std.io.tty.Config, file_name: []const u8, source: [:0]const u8) !void {
+        try tty_cfg.setColor(writer, .bold);
+        try tty_cfg.setColor(writer, .bright_white);
+
+        try writer.print("{s}", .{file_name});
+        
+        if(diagnostic.loc) |loc| {
+            const line = std.mem.count(u8, source[0..loc.start], &.{'\n'}) + 1;
+            const column = (loc.start - (std.mem.lastIndexOfScalar(u8, source[0..loc.start], '\n') orelse 0)) + 1;
+            
+            try writer.print(":{}:{}: ", .{line, column});
+        } else try writer.writeAll(": ");
+
+        try tty_cfg.setColor(writer, .bright_red);
+        try writer.writeAll("error: ");
+        
+        try tty_cfg.setColor(writer, .bright_white);
+        try writer.writeAll(diagnostic.message);
+
+        if(diagnostic.tok_ctx) |tag| {
+            _ = try writer.print(" '{s}' ", .{@tagName(tag)});
+        }
+
+        _ = try writer.writeByte('\n');
+
+        if(diagnostic.loc) |loc| {
+            const column_start = if(std.mem.lastIndexOfScalar(u8, source[0..loc.start], '\n')) |col_start| col_start + 1 else 0;
+            const column_end = (std.mem.indexOfScalarPos(u8, source, loc.start, '\n') orelse (source.len - 1));
+
+            try tty_cfg.setColor(writer, .reset);
+            try writer.print("{s}\n", .{source[column_start..column_end]});
+            
+            try tty_cfg.setColor(writer, .bright_green);
+            try writer.writeByteNTimes(' ', (loc.start - column_start));
+            try writer.writeByte('^');
+            try writer.writeByte('\n');
+        }
+
+        try tty_cfg.setColor(writer, .reset);
+    }
+
+    pub fn fromError(err: Assembler.Error, assembled: Assembled) Diagnostic {
+        const tok_i = err.tok_i;
+        const tok_start = assembled.tokenStart(tok_i);
+        const tok_slice = assembled.tokenSlice(tok_i);
+        const tok_end = tok_start + @as(u32, @intCast(tok_slice.len));
+        
+        const loc: Location = .{
+            .start = tok_start,
+            .end = tok_end,
+        };
+
+        return switch (err.tag) {
+            .unknown_directive => unknown_directive.withLocation(loc),
+            .invalid_register => invalid_register.withLocation(loc),
+            .expected_address_register => expected_address_register.withLocation(loc),
+            .invalid_address_register_mask => invalid_address_register_mask.withLocation(loc),
+            .expected_src_register => expected_src_register.withLocation(loc),
+            .expected_limited_src_register => expected_limited_src_register.withLocation(loc),
+            .expected_dst_register => expected_dst_register.withLocation(loc),
+            .expected_bool_register => expected_bool_register.withLocation(loc),
+            .expected_int_register => expected_int_register.withLocation(loc),
+            .expected_output_register => expected_output_register.withLocation(loc),
+            .expected_uniform_register => expected_uniform_register.withLocation(loc),
+            .invalid_mask => invalid_mask.withLocation(loc),
+            .swizzled_mask => swizzled_mask.withLocation(loc),
+            .invalid_swizzle => invalid_swizzle.withLocation(loc),
+            .cannot_swizzle => cannot_swizzle.withLocation(loc),
+            .expected_number => expected_number.withLocation(loc),
+            .number_too_big => number_too_big.withLocation(loc),
+            .expected_semantic => expected_semantic.withLocation(loc),
+            .invalid_semantic_component => invalid_semantic_component.withLocation(loc),
+            .output_has_semantic => output_has_semantic.withLocation(loc),
+            .expected_primitive => expected_primitive.withLocation(loc),
+            .expected_winding => expected_winding.withLocation(loc),
+            .expected_comparison => expected_comparison.withLocation(loc),
+            .expected_condition => expected_condition.withLocation(loc),
+            .expected_boolean => expected_bool.withLocation(loc),
+            .expected_shader_type => expected_shader_type.withLocation(loc),
+            .redefined_label => redefined_label.withLocation(loc),
+            .undefined_label => undefined_label.withLocation(loc),
+            .label_too_far => label_too_far.withLocation(loc),
+            .label_range_too_big => label_range_too_big.withLocation(loc),
+            .redefined_entry => redefined_entry.withLocation(loc),
+            .expected_directive_or_label_or_mnemonic => expected_directive_or_label_or_mnemonic.withLocation(loc),
+            .expected_token => expected_token.withLocation(loc).withTokenContext(err.expected_tok),
+        };
+    }
+};
+
 pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
     const cwd = std.fs.cwd();
 
+    const stderr_raw = std.io.getStdErr();
+    var stderr_buf = std.io.bufferedWriter(stderr_raw.writer());
+    const stderr = stderr_buf.writer();
+
     switch (arguments.command) {
         .@"asm" => |asm_options| {
-            const extra_files_paths = asm_options.positional.trailing;
-
-            if (extra_files_paths.len > 0) {
-                @panic("TODO: assemble multiple files");
-            }
-
             const file_path = asm_options.positional.file;
             const file = cwd.openFile(file_path, .{ .mode = .read_only }) catch |err| {
                 std.debug.print("could not open input file '{s}': {s}\n", .{ file_path, @errorName(err) });
                 return 1;
             };
 
-            const file_source = file.readToEndAlloc(arena, std.math.maxInt(u32)) catch |err| switch (err) {
+            const file_source = file.readToEndAllocOptions(arena, std.math.maxInt(u32), null, @alignOf(usize), 0) catch |err| switch (err) {
                 error.FileTooBig => {
                     std.debug.print("could not read file as its larger than 4GB", .{});
                     return 1;
@@ -69,151 +224,124 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
             };
             defer arena.free(file_source);
 
-            var assembler: Assembler = .empty;
-            defer assembler.deinit(arena);
+            var assembled: Assembled = try .assemble(arena, file_source);
+            defer assembled.deinit(arena);
 
-            assembler.assemble(arena, file_source) catch |err| switch (err) {
-                error.Syntax => {
-                    std.debug.print("errors found while assembling file {s}:\n", .{file_path});
+            const tty_cfg = std.io.tty.detectConfig(stderr_raw);
 
-                    for (assembler.diagnostics.items) |d| {
-                        std.debug.print("{}\n", .{d});
+            if(assembled.errors.len > 0) {
+                for (assembled.errors) |err| {
+                    const diagnostic: Diagnostic = .fromError(err, assembled);
+
+                    try diagnostic.report(stderr.any(), tty_cfg, file_path, file_source);
+                }
+
+                try stderr_buf.flush();
+                return 1;
+            }
+
+            const output_path = asm_options.output;
+            const output_file = try cwd.createFile(output_path, .{});
+
+            var output_buffered = std.io.bufferedWriter(output_file.writer());
+            const out = output_buffered.writer();
+
+            switch (asm_options.ofmt) {
+                .zpsh => {
+                    if(assembled.encoded.instructions.items.len > 512) {
+                        try tty_cfg.setColor(stderr, .red);
+                        try stderr.print("cannot output zpsh, encoded shader has too many instructions ({})", .{assembled.encoded.instructions.items.len});
+                        return 1;
                     }
 
-                    return 1;
+                    if(assembled.entries.count() > std.math.maxInt(u8)) {
+                        try tty_cfg.setColor(stderr, .red);
+                        try stderr.print("cannot output zpsh, encoded shader has too many entrypoints ({})", .{assembled.entries.count()});
+                        return 1;
+                    }
+
+                    const encoded = &assembled.encoded;
+
+                    var interned_strings_size: u32 = 0;
+                    var entry_it = assembled.entries.iterator();
+                    while(entry_it.next()) |entrypoint| {
+                        interned_strings_size += @intCast(entrypoint.key_ptr.*.len + 1);
+                    }
+
+                    var string_table: std.ArrayListUnmanaged(u8) = try .initCapacity(arena, interned_strings_size);
+                    defer string_table.deinit(arena);
+
+                    entry_it.reset();
+                    while(entry_it.next()) |entrypoint| {
+                        string_table.appendSliceAssumeCapacity(entrypoint.key_ptr.*);
+                        string_table.appendAssumeCapacity(0);
+                    }
+
+                    try out.writeStructEndian(zpsh.Header{
+                        .shader_size = .init(encoded.instructions.items.len, encoded.allocated_descriptors),
+                        .string_table_size = interned_strings_size,
+                        .entrypoints = @intCast(assembled.entries.count()),
+                    }, .little);
+                    
+                    try out.writeAll(std.mem.sliceAsBytes(encoded.instructions.items));
+                    try out.writeAll(std.mem.sliceAsBytes(encoded.descriptors[0..encoded.allocated_descriptors]));
+                    try out.writeAll(string_table.items); 
+
+                    var current_string_offset: u32 = 0;
+                    
+                    entry_it.reset();
+                    while(entry_it.next()) |entrypoint| {
+                        const processed_info = entrypoint.value_ptr.*;
+
+                        try out.writeStructEndian(zpsh.EntrypointHeader{
+                            .name_string_offset = @intCast(current_string_offset),
+                            .code_offset = processed_info.offset,
+                            .info = .{
+                                .type = .vertex,
+                            },
+                            .boolean_constant_mask = @bitCast(assembled.bool_const.bits.mask),
+                            .floating_constants = @intCast(assembled.flt_const.count()),
+                            .output_integer_info = .{
+                                .integer_constants = @intCast(assembled.int_const.count()),
+                                .outputs = @intCast(assembled.outputs.count()),
+                            },
+                        }, .little);
+
+                        // NOTE: We can do this because two entrypoints cannot have the same name.
+                        current_string_offset += @intCast(entrypoint.key_ptr.len + 1); 
+                        
+                        var flt_it = assembled.flt_const.iterator();
+                        while (flt_it.next()) |entry| {
+                            try out.writeStructEndian(zpsh.EntrypointHeader.FloatingConstantEntry{
+                                .info = .init(entry.key),
+                                .value = entry.value.*,
+                            }, .little);
+                        }
+
+                        var int_it = assembled.int_const.iterator();
+                        while (int_it.next()) |entry| {
+                            try out.writeStructEndian(zpsh.EntrypointHeader.IntegerConstantEntry{
+                                .info = .init(entry.key),
+                                .value = entry.value.*,
+                            }, .little);
+                        }
+
+                        var out_it = assembled.outputs.iterator();
+                        while (out_it.next()) |entry| {
+                            try out.writeInt(u32, @bitCast(zpsh.EntrypointHeader.OutputEntry{
+                                .reg = entry.key,
+                                .x = entry.value.x,
+                                .y = entry.value.y,
+                                .z = entry.value.z,
+                                .w = entry.value.w,
+                            }), .little);
+                        }
+                    }
+
+                    try output_buffered.flush();
+                    return 0;
                 },
-                else => {
-                    std.debug.print("error while assembling file '{s}': {s}\n", .{ file_path, @errorName(err) });
-                    return 1;
-                },
-            };
-
-            if (asm_options.summary) {
-                var labels_iterator = assembler.labels.iterator();
-                std.debug.print("LABELS:\n", .{});
-                while (labels_iterator.next()) |label| {
-                    std.debug.print("{s}: 0x{X}\n", .{ label.key_ptr.*, label.value_ptr.* });
-                }
-
-                std.debug.print("INSTRUCTIONS:\n", .{});
-                for (assembler.encoder.instructions.items, 0..) |ins, i| {
-                    std.debug.print("0x{X}: {b}\n", .{ i, @as(u32, @bitCast(ins)) });
-                }
-
-                std.debug.print("FLOATING CONSTANTS:\n", .{});
-                var f_it = assembler.floating_constants.iterator();
-                while (f_it.next()) |e| {
-                    std.debug.print("{} -> {any}\n", .{ e.key, e.value.* });
-                }
-
-                std.debug.print("INTEGER CONSTANTS:\n", .{});
-                var i_it = assembler.integer_constants.iterator();
-                while (i_it.next()) |e| {
-                    std.debug.print("{} -> {any}\n", .{ e.key, e.value.* });
-                }
-
-                std.debug.print("BOOLEAN CONSTANTS:\n", .{});
-                var b_it = assembler.boolean_constants.iterator();
-                while (b_it.next()) |e| {
-                    std.debug.print("{} -> {}\n", .{ e.key, e.value.* });
-                }
-
-                std.debug.print("UNIFORMS:\n", .{});
-                var u_it = assembler.uniforms.iterator();
-                while (u_it.next()) |e| {
-                    std.debug.print("{s} -> {}\n", .{ e.key_ptr.*, e.value_ptr.* });
-                }
-
-                std.debug.print("INPUTS:\n", .{});
-                var in_it = assembler.inputs.iterator();
-                while (in_it.next()) |e| {
-                    std.debug.print("{}\n", .{e});
-                }
-
-                std.debug.print("OUTPUTS:\n", .{});
-                var out_it = assembler.outputs.iterator();
-                while (out_it.next()) |e| {
-                    std.debug.print("{} -> {s}\n", .{ e.key, @tagName(e.value.*) });
-                }
-
-                std.debug.print("ENTRY: {?}\n", .{assembler.entry});
-                return 0;
             }
-
-            const entry = assembler.entry orelse {
-                std.debug.print("cannot write shbin: no entry was found in {s}\n", .{file_path});
-                return 1;
-            };
-
-            if (!assembler.labels.contains(entry.start) or !assembler.labels.contains(entry.end)) {
-                std.debug.print("start or end entry label was not found in '{s}'", .{file_path});
-                return 1;
-            }
-
-            @panic("TODO");
-            // const output_path = file_path[0..(file_path.len - std.fs.path.extension(file_path).len)];
-            // const output_file = try cwd.createFile(output_path, .{});
-            //
-            // var output_buffered = std.io.bufferedWriter(output_file.writer());
-            // const out = output_buffered.writer();
-            //
-            // try out.writeStructEndian(shbin.Header{
-            //     .dvle_num = 1,
-            // }, .little);
-            //
-            // const encoder = assembler.encoder;
-            // const encoded_shader_binary_len: u32 = @intCast(encoder.instructions.items.len * @sizeOf(pica.encoding.Instruction));
-            // const dvlp_section_size: u32 = @intCast(@sizeOf(shbin.Dvlp) + encoded_shader_binary_len + encoder.descriptors.len * @sizeOf(pica.encoding.OperandDescriptor));
-            //
-            // const dvle_offset: u32 = @intCast(@sizeOf(shbin.Header) + @sizeOf(u32) * 1 + dvlp_section_size);
-            // try out.writeInt(u32, dvle_offset, .little);
-            //
-            // try out.writeStructEndian(shbin.Dvlp{
-            //     .version = 0,
-            //     .shader_binary_offset = @sizeOf(shbin.Dvlp),
-            //     .shader_binary_size = @intCast(encoder.instructions.items.len),
-            //     .operand_descriptor_offset = @intCast(@sizeOf(shbin.Dvlp) + encoded_shader_binary_len),
-            //     .operand_descriptor_entries = @intCast(encoder.descriptors.len),
-            //     ._unknown0 = 0,
-            //     .filename_symbol_table_offset = 0,
-            //     .filename_symbol_table_size = 0,
-            // }, .little);
-            //
-            // for (encoder.instructions.items) |i| {
-            //     try out.writeInt(u32, @bitCast(i), .little);
-            // }
-            //
-            // for (encoder.descriptors[0..encoder.allocated_descriptors]) |d| {
-            //     try out.writeInt(u32, @bitCast(d), .little);
-            // }
-            //
-            // const all_constants: u32 = @intCast(assembler.floating_constants.count() + assembler.integer_constants.count() + assembler.boolean_constants.count());
-            // try out.writeStructEndian(shbin.Dvle{
-            //     .version = 0,
-            //     .type = .vertex,
-            //     .merge_output_maps = false,
-            //     .executable_main_offset = assembler.labels.get(entry.start).?,
-            //     .executable_main_end_offset = assembler.labels.get(entry.end).?,
-            //     .used_input_registers = @intCast(assembler.inputs.bits.mask),
-            //     .used_output_registers = @intCast(assembler.outputs.bits.mask),
-            //     .geometry_type = undefined,
-            //     .starting_float_register_fixed = 0,
-            //     .fully_defined_vertices_variable = 0,
-            //     .vertices_variable = 0,
-            //     .constant_table_offset = @intCast(@sizeOf(shbin.Dvle)),
-            //     .constant_table_entries = all_constants,
-            //     .label_table_offset = @intCast(@sizeOf(shbin.Dvle) + all_constants * @sizeOf(shbin.Dvle.ConstantEntry)),
-            //     .label_table_entries = @intCast(assembler.labels.count()),
-            //     .output_register_table_offset = @intCast(@sizeOf(shbin.Dvle) + all_constants * @sizeOf(shbin.Dvle.ConstantEntry) + assembler.labels.count() * @sizeOf(shbin.Dvle.LabelEntry)),
-            //     .output_register_table_entries = @intCast(assembler.outputs.count()),
-            //     .uniform_table_offset = 0,
-            //     .uniform_table_entries = 0,
-            //     .symbol_table_offset = 0,
-            //     .symbol_table_size = 0,
-            // }, .little);
-            //
-            // try output_buffered.flush();
-            // return 0;
         },
         .disasm => @panic("TODO"),
     }
@@ -221,9 +349,12 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 
 const std = @import("std");
 
-const zitrus_tooling = @import("zitrus-tooling");
-const pica = zitrus_tooling.pica;
-const as = pica.as;
-const Assembler = as.Assembler;
+const zitrus = @import("zitrus");
 
-const shbin = zitrus_tooling.horizon.shbin;
+const zpsh = zitrus.fmt.zpsh;
+
+const pica = zitrus.pica;
+const shader = pica.shader;
+
+const Assembler = shader.as.Assembler;
+const Assembled = Assembler.Assembled;

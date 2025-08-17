@@ -664,5 +664,5 @@ const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
 const ClientSession = horizon.ClientSession;
-const ResultCode = horizon.ResultCode;
+const ResultCode = horizon.result.Code;
 const Result = horizon.Result;

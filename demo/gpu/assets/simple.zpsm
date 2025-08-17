@@ -1,0 +1,15 @@
+.out o0 color 
+.out o1 position 
+
+.alias iColor v0
+.alias iPos v1
+
+.alias oColor o0
+.alias oPos o1
+
+.entry main vertex
+
+main:
+    mov oColor, iColor
+    mov oPos, iPos
+    end

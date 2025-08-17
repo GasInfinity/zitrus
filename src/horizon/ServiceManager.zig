@@ -370,4 +370,4 @@ const Semaphore = horizon.Semaphore;
 const ClientSession = horizon.ClientSession;
 const ServerPort = horizon.ServerPort;
 const ClientPort = horizon.ClientPort;
-const ResultCode = horizon.ResultCode;
+const ResultCode = horizon.result.Code;

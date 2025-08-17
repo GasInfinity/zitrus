@@ -727,7 +727,7 @@ const tls = horizon.tls;
 const ipc = horizon.ipc;
 
 const Result = horizon.Result;
-const ResultCode = horizon.ResultCode;
+const ResultCode = horizon.result.Code;
 const Object = horizon.Object;
 const Session = horizon.ClientSession;
 const Event = horizon.Event;

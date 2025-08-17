@@ -91,7 +91,7 @@ pub const gx = struct {
         _: u6 = 0,
     };
 
-    pub const MemoryFill = struct {
+    pub const MemoryFillUnit = struct {
         pub const Value = union(gpu.PixelSize) {
             @"16": u16,
             @"24": u24,
@@ -113,10 +113,10 @@ pub const gx = struct {
         buffer: []align(8) u8,
         value: Value,
 
-        pub fn init(buffer: []align(8) u8, value: Value) MemoryFill {
+        pub fn init(buffer: []align(8) u8, value: Value) MemoryFillUnit {
             return .{ .buffer = buffer, .value = value };
         }
-    };
+    }; 
 
     pub const DisplayTransferFlags = packed struct(u8) {
         pub const none: DisplayTransferFlags = .{};
@@ -192,7 +192,7 @@ pub const gx = struct {
                 value: u32,
                 end: ?*anyopaque,
 
-                pub fn init(fill: gx.MemoryFill) Buffer {
+                pub fn init(fill: gx.MemoryFillUnit) Buffer {
                     return .{
                         .start = fill.buffer.ptr,
                         .value = switch (fill.value) {
@@ -421,7 +421,7 @@ pub fn FramebufferPresent(comptime screen: Screen) type {
         left_vaddr: *anyopaque,
         right_vaddr: *anyopaque,
         stride: usize,
-        mode: (if (screen == .top) TopFramebufferMode else void) = if (screen == .top) .@"2d" else undefined,
+        mode: (if (screen == .top) FramebufferMode else void) = if (screen == .top) .@"2d" else undefined,
         dma_size: DmaSize,
     };
 }
@@ -507,7 +507,7 @@ pub fn submitProcessCommandList(gsp: *GspGpu, command_list: []align(8) const u32
     });
 }
 
-pub fn submitMemoryFill(gsp: *GspGpu, fills: [2]?gx.MemoryFill, submit_flags: gx.SubmitFlags) !void {
+pub fn submitMemoryFill(gsp: *GspGpu, fills: [2]?gx.MemoryFillUnit, submit_flags: gx.SubmitFlags) !void {
     return gsp.submitGxCommand(gx.Command{
         .header = .{
             .command_id = .memory_fill,
@@ -934,7 +934,7 @@ pub fn sendRegisterInterruptRelayQueue(gsp: GspGpu, unknown_flags: u8, event: Ev
     const data = tls.getThreadLocalStorage();
     return switch (try data.ipc.sendRequest(gsp.session, command.RegisterInterruptRelayQueue, .{ .flags = unknown_flags, .ev = event }, .{})) {
         .success => |s| .{
-            .should_init_hw = s.code.description == @as(horizon.result.ResultDescription, @enumFromInt(0x207)),
+            .should_init_hw = s.code.description == @as(horizon.result.Description, @enumFromInt(0x207)),
             .response = s.value.response,
         },
         .failure => |code| horizon.unexpectedResult(code),
@@ -1131,7 +1131,7 @@ pub const command = struct {
 const GspGpu = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
-const gpu = zitrus.gpu;
+const gpu = zitrus.pica;
 
 const horizon = zitrus.horizon;
 const memory = horizon.memory;
@@ -1141,10 +1141,10 @@ const ipc = horizon.ipc;
 const Screen = gpu.Screen;
 const ColorFormat = gpu.ColorFormat;
 const DmaSize = gpu.DmaSize;
-const TopFramebufferMode = gpu.TopFramebufferMode;
 const FramebufferFormat = gpu.FramebufferFormat;
+const FramebufferMode = FramebufferFormat.Mode;
 
-const ResultCode = horizon.ResultCode;
+const ResultCode = horizon.result.Code;
 const Object = horizon.Object;
 const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;

@@ -64,7 +64,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                     break :m 1;
                 };
 
-                if (!std.mem.eql(u8, &smdh_data.magic, smdh.magic)) {
+                if (!std.mem.eql(u8, &smdh_data.magic, smdh.magic_value)) {
                     std.debug.print("smdh file '{s}' is invalid/corrupted\n", .{smdh_path});
                     break :m 1;
                 }
@@ -80,7 +80,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 
             var output_buffered = std.io.bufferedWriter(output_file.writer());
 
-            zitrus_tooling.@"3dsx".make(input_file.reader(), output_buffered.writer(), .{
+            zitrus.fmt.@"3dsx".make(input_file.reader(), output_buffered.writer(), .{
                 .allocator = arena,
                 .smdh = smdh_data,
             }) catch |err| switch (err) {
@@ -141,5 +141,5 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 }
 
 const std = @import("std");
-const zitrus_tooling = @import("zitrus-tooling");
-const smdh = zitrus_tooling.horizon.smdh;
+const zitrus = @import("zitrus");
+const smdh = zitrus.horizon.fmt.smdh;

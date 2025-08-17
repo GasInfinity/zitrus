@@ -20,11 +20,8 @@ jobs:
         with:
           version: 0.14.1
 
-      - name: Test tooling
-        run: zig build test-tooling
-
-      - name: Test tools
-        run: zig build test-tools
+      - name: Test
+        run: zig build test
 
       - name: Build tools
         run: zig build

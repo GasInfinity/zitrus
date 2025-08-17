@@ -40,7 +40,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                 },
             };
 
-            const result_code: ResultCode = @bitCast(result_int);
+            const result_code: result.Code = @bitCast(result_int);
             
             const stdout = std.io.getStdOut();
             const stdout_writer = stdout.writer();
@@ -55,13 +55,13 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                 \\}}
                 \\
             , .{
-                std.enums.tagName(ResultLevel, result_code.level) orelse "<unknown>",
+                std.enums.tagName(result.Level, result_code.level) orelse "<unknown>",
                 @intFromEnum(result_code.level),
-                std.enums.tagName(ResultModule, result_code.module) orelse "<unknown>",
+                std.enums.tagName(result.Module, result_code.module) orelse "<unknown>",
                 @intFromEnum(result_code.module),
-                std.enums.tagName(ResultSummary, result_code.summary) orelse "<unknown>",
+                std.enums.tagName(result.Summary, result_code.summary) orelse "<unknown>",
                 @intFromEnum(result_code.summary),
-                std.enums.tagName(ResultDescription, result_code.description) orelse "<unknown>",
+                std.enums.tagName(result.Description, result_code.description) orelse "<unknown>",
                 @intFromEnum(result_code.description),
             });
             try stdout_buffered.flush();
@@ -71,10 +71,5 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 }
 
 const std = @import("std");
-const zitrus_tooling = @import("zitrus-tooling");
-const result = zitrus_tooling.horizon.result;
-const ResultCode = result.ResultCode;
-const ResultLevel = result.ResultLevel;
-const ResultModule = result.ResultModule;
-const ResultSummary = result.ResultSummary;
-const ResultDescription = result.ResultDescription;
+const zitrus = @import("zitrus");
+const result = zitrus.horizon.result;

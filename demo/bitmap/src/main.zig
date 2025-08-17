@@ -94,7 +94,7 @@ const ServiceManager = horizon.ServiceManager;
 const Applet = horizon.services.Applet;
 const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
-const Framebuffer = zitrus.gpu.Framebuffer;
+const Framebuffer = zitrus.pica.Framebuffer;
 
 pub const panic = zitrus.panic;
 const zitrus = @import("zitrus");

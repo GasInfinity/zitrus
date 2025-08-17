@@ -188,7 +188,7 @@ const horizon = zitrus.horizon;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
 
-const ResultCode = horizon.ResultCode;
+const ResultCode = horizon.result.Code;
 const ClientSession = horizon.ClientSession;
 const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;

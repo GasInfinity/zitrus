@@ -9,12 +9,16 @@ pub fn build(b: *std.Build) void {
 
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
-        .target = zitrus_mod.resolved_target,
+        .target = b.resolveTargetQuery(zitrus.target.horizon_arm11),
         .optimize = optimize,
         .single_threaded = true,
     });
 
     exe_mod.addImport("zitrus", zitrus_mod);
+    exe_mod.addAnonymousImport("simple.zpsh", .{ .root_source_file = zitrus.addAssembleZpsm(b, .{
+        .name = "simple.zpsh",
+        .root_source_file = b.path("assets/simple.zpsm"),
+    })});
 
     const exe = zitrus.addExecutable(b, .{
         .name = "gpu.elf",
@@ -24,7 +28,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 
     const bitmap_smdh = zitrus.addMakeSmdh(b, .{
-        .name = "gpu.smdh",
+        .name = "gpu.icn",
         .settings = b.path("smdh-settings.ziggy"),
     });
 

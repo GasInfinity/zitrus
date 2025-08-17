@@ -354,16 +354,16 @@ fn collides(x11: f32, y11: f32, x12: f32, y12: f32, x21: f32, y21: f32, x22: f32
 const zoftblit = @import("zoftblit.zig");
 const ScreenCtx = zoftblit.Context(Bgr888);
 
-const gpu = zitrus.gpu;
-const Screen = gpu.Screen;
-const Bgr888 = gpu.ColorFormat.Bgr888;
+const pica = zitrus.pica;
+const Screen = pica.Screen;
+const Bgr888 = pica.ColorFormat.Bgr888;
 
 const horizon = zitrus.horizon;
 const ServiceManager = horizon.ServiceManager;
 const Applet = horizon.services.Applet;
 const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
-const Framebuffer = zitrus.gpu.Framebuffer;
+const Framebuffer = zitrus.pica.Framebuffer;
 
 pub const panic = zitrus.panic;
 const zitrus = @import("zitrus");

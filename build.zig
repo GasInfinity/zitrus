@@ -1,6 +1,29 @@
+pub const target = struct {
+    pub const arm9: std.Target.Query = .{
+        .cpu_arch = .arm,
+        .cpu_model = .{ .explicit = &std.Target.arm.cpu.arm946e_s },
+        .abi = .eabihf,
+        .os_tag = .freestanding, 
+    };
+
+    pub const arm11: std.Target.Query = .{
+        .cpu_arch = .arm,
+        .cpu_model = .{ .explicit = &std.Target.arm.cpu.mpcore },
+        .abi = .eabihf,
+        .os_tag = .freestanding,
+    };
+
+    pub const horizon_arm11: std.Target.Query = .{
+        .cpu_arch = .arm,
+        .cpu_model = .{ .explicit = &std.Target.arm.cpu.mpcore },
+        .abi = .eabihf,
+        .os_tag = .other,
+    }; 
+};
+
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
-    const target = b.standardTargetOptions(.{});
+    const tools_target = b.standardTargetOptions(.{});
 
     const zalloc = b.dependency("zalloc", .{});
     const zalloc_mod = zalloc.module("zalloc");
@@ -8,30 +31,23 @@ pub fn build(b: *std.Build) void {
     const zsflt = b.dependency("zsflt", .{});
     const zsflt_mod = zsflt.module("zsflt");
 
-    const zitrus_tooling = b.addModule("zitrus-tooling", .{ .root_source_file = b.path("src/tooling/zitrus.zig") });
-    zitrus_tooling.addImport("zitrus-tooling", zitrus_tooling);
-    zitrus_tooling.addImport("zsflt", zsflt_mod);
-
     const zitrus = b.addModule("zitrus", .{
         .root_source_file = b.path("src/zitrus.zig"),
-        .target = b.resolveTargetQuery(.{
-            .cpu_arch = .arm,
-            .cpu_model = .{ .explicit = &std.Target.arm.cpu.mpcore },
-            .abi = .eabihf,
-            .os_tag = .other,
-        }),
     });
 
     // Yes, zitrus uses zitrus, thanks zig for not being c
     zitrus.addImport("zitrus", zitrus);
-    zitrus.addImport("zitrus-tooling", zitrus_tooling);
     zitrus.addImport("zalloc", zalloc_mod);
     zitrus.addImport("zsflt", zsflt_mod);
 
     const static_zitrus_lib = b.addStaticLibrary(.{
         .name = "zitrus",
-        .root_module = zitrus,
+        .root_source_file = b.path("src/zitrus.zig"),
+        .target = b.resolveTargetQuery(target.horizon_arm11),
     });
+    static_zitrus_lib.root_module.addImport("zitrus", static_zitrus_lib.root_module);
+    static_zitrus_lib.root_module.addImport("zalloc", zalloc_mod);
+    static_zitrus_lib.root_module.addImport("zsflt", zsflt_mod);
 
     const install_docs = b.addInstallDirectory(.{
         .source_dir = static_zitrus_lib.getEmittedDocs(),
@@ -42,27 +58,30 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Install docs");
     docs_step.dependOn(&install_docs.step);
 
-    const zitrus_tooling_tests = b.addTest(.{ .name = "zitrus-tooling-tests", .root_source_file = b.path("src/tooling/zitrus.zig"), .target = b.resolveTargetQuery(.{}) });
+    const zitrus_tests = b.addTest(.{
+        .name = "zitrus-tests",
+        .root_source_file = b.path("src/zitrus.zig"),
+        .target = b.resolveTargetQuery(.{})
+    });
+    zitrus_tests.root_module.addImport("zitrus", zitrus_tests.root_module);
+    zitrus_tests.root_module.addImport("zalloc", zalloc_mod);
+    zitrus_tests.root_module.addImport("zsflt", zsflt_mod);
 
-    // Bro? Why do I need to do this again? Target handling is so bad rn
-    zitrus_tooling_tests.root_module.addImport("zitrus-tooling", zitrus_tooling_tests.root_module);
-    zitrus_tooling_tests.root_module.addImport("zsflt", zsflt_mod);
+    const run_tests = b.addRunArtifact(zitrus_tests);
+    const run_tests_step = b.step("test", "Runs zitrus tests");
+    run_tests_step.dependOn(&run_tests.step);
 
-    const run_tooling_tests = b.addRunArtifact(zitrus_tooling_tests);
-    const run_tooling_tests_step = b.step("test-tooling", "Runs zitrus-tooling tests");
-    run_tooling_tests_step.dependOn(&run_tooling_tests.step);
-
-    buildTools(b, optimize, target, zitrus_tooling);
+    buildTools(b, optimize, tools_target, zitrus);
 }
 
-fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, target: std.Build.ResolvedTarget, tooling: *std.Build.Module) void {
+fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: std.Build.ResolvedTarget, zitrus_mod: *std.Build.Module) void {
     const tools = b.createModule(.{
         .root_source_file = b.path("tools/main.zig"),
-        .target = target,
+        .target = tools_target,
         .optimize = optimize,
     });
 
-    tools.addImport("zitrus-tooling", tooling);
+    tools.addImport("zitrus", zitrus_mod);
 
     const flags = b.dependency("flags", .{});
     tools.addImport("flags", flags.module("flags"));
@@ -176,6 +195,20 @@ pub fn addMakeSmdh(b: *std.Build, options: MakeSmdhOptions) std.Build.LazyPath {
     }
 
     return smdh;
+}
+
+pub const AssembleZpsmOptions = struct {
+    name: []const u8,
+    root_source_file: std.Build.LazyPath,
+};
+
+pub fn addAssembleZpsm(b: *std.Build, options: AssembleZpsmOptions) std.Build.LazyPath {
+    const zitrus = b.dependencyFromBuildZig(@This(), .{});
+    const run_assemble_zpsm = b.addRunArtifact(zitrus.artifact("zitrus-tools"));
+    run_assemble_zpsm.addArgs(&.{ "pica", "asm" }); 
+    run_assemble_zpsm.addFileArg(options.root_source_file);
+    run_assemble_zpsm.addArg("-o"); 
+    return run_assemble_zpsm.addOutputFileArg(options.name);
 }
 
 const std = @import("std");

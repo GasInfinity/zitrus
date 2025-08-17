@@ -276,5 +276,5 @@ const ApplicationSettings = @import("ApplicationSettings.zig");
 const std = @import("std");
 const ziggy = @import("ziggy");
 const zigimg = @import("zigimg");
-const zitrus_tooling = @import("zitrus-tooling");
-const smdh = zitrus_tooling.horizon.smdh;
+const zitrus = @import("zitrus");
+const smdh = zitrus.horizon.fmt.smdh;

@@ -94,5 +94,5 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 }
 
 const std = @import("std");
-const zitrus_tooling = @import("zitrus-tooling");
-const ncch = zitrus_tooling.horizon.ncch;
+const zitrus = @import("zitrus");
+const ncch = zitrus.horizon.fmt.ncch;

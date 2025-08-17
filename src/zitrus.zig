@@ -8,7 +8,7 @@ pub const PhysicalAddress = AlignedPhysicalAddress(.@"1", .@"1");
 pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, comptime address_shift: std.mem.Alignment) type {
     std.debug.assert(address_alignment.order(address_shift) != .lt);
 
-    return enum(usize) {
+    return enum(u32) {
         zero = 0x00,
         _,
 
@@ -43,17 +43,21 @@ pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, com
     };
 }
 
+pub const fmt = @import("fmt.zig");
 pub const panic = @import("panic.zig");
 pub const arm = @import("arm.zig");
 pub const memory = @import("memory.zig");
 pub const start = @import("start.zig");
 pub const horizon = @import("horizon.zig");
-
-pub const gpu = @import("gpu.zig");
+pub const pica = @import("pica.zig");
+pub const mango = @import("mango.zig");
 
 const builtin = @import("builtin");
 const std = @import("std");
 
 comptime {
     _ = start;
+
+    _ = mango;
+    _ = pica;
 }

@@ -22,16 +22,16 @@ pub const linear_heap_end: usize = linear_heap_begin + 0x10000000;
 pub const configuration_memory_begin = 0x1FF80000;
 pub const shared_page_memory_begin = 0x1FF81000;
 
-pub const gpu_registers: *gpu.Registers = @ptrFromInt(gpu_begin);
+pub const gpu_registers: *pica.Registers = @ptrFromInt(gpu_begin);
 
 pub const kernel_config: *const config.KernelConfig = @ptrCast(configuration_memory_begin);
 pub const shared_config: *config.SharedConfig = @ptrCast(shared_page_memory_begin);
 
 pub fn toPhysical(ptr: usize) zitrus.PhysicalAddress {
     return @enumFromInt(switch (ptr) {
-        old_linear_heap_begin...old_linear_heap_end => (ptr - old_linear_heap_begin) + zitrus.memory.arm11.fcram_begin,
-        linear_heap_begin...linear_heap_end => (ptr - linear_heap_begin) + zitrus.memory.arm11.fcram_begin,
-        vram_begin...vram_end => (ptr - vram_begin) + zitrus.memory.arm11.vram_begin,
+        old_linear_heap_begin...old_linear_heap_end => (ptr - old_linear_heap_begin) + memory.arm11.fcram_begin,
+        linear_heap_begin...linear_heap_end => (ptr - linear_heap_begin) + memory.arm11.fcram_begin,
+        vram_begin...vram_end => (ptr - vram_begin) + memory.arm11.vram_begin,
         else => unreachable,
     });
 }
@@ -41,4 +41,4 @@ const horizon = zitrus.horizon;
 const config = horizon.config;
 
 const memory = zitrus.memory;
-const gpu = zitrus.gpu;
+const pica = zitrus.pica;
