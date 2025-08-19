@@ -53,6 +53,9 @@ const Diagnostic = struct {
     const invalid_register: Diagnostic = .init("invalid register");
     const expected_address_register: Diagnostic = .init("expected address register (a)");
     const invalid_address_register_mask: Diagnostic = .init("invalid address register mask (xy)");
+    const expected_condition_register: Diagnostic = .init("expected condition register (cc)");
+    const invalid_condition_register_mask: Diagnostic = .init("invalid condition register mask (xy)");
+
     const expected_src_register: Diagnostic = .init("expected source register (v0-v15, r0-r15, f0-f95)");
     const expected_limited_src_register: Diagnostic = .init("expected limited source register (v0-v15, r0-r15)");
     const expected_dst_register: Diagnostic = .init("expected destination register (o0-o15, r0-r15)");
@@ -79,7 +82,6 @@ const Diagnostic = struct {
 
     const undefined_label: Diagnostic = .init("undefined label");
     const redefined_label: Diagnostic = .init("redefined label");
-    const label_too_far: Diagnostic = .init("label is too far from current instruction");
     const label_range_too_big: Diagnostic = .init("label range has too many instructions");
     const redefined_entry: Diagnostic = .init("redefined entrypoint");
 
@@ -167,6 +169,8 @@ const Diagnostic = struct {
             .invalid_register => invalid_register.withLocation(loc),
             .expected_address_register => expected_address_register.withLocation(loc),
             .invalid_address_register_mask => invalid_address_register_mask.withLocation(loc),
+            .expected_condition_register => expected_condition_register.withLocation(loc),
+            .invalid_condition_register_mask => invalid_condition_register_mask.withLocation(loc),
             .expected_src_register => expected_src_register.withLocation(loc),
             .expected_limited_src_register => expected_limited_src_register.withLocation(loc),
             .expected_dst_register => expected_dst_register.withLocation(loc),
@@ -191,7 +195,6 @@ const Diagnostic = struct {
             .expected_shader_type => expected_shader_type.withLocation(loc),
             .redefined_label => redefined_label.withLocation(loc),
             .undefined_label => undefined_label.withLocation(loc),
-            .label_too_far => label_too_far.withLocation(loc),
             .label_range_too_big => label_range_too_big.withLocation(loc),
             .redefined_entry => redefined_entry.withLocation(loc),
             .expected_directive_or_label_or_mnemonic => expected_directive_or_label_or_mnemonic.withLocation(loc),
@@ -262,13 +265,15 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 
                     const encoded = &assembled.encoded;
 
-                    var interned_strings_size: u32 = 0;
+                    var padded_strings_size: u32 = 0;
                     var entry_it = assembled.entries.iterator();
                     while(entry_it.next()) |entrypoint| {
-                        interned_strings_size += @intCast(entrypoint.key_ptr.*.len + 1);
+                        padded_strings_size += @intCast(entrypoint.key_ptr.*.len + 1);
                     }
 
-                    var string_table: std.ArrayListUnmanaged(u8) = try .initCapacity(arena, interned_strings_size);
+                    padded_strings_size = std.mem.alignForward(u32, padded_strings_size, @sizeOf(u32));
+
+                    var string_table: std.ArrayListUnmanaged(u8) = try .initCapacity(arena, padded_strings_size);
                     defer string_table.deinit(arena);
 
                     entry_it.reset();
@@ -277,9 +282,12 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                         string_table.appendAssumeCapacity(0);
                     }
 
+                    // Align the section 
+                    string_table.appendNTimesAssumeCapacity(0, padded_strings_size - string_table.items.len);
+
                     try out.writeStructEndian(zpsh.Header{
                         .shader_size = .init(encoded.instructions.items.len, encoded.allocated_descriptors),
-                        .string_table_size = interned_strings_size,
+                        .string_table_size = padded_strings_size,
                         .entrypoints = @intCast(assembled.entries.count()),
                     }, .little);
                     
@@ -299,42 +307,28 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                             .info = .{
                                 .type = .vertex,
                             },
-                            .boolean_constant_mask = @bitCast(assembled.bool_const.bits.mask),
-                            .floating_constants = @intCast(assembled.flt_const.count()),
-                            .output_integer_info = .{
-                                .integer_constants = @intCast(assembled.int_const.count()),
-                                .outputs = @intCast(assembled.outputs.count()),
-                            },
+                            .boolean_constant_mask = .fromSet(.{ .bits = assembled.bool_const.bits }),
+                            .integer_constant_mask = .fromSet(.{ .bits = assembled.int_const.bits }),
+                            .floating_constant_mask = .fromSet(.{ .bits = assembled.flt_const.bits }),
+                            .output_mask = .fromSet(.{ .bits = assembled.outputs.bits }),
                         }, .little);
 
                         // NOTE: We can do this because two entrypoints cannot have the same name.
                         current_string_offset += @intCast(entrypoint.key_ptr.len + 1); 
                         
-                        var flt_it = assembled.flt_const.iterator();
-                        while (flt_it.next()) |entry| {
-                            try out.writeStructEndian(zpsh.EntrypointHeader.FloatingConstantEntry{
-                                .info = .init(entry.key),
-                                .value = entry.value.*,
-                            }, .little);
-                        }
-
                         var int_it = assembled.int_const.iterator();
                         while (int_it.next()) |entry| {
-                            try out.writeStructEndian(zpsh.EntrypointHeader.IntegerConstantEntry{
-                                .info = .init(entry.key),
-                                .value = entry.value.*,
-                            }, .little);
+                            try out.writeAll(std.mem.asBytes(entry.value));
+                        }
+
+                        var flt_it = assembled.flt_const.iterator();
+                        while (flt_it.next()) |entry| {
+                            try out.writeStructEndian(entry.value.*, .little);
                         }
 
                         var out_it = assembled.outputs.iterator();
                         while (out_it.next()) |entry| {
-                            try out.writeInt(u32, @bitCast(zpsh.EntrypointHeader.OutputEntry{
-                                .reg = entry.key,
-                                .x = entry.value.x,
-                                .y = entry.value.y,
-                                .z = entry.value.z,
-                                .w = entry.value.w,
-                            }), .little);
+                            try out.writeInt(u32, @bitCast(entry.value.*), .little);
                         }
                     }
 

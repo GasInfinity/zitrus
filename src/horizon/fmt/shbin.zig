@@ -84,7 +84,7 @@ pub const Dvle = extern struct {
 
         pub const Data = extern union {
             bool: bool,
-            u8x4: pica.I8x4,
+            u8x4: [4]i8,
             f24x4: pica.F7_16x4,
         };
 

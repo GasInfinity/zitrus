@@ -607,7 +607,7 @@ pub const Instruction = packed union {
 
         pub fn toComparison(opcode: Opcode) ?Comparison {
             return switch (@intFromEnum(opcode)) {
-                0x2E...0x2F => @enumFromInt(@intFromEnum(Opcode.cmp) >> 3),
+                0x2E...0x2F => @enumFromInt(@intFromEnum(Opcode.cmp) >> 1),
                 else => null,
             };
         }
@@ -648,7 +648,7 @@ pub const Instruction = packed union {
         pub const ControlFlow = packed struct(u32) {
             num: u8,
             _unused0: u2 = 0,
-            dst_word_offset: i12,
+            dst: u12,
             condition: Condition,
             ref_y: bool,
             ref_x: bool,
@@ -658,7 +658,7 @@ pub const Instruction = packed union {
         pub const ConstantControlFlow = packed struct(u32) {
             num: u8,
             _unused0: u2 = 0,
-            dst_word_offset: i12,
+            dst: u12,
             constant_id: IntegralRegister,
             opcode: Opcode,
         };

@@ -1,7 +1,9 @@
 // NOTE: mango is not finished. It is designed with a vulkan-like api
 // TODO: Document everything when finished
 
-const simple_vtx = @embedFile("simple.zpsh");
+// NOTE: as you can see, the shader address must be aligned to 32-bits
+const simple_vtx_storage align(@sizeOf(u32)) = @embedFile("simple.zpsh").*;
+const simple_vtx = &simple_vtx_storage;
 
 pub const os = struct {
     pub const heap = struct {
@@ -53,7 +55,7 @@ pub fn main() !void {
 
     const Vertex = extern struct {
         color: [3]u8,
-        pos: [4]i8,
+        pos: [4]u8,
     };
 
     var device: mango.Device = .initTodo(&gsp);
@@ -161,10 +163,10 @@ pub fn main() !void {
         const idx_data: *[4]u8 = @ptrCast(mapped_idx);
 
         vtx_data.* = .{
-            .{ .pos = .{ -1, -1, 0, 1 }, .color = .{ 0, 0, 0 } },
-            .{ .pos = .{ 1, -1, 0, 1 }, .color = .{ 1, 1, 0 } },
-            .{ .pos = .{ -1, 1, 0, 1 }, .color = .{ 0, 1, 1 } },
-            .{ .pos = .{ 1, 1, 0, 1 }, .color = .{ 0, 1, 0 } },
+            .{ .pos = .{ 0, 0, 0, 1 }, .color = .{ 0, 0, 0 } },
+            .{ .pos = .{ 240, 0, 0, 1 }, .color = .{ 1, 1, 0 } },
+            .{ .pos = .{ 0, 240, 0, 1 }, .color = .{ 0, 1, 1 } },
+            .{ .pos = .{ 240, 240, 0, 1 }, .color = .{ 0, 1, 0 } },
         };
         idx_data.* = .{ 0, 1, 2, 3 };
 
@@ -260,7 +262,7 @@ pub fn main() !void {
                 .{
                     .location = .v1,
                     .binding = .@"0",
-                    .format = .r8g8b8a8_sscaled,
+                    .format = .r8g8b8a8_uscaled,
                     .offset = 3,
                 },
             },
@@ -292,7 +294,12 @@ pub fn main() !void {
             .stencil_test_enable = false,
             .back_front = std.mem.zeroes(mango.GraphicsPipelineCreateInfo.AlphaDepthStencilState.StencilOperationState),
         },
-        .texture_sampling_state = null,
+        .texture_sampling_state = &.{
+            .texture_enable = @splat(false),
+
+            .texture_2_coordinates = .@"2",
+            .texture_3_coordinates = .@"2", 
+        },
         .lighting_state = &.{}, 
         .texture_combiner_state = &.init(&.{
             .{
@@ -329,8 +336,6 @@ pub fn main() !void {
         .dynamic_state = .{
             .viewport = true,
             .scissor = true,
-
-            .texture_combiner = true,
         },
     }, gpa);
     defer device.destroyPipeline(simple_pipeline, gpa);
@@ -354,26 +359,6 @@ pub fn main() !void {
         });
         cmdbuf.setScissor(&.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 320 } }));
 
-        // TODO: Compiler texture combiners in the pipeline, remove this dynamic state from this example.
-        cmdbuf.setTextureCombiners(1, &.{
-            .{
-                .color_src = @splat(.primary_color),
-                .alpha_src = @splat(.primary_color),
-                .color_factor = @splat(.src_color),
-                .alpha_factor = @splat(.src_alpha),
-                .color_op = .replace,
-                .alpha_op = .replace,
-
-                .color_scale = .@"1x",
-                .alpha_scale = .@"1x",
-
-                .constant = @splat(0),
-            }
-        }, 0, &.{});
-
-        //  TODO: Texturing
-        // cmdbuf.setTextureEnable(&.{ true, false, false, false });
-
         {
             // We'll render to the bottom screen, images are 240x320 physically.
             cmdbuf.beginRendering(&.{
@@ -381,12 +366,13 @@ pub fn main() !void {
                 .depth_stencil_attachment = .null,
             });
             defer cmdbuf.endRendering();
-
+            
+            cmdbuf.bindFloatUniforms(.vertex, 0, &zitrus.math.mat.orthoRotate90Cw(0, 240, 320, 0, 0, 1000));
             cmdbuf.drawIndexed(4, 0, 0);
         }
     }
 
-    // TODO: Say goodbye to using the gsp directly, use mango.
+    // TODO: Say goodbye to using the gsp directly, use mango when available.
     while (true) {
         const interrupts = try gsp.waitInterrupts();
 
@@ -431,7 +417,6 @@ pub fn main() !void {
         // XXX: This blocks currently as we don't have synchronization primitives.
         device.submit(&.init(&.{ &cmdbuf }));
 
-        // XXX: Technically VRAM is not host visible, this is an implementation detail and with proper debug checks WILL panic :D
         try device.blitImage(color_attachment_image, bottom_presentable_images[0]);
 
         // try framebuffer.flushBuffers(&gsp);

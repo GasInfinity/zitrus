@@ -12,6 +12,7 @@ pub const Sampler = @import("Sampler.zig");
 pub const Swapchain = @import("Swapchain.zig");
 
 pub const GraphicsState = @import("GraphicsState.zig");
+pub const RenderingState = @import("RenderingState.zig");
 pub const VertexInputLayout = @import("VertexInputLayout.zig");
 
 const std = @import("std");

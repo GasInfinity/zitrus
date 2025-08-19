@@ -110,10 +110,10 @@ pub fn binary(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, d
     return encoder.addInstruction(alloc, .{ .register = .{ .operand_descriptor_id = descriptor_id, .src2 = src2.toLimited().?, .src1 = src1, .address_index = src_rel, .dst = dest, .opcode = opcode } });
 }
 
-pub fn flow(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, num: u8, dest: i12, condition: Condition, x: bool, y: bool) !void {
+pub fn flow(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, num: u8, dest: u12, condition: Condition, x: bool, y: bool) !void {
     return encoder.addInstruction(alloc, .{ .control_flow = .{
         .num = num,
-        .dst_word_offset = dest,
+        .dst = dest,
         .condition = condition,
         .ref_x = x,
         .ref_y = y,
@@ -121,10 +121,10 @@ pub fn flow(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, num
     } });
 }
 
-pub fn flowConstant(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, num: u8, dest: i12, constant: IntegralRegister) !void {
+pub fn flowConstant(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, num: u8, dest: u12, constant: IntegralRegister) !void {
     return encoder.addInstruction(alloc, .{ .constant_control_flow = .{
         .num = num,
-        .dst_word_offset = dest,
+        .dst = dest,
         .constant_id = constant,
         .opcode = opcode,
     } });
@@ -231,19 +231,19 @@ pub fn callc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool,
     return encoder.flow(alloc, .callc, num, dest, condition, x, y);
 }
 
-pub fn callu(encoder: *Encoder, alloc: Allocator, b: BooleanRegister, dest: i12, num: u8) !void {
+pub fn callu(encoder: *Encoder, alloc: Allocator, b: BooleanRegister, dest: u12, num: u8) !void {
     return encoder.flowConstant(alloc, .callu, num, dest, .{ .bool = b });
 }
 
-pub fn ifu(encoder: *Encoder, alloc: Allocator, b: BooleanRegister, dest: i12, num: u8) !void {
+pub fn ifu(encoder: *Encoder, alloc: Allocator, b: BooleanRegister, dest: u12, num: u8) !void {
     return encoder.flowConstant(alloc, .ifu, num, dest, .{ .bool = b });
 }
 
-pub fn ifc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool, y: bool, dest: i12, num: u8) !void {
+pub fn ifc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool, y: bool, dest: u12, num: u8) !void {
     return encoder.flow(alloc, .ifc, num, dest, condition, x, y);
 }
 
-pub fn loop(encoder: *Encoder, alloc: Allocator, i: IntegerRegister, dest: i12) !void {
+pub fn loop(encoder: *Encoder, alloc: Allocator, i: IntegerRegister, dest: u12) !void {
     return encoder.flowConstant(alloc, .loop, 0, dest, .{ .int = .{ .used = i } });
 }
 
@@ -260,11 +260,11 @@ pub fn emit(encoder: *Encoder, alloc: Allocator) !void {
     return encoder.unparametized(alloc, .emit);
 }
 
-pub fn jmpc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool, y: bool, dest: i12) !void {
+pub fn jmpc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool, y: bool, dest: u12) !void {
     return encoder.flow(alloc, .jmpc, 0, dest, condition, x, y);
 }
 
-pub fn jmpu(encoder: *Encoder, alloc: Allocator, b: BooleanRegister, if_true: bool, dest: i12) !void {
+pub fn jmpu(encoder: *Encoder, alloc: Allocator, b: BooleanRegister, if_true: bool, dest: u12) !void {
     return encoder.flowConstant(alloc, .jmpu, @intFromBool(!if_true), dest, .{ .bool = b });
 }
 

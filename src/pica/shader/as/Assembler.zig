@@ -13,12 +13,12 @@ const Entrypoint = struct {
     tok_i: u32,
 };
 
-pub const LabelMap = std.StringArrayHashMapUnmanaged(u16);
+pub const LabelMap = std.StringArrayHashMapUnmanaged(u12);
 pub const EntrypointMap = std.StringArrayHashMapUnmanaged(Entrypoint);
 pub const Outputs = std.EnumMap(register.Destination.Output, pica.OutputMap);
 
 pub const FloatingConstants = std.EnumMap(register.Source.Constant, pica.F7_16x4);
-pub const IntegerConstants = std.EnumMap(register.Integral.Integer, pica.I8x4);
+pub const IntegerConstants = std.EnumMap(register.Integral.Integer, [4]i8);
 pub const BooleanConstants = std.EnumSet(register.Integral.Boolean);
 
 pub const Assembled = struct {
@@ -169,6 +169,9 @@ pub const Error = struct {
         expected_address_register,
         invalid_address_register_mask,
 
+        expected_condition_register,
+        invalid_condition_register_mask,
+
         expected_src_register,
         expected_limited_src_register,
         expected_dst_register,
@@ -198,7 +201,6 @@ pub const Error = struct {
 
         redefined_label,
         undefined_label,
-        label_too_far,
         label_range_too_big,
 
         redefined_entry,
@@ -478,7 +480,7 @@ flt_const: FloatingConstants,
 int_const: IntegerConstants,
 bool_const: BooleanConstants,
 tok_i: u32,
-inst_i: u16,
+inst_i: u12,
 
 pub fn deinit(a: *Assembler, gpa: std.mem.Allocator) void {
     a.errors.deinit(gpa);
@@ -636,7 +638,7 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
             try a.encoder.binary(a.gpa, opcode, dst_info.dst, dst_info.mask, src1_info.negated, src1_info.src, src1_info.swizzle, src2_info.negated, src2_info.src, src2_info.swizzle, .none);
         },
         .flow_conditional => {
-            const num: u8, const dest: i12, const condition: encoding.Condition, const x: bool, const y: bool = values: switch (opcode) {
+            const num: u8, const dest: u12, const condition: encoding.Condition, const x: bool, const y: bool = values: switch (opcode) {
                 .breakc => {
                     const condition = try a.parseEnum(encoding.Condition, .expected_condition);                 
                     _ = try a.expectToken(.comma);
@@ -657,9 +659,9 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
                     _ = try a.expectToken(.comma);
                     const y = try a.parseBoolean();
                     _ = try a.expectToken(.comma);
-                    const dest = try a.parseLabelDest();
+                    const dest = try a.parseLabel();
 
-                    break :values .{ 0, dest, condition, x, y };
+                    break :values .{ 0, dest.offset, condition, x, y };
                 },
                 else => {
                     const condition = try a.parseEnum(encoding.Condition, .expected_condition);                 
@@ -677,22 +679,22 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
             try a.encoder.flow(a.gpa, opcode, num, dest, condition, x, y);
         },
         .flow_uniform => {
-            const i_reg: register.Integral, const num: u8, const dest: i12 = values: switch (opcode) {
+            const i_reg: register.Integral, const num: u8, const dest: u12 = values: switch (opcode) {
                 .loop => {
                     const int_info = try a.parseIntegerRegister();
                     _ = try a.expectToken(.comma);
-                    const end = try a.parseLabelDest() - 1;
+                    const end = try a.parseLabel();
 
-                    break :values .{ .{ .int = .{ .used = int_info.int } }, 0, end };
+                    break :values .{ .{ .int = .{ .used = int_info.int } }, 0, end.offset - 1 };
                 },
                 .jmpu => {
                     const b_info = try a.parseBooleanRegister();
                     _ = try a.expectToken(.comma);
                     const if_true = try a.parseBoolean();
                     _ = try a.expectToken(.comma);
-                    const dest = try a.parseLabelDest();
+                    const dest = try a.parseLabel();
 
-                    break :values .{ .{ .bool = b_info.bool }, @intFromBool(!if_true), dest };
+                    break :values .{ .{ .bool = b_info.bool }, @intFromBool(!if_true), dest.offset };
                 },
                 else => {
                     const b_info = try a.parseBooleanRegister();
@@ -879,12 +881,7 @@ fn processDirective(a: *Assembler) !void {
                         _ = try a.expectToken(.r_paren);
 
                         const i_reg: register.Integral.Integer = @enumFromInt(@intFromEnum(uniform_reg) - @intFromEnum(UniformRegister.i0));
-                        a.int_const.put(i_reg, .{
-                            .x = x,
-                            .y = y,
-                            .z = z,
-                            .w = w,
-                        });
+                        a.int_const.put(i_reg, .{ x, y, z, w});
                     },
                     @intFromEnum(UniformRegister.b0)...@intFromEnum(UniformRegister.b15) => {
                         const b_reg: register.Integral.Boolean = @enumFromInt(@intFromEnum(uniform_reg) - @intFromEnum(UniformRegister.b0));
@@ -1098,7 +1095,7 @@ fn parseSwizzledIdentifier(a: *Assembler) !SwizzledIdentifier {
 
 pub const LabelInfo = struct {
     tok_i: u32,
-    offset: u16,
+    offset: u12,
 };
 
 fn parseLabel(a: *Assembler) !LabelInfo {
@@ -1119,7 +1116,7 @@ fn parseLabel(a: *Assembler) !LabelInfo {
 }
 
 pub const LabelRangeInfo = struct {
-    dest: i12,
+    dest: u12,
     num: u8,
 };
 
@@ -1128,42 +1125,19 @@ fn parseLabelRange(a: *Assembler) !LabelRangeInfo {
     _ = try a.expectToken(.comma);
     const end_info = try a.parseLabel();
 
-    const dest = @as(i32, start_info.offset) - @as(i32, @intCast(a.encoder.instructions.items.len));
-
-    if(dest < std.math.minInt(i12) or dest > std.math.maxInt(i12)) {
-        return a.failMsg(.{
-            .tag = .label_too_far,
-            .tok_i = start_info.tok_i,
-        });
-    }
-
     const num_instructions = end_info.offset - start_info.offset;
 
     if(num_instructions > std.math.maxInt(u8)) {
         return a.failMsg(.{
             .tag = .label_range_too_big,
-            .tok_i = start_info.tok_i,
+            .tok_i = end_info.tok_i,
         });
     }
 
     return .{
-        .dest = @intCast(dest),
+        .dest = @intCast(start_info.offset),
         .num = @intCast(num_instructions),
     };
-}
-
-fn parseLabelDest(a: *Assembler) !i12 {
-    const start_info = try a.parseLabel();
-    const dest = @as(i32, start_info.offset) - @as(i32, @intCast(a.encoder.instructions.items.len));
-
-    if(dest < std.math.minInt(i12) or dest > std.math.maxInt(i12)) {
-        return a.failMsg(.{
-            .tag = .label_too_far,
-            .tok_i = start_info.tok_i,
-        });
-    }
-
-    return @intCast(dest);
 }
 
 fn parseInt(a: *Assembler, comptime T: type, max_value: T) !T {

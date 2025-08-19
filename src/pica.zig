@@ -1,10 +1,14 @@
 //! Definitions for all things PICA200.
 //!
 //! Info:
-//! - Clipping volumes:
+//! - LCD screens are physically rotated 90º CCW from how the devices are held (i.e: bottom is not 320x240, is 240x320)
+//!
+//! - NDC clipping volume:
 //!     - X: [-W, W]
 //!     - Y: [-W, W]
 //!     - Z: [0, -W]
+//!
+//! - Framebuffer origin can be changed so `-1` in NDC could mean bottom-left (GL) or top-left (D3D, Metal, VK)
 
 // Taken from / Credits:
 // https://problemkaputt.de/gbatek.htm#3dsgpuinternalregisteroverview
@@ -20,7 +24,6 @@ pub const F7_12 = zsflt.Float(7, 12);
 pub const F7_16 = zsflt.Float(7, 16);
 pub const F7_23 = zsflt.Float(7, 23);
 
-pub const I8x4 = extern struct { x: i8, y: i8, z: i8, w: i8 };
 pub const U16x2 = packed struct(u32) { x: u16, y: u16 };
 pub const I16x2 = packed struct(u32) { x: i16, y: i16 };
 
@@ -1538,7 +1541,7 @@ pub const Registers = struct {
             };
 
             pub const FloatUniformConfig = packed struct(u32) {
-                pub const Mode = enum(u1) { f8_23, f7_16 };
+                pub const Mode = enum(u1) { f7_16, f8_23 };
 
                 index: FloatConstantRegister,
                 _unused0: u24 = 0,
@@ -1587,7 +1590,7 @@ pub const Registers = struct {
             };
 
             bool_uniform: BooleanUniformMask,
-            int_uniform: [4]I8x4,
+            int_uniform: [4][4]i8,
             _unused0: [4]u32,
             input_buffer_config: InputBufferConfig,
             entrypoint: Entry,

@@ -7,9 +7,21 @@
 .alias oColor o0
 .alias oPos o1
 
+; layout(location = 0) uniform mat4x4 uPersp;
+.alias uPerspM0 f0
+.alias uPerspM1 f1
+.alias uPerspM2 f2
+.alias uPerspM3 f3
+
 .entry main vertex
 
 main:
+    ; oPos = uPersp * iPos;
+    dp4 oPos.x, uPerspM0, iPos 
+    dp4 oPos.y, uPerspM1, iPos 
+    dp4 oPos.z, uPerspM2, iPos 
+    dp4 oPos.w, uPerspM3, iPos 
+
+    ; oColor = iColor;
     mov oColor, iColor
-    mov oPos, iPos
     end

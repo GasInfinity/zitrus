@@ -58,6 +58,7 @@ No pseudo-instructions are implemented nor planned currently. All known PICA200 
         - loop: `iX, end_exclusive_label`
         - jmpu: `bX, <true/false>, start_label`
     - comparison: `[-]src1[.swizzle], [-]src2[.swizzle], comparison, comparison`
+        - no, at least from what I (GasInfinity) tested in my o2DS, cmp does NOT use the destination mask, so cc[.mask] would be always cc.xy.
     - setemit: `0-2, <none/emmiting>, <cw/ccw>`
     - mad: `dst[.mask], [-]src_limited1[.swizzle], [-]src2[.swizzle], [-]src3[.swizzle]`, where two src must be a `Limited source register`.
 

@@ -16,35 +16,9 @@ pub const Scope = enum {
     render_pass,
 };
 
-const GraphicsState = backend.GraphicsState;
-
-const RenderingState = struct {
-    const Dirty = packed struct(u32) {
-        rendering_data: bool = false,
-        vertex_buffers: bool = false,
-        _: u30 = 0,
-    };
-
-    pub const Misc = packed struct {
-        vertex_buffers_dirty_start: u8,
-        vertex_buffers_dirty_end: u8,
-        index_format: pica.IndexFormat,
-    };
-
-    misc: Misc = undefined,
-    index_buffer_offset: u28 = undefined,
-    vertex_buffers_offset: [12]u32 = undefined,
-
-    color_attachment: PhysicalAddress = undefined,
-    depth_stencil_attachment: PhysicalAddress = undefined,
-    dimensions: pica.U16x2 = undefined,
-
-    dirty: Dirty = .{},
-};
-
 queue: cmd3d.Queue,
 gfx_state: GraphicsState = .{},
-rendering_state: RenderingState = .{},
+rnd_state: RenderingState = .{},
 bound_graphics_pipeline: ?*backend.Pipeline.Graphics = null,
 state: State = .initial,
 scope: Scope = .none,
@@ -74,14 +48,14 @@ pub fn bindPipeline(cmd: *CommandBuffer, bind_point: mango.PipelineBindPoint, pi
             @memcpy(cmd.queue.buffer[cmd.queue.current_index..][0..graphics_pipeline.cmd3d_state.len], graphics_pipeline.cmd3d_state);
             cmd.queue.current_index += graphics_pipeline.cmd3d_state.len;
 
-            graphics_pipeline.copyNeededState(&cmd.gfx_state);
+            graphics_pipeline.copyGraphicsState(&cmd.gfx_state);
+            graphics_pipeline.copyRenderingState(&cmd.rnd_state);
             cmd.bound_graphics_pipeline = graphics_pipeline;
         },
     }
 }
 
 pub fn bindVertexBuffersSlice(cmd: *CommandBuffer, first_binding: u32, buffers: []const mango.Buffer, offsets: []const u32) void {
-    std.debug.assert(cmd.state == .recording);
     std.debug.assert(buffers.len == offsets.len);
 
     return cmd.bindVertexBuffers(first_binding, buffers.len, buffers.ptr, offsets.ptr);
@@ -89,56 +63,23 @@ pub fn bindVertexBuffersSlice(cmd: *CommandBuffer, first_binding: u32, buffers: 
 
 pub fn bindVertexBuffers(cmd: *CommandBuffer, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
     std.debug.assert(cmd.state == .recording);
-    if(binding_count == 0) {
-        return;
-    }
 
-    std.debug.assert(first_binding < internal_regs.geometry_pipeline.attribute_buffer.len and first_binding + binding_count <= internal_regs.geometry_pipeline.attribute_buffer.len);
-    std.debug.assertReadable(std.mem.sliceAsBytes(buffers[0..binding_count]));
-    std.debug.assertReadable(std.mem.sliceAsBytes(offsets[0..binding_count]));
-    
-    const dynamic_rendering_state = &cmd.rendering_state;
-
-    var dirty_vertex_buffers = false;
-    for (0..binding_count) |i| {
-        const current_binding = first_binding + i;
-        const offset = offsets[i];
-        const buffer: backend.Buffer = .fromHandle(buffers[i]);
-
-        std.debug.assert(offset <= buffer.size);
-        std.debug.assert(buffer.usage.vertex_buffer);
-
-        const buffer_physical_address = buffer.memory_info.boundPhysicalAddress();
-        const bound_vertex_offset = (@intFromEnum(buffer_physical_address) - @intFromEnum(backend.global_attribute_buffer_base)) + offset;
-
-        dirty_vertex_buffers = dirty_vertex_buffers or dynamic_rendering_state.vertex_buffers_offset[current_binding] != bound_vertex_offset;
-        dynamic_rendering_state.vertex_buffers_offset[current_binding] = bound_vertex_offset;
-    }
-
-    dynamic_rendering_state.misc.vertex_buffers_dirty_start, dynamic_rendering_state.misc.vertex_buffers_dirty_end = if(dynamic_rendering_state.dirty.vertex_buffers)
-        .{ @intCast(@min(first_binding, dynamic_rendering_state.misc.vertex_buffers_dirty_start)), @intCast(@max(first_binding + binding_count, dynamic_rendering_state.misc.vertex_buffers_dirty_end)) }
-    else 
-        .{ @intCast(first_binding), @intCast(first_binding + binding_count) };
-
-    dynamic_rendering_state.dirty.vertex_buffers = dynamic_rendering_state.dirty.vertex_buffers or dirty_vertex_buffers;
+    return cmd.rnd_state.bindVertexBuffers(first_binding, binding_count, buffers, offsets);
 }
 
-pub fn bindIndexBuffer(cmd: *CommandBuffer, buffer: mango.Buffer, offset: usize, index_type: mango.IndexType) void {
+pub fn bindIndexBuffer(cmd: *CommandBuffer, buffer: mango.Buffer, offset: u32, index_type: mango.IndexType) void {
     std.debug.assert(cmd.state == .recording);
 
-    const index_buffer: backend.Buffer = .fromHandle(buffer);
-
-    std.debug.assert(offset <= index_buffer.size);
-    std.debug.assert(index_buffer.usage.index_buffer);
-
-    const index_buffer_address: usize = @intFromEnum(index_buffer.memory_info.boundPhysicalAddress()) + offset;
-    const dynamic_rendering_state = &cmd.rendering_state;
-
-    dynamic_rendering_state.misc.index_format = index_type.native();
-    dynamic_rendering_state.index_buffer_offset = @intCast(index_buffer_address - @intFromEnum(backend.global_attribute_buffer_base));
+    return cmd.rnd_state.bindIndexBuffer(buffer, offset, index_type);
 }
 
-pub fn bindCombinedImageSamplers(cmd: *CommandBuffer, first_combined: usize, combined_count: usize, combined_image_samplers: [*]const mango.CombinedImageSampler) void {
+pub fn bindFloatUniforms(cmd: *CommandBuffer, stage: mango.ShaderStage, first_uniform: u32, uniforms: []const [4]f32) void {
+    std.debug.assert(cmd.state == .recording);
+    
+    return cmd.rnd_state.bindFloatUniforms(stage, first_uniform, uniforms);
+}
+
+pub fn bindCombinedImageSamplers(cmd: *CommandBuffer, first_combined: u32, combined_count: u32, combined_image_samplers: [*]const mango.CombinedImageSampler) void {
     _ = cmd;
     _ = first_combined;
     _ = combined_count;
@@ -171,14 +112,14 @@ pub fn beginRendering(cmd: *CommandBuffer, rendering_info: *const mango.Renderin
         std.debug.assert(color_width == depth_stencil_width and color_height == depth_stencil_height);
     }
 
-    cmd.rendering_state.color_attachment = color_physical_address;
-    cmd.rendering_state.depth_stencil_attachment = depth_stencil_physical_address;
-    cmd.rendering_state.dimensions = if(color_physical_address != .zero)
+    cmd.rnd_state.color_attachment = color_physical_address;
+    cmd.rnd_state.depth_stencil_attachment = depth_stencil_physical_address;
+    cmd.rnd_state.dimensions = if(color_physical_address != .zero)
         .{ .x = @intCast(color_width), .y = @intCast(color_height) }
     else 
         .{ .x = @intCast(depth_stencil_width), .y = @intCast(depth_stencil_height) };
 
-    cmd.rendering_state.dirty.rendering_data = true;
+    cmd.rnd_state.dirty.rendering_data = true;
     cmd.scope = .render_pass;
 }
 
@@ -188,11 +129,11 @@ pub fn endRendering(cmd: *CommandBuffer) void {
     const queue = &cmd.queue;
 
     // This means a drawcall has been issued so flush the render buffer.
-    if(!cmd.rendering_state.dirty.rendering_data) {
+    if(!cmd.rnd_state.dirty.rendering_data) {
         queue.add(internal_regs, &internal_regs.framebuffer.render_buffer_flush, .init(.trigger));
     }
 
-    cmd.rendering_state.dirty.rendering_data = false;
+    cmd.rnd_state.dirty.rendering_data = false;
     cmd.scope = .none;
 }
 
@@ -204,7 +145,7 @@ pub fn drawMultiSlice(cmd: *CommandBuffer, vertex_info: []const mango.MultiDrawI
     return cmd.drawMulti(vertex_info.len, vertex_info.ptr, @sizeOf(mango.MultiDrawInfo));   
 }
 
-pub fn drawMulti(cmd: *CommandBuffer, draw_count: usize, vertex_info: [*]const mango.MultiDrawInfo, stride: usize) void {
+pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const mango.MultiDrawInfo, stride: u32) void {
     std.debug.assert(cmd.state == .recording);
     std.debug.assert(cmd.scope == .render_pass);
 
@@ -271,7 +212,7 @@ pub fn drawMultiIndexedSlice(cmd: *CommandBuffer, index_info: []const mango.Mult
     return cmd.drawMultiIndexed(index_info.len, index_info.ptr, @sizeOf(mango.MultiDrawIndexedInfo));   
 }
 
-pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: usize, index_info: [*]const mango.MultiDrawIndexedInfo, stride: usize) void {
+pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]const mango.MultiDrawIndexedInfo, stride: u32) void {
     std.debug.assert(cmd.state == .recording);
     std.debug.assert(cmd.scope == .render_pass);
 
@@ -286,7 +227,7 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: usize, index_info: [*]c
 
     const queue = &cmd.queue;
     const dynamic_graphics_state = cmd.gfx_state;
-    const dynamic_rendering_state = cmd.rendering_state;
+    const dynamic_rendering_state = cmd.rnd_state;
 
     const first_draw = index_info[0];
     queue.addIncremental(internal_regs, .{
@@ -305,7 +246,7 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: usize, index_info: [*]c
             queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer[i].offset, offset + @as(u32, @bitCast(first_draw.vertex_offset * buf_conf.high.bytes_per_vertex)));
         }
         
-        cmd.rendering_state.dirty.vertex_buffers = true; 
+        cmd.rnd_state.dirty.vertex_buffers = true; 
     }
 
     queue.add(internal_regs, &internal_regs.geometry_pipeline.restart_primitive, .init(.trigger));
@@ -340,7 +281,7 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: usize, index_info: [*]c
                 queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer[i].offset, offset + @as(u32, @bitCast(current_index_info.vertex_offset * buf_conf.high.bytes_per_vertex)));
             }
 
-            cmd.rendering_state.dirty.vertex_buffers = true; 
+            cmd.rnd_state.dirty.vertex_buffers = true; 
         }
 
         queue.add(internal_regs, &internal_regs.geometry_pipeline.restart_primitive, .init(.trigger));
@@ -388,7 +329,7 @@ pub fn setScissor(cmd: *CommandBuffer, scissor: *const mango.Scissor) void {
     cmd.gfx_state.setScissor(scissor);
 }
 
-pub fn setTextureCombiners(cmd: *CommandBuffer, texture_combiners_len: usize, texture_combiners: [*]const mango.TextureCombiner, texture_combiner_buffer_sources_len: usize, texture_combiner_buffer_sources: [*]const mango.TextureCombiner.BufferSources) void {
+pub fn setTextureCombiners(cmd: *CommandBuffer, texture_combiners_len: u32, texture_combiners: [*]const mango.TextureCombiner, texture_combiner_buffer_sources_len: u32, texture_combiner_buffer_sources: [*]const mango.TextureCombiner.BufferSources) void {
     std.debug.assert(cmd.state == .recording);
     cmd.gfx_state.setTextureCombiners(texture_combiners_len, texture_combiners, texture_combiner_buffer_sources_len, texture_combiner_buffer_sources);
 }
@@ -480,41 +421,18 @@ pub fn setTextureCoordinates(cmd: *CommandBuffer, texture_2_coordinates: mango.T
 
 fn beforeDraw(cmd: *CommandBuffer) void {
     const queue = &cmd.queue;
-    const rendering_state = &cmd.rendering_state;
 
     // TODO: Check if we have enough space in the queue. If not, grow it from the pool (TODO)
 
     cmd.gfx_state.emitDirty(queue);    
-
-    if(rendering_state.dirty.vertex_buffers) {
-        for (rendering_state.misc.vertex_buffers_dirty_start..rendering_state.misc.vertex_buffers_dirty_end) |current_binding| {
-            queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer[current_binding].offset, rendering_state.vertex_buffers_offset[current_binding]);
-        }
-    }
-
-    if(rendering_state.dirty.rendering_data) {
-        queue.add(internal_regs, &internal_regs.framebuffer.render_buffer_invalidate, .init(.trigger));
-        queue.addIncremental(internal_regs, .{
-            &internal_regs.framebuffer.depth_buffer_location,
-            &internal_regs.framebuffer.color_buffer_location,
-            &internal_regs.framebuffer.render_buffer_dimensions,
-        }, .{
-            .fromPhysical(rendering_state.depth_stencil_attachment),
-            .fromPhysical(rendering_state.color_attachment),
-            .{
-                .width = @intCast(rendering_state.dimensions.x),
-                .height_end = @intCast(rendering_state.dimensions.y - 1),
-                // TODO: Expose a flag for flipping?
-                .flip_vertically = true,
-            }
-        });
-    }
-
-    rendering_state.dirty = .{};
+    cmd.rnd_state.emitDirty(queue);
 }
 
 const CommandBuffer = @This();
 const backend = @import("backend.zig");
+
+const GraphicsState = backend.GraphicsState;
+const RenderingState = backend.RenderingState;
 
 const std = @import("std");
 const zitrus = @import("zitrus");

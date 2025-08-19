@@ -50,6 +50,8 @@ pub const memory = @import("memory.zig");
 pub const start = @import("start.zig");
 pub const horizon = @import("horizon.zig");
 pub const pica = @import("pica.zig");
+pub const math = @import("math.zig");
+
 pub const mango = @import("mango.zig");
 
 const builtin = @import("builtin");
