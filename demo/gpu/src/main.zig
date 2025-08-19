@@ -55,7 +55,7 @@ pub fn main() !void {
 
     const Vertex = extern struct {
         color: [3]u8,
-        pos: [4]u8,
+        pos: [4]i8,
     };
 
     var device: mango.Device = .initTodo(&gsp);
@@ -163,10 +163,10 @@ pub fn main() !void {
         const idx_data: *[4]u8 = @ptrCast(mapped_idx);
 
         vtx_data.* = .{
-            .{ .pos = .{ 0, 0, 0, 1 }, .color = .{ 0, 0, 0 } },
-            .{ .pos = .{ 240, 0, 0, 1 }, .color = .{ 1, 1, 0 } },
-            .{ .pos = .{ 0, 240, 0, 1 }, .color = .{ 0, 1, 1 } },
-            .{ .pos = .{ 240, 240, 0, 1 }, .color = .{ 0, 1, 0 } },
+            .{ .pos = .{ -1, -1, 2, 1 }, .color = .{ 1, 1, 1 } },
+            .{ .pos = .{ 1, -1, 2, 1 }, .color = .{ 1, 1, 0 } },
+            .{ .pos = .{ -1, 1, 7, 1 }, .color = .{ 0, 1, 1 } },
+            .{ .pos = .{ 1, 1, 7, 1 }, .color = .{ 0, 1, 0 } },
         };
         idx_data.* = .{ 0, 1, 2, 3 };
 
@@ -228,7 +228,7 @@ pub fn main() !void {
     defer device.destroyImage(color_attachment_image, gpa);
     try device.bindImageMemory(color_attachment_image, color_attachment_image_memory, 0);
 
-    try device.clearColorImage(color_attachment_image, &@splat(255));
+    try device.clearColorImage(color_attachment_image, &@splat(64));
 
     const color_attachment_image_view = try device.createImageView(.{
         .type = .@"2d",
@@ -262,7 +262,7 @@ pub fn main() !void {
                 .{
                     .location = .v1,
                     .binding = .@"0",
-                    .format = .r8g8b8a8_uscaled,
+                    .format = .r8g8b8a8_sscaled,
                     .offset = 3,
                 },
             },
@@ -367,7 +367,7 @@ pub fn main() !void {
             });
             defer cmdbuf.endRendering();
             
-            cmdbuf.bindFloatUniforms(.vertex, 0, &zitrus.math.mat.orthoRotate90Cw(0, 240, 320, 0, 0, 1000));
+            cmdbuf.bindFloatUniforms(.vertex, 0, &zitrus.math.mat.perspRotate90Cw(std.math.degreesToRadians(90.0), 240.0 / 320.0, 1, 1000));
             cmdbuf.drawIndexed(4, 0, 0);
         }
     }

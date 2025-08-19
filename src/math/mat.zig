@@ -28,3 +28,27 @@ pub fn orthoRotate90Cw(l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
         .{0, 0, 0, 1},
     };
 }
+
+pub fn persp(fov_y: f32, aspect_ratio: f32, n: f32, f: f32) @"4x4" {
+    const fov_y_tan = @tan(fov_y / 2.0);
+    const f_range = f - n;
+
+    return .{
+        .{1 / (fov_y_tan * aspect_ratio), 0, 0, 0},
+        .{0, 1 / fov_y_tan, 0, 0},
+        .{0, 0, -f / f_range, (f * n) / f_range},
+        .{0, 0, 1, 0},
+    };
+}
+
+pub fn perspRotate90Cw(fov_y: f32, aspect_ratio: f32, n: f32, f: f32) @"4x4" {
+    const fov_y_tan = @tan(fov_y / 2.0);
+    const f_range = f - n;
+
+    return .{
+        .{0, 1 / fov_y_tan, 0, 0},
+        .{-1 / (fov_y_tan * aspect_ratio), 0, 0, 0},
+        .{0, 0, -f / f_range, (f * n) / f_range},
+        .{0, 0, 1, 0},
+    };
+}
