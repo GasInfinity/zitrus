@@ -116,7 +116,7 @@ pub const gx = struct {
         pub fn init(buffer: []align(8) u8, value: Value) MemoryFillUnit {
             return .{ .buffer = buffer, .value = value };
         }
-    }; 
+    };
 
     pub const DisplayTransferFlags = packed struct(u8) {
         pub const none: DisplayTransferFlags = .{};
@@ -570,7 +570,7 @@ pub fn submitTextureCopy(gsp: *GspGpu, src: [*]const u8, dst: [*]u8, size: usize
             .flags = .{
                 .flip_v = false,
                 .output_width_less_than_input = src_gaps.x > dst_gaps.x,
-                .linear_tiled = false, 
+                .linear_tiled = false,
                 .tiled_tiled = false,
                 .input_format = .bgra8888,
                 .output_format = .bgra8888,

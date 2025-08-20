@@ -19,6 +19,7 @@ pub const Scope = enum {
 queue: cmd3d.Queue,
 gfx_state: GraphicsState = .{},
 rnd_state: RenderingState = .{},
+emitted_graphics_pipeline: ?*backend.Pipeline.Graphics = null,
 bound_graphics_pipeline: ?*backend.Pipeline.Graphics = null,
 state: State = .initial,
 scope: Scope = .none,
@@ -42,15 +43,12 @@ pub fn bindPipeline(cmd: *CommandBuffer, bind_point: mango.PipelineBindPoint, pi
 
     switch (bind_point) {
         .graphics => {
-            const graphics_pipeline: *backend.Pipeline.Graphics = .fromHandleMutable(pipeline);
+            if (pipeline == .null) {
+                cmd.bound_graphics_pipeline = null;
+                return;
+            }
 
-            // TODO: move this to rendering state
-            @memcpy(cmd.queue.buffer[cmd.queue.current_index..][0..graphics_pipeline.cmd3d_state.len], graphics_pipeline.cmd3d_state);
-            cmd.queue.current_index += graphics_pipeline.cmd3d_state.len;
-
-            graphics_pipeline.copyGraphicsState(&cmd.gfx_state);
-            graphics_pipeline.copyRenderingState(&cmd.rnd_state);
-            cmd.bound_graphics_pipeline = graphics_pipeline;
+            cmd.bound_graphics_pipeline = .fromHandleMutable(pipeline);
         },
     }
 }
@@ -75,23 +73,21 @@ pub fn bindIndexBuffer(cmd: *CommandBuffer, buffer: mango.Buffer, offset: u32, i
 
 pub fn bindFloatUniforms(cmd: *CommandBuffer, stage: mango.ShaderStage, first_uniform: u32, uniforms: []const [4]f32) void {
     std.debug.assert(cmd.state == .recording);
-    
+
     return cmd.rnd_state.bindFloatUniforms(stage, first_uniform, uniforms);
 }
 
-pub fn bindCombinedImageSamplers(cmd: *CommandBuffer, first_combined: u32, combined_count: u32, combined_image_samplers: [*]const mango.CombinedImageSampler) void {
-    _ = cmd;
-    _ = first_combined;
-    _ = combined_count;
-    _ = combined_image_samplers;
-    // TODO: Bind combined Samplers and ImageViews
+pub fn bindCombinedImageSamplers(cmd: *CommandBuffer, first_combined: u32, combined_image_samplers: []const mango.CombinedImageSampler) void {
+    std.debug.assert(cmd.state == .recording);
+
+    return cmd.rnd_state.bindCombinedImageSamplers(first_combined, combined_image_samplers);
 }
 
 pub fn beginRendering(cmd: *CommandBuffer, rendering_info: *const mango.RenderingInfo) void {
     std.debug.assert(cmd.state == .recording);
     std.debug.assert(cmd.scope == .none);
 
-    const color_width, const color_height, const color_physical_address: zitrus.PhysicalAddress = if(rendering_info.color_attachment != .null) info: {
+    const color_width, const color_height, const color_physical_address: zitrus.PhysicalAddress = if (rendering_info.color_attachment != .null) info: {
         @branchHint(.likely);
         const color_attachment: backend.ImageView = .fromHandle(rendering_info.color_attachment);
         const color_image: backend.Image = .fromHandle(color_attachment.data.image);
@@ -100,7 +96,7 @@ pub fn beginRendering(cmd: *CommandBuffer, rendering_info: *const mango.Renderin
         break :info .{ color_image.info.width(), color_image.info.height(), color_image.memory_info.boundPhysicalAddress() };
     } else .{ 0, 0, .fromAddress(0) };
 
-    const depth_stencil_width, const depth_stencil_height, const depth_stencil_physical_address: zitrus.PhysicalAddress = if(rendering_info.depth_stencil_attachment != .null) info: {
+    const depth_stencil_width, const depth_stencil_height, const depth_stencil_physical_address: zitrus.PhysicalAddress = if (rendering_info.depth_stencil_attachment != .null) info: {
         const depth_stencil_attachment: backend.ImageView = .fromHandle(rendering_info.depth_stencil_attachment);
         const depth_stencil_image: backend.Image = .fromHandle(depth_stencil_attachment.data.image);
 
@@ -108,15 +104,15 @@ pub fn beginRendering(cmd: *CommandBuffer, rendering_info: *const mango.Renderin
         break :info .{ depth_stencil_image.info.width(), depth_stencil_image.info.height(), depth_stencil_image.memory_info.boundPhysicalAddress() };
     } else .{ 0, 0, .fromAddress(0) };
 
-    if(color_physical_address != .zero and depth_stencil_physical_address != .zero) {
+    if (color_physical_address != .zero and depth_stencil_physical_address != .zero) {
         std.debug.assert(color_width == depth_stencil_width and color_height == depth_stencil_height);
     }
 
     cmd.rnd_state.color_attachment = color_physical_address;
     cmd.rnd_state.depth_stencil_attachment = depth_stencil_physical_address;
-    cmd.rnd_state.dimensions = if(color_physical_address != .zero)
+    cmd.rnd_state.dimensions = if (color_physical_address != .zero)
         .{ .x = @intCast(color_width), .y = @intCast(color_height) }
-    else 
+    else
         .{ .x = @intCast(depth_stencil_width), .y = @intCast(depth_stencil_height) };
 
     cmd.rnd_state.dirty.rendering_data = true;
@@ -129,7 +125,7 @@ pub fn endRendering(cmd: *CommandBuffer) void {
     const queue = &cmd.queue;
 
     // This means a drawcall has been issued so flush the render buffer.
-    if(!cmd.rnd_state.dirty.rendering_data) {
+    if (!cmd.rnd_state.dirty.rendering_data) {
         queue.add(internal_regs, &internal_regs.framebuffer.render_buffer_flush, .init(.trigger));
     }
 
@@ -138,18 +134,18 @@ pub fn endRendering(cmd: *CommandBuffer) void {
 }
 
 pub fn draw(cmd: *CommandBuffer, vertex_count: u32, first_vertex: u32) void {
-    return cmd.drawMultiSlice(&.{ .{ .first_vertex = first_vertex, .vertex_count = vertex_count } });
+    return cmd.drawMultiSlice(&.{.{ .first_vertex = first_vertex, .vertex_count = vertex_count }});
 }
 
 pub fn drawMultiSlice(cmd: *CommandBuffer, vertex_info: []const mango.MultiDrawInfo) void {
-    return cmd.drawMulti(vertex_info.len, vertex_info.ptr, @sizeOf(mango.MultiDrawInfo));   
+    return cmd.drawMulti(vertex_info.len, vertex_info.ptr, @sizeOf(mango.MultiDrawInfo));
 }
 
 pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const mango.MultiDrawInfo, stride: u32) void {
     std.debug.assert(cmd.state == .recording);
     std.debug.assert(cmd.scope == .render_pass);
 
-    if(draw_count == 0) {
+    if (draw_count == 0) {
         return;
     }
 
@@ -180,17 +176,17 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
 
     var last_vertex_info = first_draw;
     var current_vertex_info_ptr: *const mango.MultiDrawInfo = @alignCast(@ptrCast(@as([*]const u8, @ptrCast(vertex_info)) + stride));
-    
+
     for (1..draw_count) |_| {
         std.debug.assertReadable(std.mem.asBytes(current_vertex_info_ptr));
 
         const current_vertex_info = current_vertex_info_ptr.*;
-        
-        if(current_vertex_info.vertex_count != last_vertex_info.vertex_count) {
+
+        if (current_vertex_info.vertex_count != last_vertex_info.vertex_count) {
             queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_num_vertices, current_vertex_info.vertex_count);
         }
 
-        if(current_vertex_info.first_vertex != last_vertex_info.first_vertex) {
+        if (current_vertex_info.first_vertex != last_vertex_info.first_vertex) {
             queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_first_index, current_vertex_info.first_vertex);
         }
 
@@ -205,18 +201,18 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
 }
 
 pub fn drawIndexed(cmd: *CommandBuffer, index_count: u32, first_index: u32, vertex_offset: i32) void {
-    return cmd.drawMultiIndexedSlice(&.{ .{ .first_index = first_index, .index_count = index_count, .vertex_offset = vertex_offset } });
+    return cmd.drawMultiIndexedSlice(&.{.{ .first_index = first_index, .index_count = index_count, .vertex_offset = vertex_offset }});
 }
 
 pub fn drawMultiIndexedSlice(cmd: *CommandBuffer, index_info: []const mango.MultiDrawIndexedInfo) void {
-    return cmd.drawMultiIndexed(index_info.len, index_info.ptr, @sizeOf(mango.MultiDrawIndexedInfo));   
+    return cmd.drawMultiIndexed(index_info.len, index_info.ptr, @sizeOf(mango.MultiDrawIndexedInfo));
 }
 
 pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]const mango.MultiDrawIndexedInfo, stride: u32) void {
     std.debug.assert(cmd.state == .recording);
     std.debug.assert(cmd.scope == .render_pass);
 
-    if(draw_count == 0) {
+    if (draw_count == 0) {
         return;
     }
 
@@ -241,12 +237,12 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
         first_draw.index_count,
     });
 
-    if(first_draw.vertex_offset != 0) {
+    if (first_draw.vertex_offset != 0) {
         for (&dynamic_rendering_state.vertex_buffers_offset, &dynamic_graphics_state.vtx_input.buffer_config, 0..) |offset, buf_conf, i| {
             queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer[i].offset, offset + @as(u32, @bitCast(first_draw.vertex_offset * buf_conf.high.bytes_per_vertex)));
         }
-        
-        cmd.rnd_state.dirty.vertex_buffers = true; 
+
+        cmd.rnd_state.dirty.vertex_buffers = true;
     }
 
     queue.add(internal_regs, &internal_regs.geometry_pipeline.restart_primitive, .init(.trigger));
@@ -259,29 +255,29 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
 
     var last_index_info = first_draw;
     var current_index_info_ptr: *const mango.MultiDrawIndexedInfo = @alignCast(@ptrCast(@as([*]const u8, @ptrCast(index_info)) + stride));
-    
+
     for (1..draw_count) |_| {
         std.debug.assertReadable(std.mem.asBytes(current_index_info_ptr));
 
         const current_index_info = current_index_info_ptr.*;
-        
-        if(current_index_info.index_count != last_index_info.index_count) {
+
+        if (current_index_info.index_count != last_index_info.index_count) {
             queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_num_vertices, current_index_info.index_count);
         }
 
-        if(current_index_info.first_index != last_index_info.first_index) {
+        if (current_index_info.first_index != last_index_info.first_index) {
             queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_index_buffer, .{
                 .base_offset = @intCast(dynamic_rendering_state.index_buffer_offset + current_index_info.first_index),
                 .format = dynamic_rendering_state.misc.index_format,
             });
         }
 
-        if(current_index_info.vertex_offset != last_index_info.vertex_offset) {
+        if (current_index_info.vertex_offset != last_index_info.vertex_offset) {
             for (&dynamic_rendering_state.vertex_buffers_offset, &dynamic_graphics_state.vtx_input.buffer_config, 0..) |offset, buf_conf, i| {
                 queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer[i].offset, offset + @as(u32, @bitCast(current_index_info.vertex_offset * buf_conf.high.bytes_per_vertex)));
             }
 
-            cmd.rnd_state.dirty.vertex_buffers = true; 
+            cmd.rnd_state.dirty.vertex_buffers = true;
         }
 
         queue.add(internal_regs, &internal_regs.geometry_pipeline.restart_primitive, .init(.trigger));
@@ -424,7 +420,16 @@ fn beforeDraw(cmd: *CommandBuffer) void {
 
     // TODO: Check if we have enough space in the queue. If not, grow it from the pool (TODO)
 
-    cmd.gfx_state.emitDirty(queue);    
+    if (cmd.bound_graphics_pipeline != cmd.emitted_graphics_pipeline) if (cmd.bound_graphics_pipeline) |bound_gfx_pipeline| {
+        @memcpy(cmd.queue.buffer[cmd.queue.current_index..][0..bound_gfx_pipeline.cmd3d_state.len], bound_gfx_pipeline.cmd3d_state);
+        cmd.queue.current_index += bound_gfx_pipeline.cmd3d_state.len;
+
+        bound_gfx_pipeline.copyGraphicsState(&cmd.gfx_state);
+        bound_gfx_pipeline.copyRenderingState(&cmd.rnd_state);
+        cmd.emitted_graphics_pipeline = bound_gfx_pipeline;
+    };
+
+    cmd.gfx_state.emitDirty(queue);
     cmd.rnd_state.emitDirty(queue);
 }
 
@@ -444,4 +449,3 @@ const cmd3d = pica.cmd3d;
 const PhysicalAddress = zitrus.PhysicalAddress;
 
 const internal_regs = &zitrus.memory.arm11.gpu.internal;
-

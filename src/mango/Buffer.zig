@@ -12,7 +12,7 @@ pub fn toHandle(buffer: *Buffer) Handle {
 }
 
 pub fn fromHandleMutable(handle: Handle) *Buffer {
-    return @as(*Buffer, @ptrFromInt(@intFromEnum(handle))); 
+    return @as(*Buffer, @ptrFromInt(@intFromEnum(handle)));
 }
 
 pub fn fromHandle(handle: Handle) Buffer {

@@ -16,6 +16,15 @@
 // TODO: Have validation-layer behaviour with a toggle at the expense of more checks and more memory usage.
 // TODO: Move to a Handle based API. Internal implementation MUST not be exposed as it could be misused.
 
+pub const DeviceSize = enum(u32) {
+    whole_size = std.math.maxInt(u32),
+    _,
+
+    pub fn size(value: u32) DeviceSize {
+        return @enumFromInt(value);
+    }
+};
+
 pub const Offset2D = extern struct { x: u16, y: u16 };
 pub const Extent2D = extern struct { width: u16, height: u16 };
 pub const Rect2D = extern struct { offset: Offset2D, extent: Extent2D };
@@ -29,7 +38,7 @@ pub const ColorComponentFlags = packed struct(u8) {
     g_enable: bool = false,
     b_enable: bool = false,
     a_enable: bool = false,
-    _: u4 = 0
+    _: u4 = 0,
 };
 
 /// The 3DS always has 3 heaps.
@@ -43,7 +52,7 @@ pub const MemoryHeap = extern struct {
         _: u7 = false,
     };
 
-    size: u32,
+    size: DeviceSize,
     flags: Flags,
 };
 
@@ -56,7 +65,7 @@ pub const MemoryHeapIndex = enum(u8) {
 pub const MemoryType = extern struct {
     pub const Flags = packed struct(u8) {
         /// The memory is the most efficient to be accessed by the GPU. Set if and only if the heap is `device_local`.
-        device_local: bool, 
+        device_local: bool,
         /// The memory can be accessed by the host via `mapMemory` and `unmapMemory`.
         host_visible: bool,
         /// The memory must be flushed and invalidated via `flushMappedMemoryRanges` and `invalidateMappedMemoryRanges`.
@@ -72,19 +81,19 @@ pub const MemoryType = extern struct {
 };
 
 pub const MemoryAllocateInfo = extern struct {
-    allocation_size: u32,
+    allocation_size: DeviceSize,
     memory_type: u8,
 };
 
 pub const MappedMemoryRange = extern struct {
     memory: DeviceMemory,
-    offset: u32,
-    size: u32,
+    offset: DeviceSize,
+    size: DeviceSize,
 };
 
 pub const Format = enum(u8) {
     undefined,
-    
+
     r5g6b5_unorm_pack16,
     r5g5b5a1_unorm_pack16,
     r4g4b4a4_unorm_pack16,
@@ -108,7 +117,7 @@ pub const Format = enum(u8) {
     r8g8b8a8_sscaled,
     r16g16b16a16_sscaled,
     r32g32b32a32_sfloat,
-    
+
     g8r8_unorm,
     b8g8r8_unorm,
     a8b8g8r8_unorm,
@@ -128,7 +137,7 @@ pub const Format = enum(u8) {
 
     etc1_unorm,
     etc1a4_unorm,
-    
+
     pub fn nativeColorFormat(fmt: Format) pica.ColorFormat {
         return switch (fmt) {
             .a8b8g8r8_unorm => .abgr8888,
@@ -150,7 +159,7 @@ pub const Format = enum(u8) {
     }
 
     pub fn nativeVertexFormat(fmt: Format) pica.AttributeFormat {
-        return switch(fmt) {
+        return switch (fmt) {
             .r8_sscaled => .{ .type = .i8, .size = .x },
             .r8_uscaled => .{ .type = .u8, .size = .x },
             .r16_sscaled => .{ .type = .i16, .size = .x },
@@ -178,7 +187,7 @@ pub const Format = enum(u8) {
         return switch (fmt) {
             .g8r8_unorm => .hilo88,
             .a8b8g8r8_unorm => .abgr8888,
-            .b8g8r8_unorm => .bgr8888,
+            .b8g8r8_unorm => .bgr888,
             .r5g6b5_unorm_pack16 => .rgb565,
             .r5g5b5a1_unorm_pack16 => .rgba5551,
             .r4g4b4a4_unorm_pack16 => .rgba4444,
@@ -275,7 +284,7 @@ pub const StencilOperation = enum(u8) {
     /// Increments the current value and clamps to `0` when the maximum value would have exceeded.
     increment_wrap,
     /// Decrements the current value and clamps to the maximum possible value when the value would go below `0`.
-    decrement_wrap, 
+    decrement_wrap,
 
     pub fn native(op: StencilOperation) pica.StencilOperation {
         return switch (op) {
@@ -422,7 +431,7 @@ pub const ColorBlendEquation = extern struct {
             .src_color_factor = equation.src_color_factor.native(),
             .dst_color_factor = equation.dst_color_factor.native(),
             .src_alpha_factor = equation.src_alpha_factor.native(),
-            .dst_alpha_factor = equation.dst_alpha_factor.native(), 
+            .dst_alpha_factor = equation.dst_alpha_factor.native(),
         };
     }
 };
@@ -562,7 +571,7 @@ pub const TextureCombinerScale = enum(u8) {
 pub const TextureCombinerBufferSource = enum(u8) {
     /// Use previous combiner buffer output as this combiner's buffer input
     previous_buffer,
-    /// Use previous combiner output as this combiner's buffer input 
+    /// Use previous combiner output as this combiner's buffer input
     previous,
 
     pub fn native(buffer_source: TextureCombinerBufferSource) pica.TextureCombinerBufferSource {
@@ -581,7 +590,7 @@ pub const FrontFace = enum(u8) {
 };
 
 pub const CullMode = enum(u8) {
-    /// No triangles are discarded. 
+    /// No triangles are discarded.
     none,
     /// The front-facing triangles are culled.
     front,
@@ -620,13 +629,13 @@ pub const BufferCreateInfo = extern struct {
         _: u4 = 0,
     };
 
-    size: usize,
+    size: DeviceSize,
     usage: Usage,
 };
 
 pub const ImageCreateInfo = extern struct {
     pub const Type = enum(u8) {
-        @"2d",    
+        @"2d",
     };
 
     pub const Tiling = enum(u8) {
@@ -793,8 +802,7 @@ pub const GraphicsPipelineCreateInfo = extern struct {
         texture_3_coordinates: TextureCoordinateSource,
     };
 
-    pub const LightingState = extern struct {
-    };
+    pub const LightingState = extern struct {};
 
     pub const TextureCombinerState = extern struct {
         texture_combiners: [*]const TextureCombiner,
@@ -834,18 +842,18 @@ pub const GraphicsPipelineCreateInfo = extern struct {
         depth_compare_op: CompareOperation,
 
         stencil_test_enable: bool,
-        back_front: StencilOperationState,  
+        back_front: StencilOperationState,
     };
 
     pub const ColorBlendState = extern struct {
         pub const Attachment = extern struct {
-            blend_equation: ColorBlendEquation, 
+            blend_equation: ColorBlendEquation,
             color_write_mask: ColorComponentFlags,
         };
 
         logic_op_enable: bool,
         logic_op: LogicOperation,
-        
+
         attachment: Attachment,
         blend_constants: [4]u8,
     };
@@ -868,7 +876,7 @@ pub const GraphicsPipelineCreateInfo = extern struct {
         stencil_write_mask: bool = false,
         stencil_reference: bool = false,
         stencil_test_enable: bool = false,
-        stencil_test_operation: bool = false, 
+        stencil_test_operation: bool = false,
 
         logic_op_enable: bool = false,
         logic_op: bool = false,
@@ -879,7 +887,7 @@ pub const GraphicsPipelineCreateInfo = extern struct {
         alpha_test_enable: bool = false,
         alpha_test_compare_op: bool = false,
         alpha_test_reference: bool = false,
-        
+
         color_write_mask: bool = false,
         primitive_topology: bool = false,
 
@@ -910,20 +918,20 @@ pub const TextureCoordinateSource = enum(u8) {
     @"0",
     @"1",
     @"2",
-    
+
     pub fn nativeTexture2(src: TextureCoordinateSource) pica.TextureUnitTexture2Coordinates {
-        return switch(src) {
+        return switch (src) {
             .@"0" => unreachable,
-            .@"1" => .@"1", 
-            .@"2" => .@"2", 
+            .@"1" => .@"1",
+            .@"2" => .@"2",
         };
     }
 
     pub fn nativeTexture3(src: TextureCoordinateSource) pica.TextureUnitTexture3Coordinates {
-        return switch(src) {
-            .@"0" => .@"0", 
-            .@"1" => .@"1", 
-            .@"2" => .@"2", 
+        return switch (src) {
+            .@"0" => .@"0",
+            .@"1" => .@"1",
+            .@"2" => .@"2",
         };
     }
 };
@@ -969,7 +977,7 @@ pub const Scissor = extern struct {
             @bitCast(scissor.rect.offset),
             .{ .x = scissor.rect.offset.x + scissor.rect.extent.width - 1, .y = scissor.rect.offset.y + scissor.rect.extent.height - 1 },
         });
-    }    
+    }
 };
 
 pub const Viewport = extern struct {
@@ -1021,9 +1029,20 @@ pub const VertexInputAttributeDescription = extern struct {
 };
 
 pub const BufferCopy = extern struct {
-    src_offset: usize,
-    dst_offset: usize,
-    size: usize,
+    src_offset: DeviceSize,
+    dst_offset: DeviceSize,
+    size: DeviceSize,
+};
+
+pub const BufferImageCopy = extern struct {
+    pub const Flags = packed struct(u8) {
+        /// Directly copies the data without performing linear to optimal tiling.
+        memcpy: bool = false,
+        _: u7 = 0,
+    };
+
+    src_offset: DeviceSize,
+    flags: Flags,
 };
 
 pub const MultiDrawInfo = extern struct {
@@ -1043,8 +1062,8 @@ pub const RenderingInfo = extern struct {
 };
 
 pub const CombinedImageSampler = extern struct {
-    image: *ImageView,
-    sampler: *Sampler,
+    image: ImageView,
+    sampler: Sampler,
 };
 
 pub const TextureCombiner = extern struct {

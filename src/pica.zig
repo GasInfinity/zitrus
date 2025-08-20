@@ -32,7 +32,7 @@ pub const F7_16x4 = extern struct {
 
     data: [@divExact(@bitSizeOf(F7_16) * 4, @bitSizeOf(u32))]u32,
 
-    pub fn pack(x: F7_16, y: F7_16, z:F7_16, w: F7_16) F7_16x4 {
+    pub fn pack(x: F7_16, y: F7_16, z: F7_16, w: F7_16) F7_16x4 {
         var vec: F7_16x4 = undefined;
         const vec_bytes = std.mem.asBytes(&vec.data);
 
@@ -41,7 +41,7 @@ pub const F7_16x4 = extern struct {
         std.mem.writePackedInt(u24, vec_bytes, @bitSizeOf(F7_16), @bitCast(y), .little);
         std.mem.writePackedInt(u24, vec_bytes, @bitSizeOf(F7_16) * 2, @bitCast(z), .little);
         std.mem.writePackedInt(u24, vec_bytes, @bitSizeOf(F7_16) * 3, @bitCast(w), .little);
-        std.mem.swap(u32, &vec.data[0], &vec.data[2]); 
+        std.mem.swap(u32, &vec.data[0], &vec.data[2]);
 
         return vec;
     }
@@ -100,7 +100,7 @@ pub const ColorFormat = enum(u3) {
             .abgr8888 => Abgr8888,
             .bgr888 => Bgr888,
             .rgb565 => Rgb565,
-            .rgba5551=> Rgba5551,
+            .rgba5551 => Rgba5551,
             .rgba4444 => Rgba4444,
         };
     }
@@ -176,7 +176,7 @@ pub const FramebufferFormat = packed struct(u32) {
 
 /// The front face is always counter-clockwise and cannot be changed.
 pub const CullMode = enum(u2) {
-    /// No triangles are discarded. 
+    /// No triangles are discarded.
     none,
     /// The front-facing triangles are culled where their front face is counter-clockwise.
     front_ccw,
@@ -190,7 +190,7 @@ pub const ScissorMode = enum(u2) {
     /// The pixels outside the scissor area will be rendered.
     outside,
     /// The pixels inside the scissor area will be rendered.
-    inside = 3
+    inside = 3,
 };
 
 pub const EarlyDepthCompareOperation = enum(u2) {
@@ -234,53 +234,42 @@ pub const OutputMap = packed struct(u32) {
 
         pub fn isNormalQuaternion(semantic: Semantic) bool {
             return switch (semantic) {
-                .normal_quaternion_x,
-                .normal_quaternion_y,
-                .normal_quaternion_z,
-                .normal_quaternion_w => true,
+                .normal_quaternion_x, .normal_quaternion_y, .normal_quaternion_z, .normal_quaternion_w => true,
                 else => false,
             };
         }
 
         pub fn isColor(semantic: Semantic) bool {
             return switch (semantic) {
-                .color_r,
-                .color_g,
-                .color_b,
-                .color_a => true,
+                .color_r, .color_g, .color_b, .color_a => true,
                 else => false,
             };
         }
 
         pub fn isTextureCoordinate0(semantic: Semantic) bool {
             return switch (semantic) {
-                .texture_coordinate_0_u,
-                .texture_coordinate_0_v => true,
+                .texture_coordinate_0_u, .texture_coordinate_0_v => true,
                 else => false,
             };
         }
 
         pub fn isTextureCoordinate1(semantic: Semantic) bool {
             return switch (semantic) {
-                .texture_coordinate_1_u,
-                .texture_coordinate_1_v => true,
+                .texture_coordinate_1_u, .texture_coordinate_1_v => true,
                 else => false,
             };
         }
 
         pub fn isTextureCoordinate2(semantic: Semantic) bool {
             return switch (semantic) {
-                .texture_coordinate_2_u,
-                .texture_coordinate_2_v => true,
+                .texture_coordinate_2_u, .texture_coordinate_2_v => true,
                 else => false,
             };
         }
 
         pub fn isView(semantic: Semantic) bool {
             return switch (semantic) {
-                .view_x,
-                .view_y,
-                .view_z => true,
+                .view_x, .view_y, .view_z => true,
                 else => false,
             };
         }
@@ -402,7 +391,7 @@ pub const AttributeFormat = packed struct(u4) {
         pub fn byteSize(typ: Type) usize {
             return switch (typ) {
                 .i8, .u8 => @sizeOf(u8),
-                .i16  => @sizeOf(i16),
+                .i16 => @sizeOf(i16),
                 .f32 => @sizeOf(f32),
             };
         }
@@ -415,7 +404,7 @@ pub const AttributeFormat = packed struct(u4) {
 
     pub fn byteSize(fmt: AttributeFormat) usize {
         return fmt.type.byteSize() * (@intFromEnum(fmt.size) + 1);
-    } 
+    }
 };
 
 pub const IndexFormat = enum(u1) {
@@ -491,10 +480,7 @@ pub const TextureCombinerScale = enum(u2) {
     @"3x",
 };
 
-pub const TextureCombinerBufferSource = enum(u1) {
-    previous_buffer,
-    previous
-};
+pub const TextureCombinerBufferSource = enum(u1) { previous_buffer, previous };
 
 pub const TextureCombinerFogMode = enum(u3) {
     disabled,
@@ -889,9 +875,9 @@ pub const Registers = struct {
 
         pub const TextureUnits = extern struct {
             pub const Config = packed struct(u32) {
-                texture_0_enabled: bool, 
-                texture_1_enabled: bool, 
-                texture_2_enabled: bool, 
+                texture_0_enabled: bool,
+                texture_1_enabled: bool,
+                texture_2_enabled: bool,
                 _unused0: u5 = 0,
                 texture_3_coordinates: TextureUnitTexture3Coordinates,
                 texture_3_enabled: bool,
@@ -952,7 +938,7 @@ pub const Registers = struct {
                 dimensions: TextureDimensions,
                 parameters: TextureParameters,
                 lod: TextureLevelOfDetail,
-                address: [6]u32,
+                address: [6]zitrus.AlignedPhysicalAddress(.@"8", .@"8"),
                 shadow: u32,
                 _unknown0: u32,
                 _unknown1: u32,
@@ -964,7 +950,7 @@ pub const Registers = struct {
                 dimensions: TextureDimensions,
                 parameters: TextureParameters,
                 lod: TextureLevelOfDetail,
-                address: u32,
+                address: zitrus.AlignedPhysicalAddress(.@"8", .@"8"),
                 format: RightPaddedRegister(TextureUnitFormat),
             };
 
@@ -1001,7 +987,7 @@ pub const Registers = struct {
                     alpha_src_2: TextureCombinerSource,
                     _unused1: u4 = 0,
                 };
-                
+
                 pub const Factors = packed struct(u32) {
                     color_factor_0: TextureCombinerColorFactor,
                     color_factor_1: TextureCombinerColorFactor,
@@ -1159,7 +1145,7 @@ pub const Registers = struct {
 
                 // NOTE: really weird that it doesn't trigger separate r g b a?
                 enable_all: u4 = 0,
-                _unused0: u28 = 0, 
+                _unused0: u28 = 0,
             };
 
             pub const DepthStencilRwMask = packed struct(u32) {
@@ -1170,7 +1156,7 @@ pub const Registers = struct {
                 depth_enable: bool = false,
                 _unused0: u30 = 0,
             };
-            
+
             pub const RenderBufferDimensions = packed struct(u32) {
                 width: u11,
                 _unused0: u1 = 0,
@@ -1181,7 +1167,7 @@ pub const Registers = struct {
 
                 pub fn init(width: u11, height: u10, flip_vertically: bool) RenderBufferDimensions {
                     return .{ .width = width, .height_end = height - 1, .flip_vertically = flip_vertically };
-                } 
+                }
             };
 
             pub const ColorBufferFormat = packed struct(u32) {
@@ -1216,7 +1202,7 @@ pub const Registers = struct {
             _unknown2: u32,
             _unknown3: u32,
             render_buffer_invalidate: RightPaddedRegister(Trigger),
-            render_buffer_flush: RightPaddedRegister(Trigger), 
+            render_buffer_flush: RightPaddedRegister(Trigger),
             color_buffer_reading: ColorRwMask,
             color_buffer_writing: ColorRwMask,
             depth_buffer_reading: DepthStencilRwMask,
@@ -1429,7 +1415,7 @@ pub const Registers = struct {
             };
 
             pub const PipelineConfig = packed struct(u32) {
-                pub const GeometryUsage = enum(u2) { disabled, enabled = 2 }; 
+                pub const GeometryUsage = enum(u2) { disabled, enabled = 2 };
 
                 geometry_shader_usage: GeometryUsage = .disabled,
                 _unused0: u6 = 0,
@@ -1515,7 +1501,7 @@ pub const Registers = struct {
                 _unused2: u1 = 0,
                 enabled_for_vertex_1: bool = false,
             };
-            
+
             pub const OutputMask = packed struct(u32) {
                 o0_enabled: bool = false,
                 o1_enabled: bool = false,
@@ -1584,8 +1570,22 @@ pub const Registers = struct {
             };
 
             pub const BooleanUniformMask = packed struct(u32) {
-                b0: bool, b1: bool, b2: bool, b3: bool, b4: bool, b5: bool, b6: bool, b7: bool,
-                b8: bool, b9: bool, b10: bool, b11: bool, b12: bool, b13: bool, b14: bool, b15: bool,
+                b0: bool,
+                b1: bool,
+                b2: bool,
+                b3: bool,
+                b4: bool,
+                b5: bool,
+                b6: bool,
+                b7: bool,
+                b8: bool,
+                b9: bool,
+                b10: bool,
+                b11: bool,
+                b12: bool,
+                b13: bool,
+                b14: bool,
+                b15: bool,
                 _unused0: u16 = 0x7FFF,
             };
 
@@ -1700,4 +1700,3 @@ const InputRegister = shader.register.Source.Input;
 
 const AlignedPhysicalAddress = zitrus.AlignedPhysicalAddress;
 const PhysicalAddress = zitrus.PhysicalAddress;
-

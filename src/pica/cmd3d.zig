@@ -53,7 +53,7 @@ pub const Queue = struct {
 
         switch (comptime std.math.order(@bitSizeOf(Child), @bitSizeOf(u32))) {
             .eq => {
-                queue.buffer[queue.current_index] = switch(child_info) {
+                queue.buffer[queue.current_index] = switch (child_info) {
                     .@"enum" => @intFromEnum(value),
                     else => @bitCast(value),
                 };
@@ -64,16 +64,18 @@ pub const Queue = struct {
                     .incremental_writing = false,
                 });
 
-                queue.current_index += 2; 
+                queue.current_index += 2;
             },
             .gt => {
-                const as_u32_array = switch(child_info) {
-                    .array => |a| if(@bitSizeOf(a.child) != @bitSizeOf(u32))
+                const as_u32_array = switch (child_info) {
+                    .array => |a| if (@bitSizeOf(a.child) != @bitSizeOf(u32))
                         @compileError("only arrays of 32-bit types are supported for incremental writes")
-                    else @as([a.len]u32, @bitCast(value)),
-                    .@"struct" => |s| if(s.layout == .auto or (@bitSizeOf(Child) % @bitSizeOf(u32)) != 0)
+                    else
+                        @as([a.len]u32, @bitCast(value)),
+                    .@"struct" => |s| if (s.layout == .auto or (@bitSizeOf(Child) % @bitSizeOf(u32)) != 0)
                         @compileError("only non-auto structs with a bitSize multiple of 32 are supported")
-                    else @as([@divExact(@bitSizeOf(Child), @bitSizeOf(u32))]u32, @bitCast(value)),
+                    else
+                        @as([@divExact(@bitSizeOf(Child), @bitSizeOf(u32))]u32, @bitCast(value)),
                     else => @compileError("unsupported type for incremental write"),
                 };
 
@@ -92,7 +94,7 @@ pub const Queue = struct {
                 }
 
                 // add padding as commands must be aligned to 8 bytes
-                if(!std.mem.isAligned(as_u32_array.len - 1, 2)) {
+                if (!std.mem.isAligned(as_u32_array.len - 1, 2)) {
                     queue.buffer[queue.current_index] = 0;
                     queue.current_index += 1;
                 }
@@ -108,7 +110,7 @@ pub const Queue = struct {
         const st_ty = @typeInfo(RegistersType).@"struct";
 
         std.debug.assert(st_ty.is_tuple);
-        
+
         var needed_fields: [st_ty.fields.len]std.builtin.Type.StructField = undefined;
 
         for (st_ty.fields, 0..) |field, i| {
@@ -118,12 +120,12 @@ pub const Queue = struct {
             const current = registers[i];
             const current_id: Id = .fromRegister(base, current);
 
-            if(@bitSizeOf(f_ty.child) != @bitSizeOf(u32)) @compileLog("only values with a @bitSizeOf(u32) are supported.");
+            if (@bitSizeOf(f_ty.child) != @bitSizeOf(u32)) @compileLog("only values with a @bitSizeOf(u32) are supported.");
 
-            if(i > 0) {
+            if (i > 0) {
                 const last_id: Id = .fromRegister(base, registers[i - 1]);
 
-                std.debug.assert(std.math.order(@intFromEnum(current_id), @intFromEnum(last_id)) == .gt);    
+                std.debug.assert(std.math.order(@intFromEnum(current_id), @intFromEnum(last_id)) == .gt);
                 std.debug.assert((@intFromEnum(current_id) - @intFromEnum(last_id)) == 1);
             }
 
@@ -136,7 +138,7 @@ pub const Queue = struct {
             };
         }
 
-        return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &needed_fields, .decls = &.{}, .is_tuple = true }});
+        return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &needed_fields, .decls = &.{}, .is_tuple = true } });
     }
 
     pub fn addIncremental(queue: *Queue, comptime base: *pica.Registers.Internal, comptime registers: anytype, values: IncrementalWritesTuple(base, registers)) void {
@@ -144,7 +146,7 @@ pub const Queue = struct {
     }
 
     pub fn addIncrementalMasked(queue: *Queue, comptime base: *pica.Registers.Internal, comptime registers: anytype, values: IncrementalWritesTuple(base, registers), mask: u4) void {
-        if(registers.len == 0) return;
+        if (registers.len == 0) return;
 
         const first_id: Id = .fromRegister(base, registers[0]);
 
@@ -164,10 +166,10 @@ pub const Queue = struct {
         }
 
         // add padding as commands must be aligned to 8 bytes
-        if(!std.mem.isAligned(values.len - 1, 2)) {
+        if (!std.mem.isAligned(values.len - 1, 2)) {
             queue.buffer[queue.current_index] = 0;
             queue.current_index += 1;
-        } 
+        }
     }
 
     pub fn addConsecutive(queue: *Queue, comptime base: *pica.Registers.Internal, comptime register: anytype, values: []const std.meta.Child(@TypeOf(register))) void {
@@ -177,7 +179,7 @@ pub const Queue = struct {
     pub fn addConsecutiveMasked(queue: *Queue, comptime base: *pica.Registers.Internal, comptime register: anytype, values: []const std.meta.Child(@TypeOf(register)), mask: u4) void {
         comptime std.debug.assert(@typeInfo(@TypeOf(register)) == .pointer);
 
-        if(values.len == 0) {
+        if (values.len == 0) {
             return;
         }
 
@@ -202,7 +204,7 @@ pub const Queue = struct {
         }
 
         // add padding as commands must be aligned to 8 bytes
-        if(!std.mem.isAligned(values.len - 1, 2)) {
+        if (!std.mem.isAligned(values.len - 1, 2)) {
             queue.buffer[queue.current_index] = 0;
             queue.current_index += 1;
         }

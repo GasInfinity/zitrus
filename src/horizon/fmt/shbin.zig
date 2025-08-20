@@ -123,7 +123,6 @@ pub const Dvle = extern struct {
     };
 };
 
-
 pub const UniformRegister = enum(u8) {
     pub const Kind = enum {
         input,

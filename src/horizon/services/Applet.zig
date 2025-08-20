@@ -272,7 +272,7 @@ pub const ParameterResult = struct {
     }
 
     pub fn deinit(parameter: *ParameterResult) void {
-        if(parameter.handle != .null) {
+        if (parameter.handle != .null) {
             _ = horizon.closeHandle(parameter.handle);
         }
         parameter.* = undefined;
@@ -548,14 +548,14 @@ pub const command = struct {
     // TODO: PrepareToStartNewestHomeMenu
     // TODO: StartApplication
 
-    /// Errors: 0xc8a0cc04, 
+    /// Errors: 0xc8a0cc04,
     pub const WakeupApplication = ipc.Command(Id, .wakeup_application, struct {}, struct {});
     // TODO: CancelApplication
     // TODO: StartLibraryApplet
     // TODO: StartSystemApplet
     // TODO: StartNewestHomeMenu
     // TODO: OrderToCloseApplcation
-    /// 
+    ///
     pub const PrepareToCloseApplication = ipc.Command(Id, .prepare_to_close_application, struct { cancel_preload: bool }, struct {});
     // TODO: PrepareToJumpToApplication
     // TODO: JumpToApplication

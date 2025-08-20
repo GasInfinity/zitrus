@@ -43,10 +43,14 @@ pub const Data = packed struct(u64) {
 
 data: Data,
 
+pub fn toHandle(sampler: Sampler) Handle {
+    return @enumFromInt(@as(u64, @bitCast(sampler.data)));
+}
+
 pub fn fromHandle(handle: Handle) Sampler {
     // TODO: With runtime safety the handle is a real pointer with some metadata
     return .{
-        .data = @bitCast(handle),
+        .data = @bitCast(@intFromEnum(handle)),
     };
 }
 

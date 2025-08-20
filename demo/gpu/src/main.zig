@@ -5,6 +5,8 @@
 const simple_vtx_storage align(@sizeOf(u32)) = @embedFile("simple.zpsh").*;
 const simple_vtx = &simple_vtx_storage;
 
+const test_bgr = @embedFile("test.bgr");
+
 pub const os = struct {
     pub const heap = struct {
         pub const page_allocator = horizon.heap.page_allocator;
@@ -54,21 +56,21 @@ pub fn main() !void {
     defer horizon.heap.linear_page_allocator.free(raw_command_queue);
 
     const Vertex = extern struct {
-        color: [3]u8,
         pos: [4]i8,
+        uv: [2]u8,
     };
 
     var device: mango.Device = .initTodo(&gsp);
 
     const bottom_presentable_image_memory = try device.allocateMemory(&.{
         .memory_type = 0,
-        .allocation_size = 320 * 240 * 3 * 2,
+        .allocation_size = .size(320 * 240 * 3 * 2),
     }, gpa);
     defer device.freeMemory(bottom_presentable_image_memory, gpa);
 
     const top_presentable_image_memory = try device.allocateMemory(&.{
         .memory_type = 1,
-        .allocation_size = 400 * 240 * 3,
+        .allocation_size = .size(400 * 240 * 3),
     }, gpa);
     defer device.freeMemory(top_presentable_image_memory, gpa);
 
@@ -140,13 +142,13 @@ pub fn main() !void {
 
     const vtx_buffer_memory = try device.allocateMemory(&.{
         .memory_type = 0,
-        .allocation_size = @sizeOf(Vertex) * 4,
+        .allocation_size = .size(@sizeOf(Vertex) * 4),
     }, gpa);
     defer device.freeMemory(vtx_buffer_memory, gpa);
 
     const index_buffer_memory = try device.allocateMemory(&.{
         .memory_type = 0,
-        .allocation_size = 4,
+        .allocation_size = .size(4),
     }, gpa);
     defer device.freeMemory(index_buffer_memory, gpa);
 
@@ -163,35 +165,35 @@ pub fn main() !void {
         const idx_data: *[4]u8 = @ptrCast(mapped_idx);
 
         vtx_data.* = .{
-            .{ .pos = .{ -1, -1, 2, 1 }, .color = .{ 1, 1, 1 } },
-            .{ .pos = .{ 1, -1, 2, 1 }, .color = .{ 1, 1, 0 } },
-            .{ .pos = .{ -1, 1, 7, 1 }, .color = .{ 0, 1, 1 } },
-            .{ .pos = .{ 1, 1, 7, 1 }, .color = .{ 0, 1, 0 } },
+            .{ .pos = .{ -1, -1, 2, 1 }, .uv = .{ 0, 0 } },
+            .{ .pos = .{ 1, -1, 2, 1 }, .uv = .{ 1, 0 } },
+            .{ .pos = .{ -1, 1, 4, 1 }, .uv = .{ 0, 1 } },
+            .{ .pos = .{ 1, 1, 4, 1 }, .uv = .{ 1, 1 } },
         };
         idx_data.* = .{ 0, 1, 2, 3 };
 
         try device.flushMappedMemoryRanges(&.{
             .{
                 .memory = vtx_buffer_memory,
-                .offset = 0,
-                .size = @sizeOf(Vertex) * 4,
+                .offset = .size(0),
+                .size = .size(@sizeOf(Vertex) * 4),
             },
             .{
                 .memory = index_buffer_memory,
-                .offset = 0,
-                .size = 4,
+                .offset = .size(0),
+                .size = .size(4),
             }
         });
     }
 
     const color_attachment_image_memory = try device.allocateMemory(&.{
         .memory_type = 1,
-        .allocation_size = 320 * 240 * 4,
+        .allocation_size = .size(320 * 240 * 4),
     }, gpa);
     defer device.freeMemory(color_attachment_image_memory, gpa);
 
     const index_buffer = try device.createBuffer(.{
-        .size = 0x4,
+        .size = .size(0x4),
         .usage = .{
             .index_buffer = true,
         },
@@ -200,7 +202,7 @@ pub fn main() !void {
     try device.bindBufferMemory(index_buffer, index_buffer_memory, 0);
 
     const vtx_buffer = try device.createBuffer(.{
-        .size = @sizeOf(Vertex) * 4,
+        .size = .size(@sizeOf(Vertex) * 4),
         .usage = .{
             .vertex_buffer = true,
         },
@@ -228,7 +230,90 @@ pub fn main() !void {
     defer device.destroyImage(color_attachment_image, gpa);
     try device.bindImageMemory(color_attachment_image, color_attachment_image_memory, 0);
 
-    try device.clearColorImage(color_attachment_image, &@splat(64));
+    try device.clearColorImage(color_attachment_image, &@splat(32));
+
+    const staging_buffer_memory = try device.allocateMemory(&.{
+        .memory_type = 0,
+        .allocation_size = .size(64 * 64 * 3),
+    }, gpa);
+    defer device.freeMemory(staging_buffer_memory, gpa);
+
+    const staging_buffer = try device.createBuffer(.{
+        .size = .size(64 * 64 * 3),
+        .usage = .{
+            .transfer_src = true,
+        }, 
+    }, gpa);
+    defer device.destroyBuffer(staging_buffer, gpa);
+    try device.bindBufferMemory(staging_buffer, staging_buffer_memory, 0);
+
+    {
+        const mapped_staging = try device.mapMemory(staging_buffer_memory, 0, std.math.maxInt(u32)); 
+        defer device.unmapMemory(staging_buffer_memory); 
+
+        @memcpy(mapped_staging[0..(64 * 64 * 3)], test_bgr);
+
+        try device.flushMappedMemoryRanges(&.{
+            .{
+                .memory = staging_buffer_memory,
+                .offset = .size(0),
+                .size = .size(64 * 64 * 3),
+            }
+        });
+    }
+
+    const test_sampled_image_memory = try device.allocateMemory(&.{
+        .memory_type = 1,
+        .allocation_size = .size(64 * 64 * 3),
+    }, gpa);
+    defer device.freeMemory(test_sampled_image_memory, gpa);
+
+    const test_sampled_image = try device.createImage(.{
+        .flags = .{},
+        .type = .@"2d",
+        .tiling = .optimal,
+        .usage = .{
+            .transfer_dst = true,
+            .sampled = true,
+        },
+        .extent = .{
+            .width = 64,
+            .height = 64,
+        },
+        .format = .b8g8r8_unorm,
+        // FIXME: These values are currently ignored
+        .mip_levels = 1,
+        .array_layers = 1,
+    }, gpa);
+    defer device.destroyImage(test_sampled_image, gpa);
+    try device.bindImageMemory(test_sampled_image, test_sampled_image_memory, 0);
+
+    try device.copyBufferToImage(staging_buffer, test_sampled_image, .{
+        .src_offset = .size(0),
+        .flags = .{
+            .memcpy = false,
+        },
+    });
+    
+    const test_sampled_image_view = try device.createImageView(.{
+        .type = .@"2d",
+        .format = .b8g8r8_unorm,
+        .image = test_sampled_image,
+    }, gpa);
+    defer device.destroyImageView(test_sampled_image_view, gpa);
+
+    const simple_sampler = try device.createSampler(.{
+        .mag_filter = .linear,
+        .min_filter = .linear,
+        .mip_filter = .linear,
+        .address_mode_u = .clamp_to_edge,
+        .address_mode_v = .clamp_to_edge,
+        .lod_bias = 0.0,
+        .min_lod = 0,
+        .max_lod = 0,
+        .border_color = @splat(0),
+    }, gpa);
+    defer device.destroySampler(simple_sampler, gpa);
 
     const color_attachment_image_view = try device.createImageView(.{
         .type = .@"2d",
@@ -249,21 +334,21 @@ pub fn main() !void {
         .vertex_input_state = &.init(
             &.{
                 .{
-                    .stride = 7,
+                    .stride = @sizeOf(Vertex),
                 },
             },
             &.{
                 .{
                     .location = .v0,
                     .binding = .@"0",
-                    .format = .r8g8b8_uscaled,
+                    .format = .r8g8b8a8_sscaled,
                     .offset = 0,
                 },
                 .{
                     .location = .v1,
                     .binding = .@"0",
-                    .format = .r8g8b8a8_sscaled,
-                    .offset = 3,
+                    .format = .r8g8_uscaled,
+                    .offset = 4,
                 },
             },
             &.{}
@@ -295,7 +380,7 @@ pub fn main() !void {
             .back_front = std.mem.zeroes(mango.GraphicsPipelineCreateInfo.AlphaDepthStencilState.StencilOperationState),
         },
         .texture_sampling_state = &.{
-            .texture_enable = @splat(false),
+            .texture_enable = .{ true, false, false, false },
 
             .texture_2_coordinates = .@"2",
             .texture_3_coordinates = .@"2", 
@@ -303,7 +388,7 @@ pub fn main() !void {
         .lighting_state = &.{}, 
         .texture_combiner_state = &.init(&.{
             .{
-                .color_src = @splat(.primary_color),
+                .color_src = @splat(.texture_0),
                 .alpha_src = @splat(.primary_color),
                 .color_factor = @splat(.src_color),
                 .alpha_factor = @splat(.src_alpha),
@@ -368,6 +453,12 @@ pub fn main() !void {
             defer cmdbuf.endRendering();
             
             cmdbuf.bindFloatUniforms(.vertex, 0, &zitrus.math.mat.perspRotate90Cw(std.math.degreesToRadians(90.0), 240.0 / 320.0, 1, 1000));
+            cmdbuf.bindCombinedImageSamplers(0, &.{
+                .{
+                    .image = test_sampled_image_view,
+                    .sampler = simple_sampler,
+                }
+            });
             cmdbuf.drawIndexed(4, 0, 0);
         }
     }

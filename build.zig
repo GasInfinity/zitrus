@@ -3,7 +3,7 @@ pub const target = struct {
         .cpu_arch = .arm,
         .cpu_model = .{ .explicit = &std.Target.arm.cpu.arm946e_s },
         .abi = .eabihf,
-        .os_tag = .freestanding, 
+        .os_tag = .freestanding,
     };
 
     pub const arm11: std.Target.Query = .{
@@ -18,7 +18,7 @@ pub const target = struct {
         .cpu_model = .{ .explicit = &std.Target.arm.cpu.mpcore },
         .abi = .eabihf,
         .os_tag = .other,
-    }; 
+    };
 };
 
 pub fn build(b: *std.Build) void {
@@ -58,11 +58,7 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Install docs");
     docs_step.dependOn(&install_docs.step);
 
-    const zitrus_tests = b.addTest(.{
-        .name = "zitrus-tests",
-        .root_source_file = b.path("src/zitrus.zig"),
-        .target = b.resolveTargetQuery(.{})
-    });
+    const zitrus_tests = b.addTest(.{ .name = "zitrus-tests", .root_source_file = b.path("src/zitrus.zig"), .target = b.resolveTargetQuery(.{}) });
     zitrus_tests.root_module.addImport("zitrus", zitrus_tests.root_module);
     zitrus_tests.root_module.addImport("zalloc", zalloc_mod);
     zitrus_tests.root_module.addImport("zsflt", zsflt_mod);
@@ -205,9 +201,9 @@ pub const AssembleZpsmOptions = struct {
 pub fn addAssembleZpsm(b: *std.Build, options: AssembleZpsmOptions) std.Build.LazyPath {
     const zitrus = b.dependencyFromBuildZig(@This(), .{});
     const run_assemble_zpsm = b.addRunArtifact(zitrus.artifact("zitrus-tools"));
-    run_assemble_zpsm.addArgs(&.{ "pica", "asm" }); 
+    run_assemble_zpsm.addArgs(&.{ "pica", "asm" });
     run_assemble_zpsm.addFileArg(options.root_source_file);
-    run_assemble_zpsm.addArg("-o"); 
+    run_assemble_zpsm.addArg("-o");
     return run_assemble_zpsm.addOutputFileArg(options.name);
 }
 

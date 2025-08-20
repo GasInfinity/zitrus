@@ -522,8 +522,15 @@ pub const OperandDescriptor = packed struct(u32) {
 };
 
 pub const ComparisonOperation = enum(u3) {
-    eq, ne, lt, le, gt, ge, true_0, true_1,
-    
+    eq,
+    ne,
+    lt,
+    le,
+    gt,
+    ge,
+    true_0,
+    true_1,
+
     pub fn invert(op: ComparisonOperation) ComparisonOperation {
         return switch (op) {
             .lt => .ge,

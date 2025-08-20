@@ -17,24 +17,24 @@ pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, com
         pub const shift = address_shift;
 
         pub fn fromAddress(address: usize) AlignedPhysAddr {
-            return .fromPhysical(@as(PhysicalAddress, @enumFromInt(address))); 
+            return .fromPhysical(@as(PhysicalAddress, @enumFromInt(address)));
         }
 
         pub fn fromPhysical(aligned_address: anytype) AlignedPhysAddr {
             const OtherAlignedPhysAddr = @TypeOf(aligned_address);
-            
-            if(@typeInfo(OtherAlignedPhysAddr) != .@"enum" or !@hasDecl(OtherAlignedPhysAddr, "alignment") or !@hasDecl(OtherAlignedPhysAddr, "shift"))
+
+            if (@typeInfo(OtherAlignedPhysAddr) != .@"enum" or !@hasDecl(OtherAlignedPhysAddr, "alignment") or !@hasDecl(OtherAlignedPhysAddr, "shift"))
                 @compileError("please provide a valid AlignedPhysicalAddress to .of()");
 
             const other_alignment = @field(OtherAlignedPhysAddr, "alignment");
             const other_shift = @field(OtherAlignedPhysAddr, "shift");
 
-            if(@TypeOf(other_alignment) != std.mem.Alignment or @TypeOf(other_shift) != std.mem.Alignment or OtherAlignedPhysAddr != AlignedPhysicalAddress(other_alignment, other_shift))
+            if (@TypeOf(other_alignment) != std.mem.Alignment or @TypeOf(other_shift) != std.mem.Alignment or OtherAlignedPhysAddr != AlignedPhysicalAddress(other_alignment, other_shift))
                 @compileError("please provide a valid AlignedPhysicalAddress to .of()");
 
             const address = @intFromEnum(aligned_address) << @intCast(std.math.log2(other_shift.toByteUnits()));
 
-            if(alignment.order(other_alignment) != .lt) {
+            if (alignment.order(other_alignment) != .lt) {
                 std.debug.assert(alignment.check(address));
             }
 

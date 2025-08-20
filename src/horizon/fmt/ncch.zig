@@ -90,13 +90,11 @@ pub const Header = extern struct {
 pub const ExtendedHeader = extern struct {
     pub const SystemControlInfo = extern struct {
         pub const Flags = packed struct(u8) { _: u8 };
-        pub const CodeSetInfo = extern struct {
-        };
+        pub const CodeSetInfo = extern struct {};
 
         application_tile: [8]u8,
         _reserved0: [5]u8 = @splat(0),
         flags: Flags,
         remaster_version: u16,
-
     };
 };

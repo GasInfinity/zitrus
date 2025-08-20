@@ -19,6 +19,7 @@ pub fn build(b: *std.Build) void {
         .name = "simple.zpsh",
         .root_source_file = b.path("assets/simple.zpsm"),
     })});
+    exe_mod.addAnonymousImport("test.bgr", .{ .root_source_file = b.path("assets/test.bgr") });
 
     const exe = zitrus.addExecutable(b, .{
         .name = "gpu.elf",

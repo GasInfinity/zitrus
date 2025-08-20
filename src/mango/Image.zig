@@ -5,7 +5,7 @@
 //! However the PICA200 imposes some limitations:
 //!     - Sampled images MUST be optimally tiled, powers of two and have a size of `[8, 1024]`.
 //!     - Color / Depth attachment images MUST be optimally tiled, divisible by the attachment render block size {8, 32} (TODO), be device local, and have a size `[8, 1024]`.
-//! 
+//!
 //!
 //! There's one more limitation which is not imposed by the PICA200 but by the LCD framebuffers, images must be linearly tiled.
 
@@ -55,7 +55,7 @@ pub fn toHandle(image: *Image) Handle {
 }
 
 pub fn fromHandleMutable(handle: Handle) *Image {
-    return @as(*Image, @ptrFromInt(@intFromEnum(handle))); 
+    return @as(*Image, @ptrFromInt(@intFromEnum(handle)));
 }
 
 pub fn fromHandle(handle: Handle) Image {

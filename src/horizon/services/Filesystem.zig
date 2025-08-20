@@ -89,7 +89,7 @@ pub const File = packed struct(u32) {
 
     pub fn sendOpenSubFile(file: File, offset: u64, size: u64) !File {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(file.session, File.command.OpenSubFile, .{ .offset = offset, .size = size }, .{})) {
+        return switch (try data.ipc.sendRequest(file.session, File.command.OpenSubFile, .{ .offset = offset, .size = size }, .{})) {
             .success => |s| s.value.response.file,
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -97,7 +97,7 @@ pub const File = packed struct(u32) {
 
     pub fn sendRead(file: File, offset: u64, buffer: []u8) !usize {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(file.session, File.command.Read, .{ .offset = offset, .size = buffer.len, .buffer = .init(buffer) }, .{})) {
+        return switch (try data.ipc.sendRequest(file.session, File.command.Read, .{ .offset = offset, .size = buffer.len, .buffer = .init(buffer) }, .{})) {
             .success => |s| s.value.response.actual_read,
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -105,7 +105,7 @@ pub const File = packed struct(u32) {
 
     pub fn sendWrite(file: File, offset: u64, buffer: []const u8, options: WriteOptions) !usize {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(file.session, File.command.Write, .{ .offset = offset, .size = buffer.len, .options = options, .buffer = .init(buffer) }, .{})) {
+        return switch (try data.ipc.sendRequest(file.session, File.command.Write, .{ .offset = offset, .size = buffer.len, .options = options, .buffer = .init(buffer) }, .{})) {
             .success => |s| s.value.response.actual_written,
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -113,15 +113,15 @@ pub const File = packed struct(u32) {
 
     pub fn sendGetSize(file: File) !u64 {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(file.session, File.command.GetSize, .{}, .{})) {
+        return switch (try data.ipc.sendRequest(file.session, File.command.GetSize, .{}, .{})) {
             .success => |s| s.value.response.size,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
 
-    pub fn sendSetSize(file: File, size: u64) !void{
+    pub fn sendSetSize(file: File, size: u64) !void {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(file.session, File.command.SetSize, .{ .size = size }, .{})) {
+        return switch (try data.ipc.sendRequest(file.session, File.command.SetSize, .{ .size = size }, .{})) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -129,15 +129,15 @@ pub const File = packed struct(u32) {
 
     pub fn sendGetAttributes(file: File) !Attributes {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(file.session, File.command.GetAttributes, .{}, .{})) {
+        return switch (try data.ipc.sendRequest(file.session, File.command.GetAttributes, .{}, .{})) {
             .success => |s| s.value.response.attributes,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
 
-    pub fn sendSetAttributes(file: File, attributes: Attributes) !void{
+    pub fn sendSetAttributes(file: File, attributes: Attributes) !void {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(file.session, File.command.SetAttributes, .{ .attributes = attributes }, .{})) {
+        return switch (try data.ipc.sendRequest(file.session, File.command.SetAttributes, .{ .attributes = attributes }, .{})) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -145,7 +145,7 @@ pub const File = packed struct(u32) {
 
     pub fn close(file: *File) void {
         const data = tls.getThreadLocalStorage();
-        switch(data.ipc.sendRequest(file.session, File.command.Close, .{}, .{}) catch unreachable) {
+        switch (data.ipc.sendRequest(file.session, File.command.Close, .{}, .{}) catch unreachable) {
             .success => {},
             .failure => unreachable,
         }
@@ -153,25 +153,25 @@ pub const File = packed struct(u32) {
         file.* = undefined;
     }
 
-    pub fn sendFlush(file: File) !void{
+    pub fn sendFlush(file: File) !void {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(file.session, File.command.Flush, .{}, .{})) {
+        return switch (try data.ipc.sendRequest(file.session, File.command.Flush, .{}, .{})) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
 
-    pub fn sendGetPriority(file: File) !u32{
+    pub fn sendGetPriority(file: File) !u32 {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(file.session, File.command.GetPriority, .{}, .{})) {
+        return switch (try data.ipc.sendRequest(file.session, File.command.GetPriority, .{}, .{})) {
             .success => |s| s.value.response.priority,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
 
-    pub fn sendSetPriority(file: File, priority: u32) !void{
+    pub fn sendSetPriority(file: File, priority: u32) !void {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(file.session, File.command.SetPriority, .{ .priority = priority }, .{})) {
+        return switch (try data.ipc.sendRequest(file.session, File.command.SetPriority, .{ .priority = priority }, .{})) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -179,7 +179,7 @@ pub const File = packed struct(u32) {
 
     pub fn sendOpenLinkFile(file: File) !File {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(file.session, File.command.OpenLinkFile, .{}, .{})) {
+        return switch (try data.ipc.sendRequest(file.session, File.command.OpenLinkFile, .{}, .{})) {
             .success => |s| s.value.response.clone,
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -187,7 +187,7 @@ pub const File = packed struct(u32) {
 
     pub fn sendGetAvailable(file: File, offset: u64, size: u64) !u64 {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(file.session, File.command.GetAvailable, .{ .offset = offset, .size = size }, .{})) {
+        return switch (try data.ipc.sendRequest(file.session, File.command.GetAvailable, .{ .offset = offset, .size = size }, .{})) {
             .success => |s| s.value.response.available,
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -243,7 +243,7 @@ pub const Directory = packed struct(u32) {
 
     pub fn sendRead(dir: Directory, entries: []Entry) !usize {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(dir.session, Directory.command.Read, .{ .count = entries.len, .buffer = .init(std.mem.asBytes(entries)) }, .{})) {
+        return switch (try data.ipc.sendRequest(dir.session, Directory.command.Read, .{ .count = entries.len, .buffer = .init(std.mem.asBytes(entries)) }, .{})) {
             .success => |s| s.value.response.actual_entries,
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -251,7 +251,7 @@ pub const Directory = packed struct(u32) {
 
     pub fn close(dir: *Directory) void {
         const data = tls.getThreadLocalStorage();
-        switch(data.ipc.sendRequest(dir.session, Directory.command.Close, .{}, .{}) catch unreachable) {
+        switch (data.ipc.sendRequest(dir.session, Directory.command.Close, .{}, .{}) catch unreachable) {
             .success => {},
             .failure => unreachable,
         }
@@ -261,7 +261,7 @@ pub const Directory = packed struct(u32) {
 
     pub fn sendGetPriority(dir: Directory) !u32 {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(dir.session, Directory.command.GetPriority, .{}, .{})) {
+        return switch (try data.ipc.sendRequest(dir.session, Directory.command.GetPriority, .{}, .{})) {
             .success => |s| s.value.response.priority,
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -269,7 +269,7 @@ pub const Directory = packed struct(u32) {
 
     pub fn sendSetPriority(dir: Directory, priority: u32) !void {
         const data = tls.getThreadLocalStorage();
-        return switch(try data.ipc.sendRequest(dir.session, Directory.command.SetPriority, .{ .priority = priority }, .{})) {
+        return switch (try data.ipc.sendRequest(dir.session, Directory.command.SetPriority, .{ .priority = priority }, .{})) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -312,7 +312,7 @@ pub fn init(srv: ServiceManager) !Filesystem {
 
 pub fn sendInitialize(fs: Filesystem) void {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.Initialize, .{ .process_id = .{} }, .{})) {
+    return switch (try data.ipc.sendRequest(fs.session, command.Initialize, .{ .process_id = .{} }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -320,7 +320,7 @@ pub fn sendInitialize(fs: Filesystem) void {
 
 pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, flags: OpenFlags, attributes: Attributes) !File {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.OpenFile, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.OpenFile, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
@@ -336,7 +336,7 @@ pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_t
 
 pub fn sendOpenFileDirectly(fs: Filesystem, transaction: usize, archive_id: ArchiveId, archive_path_type: PathType, archive_path: []const u8, file_path_type: PathType, file_path: []const u8, flags: OpenFlags, attributes: Attributes) !File {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.OpenFileDirectly, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.OpenFileDirectly, .{
         .transaction = transaction,
         .archive_id = archive_id,
         .archive_path_type = archive_path_type,
@@ -355,7 +355,7 @@ pub fn sendOpenFileDirectly(fs: Filesystem, transaction: usize, archive_id: Arch
 
 pub fn sendDeleteFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.DeleteFile, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.DeleteFile, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
@@ -369,7 +369,7 @@ pub fn sendDeleteFile(fs: Filesystem, transaction: usize, archive: Archive, path
 
 pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) !void {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.RenameFile, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.RenameFile, .{
         .transaction = transaction,
         .source_archive = src_archive,
         .source_path_type = src_path_type,
@@ -387,7 +387,7 @@ pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, 
 
 pub fn sendDeleteDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.DeleteDirectory, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.DeleteDirectory, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
@@ -401,7 +401,7 @@ pub fn sendDeleteDirectory(fs: Filesystem, transaction: usize, archive: Archive,
 
 pub fn sendDeleteDirectoryRecursively(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.DeleteDirectoryRecursively, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.DeleteDirectoryRecursively, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
@@ -415,7 +415,7 @@ pub fn sendDeleteDirectoryRecursively(fs: Filesystem, transaction: usize, archiv
 
 pub fn sendCreateFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, attributes: Attributes, size: u64) !void {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.CreateFile, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.CreateFile, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
@@ -431,7 +431,7 @@ pub fn sendCreateFile(fs: Filesystem, transaction: usize, archive: Archive, path
 
 pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, attributes: Attributes) !void {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.CreateDirectory, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.CreateDirectory, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
@@ -446,7 +446,7 @@ pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive,
 
 pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) !void {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.RenameDirectory, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.RenameDirectory, .{
         .transaction = transaction,
         .source_archive = src_archive,
         .source_path_type = src_path_type,
@@ -464,7 +464,7 @@ pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Arch
 
 pub fn sendOpenDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !Directory {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.OpenDirectory, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.OpenDirectory, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
@@ -478,7 +478,7 @@ pub fn sendOpenDirectory(fs: Filesystem, transaction: usize, archive: Archive, p
 
 pub fn sendOpenArchive(fs: Filesystem, transaction: usize, archive_id: ArchiveId, path_type: PathType, path: []const u8) !Archive {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.OpenArchive, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.OpenArchive, .{
         .transaction = transaction,
         .archive_id = archive_id,
         .path_type = path_type,
@@ -492,7 +492,7 @@ pub fn sendOpenArchive(fs: Filesystem, transaction: usize, archive_id: ArchiveId
 
 pub fn sendControlArchive(fs: Filesystem, transaction: usize, archive: Archive, action: ControlArchiveAction, input: []const u8, output: []u8) !void {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.ControlArchive, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.ControlArchive, .{
         .transaction = transaction,
         .archive = archive,
         .action = action,
@@ -508,7 +508,7 @@ pub fn sendControlArchive(fs: Filesystem, transaction: usize, archive: Archive, 
 
 pub fn sendCloseArchive(fs: Filesystem, transaction: usize, archive: Archive) !void {
     const data = tls.getThreadLocalStorage();
-    return switch(try data.ipc.sendRequest(fs.session, command.CloseArchive, .{
+    return switch (try data.ipc.sendRequest(fs.session, command.CloseArchive, .{
         .transaction = transaction,
         .archive = archive,
     }, .{})) {
@@ -631,37 +631,37 @@ pub const command = struct {
     pub const CloseArchive = ipc.Command(Id, .close_archive, struct {
         transaction: usize,
         archive: Archive,
-    }, struct {}); 
+    }, struct {});
 
     // obsolete Obsoleted_2_0_FormatThisUserSaveData
     // obsolete Obsoleted_3_0_CreateSystemSaveData
     // obsolete Obsoleted_3_0_DeleteSystemSaveData
-    
+
     pub const GetFreeBytes = ipc.Command(Id, .get_free_bytes, struct { archive: Archive }, struct { free_bytes: u64 });
     pub const GetCardType = ipc.Command(Id, .get_card_type, struct {}, struct { card_type: CardType });
-    pub const GetSmdcArchiveResource = ipc.Command(Id, .get_smdc_archive_resource, struct {}, struct { archive_resource: ArchiveResource }); 
-    pub const GetNandArchiveResource = ipc.Command(Id, .get_nand_archive_resource, struct {}, struct { archive_resource: ArchiveResource }); 
-    pub const GetSmdcFatFsError = ipc.Command(Id, .get_smdc_fatfs_error, struct {}, struct { fatfs_error: u32 }); 
-    pub const IsSmdcDetected = ipc.Command(Id, .is_smdc_detected, struct {}, struct { detected: bool }); 
-    pub const IsSmdcWritable = ipc.Command(Id, .is_smdc_writable, struct {}, struct { writable: bool }); 
-    pub const GetSmdcCid = ipc.Command(Id, .get_smdc_cid, struct { buffer_size: usize, buffer: ipc.MappedSlice(.write)}, struct {}); 
-    pub const GetNandCid = ipc.Command(Id, .get_smdc_cid, struct { buffer_size: usize, buffer: ipc.MappedSlice(.write)}, struct {}); 
-    pub const GetSmdcSpeedInfo = ipc.Command(Id, .get_smdc_speed_info, struct {}, struct { speed_info: u32 }); 
-    pub const GetNandSpeedInfo = ipc.Command(Id, .get_nand_speed_info, struct {}, struct { speed_info: u32 }); 
-    pub const GetSmdcLog = ipc.Command(Id, .get_smdc_log, struct { buffer_size: usize, buffer: ipc.MappedSlice(.write)}, struct {}); 
-    pub const GetNandLog = ipc.Command(Id, .get_nand_log, struct { buffer_size: usize, buffer: ipc.MappedSlice(.write)}, struct {}); 
-    pub const ClearSmdcLog = ipc.Command(Id, .clear_smdc_log, struct {}, struct {}); 
-    pub const ClearNandLog = ipc.Command(Id, .clear_smdc_log, struct {}, struct {}); 
-    pub const CardSlotIsInserted = ipc.Command(Id, .card_slot_is_inserted, struct {}, struct { inserted: bool }); 
-    pub const CardSlotPowerOn = ipc.Command(Id, .card_slot_power_on, struct {}, struct { status: u8 }); 
-    pub const CardSlotPowerOff = ipc.Command(Id, .card_slot_power_off, struct {}, struct { status: u8 }); 
-    pub const CardSlotGetCardIfPowerStatus = ipc.Command(Id, .card_slot_get_card_if_power_status, struct {}, struct { powered: bool }); 
+    pub const GetSmdcArchiveResource = ipc.Command(Id, .get_smdc_archive_resource, struct {}, struct { archive_resource: ArchiveResource });
+    pub const GetNandArchiveResource = ipc.Command(Id, .get_nand_archive_resource, struct {}, struct { archive_resource: ArchiveResource });
+    pub const GetSmdcFatFsError = ipc.Command(Id, .get_smdc_fatfs_error, struct {}, struct { fatfs_error: u32 });
+    pub const IsSmdcDetected = ipc.Command(Id, .is_smdc_detected, struct {}, struct { detected: bool });
+    pub const IsSmdcWritable = ipc.Command(Id, .is_smdc_writable, struct {}, struct { writable: bool });
+    pub const GetSmdcCid = ipc.Command(Id, .get_smdc_cid, struct { buffer_size: usize, buffer: ipc.MappedSlice(.write) }, struct {});
+    pub const GetNandCid = ipc.Command(Id, .get_smdc_cid, struct { buffer_size: usize, buffer: ipc.MappedSlice(.write) }, struct {});
+    pub const GetSmdcSpeedInfo = ipc.Command(Id, .get_smdc_speed_info, struct {}, struct { speed_info: u32 });
+    pub const GetNandSpeedInfo = ipc.Command(Id, .get_nand_speed_info, struct {}, struct { speed_info: u32 });
+    pub const GetSmdcLog = ipc.Command(Id, .get_smdc_log, struct { buffer_size: usize, buffer: ipc.MappedSlice(.write) }, struct {});
+    pub const GetNandLog = ipc.Command(Id, .get_nand_log, struct { buffer_size: usize, buffer: ipc.MappedSlice(.write) }, struct {});
+    pub const ClearSmdcLog = ipc.Command(Id, .clear_smdc_log, struct {}, struct {});
+    pub const ClearNandLog = ipc.Command(Id, .clear_smdc_log, struct {}, struct {});
+    pub const CardSlotIsInserted = ipc.Command(Id, .card_slot_is_inserted, struct {}, struct { inserted: bool });
+    pub const CardSlotPowerOn = ipc.Command(Id, .card_slot_power_on, struct {}, struct { status: u8 });
+    pub const CardSlotPowerOff = ipc.Command(Id, .card_slot_power_off, struct {}, struct { status: u8 });
+    pub const CardSlotGetCardIfPowerStatus = ipc.Command(Id, .card_slot_get_card_if_power_status, struct {}, struct { powered: bool });
 
     // TODO: CardNor commands
 
-    pub const GetProductInfo = ipc.Command(Id, .get_product_info, struct { process_id: u32 }, struct { product_info: ProductInfo }); 
+    pub const GetProductInfo = ipc.Command(Id, .get_product_info, struct { process_id: u32 }, struct { product_info: ProductInfo });
     pub const GetProgramLaunchInfo = ipc.Command(Id, .get_program_launch_info, struct { process_id: u32 }, struct { program_info: ProgramInfo });
-    
+
     // obsolete Obsoleted_3_0_CreateExtSaveData
     // obsolete Obsoleted_3_0_CreateSharedExtSaveData
     // obsolete Obsoleted_3_0_ReadExtSaveDataIcon

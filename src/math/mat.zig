@@ -9,10 +9,10 @@ pub fn ortho(l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
     const z_scale = n - f;
 
     return .{
-        .{2 / x_scale, 0, 0, -(r + l) / x_scale},
-        .{0, 2 / y_scale, 0, -(b + t) / y_scale},
-        .{0, 0, 1 / z_scale, -n / z_scale},
-        .{0, 0, 0, 1},
+        .{ 2 / x_scale, 0, 0, -(r + l) / x_scale },
+        .{ 0, 2 / y_scale, 0, -(b + t) / y_scale },
+        .{ 0, 0, 1 / z_scale, -n / z_scale },
+        .{ 0, 0, 0, 1 },
     };
 }
 
@@ -22,10 +22,10 @@ pub fn orthoRotate90Cw(l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
     const z_scale = n - f;
 
     return .{
-        .{0, 2 / y_scale, 0, -(b + t) / y_scale},
-        .{-2 / x_scale, 0, 0, (r + l) / x_scale},
-        .{0, 0, 1 / z_scale, -n / z_scale},
-        .{0, 0, 0, 1},
+        .{ 0, 2 / y_scale, 0, -(b + t) / y_scale },
+        .{ -2 / x_scale, 0, 0, (r + l) / x_scale },
+        .{ 0, 0, 1 / z_scale, -n / z_scale },
+        .{ 0, 0, 0, 1 },
     };
 }
 
@@ -34,10 +34,10 @@ pub fn persp(fov_y: f32, aspect_ratio: f32, n: f32, f: f32) @"4x4" {
     const f_range = f - n;
 
     return .{
-        .{1 / (fov_y_tan * aspect_ratio), 0, 0, 0},
-        .{0, 1 / fov_y_tan, 0, 0},
-        .{0, 0, -f / f_range, (f * n) / f_range},
-        .{0, 0, 1, 0},
+        .{ 1 / (fov_y_tan * aspect_ratio), 0, 0, 0 },
+        .{ 0, 1 / fov_y_tan, 0, 0 },
+        .{ 0, 0, -f / f_range, (f * n) / f_range },
+        .{ 0, 0, 1, 0 },
     };
 }
 
@@ -46,9 +46,9 @@ pub fn perspRotate90Cw(fov_y: f32, aspect_ratio: f32, n: f32, f: f32) @"4x4" {
     const f_range = f - n;
 
     return .{
-        .{0, 1 / fov_y_tan, 0, 0},
-        .{-1 / (fov_y_tan * aspect_ratio), 0, 0, 0},
-        .{0, 0, -f / f_range, (f * n) / f_range},
-        .{0, 0, 1, 0},
+        .{ 0, 1 / fov_y_tan, 0, 0 },
+        .{ -1 / (fov_y_tan * aspect_ratio), 0, 0, 0 },
+        .{ 0, 0, -f / f_range, (f * n) / f_range },
+        .{ 0, 0, 1, 0 },
     };
 }

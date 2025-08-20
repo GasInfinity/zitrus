@@ -108,7 +108,7 @@ pub fn MappedSlice(comptime mapping_modifier: MappingModifier) type {
     return struct {
         const Mapped = @This();
         pub const modifier = mapping_modifier;
-        pub const Slice = if(modifier.write_only) []u8 else []const u8;
+        pub const Slice = if (modifier.write_only) []u8 else []const u8;
 
         slice: Slice,
 

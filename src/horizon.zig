@@ -1318,7 +1318,7 @@ pub fn sbrk(n: usize) usize {
     const current_heap_top = sbrk_heap_top;
 
     sbrk_heap_top += aligned_n;
-    return switch(controlMemory(.{
+    return switch (controlMemory(.{
         .area = .all,
         .fundamental_operation = .commit,
         .linear = false,

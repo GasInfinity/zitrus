@@ -12,9 +12,7 @@ pub const NotificationResult = enum {
     must_close,
 };
 
-pub const MessageResult = union {
-
-};
+pub const MessageResult = union {};
 
 pub const State = packed struct(u8) {
     pub const default: State = .{ .allow_home = true, .allow_sleep = true };
@@ -74,7 +72,7 @@ pub fn deinit(app: *Application, apt: Applet, srv: ServiceManager) void {
             const man_info = apt.sendGetAppletManInfo(srv, .none) catch unreachable;
 
             if ((apt.sendIsRegistered(srv, man_info.home_menu) catch false)) {
-                apt.sendPrepareToDoApplicationJump(srv, flags, program_id, media_type) catch unreachable; 
+                apt.sendPrepareToDoApplicationJump(srv, flags, program_id, media_type) catch unreachable;
                 apt.sendDoApplicationJump(srv, parameters, hmac) catch unreachable;
             } else {
                 apt.sendFinalize(srv, man_info.home_menu) catch unreachable;
@@ -116,7 +114,7 @@ pub fn pollNotification(app: *Application, apt: Applet, srv: ServiceManager) !?N
 }
 
 pub fn waitNotificationTimeout(app: *Application, apt: Applet, srv: ServiceManager, timeout_ns: i64) !?NotificationResult {
-    app.notification_event.wait(timeout_ns) catch |err| switch(err) {
+    app.notification_event.wait(timeout_ns) catch |err| switch (err) {
         error.Timeout => return null,
         else => return err,
     };
@@ -132,9 +130,9 @@ pub fn waitNotificationTimeout(app: *Application, apt: Applet, srv: ServiceManag
             }
         },
         .sleep_query => try apt.sendReplySleepQuery(srv, environment.program_meta.app_id, if (app.flags.allow_sleep)
-                .accept
-            else
-                .reject),
+            .accept
+        else
+            .reject),
         .sleep_accepted => {
             // sleep dsp if needed
             try apt.sendReplySleepNotificationComplete(srv, environment.program_meta.app_id);
@@ -149,7 +147,7 @@ pub fn waitNotificationTimeout(app: *Application, apt: Applet, srv: ServiceManag
             app.flags.must_close = true;
             return .must_close_by_shutdown;
         },
-        .power_button_click => return .jump_home_by_power, 
+        .power_button_click => return .jump_home_by_power,
         .power_button_clear => {},
         .try_sleep => {}, // TODO
         .order_to_close => {
@@ -163,10 +161,10 @@ pub fn waitNotificationTimeout(app: *Application, apt: Applet, srv: ServiceManag
 }
 
 fn waitParameterConsumingNotifications(app: *Application, apt: Applet, srv: ServiceManager) !Applet.ParameterResult {
-    while(true) {
-        const is_parameter = try Event.waitMultiple(&.{app.notification_event, app.parameters_event}, false, -1) == 1;
+    while (true) {
+        const is_parameter = try Event.waitMultiple(&.{ app.notification_event, app.parameters_event }, false, -1) == 1;
 
-        if(!is_parameter) {
+        if (!is_parameter) {
             switch (try apt.sendInquireNotification(srv, environment.program_meta.app_id)) {
                 else => {},
             }
@@ -221,10 +219,10 @@ pub fn jumpToHome(app: *Application, apt: Applet, srv: ServiceManager, gsp: *Gsp
                 else => {
                     try gsp.acquireRight(0x0);
                     try gsp.sendRestoreVRAMSysArea();
-                }
+                },
             }
 
-            if(parameters.cmd == .wakeup_by_pause) {
+            if (parameters.cmd == .wakeup_by_pause) {
                 return .resumed;
             }
 
@@ -238,7 +236,7 @@ pub fn jumpToHome(app: *Application, apt: Applet, srv: ServiceManager, gsp: *Gsp
                 else => unreachable,
             };
         },
-        else => unreachable, 
+        else => unreachable,
     }
 }
 
@@ -259,8 +257,8 @@ pub fn screenTransfer(app: *Application, apt: Applet, srv: ServiceManager, gsp: 
     defer parameters.deinit();
 
     std.debug.assert(parameters.cmd == .response);
-    
-    if(is_library_applet) {
+
+    if (is_library_applet) {
         @panic("TODO");
     }
 

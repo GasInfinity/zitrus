@@ -1,11 +1,11 @@
-.out o0 color 
-.out o1 position 
+.out o0 position 
+.out o1.xy texture_coordinate_0.xy
 
-.alias iColor v0
-.alias iPos v1
+.alias iPos v0
+.alias iUv v1
 
-.alias oColor o0
-.alias oPos o1
+.alias oPos o0
+.alias oUv o1
 
 ; layout(location = 0) uniform mat4x4 uPersp;
 .alias uPerspM0 f0
@@ -22,6 +22,6 @@ main:
     dp4 oPos.z, uPerspM2, iPos 
     dp4 oPos.w, uPerspM3, iPos 
 
-    ; oColor = iColor;
-    mov oColor, iColor
+    ; oUv = iUv;
+    mov oUv, iUv.xy
     end

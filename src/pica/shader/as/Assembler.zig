@@ -528,7 +528,7 @@ pub fn passRoot(a: *Assembler) !void {
             _ = a.nextToken();
             continue :root a.tokenTag(a.tok_i);
         },
-        .invalid, .minus, .number_literal, .comma, .l_paren, .r_paren, .l_square, .r_square, .colon, .@"true", .@"false" => {
+        .invalid, .minus, .number_literal, .comma, .l_paren, .r_paren, .l_square, .r_square, .colon, .true, .false => {
             _ = try a.warn(.expected_directive_or_label_or_mnemonic);
             _ = a.nextToken();
             continue :root a.tokenTag(a.tok_i);
@@ -563,7 +563,7 @@ pub fn passAssemble(a: *Assembler) !void {
             _ = a.nextToken();
             continue :root a.tokenTag(a.tok_i);
         },
-        .invalid, .minus, .number_literal, .comma, .l_paren, .r_paren, .l_square, .r_square, .colon, .@"true", .@"false"=> unreachable,
+        .invalid, .minus, .number_literal, .comma, .l_paren, .r_paren, .l_square, .r_square, .colon, .true, .false => unreachable,
         .identifier => {
             _ = a.nextToken();
             _ = a.nextToken();
@@ -573,16 +573,50 @@ pub fn passAssemble(a: *Assembler) !void {
             a.eatUntil(.newline);
             continue :root a.tokenTag(a.tok_i);
         },
-        .mnemonic_add, .mnemonic_dp3, .mnemonic_dp4, .mnemonic_dph, .mnemonic_dst, .mnemonic_ex2, .mnemonic_lg2, .mnemonic_litp, .mnemonic_mul, .mnemonic_sge, .mnemonic_slt, .mnemonic_flr, .mnemonic_max, .mnemonic_min, .mnemonic_rcp, .mnemonic_rsq, .mnemonic_mova, .mnemonic_mov, .mnemonic_break, .mnemonic_nop, .mnemonic_end, .mnemonic_breakc, .mnemonic_call, .mnemonic_callc, .mnemonic_callu, .mnemonic_ifu, .mnemonic_ifc, .mnemonic_loop, .mnemonic_emit, .mnemonic_setemit, .mnemonic_jmpc, .mnemonic_jmpu, .mnemonic_cmp, .mnemonic_mad, => |mne_tok| {
+        .mnemonic_add,
+        .mnemonic_dp3,
+        .mnemonic_dp4,
+        .mnemonic_dph,
+        .mnemonic_dst,
+        .mnemonic_ex2,
+        .mnemonic_lg2,
+        .mnemonic_litp,
+        .mnemonic_mul,
+        .mnemonic_sge,
+        .mnemonic_slt,
+        .mnemonic_flr,
+        .mnemonic_max,
+        .mnemonic_min,
+        .mnemonic_rcp,
+        .mnemonic_rsq,
+        .mnemonic_mova,
+        .mnemonic_mov,
+        .mnemonic_break,
+        .mnemonic_nop,
+        .mnemonic_end,
+        .mnemonic_breakc,
+        .mnemonic_call,
+        .mnemonic_callc,
+        .mnemonic_callu,
+        .mnemonic_ifu,
+        .mnemonic_ifc,
+        .mnemonic_loop,
+        .mnemonic_emit,
+        .mnemonic_setemit,
+        .mnemonic_jmpc,
+        .mnemonic_jmpu,
+        .mnemonic_cmp,
+        .mnemonic_mad,
+        => |mne_tok| {
             defer a.inst_i += 1;
             _ = a.nextToken();
 
-            a.assembleMnemonic(.fromToken(mne_tok)) catch |e| switch(e) {
+            a.assembleMnemonic(.fromToken(mne_tok)) catch |e| switch (e) {
                 error.ParseError => a.eatUntil(.newline),
                 else => return e,
             };
 
-            if(a.tokenTag(a.tok_i) != .eof) {
+            if (a.tokenTag(a.tok_i) != .eof) {
                 _ = try a.expectToken(.newline);
             }
 
@@ -603,11 +637,11 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
                     const address_reg = try a.parseMaskedIdentifier();
                     const address_slice = a.tokenSlice(address_reg.identifier_tok_i);
 
-                    if(!std.mem.eql(u8, address_slice, "a")) {
+                    if (!std.mem.eql(u8, address_slice, "a")) {
                         return a.failMsg(.{ .tag = .expected_address_register, .tok_i = address_reg.identifier_tok_i });
                     }
 
-                    if(address_reg.mask.enable_z or address_reg.mask.enable_w) {
+                    if (address_reg.mask.enable_z or address_reg.mask.enable_w) {
                         return a.failMsg(.{ .tag = .invalid_address_register_mask, .tok_i = address_reg.identifier_tok_i });
                     }
 
@@ -621,7 +655,7 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
                     const dst_info = try a.parseDestinationRegister();
                     _ = try a.expectToken(.comma);
                     const src_info = try a.parseSourceRegister();
-                    
+
                     break :unary .{ dst_info.dst, dst_info.mask, src_info.negated, src_info.src, src_info.swizzle, .none };
                 },
             };
@@ -640,7 +674,7 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
         .flow_conditional => {
             const num: u8, const dest: u12, const condition: encoding.Condition, const x: bool, const y: bool = values: switch (opcode) {
                 .breakc => {
-                    const condition = try a.parseEnum(encoding.Condition, .expected_condition);                 
+                    const condition = try a.parseEnum(encoding.Condition, .expected_condition);
                     _ = try a.expectToken(.comma);
                     const x = try a.parseBoolean();
                     _ = try a.expectToken(.comma);
@@ -653,7 +687,7 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
                     break :values .{ label_range.num, label_range.dest, .@"and", false, false };
                 },
                 .jmpc => {
-                    const condition = try a.parseEnum(encoding.Condition, .expected_condition);                 
+                    const condition = try a.parseEnum(encoding.Condition, .expected_condition);
                     _ = try a.expectToken(.comma);
                     const x = try a.parseBoolean();
                     _ = try a.expectToken(.comma);
@@ -664,7 +698,7 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
                     break :values .{ 0, dest.offset, condition, x, y };
                 },
                 else => {
-                    const condition = try a.parseEnum(encoding.Condition, .expected_condition);                 
+                    const condition = try a.parseEnum(encoding.Condition, .expected_condition);
                     _ = try a.expectToken(.comma);
                     const x = try a.parseBoolean();
                     _ = try a.expectToken(.comma);
@@ -701,7 +735,7 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
                     _ = try a.expectToken(.comma);
                     const label_range = try a.parseLabelRange();
 
-                    break :values .{ .{ .bool = b_info.bool }, label_range.num, label_range.dest }; 
+                    break :values .{ .{ .bool = b_info.bool }, label_range.num, label_range.dest };
                 },
             };
 
@@ -732,13 +766,14 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
             _ = try a.expectToken(.comma);
             const src1_info = try a.parseSourceRegister();
             _ = try a.expectToken(.comma);
-            const src2_info = try a.parseSourceRegister(); 
+            const src2_info = try a.parseSourceRegister();
             _ = try a.expectToken(.comma);
-            const src3_info = try a.parseSourceRegister(); 
+            const src3_info = try a.parseSourceRegister();
 
-            const src1_limited = if(src1_info.src.toLimited()) |src1_lim|
+            const src1_limited = if (src1_info.src.toLimited()) |src1_lim|
                 src1_lim
-            else return a.failMsg(.{ .tag = .expected_limited_src_register, .tok_i = src1_info.register_tok_i });
+            else
+                return a.failMsg(.{ .tag = .expected_limited_src_register, .tok_i = src1_info.register_tok_i });
 
             try a.encoder.mad(a.gpa, dst_info.dst, dst_info.mask, src1_info.negated, src1_limited, src1_info.swizzle, src2_info.negated, src2_info.src, src2_info.swizzle, src3_info.negated, src3_info.src, src3_info.swizzle, .none);
         },
@@ -747,8 +782,8 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
 
 fn processLabel(a: *Assembler) !void {
     const label = a.tokenSlice(a.tok_i);
-    
-    if(a.labels.get(label) != null) {
+
+    if (a.labels.get(label) != null) {
         try a.warn(.redefined_label);
     }
 
@@ -769,16 +804,16 @@ fn processDirective(a: *Assembler) !void {
                 const entry_label_tok_i = try a.expectToken(.identifier);
                 const entry_label = a.tokenSlice(entry_label_tok_i);
 
-                if(a.entrypoints.get(entry_label) != null) {
+                if (a.entrypoints.get(entry_label) != null) {
                     return a.failMsg(.{
                         .tag = .redefined_entry,
                         .tok_i = entry_label_tok_i,
                     });
-                } 
+                }
 
                 const entry_type = try a.parseEnum(shader.Type, .expected_shader_type);
 
-                if(entry_type == .geometry) @panic("TODO: Geometry shaders");
+                if (entry_type == .geometry) @panic("TODO: Geometry shaders");
 
                 try a.entrypoints.put(a.gpa, entry_label, .{
                     .info = .vertex,
@@ -807,13 +842,13 @@ fn processDirective(a: *Assembler) !void {
                 const swizzled_semantics = sw: {
                     var sw: [4]pica.OutputMap.Semantic = undefined;
 
-                    inline for (&.{semantic_swizzled.swizzle.@"0", semantic_swizzled.swizzle.@"1", semantic_swizzled.swizzle.@"2", semantic_swizzled.swizzle.@"3"}, 0..) |f, i| {
-                        sw[i] = native_semantics[@intFromEnum(f)]; 
+                    inline for (&.{ semantic_swizzled.swizzle.@"0", semantic_swizzled.swizzle.@"1", semantic_swizzled.swizzle.@"2", semantic_swizzled.swizzle.@"3" }, 0..) |f, i| {
+                        sw[i] = native_semantics[@intFromEnum(f)];
                     }
 
                     break :sw sw;
                 };
-                
+
                 var current_output_map: pica.OutputMap = a.outputs.get(output_reg) orelse .{
                     .x = .unused,
                     .y = .unused,
@@ -824,20 +859,20 @@ fn processDirective(a: *Assembler) !void {
                 var current_semantic: usize = 0;
                 inline for (0..4) |i| {
                     const output, const enabled = switch (i) {
-                        0 => .{ &current_output_map.x, output_masked.mask.enable_x }, 
-                        1 => .{ &current_output_map.y, output_masked.mask.enable_y }, 
-                        2 => .{ &current_output_map.z, output_masked.mask.enable_z }, 
-                        3 => .{ &current_output_map.w, output_masked.mask.enable_w }, 
+                        0 => .{ &current_output_map.x, output_masked.mask.enable_x },
+                        1 => .{ &current_output_map.y, output_masked.mask.enable_y },
+                        2 => .{ &current_output_map.z, output_masked.mask.enable_z },
+                        3 => .{ &current_output_map.w, output_masked.mask.enable_w },
                         else => unreachable,
                     };
 
-                    if(enabled) {
-                        if(native_semantics[current_semantic] != swizzled_semantics[current_semantic] and swizzled_semantics[current_semantic] == .unused) {
+                    if (enabled) {
+                        if (native_semantics[current_semantic] != swizzled_semantics[current_semantic] and swizzled_semantics[current_semantic] == .unused) {
                             return a.failMsg(.{
                                 .tag = .invalid_semantic_component,
                                 .tok_i = semantic_swizzled.identifier_tok_i,
                             });
-                        } else if(output.* != .unused) {
+                        } else if (output.* != .unused) {
                             return a.failMsg(.{
                                 .tag = .output_has_semantic,
                                 .tok_i = output_masked.identifier_tok_i,
@@ -881,7 +916,7 @@ fn processDirective(a: *Assembler) !void {
                         _ = try a.expectToken(.r_paren);
 
                         const i_reg: register.Integral.Integer = @enumFromInt(@intFromEnum(uniform_reg) - @intFromEnum(UniformRegister.i0));
-                        a.int_const.put(i_reg, .{ x, y, z, w});
+                        a.int_const.put(i_reg, .{ x, y, z, w });
                     },
                     @intFromEnum(UniformRegister.b0)...@intFromEnum(UniformRegister.b15) => {
                         const b_reg: register.Integral.Boolean = @enumFromInt(@intFromEnum(uniform_reg) - @intFromEnum(UniformRegister.b0));
@@ -965,7 +1000,7 @@ fn parseSourceRegister(a: *Assembler) !SourceRegisterInfo {
 
 const DestinationRegisterInfo = struct {
     register_tok_i: u32,
-    
+
     dst: register.Destination,
     mask: Component.Mask,
 };
@@ -992,7 +1027,7 @@ const BooleanRegisterInfo = struct {
     bool: register.Integral.Boolean,
 };
 
-fn parseBooleanRegister(a: *Assembler) !BooleanRegisterInfo{
+fn parseBooleanRegister(a: *Assembler) !BooleanRegisterInfo {
     const b_tok_i = try a.expectToken(.identifier);
     const b_slice = a.tokenSlice(b_tok_i);
 
@@ -1102,7 +1137,7 @@ fn parseLabel(a: *Assembler) !LabelInfo {
     const label_tok_i = try a.expectToken(.identifier);
     const label_slice = a.tokenSlice(label_tok_i);
 
-    if(a.labels.get(label_slice)) |offset| {
+    if (a.labels.get(label_slice)) |offset| {
         return .{
             .tok_i = label_tok_i,
             .offset = offset,
@@ -1127,7 +1162,7 @@ fn parseLabelRange(a: *Assembler) !LabelRangeInfo {
 
     const num_instructions = end_info.offset - start_info.offset;
 
-    if(num_instructions > std.math.maxInt(u8)) {
+    if (num_instructions > std.math.maxInt(u8)) {
         return a.failMsg(.{
             .tag = .label_range_too_big,
             .tok_i = end_info.tok_i,
@@ -1141,25 +1176,25 @@ fn parseLabelRange(a: *Assembler) !LabelRangeInfo {
 }
 
 fn parseInt(a: *Assembler, comptime T: type, max_value: T) !T {
-    const negate: i2 = if(a.tokenTag(a.tok_i) == .minus) neg: {
-        if(@typeInfo(T).int.signedness == .unsigned) return a.fail(.expected_number);
+    const negate: i2 = if (a.tokenTag(a.tok_i) == .minus) neg: {
+        if (@typeInfo(T).int.signedness == .unsigned) return a.fail(.expected_number);
 
         _ = a.nextToken();
         break :neg -1;
     } else 1;
 
-    const number_literal_tok = try a.expectToken(.number_literal); 
+    const number_literal_tok = try a.expectToken(.number_literal);
     const number_literal_slice = a.tokenSlice(number_literal_tok);
 
     const int = std.fmt.parseInt(T, number_literal_slice, 0) catch |e| return a.failMsg(.{
-        .tag = switch(e) {
+        .tag = switch (e) {
             error.InvalidCharacter => .expected_number,
             error.Overflow => .number_too_big,
         },
         .tok_i = number_literal_tok,
     });
 
-    if(int > max_value) {
+    if (int > max_value) {
         return a.failMsg(.{
             .tag = .number_too_big,
             .tok_i = number_literal_tok,
@@ -1170,12 +1205,12 @@ fn parseInt(a: *Assembler, comptime T: type, max_value: T) !T {
 }
 
 fn parseFloat(a: *Assembler) !f32 {
-    const negate: f32 = if(a.tokenTag(a.tok_i) == .minus) neg: {
+    const negate: f32 = if (a.tokenTag(a.tok_i) == .minus) neg: {
         _ = a.nextToken();
         break :neg -1.0;
     } else 1.0;
 
-    const number_literal_tok = try a.expectToken(.number_literal); 
+    const number_literal_tok = try a.expectToken(.number_literal);
     const number_literal_slice = a.tokenSlice(number_literal_tok);
 
     return negate * (std.fmt.parseFloat(f32, number_literal_slice) catch |e| switch (e) {
@@ -1189,26 +1224,27 @@ fn parseFloat(a: *Assembler) !f32 {
 
 fn parseEnum(a: *Assembler, comptime T: type, error_tag: Error.Tag) !T {
     const enum_tok_i = try a.expectToken(.identifier);
-    
-    return if(std.meta.stringToEnum(T, a.tokenSlice(enum_tok_i))) |enum_value| 
+
+    return if (std.meta.stringToEnum(T, a.tokenSlice(enum_tok_i))) |enum_value|
         enum_value
-    else return a.failMsg(.{ .tag = error_tag, .tok_i = enum_tok_i });
+    else
+        return a.failMsg(.{ .tag = error_tag, .tok_i = enum_tok_i });
 }
 
 fn parseBoolean(a: *Assembler) !bool {
     return switch (a.tokenTag(a.tok_i)) {
-        .@"true" => {
+        .true => {
             _ = a.nextToken();
             return true;
         },
-        .@"false" => {
+        .false => {
             _ = a.nextToken();
             return false;
         },
         else => a.failMsg(.{
             .tag = .expected_boolean,
             .tok_i = a.tok_i,
-        })
+        }),
     };
 }
 
@@ -1271,16 +1307,16 @@ test "assemble" {
         \\   mov o0, v1
         \\   mov r0, v2
         \\   end
-    ); 
+    );
     defer assembled.deinit(std.testing.allocator);
 
-    for(assembled.errors) |err| {
-        if(err.tag == .expected_token) {
-            std.debug.print("Error: {s} (token value: '{s}', expected: {s})\n{s}", .{@tagName(err.tag), assembled.tokenSlice(err.tok_i), @tagName(err.expected_tok), assembled.source[assembled.tokenStart(err.tok_i)..]});
-        } else std.debug.print("Error: {s} (token value: {s})\n{s}", .{@tagName(err.tag), assembled.tokenSlice(err.tok_i), assembled.source[assembled.tokenStart(err.tok_i)..]});
+    for (assembled.errors) |err| {
+        if (err.tag == .expected_token) {
+            std.debug.print("Error: {s} (token value: '{s}', expected: {s})\n{s}", .{ @tagName(err.tag), assembled.tokenSlice(err.tok_i), @tagName(err.expected_tok), assembled.source[assembled.tokenStart(err.tok_i)..] });
+        } else std.debug.print("Error: {s} (token value: {s})\n{s}", .{ @tagName(err.tag), assembled.tokenSlice(err.tok_i), assembled.source[assembled.tokenStart(err.tok_i)..] });
     }
 
-    if(assembled.errors.len > 0) {
+    if (assembled.errors.len > 0) {
         return error.ParseError;
     }
 }

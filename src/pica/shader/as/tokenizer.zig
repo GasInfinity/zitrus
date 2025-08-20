@@ -44,8 +44,8 @@ pub const Token = struct {
         .{ "jmpu", .mnemonic_jmpu },
         .{ "cmp", .mnemonic_cmp },
         .{ "mad", .mnemonic_mad },
-        .{ "true", .@"true" },
-        .{ "false", .@"false" },
+        .{ "true", .true },
+        .{ "false", .false },
     });
 
     pub fn getKeyword(str: []const u8) ?Tag {
@@ -66,8 +66,8 @@ pub const Token = struct {
         colon,
         dot,
         newline,
-        @"true",
-        @"false",
+        true,
+        false,
 
         mnemonic_add,
         mnemonic_dp3,
@@ -114,8 +114,8 @@ pub const Token = struct {
                 .r_square => "]",
                 .colon => ":",
                 .dot => ".",
-                .@"true" => "true",
-                .@"false" => "false",
+                .true => "true",
+                .false => "false",
 
                 else => null,
             };

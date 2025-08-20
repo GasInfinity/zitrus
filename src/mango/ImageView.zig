@@ -16,6 +16,12 @@ pub const Data = packed struct(u64) {
     _: u23 = 0,
 
     pub fn init(create_info: mango.ImageViewCreateInfo) Data {
+        const b_image: *backend.Image = .fromHandleMutable(create_info.image);
+
+        if (!b_image.info.mutable_format) {
+            std.debug.assert(b_image.format == create_info.format);
+        }
+
         return .{
             .image = create_info.image,
             .format = create_info.format,
@@ -38,6 +44,7 @@ pub fn fromHandle(handle: Handle) ImageView {
 }
 
 const ImageView = @This();
+const backend = @import("backend.zig");
 
 const std = @import("std");
 const zitrus = @import("zitrus");

@@ -222,7 +222,6 @@ pub const Integral = packed union {
     },
 };
 
-
 comptime {
     std.debug.assert(@typeInfo(RelativeComponent).@"enum".is_exhaustive);
     std.debug.assert(@typeInfo(Source).@"enum".is_exhaustive);

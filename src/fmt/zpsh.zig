@@ -29,7 +29,7 @@ pub const Header = extern struct {
     };
 
     magic: [magic_value.len]u8 = magic_value.*,
-    shader_size: ShaderSize, 
+    shader_size: ShaderSize,
     entrypoints: u16,
     string_table_size: u32,
 };
@@ -47,9 +47,9 @@ pub const EntrypointHeader = extern struct {
         // zig fmt: on
 
         pub fn fromSet(set: std.EnumSet(BooleanRegister)) BooleanConstantMask {
-            var mask: BooleanConstantMask = undefined; 
+            var mask: BooleanConstantMask = undefined;
 
-            inline for(comptime std.enums.values(BooleanRegister)) |b| {
+            inline for (comptime std.enums.values(BooleanRegister)) |b| {
                 std.mem.writePackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(b), @intFromBool(set.contains(b)), .little);
             }
 
@@ -59,8 +59,8 @@ pub const EntrypointHeader = extern struct {
         pub fn toSet(mask: BooleanConstantMask) std.EnumSet(BooleanRegister) {
             var set: std.EnumSet(BooleanRegister) = undefined;
 
-            inline for(comptime std.enums.values(BooleanRegister)) |b| {
-                set.setPresent(b, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(b), .little) != 0); 
+            inline for (comptime std.enums.values(BooleanRegister)) |b| {
+                set.setPresent(b, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(b), .little) != 0);
             }
 
             return set;
@@ -75,9 +75,9 @@ pub const EntrypointHeader = extern struct {
         _: u12,
 
         pub fn fromSet(set: std.EnumSet(IntegerRegister)) IntegerConstantMask {
-            var mask: IntegerConstantMask = undefined; 
+            var mask: IntegerConstantMask = undefined;
 
-            inline for(comptime std.enums.values(IntegerRegister)) |i| {
+            inline for (comptime std.enums.values(IntegerRegister)) |i| {
                 std.mem.writePackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(i), @intFromBool(set.contains(i)), .little);
             }
 
@@ -87,8 +87,8 @@ pub const EntrypointHeader = extern struct {
         pub fn toSet(mask: IntegerConstantMask) std.EnumSet(IntegerRegister) {
             var set: std.EnumSet(IntegerRegister) = undefined;
 
-            inline for(comptime std.enums.values(IntegerRegister)) |i| {
-                set.setPresent(i, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(i), .little) != 0); 
+            inline for (comptime std.enums.values(IntegerRegister)) |i| {
+                set.setPresent(i, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(i), .little) != 0);
             }
 
             return set;
@@ -124,9 +124,9 @@ pub const EntrypointHeader = extern struct {
         high: High,
 
         pub fn fromSet(set: std.EnumSet(FloatingRegister)) FloatingConstantMask {
-            var mask: FloatingConstantMask = undefined; 
+            var mask: FloatingConstantMask = undefined;
 
-            inline for(comptime std.enums.values(FloatingRegister)) |f| {
+            inline for (comptime std.enums.values(FloatingRegister)) |f| {
                 std.mem.writePackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(f), @intFromBool(set.contains(f)), .little);
             }
 
@@ -136,8 +136,8 @@ pub const EntrypointHeader = extern struct {
         pub fn toSet(mask: FloatingConstantMask) std.EnumSet(FloatingRegister) {
             var set: std.EnumSet(FloatingRegister) = undefined;
 
-            inline for(comptime std.enums.values(FloatingRegister)) |f| {
-                set.setPresent(f, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(f), .little) != 0); 
+            inline for (comptime std.enums.values(FloatingRegister)) |f| {
+                set.setPresent(f, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(f), .little) != 0);
             }
 
             return set;
@@ -152,9 +152,9 @@ pub const EntrypointHeader = extern struct {
         // zig fmt: on
 
         pub fn fromSet(set: std.EnumSet(OutputRegister)) OutputMask {
-            var mask: OutputMask = undefined; 
+            var mask: OutputMask = undefined;
 
-            inline for(comptime std.enums.values(OutputRegister)) |o| {
+            inline for (comptime std.enums.values(OutputRegister)) |o| {
                 std.mem.writePackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(o), @intFromBool(set.contains(o)), .little);
             }
 
@@ -164,8 +164,8 @@ pub const EntrypointHeader = extern struct {
         pub fn toSet(mask: OutputMask) std.EnumSet(OutputRegister) {
             var set: std.EnumSet(OutputRegister) = undefined;
 
-            inline for(comptime std.enums.values(OutputRegister)) |o| {
-                set.setPresent(o, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(o), .little) != 0); 
+            inline for (comptime std.enums.values(OutputRegister)) |o| {
+                set.setPresent(o, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(o), .little) != 0);
             }
 
             return set;
@@ -193,7 +193,7 @@ pub const Parsed = struct {
     pub fn initBuffer(buffer: []const u8) Parsed {
         var hdr = std.mem.bytesAsValue(Header, buffer).*;
 
-        if(builtin.cpu.arch.endian() != .little) {
+        if (builtin.cpu.arch.endian() != .little) {
             std.mem.byteSwapAllFields(Header, &hdr);
         }
 
@@ -212,11 +212,11 @@ pub const Parsed = struct {
     pub fn entrypointIterator(parsed: *const Parsed) EntrypointIterator {
         return .{
             .parsed = parsed,
-            .byte_offset  = 0,
+            .byte_offset = 0,
             .current_entry = 0,
         };
     }
-    
+
     pub const EntrypointIterator = struct {
         pub const Entry = struct {
             info: EntrypointHeader.ShaderInfo,
@@ -238,10 +238,10 @@ pub const Parsed = struct {
         current_entry: u16,
 
         pub fn next(it: *EntrypointIterator) ?Entry {
-            if(it.current_entry == it.parsed.entrypoints) return null;
-            
+            if (it.current_entry == it.parsed.entrypoints) return null;
+
             const entry_start = it.parsed.entrypoint_data[it.byte_offset..];
-            const hdr = if(builtin.cpu.arch.endian() != .little) hdr: {
+            const hdr = if (builtin.cpu.arch.endian() != .little) hdr: {
                 const hdr_ptr: *const EntrypointHeader = @alignCast(std.mem.bytesAsValue(EntrypointHeader, entry_start));
                 var hdr = hdr_ptr.*;
                 std.mem.byteSwapAllFields(EntrypointHeader, &hdr);

@@ -34,27 +34,26 @@ pub fn initTodo(gsp: *GspGpu) Device {
 
 pub fn allocateMemory(device: *Device, allocate_info: *const mango.MemoryAllocateInfo, allocator: std.mem.Allocator) !mango.DeviceMemory {
     _ = allocator;
-    
+
+    const aligned_allocation_size = std.mem.alignForward(usize, @intFromEnum(allocate_info.allocation_size), horizon.heap.page_size);
+
     const allocated_memory: backend.DeviceMemory = switch (allocate_info.memory_type) {
         // XXX: Hardcode 0 as cached fcram until we have proper memory types.
         0 => fcram: {
-            const aligned_allocation_size = std.mem.alignForward(usize, allocate_info.allocation_size, horizon.heap.page_size);
-            const allocated_virtual_address = switch(horizon.controlMemory(.{
+            const allocated_virtual_address = switch (horizon.controlMemory(.{
                 .fundamental_operation = .commit,
                 .area = .all,
                 .linear = true,
             }, null, null, aligned_allocation_size, .rw)) {
                 .success => |s| s.value,
                 .failure => return error.OutOfMemory,
-            }; 
-            
+            };
+
             break :fcram .{ .data = .init(allocated_virtual_address, horizon.memory.toPhysical(@intFromPtr(allocated_virtual_address)), aligned_allocation_size, .fcram) };
         },
         // XXX: Hardcore 1, 2 as VRAM (A) and VRAM (B) with DEVICE_LOCAL only, see above.
         1, 2 => |memory_type_index| vram: {
-            const aligned_allocation_size = std.mem.alignForward(usize, allocate_info.allocation_size, VRamBankAllocator.min_alignment_byte_units);
-
-            const bank: zitrus.memory.VRamBank = @enumFromInt(memory_type_index - 1); 
+            const bank: zitrus.memory.VRamBank = @enumFromInt(memory_type_index - 1);
             const vram_bank_allocator = device.vram_allocators.getPtr(bank);
             const allocated_virtual_address = try vram_bank_allocator.alloc(aligned_allocation_size, VRamBankAllocator.min_alignment);
 
@@ -100,7 +99,7 @@ pub fn mapMemory(device: *Device, memory: mango.DeviceMemory, offset: u32, size:
     std.debug.assert(std.mem.isAligned(offset, horizon.heap.page_size) and offset <= b_memory.size());
 
     // TODO: see above
-    if(size != std.math.maxInt(u32)) {
+    if (size != std.math.maxInt(u32)) {
         std.debug.assert(size <= (b_memory.size() - offset));
     }
 
@@ -117,18 +116,20 @@ pub fn flushMappedMemoryRanges(device: *Device, ranges: []const mango.MappedMemo
     _ = device;
 
     for (ranges) |range| {
-        const offset = range.offset;
-        const size = range.size;
         const b_memory: backend.DeviceMemory = .fromHandle(range.memory);
 
-        std.debug.assert(std.mem.isAligned(offset, horizon.heap.page_size));
+        const offset = @intFromEnum(range.offset);
+        const flushed_memory = switch (range.size) {
+            .whole_size => b_memory.virtualAddress()[offset..][0..(b_memory.size() - offset)],
+            // TODO: 0.15 use '_'
+            else => |sz| sz: {
+                const size = @intFromEnum(sz);
 
-        // TODO: see above
-        const flushed_memory = if(size != std.math.maxInt(u32)) specified_size: {
-            std.debug.assert(size <= (b_memory.size() - offset));
-            
-            break :specified_size b_memory.virtualAddress()[offset..][0..size];
-        } else b_memory.virtualAddress()[offset..][0..(b_memory.size() - offset)];
+                std.debug.assert(size <= (b_memory.size() - offset));
+
+                break :sz b_memory.virtualAddress()[offset..][0..size];
+            },
+        };
 
         // TODO: error handling
         _ = horizon.flushProcessDataCache(.current, flushed_memory);
@@ -143,7 +144,7 @@ pub fn createBuffer(device: *Device, create_info: mango.BufferCreateInfo, alloca
 
     buffer.* = .{
         .memory_info = .empty,
-        .size = create_info.size,
+        .size = @intFromEnum(create_info.size),
         .usage = create_info.usage,
     };
 
@@ -173,11 +174,11 @@ pub fn createImage(device: *Device, create_info: mango.ImageCreateInfo, allocato
 
     std.debug.assert(create_info.extent.width >= 8 and create_info.extent.width <= 1024 and std.mem.isAligned(create_info.extent.width, 8) and create_info.extent.height >= 8 and create_info.extent.height <= 1024 and std.mem.isAligned(create_info.extent.height, 8));
 
-    if(create_info.usage.sampled) {
+    if (create_info.usage.sampled) {
         std.debug.assert(std.math.isPowerOfTwo(create_info.extent.width) and std.math.isPowerOfTwo(create_info.extent.width) and create_info.tiling == .optimal);
     }
 
-    if(create_info.usage.color_attachment or create_info.usage.depth_stencil_attachment or create_info.usage.shadow_attachment) {
+    if (create_info.usage.color_attachment or create_info.usage.depth_stencil_attachment or create_info.usage.shadow_attachment) {
         std.debug.assert(create_info.tiling == .optimal);
     }
 
@@ -228,6 +229,23 @@ pub fn destroyImageView(device: *Device, image_view: mango.ImageView, allocator:
     _ = allocator;
 }
 
+pub fn createSampler(device: *Device, create_info: mango.SamplerCreateInfo, allocator: std.mem.Allocator) !mango.Sampler {
+    _ = device;
+    _ = allocator;
+
+    const b_image_sampler: backend.Sampler = .{
+        .data = .init(create_info),
+    };
+
+    return b_image_sampler.toHandle();
+}
+
+pub fn destroySampler(device: *Device, sampler: mango.Sampler, allocator: std.mem.Allocator) void {
+    _ = device;
+    _ = sampler;
+    _ = allocator;
+}
+
 pub fn createGraphicsPipeline(device: *Device, create_info: mango.GraphicsPipelineCreateInfo, allocator: std.mem.Allocator) !mango.Pipeline {
     _ = device;
 
@@ -245,6 +263,7 @@ pub fn destroyPipeline(device: *Device, pipeline: mango.Pipeline, allocator: std
     allocator.destroy(b_gfx_pipeline);
 }
 
+// TODO: Proper assertions.
 pub fn copyBuffer(device: *Device, src_buffer: mango.Buffer, dst_buffer: mango.Buffer, regions: []const mango.BufferCopy) void {
     const gsp = device.gsp;
 
@@ -264,18 +283,71 @@ pub fn copyBuffer(device: *Device, src_buffer: mango.Buffer, dst_buffer: mango.B
         while (true) {
             const int = gsp.waitInterrupts() catch unreachable;
 
-            if(int.get(.dma) > 0) {
+            if (int.get(.dma) > 0) {
                 break;
             }
         }
     }
 }
 
-pub fn copyBufferToImage() void {
+// TODO: Provide a software callback for directly using host memory (akin to VK_EXT_host_image_copy)
+pub fn copyBufferToImage(device: *Device, src_buffer: mango.Buffer, dst_image: mango.Image, info: mango.BufferImageCopy) !void {
+    const gsp = device.gsp;
+
+    const b_src_buffer: *backend.Buffer = .fromHandleMutable(src_buffer);
+    const b_dst_image: *backend.Image = .fromHandleMutable(dst_image);
+
+    const b_src_memory: backend.DeviceMemory.BoundMemoryInfo = b_src_buffer.memory_info;
+    const b_dst_memory: backend.DeviceMemory.BoundMemoryInfo = b_dst_image.memory_info;
+
+    const src_offset = @intFromEnum(info.src_offset);
+
+    const native_fmt = b_dst_image.format.nativeColorFormat();
+    const pixel_size = native_fmt.bytesPerPixel();
+
+    const img_width = b_dst_image.info.width();
+    const img_height = b_dst_image.info.height();
+    const full_image_size = img_width * img_height * pixel_size;
+
+    const src_virt = b_src_memory.boundVirtualAddress()[src_offset..][0..full_image_size];
+    const dst_virt = b_dst_memory.boundVirtualAddress()[0..full_image_size];
+
+    std.debug.assert(img_width >= 64 and img_height >= 16);
+
+    if (info.flags.memcpy) {
+        try gsp.submitRequestDma(src_virt, dst_virt, .none, .none);
+
+        while (true) {
+            const int = gsp.waitInterrupts() catch unreachable;
+
+            if (int.get(.dma) > 0) {
+                break;
+            }
+        }
+
+        return;
+    }
+
+    try gsp.submitDisplayTransfer(src_virt.ptr, dst_virt.ptr, native_fmt, .{
+        .x = @intCast(img_width),
+        .y = @intCast(img_height),
+    }, native_fmt, .{
+        .x = @intCast(img_width),
+        .y = @intCast(img_height),
+    }, .{
+        .mode = .linear_tiled,
+    }, .none);
+
+    while (true) {
+        const int = gsp.waitInterrupts() catch unreachable;
+
+        if (int.get(.ppf) > 0) {
+            break;
+        }
+    }
 }
 
-pub fn copyImageToBuffer() void {
-}
+pub fn copyImageToBuffer() void {}
 
 pub fn blitImage(device: *Device, src_image: mango.Image, dst_image: mango.Image) !void {
     const gsp = device.gsp;
@@ -312,7 +384,7 @@ pub fn blitImage(device: *Device, src_image: mango.Image, dst_image: mango.Image
     while (true) {
         const int = gsp.waitInterrupts() catch unreachable;
 
-        if(int.get(.ppf) > 0) {
+        if (int.get(.ppf) > 0) {
             break;
         }
     }
@@ -333,7 +405,7 @@ pub fn fillBuffer(device: *Device, dst_buffer: mango.Buffer, dst_offset: usize, 
     while (true) {
         const int = gsp.waitInterrupts() catch unreachable;
 
-        if(int.get(.psc0) > 0) {
+        if (int.get(.psc0) > 0) {
             break;
         }
     }
@@ -347,11 +419,11 @@ pub fn clearColorImage(device: *Device, image: mango.Image, color: *const [4]u8)
 
     const clear_slice, const clear_value: GspGpu.gx.MemoryFillUnit.Value = switch (b_image.format) {
         .a8b8g8r8_unorm => .{
-            bound_virtual[0..b_image.info.width() * b_image.info.height() * @sizeOf(u32)],
+            bound_virtual[0 .. b_image.info.width() * b_image.info.height() * @sizeOf(u32)],
             .fill32(@bitCast(color.*)),
         },
         .b8g8r8_unorm => .{
-            bound_virtual[0..b_image.info.width() * b_image.info.height() * 3],
+            bound_virtual[0 .. b_image.info.width() * b_image.info.height() * 3],
             .fill24(@bitCast(pica.ColorFormat.Bgr888{
                 .r = color[0],
                 .g = color[1],
@@ -360,20 +432,20 @@ pub fn clearColorImage(device: *Device, image: mango.Image, color: *const [4]u8)
         },
         // .a8b8g8r8_unorm =>,
         .r5g6b5_unorm_pack16, .r5g5b5a1_unorm_pack16, .r4g4b4a4_unorm_pack16, .g8r8_unorm => .{
-            bound_virtual[0..b_image.info.width() * b_image.info.height() * @sizeOf(u16)],
-            .fill16(switch(b_image.format) {
-                .r5g6b5_unorm_pack16 => @bitCast(pica.ColorFormat.Rgb565{ 
+            bound_virtual[0 .. b_image.info.width() * b_image.info.height() * @sizeOf(u16)],
+            .fill16(switch (b_image.format) {
+                .r5g6b5_unorm_pack16 => @bitCast(pica.ColorFormat.Rgb565{
                     .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
                     .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u6)) / std.math.maxInt(u8)),
                     .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
                 }),
-                .r5g5b5a1_unorm_pack16 => @bitCast(pica.ColorFormat.Rgba5551{ 
+                .r5g5b5a1_unorm_pack16 => @bitCast(pica.ColorFormat.Rgba5551{
                     .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
                     .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
                     .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
                     .a = @intFromBool(color[3] != 0),
                 }),
-                .r4g4b4a4_unorm_pack16 => @bitCast(pica.ColorFormat.Rgba4444{ 
+                .r4g4b4a4_unorm_pack16 => @bitCast(pica.ColorFormat.Rgba4444{
                     .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
                     .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
                     .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
@@ -395,7 +467,7 @@ pub fn clearColorImage(device: *Device, image: mango.Image, color: *const [4]u8)
     while (true) {
         const int = gsp.waitInterrupts() catch unreachable;
 
-        if(int.get(.psc0) > 0) {
+        if (int.get(.psc0) > 0) {
             break;
         }
     }
@@ -427,11 +499,11 @@ pub fn submit(device: *Device, submit_info: *const SubmitInfo) void {
 
     for (command_buffers) |cmd_buf| {
         gsp.submitProcessCommandList(cmd_buf.queue.buffer[0..cmd_buf.queue.current_index], .none, .flush, .none) catch unreachable;
-        
+
         while (true) {
             const int = gsp.waitInterrupts() catch unreachable;
 
-            if(int.get(.p3d) > 0) {
+            if (int.get(.p3d) > 0) {
                 break;
             }
         }
@@ -451,6 +523,10 @@ pub fn present(device: *Device, present_info: *const PresentInfo) void {
 pub fn waitIdle(device: *Device) void {
     _ = device;
     // TODO: Multithreading when the Io interface lands, this does nothing currently.
+}
+
+comptime {
+    std.debug.assert(VRamBankAllocator.min_alignment_byte_units == 4096);
 }
 
 const VRamBankAllocator = zalloc.bitmap.StaticBitmapAllocator(.fromByteUnits(4096), zitrus.memory.vram_bank_size);

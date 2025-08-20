@@ -44,7 +44,7 @@ pub const BoundMemoryInfo = packed struct(u64) {
     virtual_page_shifted: u20,
     physical_page_shifted: u20,
     byte_offset: u12,
-    _: u12 = 0, 
+    _: u12 = 0,
 
     pub fn init(device_memory: DeviceMemory, offset: u32) BoundMemoryInfo {
         const page_offset: u20 = @intCast(offset >> 12);
@@ -69,7 +69,6 @@ pub const BoundMemoryInfo = packed struct(u64) {
         return info.virtual_page_shifted == info.physical_page_shifted and info.virtual_page_shifted == 0;
     }
 };
-
 
 data: Data,
 

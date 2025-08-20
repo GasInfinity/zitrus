@@ -72,18 +72,18 @@ pub const Graphics = struct {
         // TODO: What to do with early depth?
         gfx_queue.add(internal_regs, &internal_regs.rasterizer.early_depth_test_enable_1, .init(false));
         gfx_queue.add(internal_regs, &internal_regs.framebuffer.early_depth_test_enable_2, .init(false));
-        
+
         // TODO: Lighting in pipelines
         gfx_queue.add(internal_regs, &internal_regs.texturing.lighting_enable, .init(false));
         gfx_queue.add(internal_regs, &internal_regs.fragment_lighting.disable, .init(true));
 
-        if(create_info.geometry_shader_state) |_| {
+        if (create_info.geometry_shader_state) |_| {
             @panic("TODO");
         } else {
             gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.enable_geometry_shader_configuration, .init(false));
 
             const vtx_info = try compileShader(create_info.vertex_shader_state.*, &internal_regs.vertex_shader, &gfx_queue);
-            
+
             gfx.boolean_constants = .init(.{ .vertex = vtx_info.boolean_constants, .geometry = undefined });
             gfx.integer_constants = .init(.{ .vertex = vtx_info.integer_constants, .geometry = undefined });
 
@@ -95,49 +95,36 @@ pub const Graphics = struct {
             const max_outputs = @as(usize, @intFromEnum(vtx_info.max_output)) + 1;
 
             var attribute_clock: pica.Registers.Internal.Rasterizer.OutputAttributeClock = .{};
-            var output_map: [7]pica.OutputMap = undefined;
-            
+
             var current_out: usize = 0;
             var out_it = vtx_info.entrypoint.output_set.iterator();
             while (out_it.next()) |o| {
                 const map = vtx_info.entrypoint.output_map[current_out];
 
-                if(@intFromEnum(o) >= @intFromEnum(pica.shader.register.Destination.Output.o7)) {
+                if (@intFromEnum(o) >= @intFromEnum(pica.shader.register.Destination.Output.o7)) {
                     std.debug.assert(map.x == .unused and map.y == .unused and map.z == .unused and map.w == .unused);
                     continue;
                 }
 
                 // zig fmt: on
-                attribute_clock.color_present = attribute_clock.color_present 
-                                              or (map.x.isColor() or map.y.isColor() or map.z.isColor() or map.w.isColor());
-                attribute_clock.position_z_present = attribute_clock.position_z_present 
-                                                   or (map.x == .position_z or map.y == .position_z or map.z == .position_z or map.w == .position_z);
-                attribute_clock.texture_coordinates_0_present = attribute_clock.texture_coordinates_0_present 
-                                                              or (map.x.isTextureCoordinate0() or map.y.isTextureCoordinate0() or map.z.isTextureCoordinate0() or map.w.isTextureCoordinate0());
-                attribute_clock.texture_coordinates_1_present = attribute_clock.texture_coordinates_1_present 
-                                                              or (map.x.isTextureCoordinate1() or map.y.isTextureCoordinate1() or map.z.isTextureCoordinate1() or map.w.isTextureCoordinate1());
-                attribute_clock.texture_coordinates_2_present = attribute_clock.texture_coordinates_2_present 
-                                                              or (map.x.isTextureCoordinate2() or map.y.isTextureCoordinate2() or map.z.isTextureCoordinate2() or map.w.isTextureCoordinate2());
-                attribute_clock.texture_coordinates_0_w_present = attribute_clock.texture_coordinates_0_w_present 
-                                                                or (map.x == .texture_coordinate_0_w or map.y == .texture_coordinate_0_w or map.z == .texture_coordinate_0_w or map.w == .texture_coordinate_0_w);
-                attribute_clock.normal_quaternion_or_view_present = attribute_clock.normal_quaternion_or_view_present 
-                                                                  or (map.x.isView() or map.x.isNormalQuaternion())
-                                                                  or (map.y.isView() or map.y.isNormalQuaternion())
-                                                                  or (map.z.isView() or map.z.isNormalQuaternion())
-                                                                  or (map.w.isView() or map.w.isNormalQuaternion());
+                attribute_clock.color_present = attribute_clock.color_present or (map.x.isColor() or map.y.isColor() or map.z.isColor() or map.w.isColor());
+                attribute_clock.position_z_present = attribute_clock.position_z_present or (map.x == .position_z or map.y == .position_z or map.z == .position_z or map.w == .position_z);
+                attribute_clock.texture_coordinates_0_present = attribute_clock.texture_coordinates_0_present or (map.x.isTextureCoordinate0() or map.y.isTextureCoordinate0() or map.z.isTextureCoordinate0() or map.w.isTextureCoordinate0());
+                attribute_clock.texture_coordinates_1_present = attribute_clock.texture_coordinates_1_present or (map.x.isTextureCoordinate1() or map.y.isTextureCoordinate1() or map.z.isTextureCoordinate1() or map.w.isTextureCoordinate1());
+                attribute_clock.texture_coordinates_2_present = attribute_clock.texture_coordinates_2_present or (map.x.isTextureCoordinate2() or map.y.isTextureCoordinate2() or map.z.isTextureCoordinate2() or map.w.isTextureCoordinate2());
+                attribute_clock.texture_coordinates_0_w_present = attribute_clock.texture_coordinates_0_w_present or (map.x == .texture_coordinate_0_w or map.y == .texture_coordinate_0_w or map.z == .texture_coordinate_0_w or map.w == .texture_coordinate_0_w);
+                attribute_clock.normal_quaternion_or_view_present = attribute_clock.normal_quaternion_or_view_present or (map.x.isView() or map.x.isNormalQuaternion()) or (map.y.isView() or map.y.isNormalQuaternion()) or (map.z.isView() or map.z.isNormalQuaternion()) or (map.w.isView() or map.w.isNormalQuaternion());
                 // zig fmt: off
 
-                output_map[@intFromEnum(o)] = map;
+                gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_map_output[current_out], map);
                 current_out += 1;
             }
 
+            gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_map_total, .init(@intCast(@min(7, max_outputs))));
             gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_attribute_clock, attribute_clock);
             gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_attribute_mode, .{
                 .use_texture_coordinates = attribute_clock.texture_coordinates_0_present or attribute_clock.texture_coordinates_1_present or attribute_clock.texture_coordinates_2_present or attribute_clock.texture_coordinates_0_w_present,
             });
-
-            gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_map_total, .init(@intCast(@min(7, max_outputs))));
-            gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_map_output, output_map);
         }
 
         if(!dyn.vertex_input) {
