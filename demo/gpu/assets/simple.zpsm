@@ -23,5 +23,5 @@ main:
     dp4 oPos.w, uPerspM3, iPos 
 
     ; oUv = iUv;
-    mov oUv, iUv.xy
+    mov oUv, iUv
     end

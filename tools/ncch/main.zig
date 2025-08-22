@@ -36,10 +36,11 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
             };
             defer ncch_file.close();
 
-            var buffered_ncch_reader = std.io.bufferedReader(ncch_file.reader());
-            const ncch_reader = buffered_ncch_reader.reader();
-            
-            const header = try ncch_reader.readStructEndian(ncch.Header, .little);
+            var buf: [4096]u8 = undefined;
+            var ncch_reader = ncch_file.reader(&buf);
+            const reader = &ncch_reader.interface;
+
+            const header = try reader.peekStruct(ncch.Header, .little);
 
             if(!std.mem.eql(u8, &header.magic, ncch.magic)) {
                 std.debug.print("invalid/corrupted ncch '{s}', header magic check failed\n", .{ ncch_path });

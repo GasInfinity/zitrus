@@ -18,7 +18,7 @@ pub fn build(b: *std.Build) void {
     exe_mod.addAnonymousImport("simple.zpsh", .{ .root_source_file = zitrus.addAssembleZpsm(b, .{
         .name = "simple.zpsh",
         .root_source_file = b.path("assets/simple.zpsm"),
-    })});
+    }) });
     exe_mod.addAnonymousImport("test.bgr", .{ .root_source_file = b.path("assets/test.bgr") });
 
     const exe = zitrus.addExecutable(b, .{

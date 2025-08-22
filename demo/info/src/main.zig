@@ -4,7 +4,7 @@ pub fn main() !void {
 
     var apt = try Applet.init(srv);
     defer apt.deinit();
-    
+
     var app = try Applet.Application.init(apt, srv);
     defer app.deinit(apt, srv);
 
@@ -78,7 +78,7 @@ pub fn main() !void {
 
         while (try app.pollNotification(apt, srv)) |n| switch (n) {
             .jump_home, .jump_home_by_power => {
-                j_h: switch(try app.jumpToHome(apt, srv, &gsp, .none)) {
+                j_h: switch (try app.jumpToHome(apt, srv, &gsp, .none)) {
                     .resumed => {},
                     .jump_home => continue :j_h (try app.jumpToHome(apt, srv, &gsp, .none)),
                     .must_close => break :main_loop,

@@ -523,7 +523,7 @@ pub fn controlMemory(operation: MemoryOperation, addr0: ?*anyopaque, addr1: ?*an
           [addr1] "{r2}" (addr1),
           [size] "{r3}" (size),
           [permissions] "{r4}" (permissions),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, mapped_addr);
@@ -544,7 +544,7 @@ pub fn queryMemory(address: *anyopaque) Result(MemoryQuery) {
           [state] "={r4}" (state),
           [page_flags] "={r5}" (page_flags),
         : [handle] "{r2}" (address),
-        : "r12", "cc", "memory"
+        : .{ .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, .{ .memory_info = .{ .base_vaddr = base_vaddr, .size = size, .permission = permission, .state = state }, .page_info = .{ .flags = page_flags } });
@@ -563,7 +563,7 @@ pub fn getProcessAffinityMask(process: Process, processor_count: i32) Result(u8)
         : [affinity_mask] "{r0}" (&affinity_mask),
           [process] "{r1}" (process),
           [processor_count] "{r2}" (processor_count),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, affinity_mask);
@@ -575,7 +575,7 @@ pub fn setProcessAffinityMask(process: Process, affinity_mask: *const u8, proces
         : [process] "{r0}" (process),
           [affinity_mask] "{r1}" (affinity_mask),
           [processor_count] "{r2}" (processor_count),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -586,7 +586,7 @@ pub fn getProcessIdealProcessor(process: Process) Result(i32) {
         : [code] "={r0}" (-> result.Code),
           [ideal_processor] "={r1}" (ideal_processor),
         : [process] "{r1}" (process),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, ideal_processor);
@@ -597,7 +597,7 @@ pub fn setProcessIdealProcessor(process: Process, ideal_processor: i32) result.C
         : [code] "={r0}" (-> result.Code),
         : [process] "{r0}" (process),
           [ideal_processor] "{r1}" (ideal_processor),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -613,7 +613,7 @@ pub fn createThread(entry: *fn (ctx: *anyopaque) void, ctx: *anyopaque, stack_to
           [ctx] "{r2}" (ctx),
           [stack_top] "{r3}" (stack_top),
           [processor_id] "{r4}" (processor_id),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, handle);
@@ -631,7 +631,7 @@ pub fn sleepThread(ns: i64) void {
         :
         : [ns_low] "{r0}" (@as(u32, @truncate(ns_u))),
           [ns_high] "{r1}" (@as(u32, @truncate(ns_u >> 32))),
-        : "r0", "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r0 = true, .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -642,7 +642,7 @@ pub fn getThreadPriority(thread: Thread) Result(u6) {
         : [code] "={r0}" (-> result.Code),
           [priority] "={r1}" (priority),
         : [thread] "{r1}" (thread),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, priority);
@@ -653,7 +653,7 @@ pub fn setThreadPriority(thread: Thread, priority: u6) result.Code {
         : [code] "={r0}" (-> result.Code),
         : [thread] "{r0}" (thread),
           [priority] "{r1}" (priority),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -665,7 +665,7 @@ pub fn getThreadAffinityMask(thread: Thread, processor_count: i32) Result(u8) {
         : [affinity_mask] "{r0}" (&affinity_mask),
           [thread] "{r1}" (thread),
           [processor_count] "{r2}" (processor_count),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, affinity_mask);
@@ -677,7 +677,7 @@ pub fn setThreadAffinityMask(thread: Thread, affinity_mask: u8, processor_count:
         : [thread] "{r0}" (thread),
           [affinity_mask] "{r1}" (&affinity_mask),
           [processor_count] "{r2}" (processor_count),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -688,7 +688,7 @@ pub fn getThreadIdealProcessor(thread: Thread) Result(i32) {
         : [code] "={r0}" (-> result.Code),
           [ideal_processor] "={r1}" (ideal_processor),
         : [thread] "{r1}" (thread),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, ideal_processor);
@@ -699,7 +699,7 @@ pub fn setThreadIdealProcessor(thread: Process, ideal_processor: i32) result.Cod
         : [code] "={r0}" (-> result.Code),
         : [thread] "{r0}" (thread),
           [ideal_processor] "{r1}" (ideal_processor),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -707,7 +707,7 @@ pub fn getCurrentProcessorNumber() i32 {
     return asm volatile ("svc 0x11"
         : [processor_number] "={r0}" (-> i32),
         :
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -716,7 +716,7 @@ pub fn run(process: Process, startup_info: *const StartupInfo) result.Code {
         : [code] "={r0}" (-> result.Code),
         : [process] "{r0}" (process),
           [startup_info] "{r1}" (startup_info),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -727,7 +727,7 @@ pub fn createMutex(initial_locked: bool) Result(Mutex) {
         : [code] "={r0}" (-> result.Code),
           [mutex] "={r1}" (mutex),
         : [initial_locked] "{r0}" (initial_locked),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, mutex);
@@ -737,7 +737,7 @@ pub fn releaseMutex(handle: Mutex) result.Code {
     return asm volatile ("svc 0x14"
         : [code] "={r0}" (-> result.Code),
         : [handle] "{r0}" (handle),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -749,7 +749,7 @@ pub fn createSemaphore(initial_count: usize, max_count: usize) Result(Semaphore)
           [semaphore] "={r1}" (semaphore),
         : [initial_count] "{r0}" (initial_count),
           [max_count] "{r1}" (max_count),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, semaphore);
@@ -763,7 +763,7 @@ pub fn releaseSemaphore(semaphore: Semaphore, release_count: usize) Result(usize
           [count] "={r1}" (count),
         : [semaphore] "{r0}" (semaphore),
           [release_count] "{r1}" (release_count),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, count);
@@ -776,7 +776,7 @@ pub fn createEvent(reset_type: ResetType) Result(Event) {
         : [code] "={r0}" (-> result.Code),
           [event] "={r1}" (event),
         : [reset_type] "{r0}" (reset_type),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, @bitCast(event));
@@ -786,7 +786,7 @@ pub fn signalEvent(event: Event) result.Code {
     return asm volatile ("svc 0x18"
         : [code] "={r0}" (-> result.Code),
         : [event] "{r0}" (event),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -794,7 +794,7 @@ pub fn clearEvent(event: Event) result.Code {
     return asm volatile ("svc 0x19"
         : [code] "={r0}" (-> result.Code),
         : [event] "{r0}" (event),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -805,7 +805,7 @@ pub fn createTimer(reset_type: ResetType) Result(Timer) {
         : [code] "={r0}" (-> result.Code),
           [timer] "={r1}" (timer),
         : [reset_type] "{r0}" (reset_type),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, timer);
@@ -822,7 +822,7 @@ pub fn setTimer(timer: Timer, initial_ns: i64, interval: i64) result.Code {
           [initial_ns_high] "{r3}" (@as(u32, @truncate(initial_ns_u >> 32))),
           [interval_low] "{r1}" (@as(u32, @truncate(interval_u))),
           [interval_high] "{r4}" (@as(u32, @truncate(interval_u >> 32))),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -830,7 +830,7 @@ pub fn cancelTimer(timer: Timer) result.Code {
     return asm volatile ("svc 0x1C"
         : [code] "={r0}" (-> result.Code),
         : [timer] "{r0}" (timer),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -838,7 +838,7 @@ pub fn clearTimer(timer: Timer) result.Code {
     return asm volatile ("svc 0x1D"
         : [code] "={r0}" (-> result.Code),
         : [timer] "{r0}" (timer),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -852,7 +852,7 @@ pub fn createMemoryBlock(address: [*]align(heap.page_size) u8, size: usize, this
           [size] "{r1}" (size),
           [permissions] "{r2}" (this),
           [other_permissions] "{r3}" (other),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .{ .code = code, .value = memory_block };
@@ -865,7 +865,7 @@ pub fn mapMemoryBlock(memory_block: MemoryBlock, address: [*]align(heap.page_siz
           [address] "{r1}" (address),
           [permissions] "{r2}" (this),
           [other_permissions] "{r3}" (other),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -874,7 +874,7 @@ pub fn unmapMemoryBlock(memory_block: MemoryBlock, address: [*]align(heap.page_s
         : [code] "={r0}" (-> result.Code),
         : [memory_block] "{r0}" (memory_block),
           [address] "{r1}" (address),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -885,7 +885,7 @@ pub fn createAddressArbiter() Result(AddressArbiter) {
         : [code] "={r0}" (-> result.Code),
           [arbiter] "={r1}" (arbiter),
         :
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, arbiter);
@@ -902,7 +902,7 @@ pub fn arbitrateAddress(arbiter: AddressArbiter, address: *i32, arbitration_type
           [value] "{r3}" (value),
           [timeout_ns_low] "{r4}" (@as(u32, @truncate(timeout_ns_u))),
           [timeout_ns_high] "{r5}" (@as(u32, @truncate(timeout_ns_u >> 32))),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -910,7 +910,7 @@ pub fn closeHandle(handle: Object) result.Code {
     return asm volatile ("svc 0x23"
         : [code] "={r0}" (-> result.Code),
         : [handle] "{r0}" (handle),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -922,7 +922,7 @@ pub fn waitSynchronization(sync: Synchronization, timeout_ns: i64) result.Code {
         : [sync] "{r0}" (sync),
           [timeout_low] "{r2}" (@as(u32, @truncate(timeout_ns_u))),
           [timeout_high] "{r3}" (@as(u32, @truncate(timeout_ns_u >> 32))),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -938,7 +938,7 @@ pub fn waitSynchronizationMultiple(handles: []const Synchronization, wait_all: b
           [wait_all] "{r3}" (wait_all),
           [timeout_low] "{r0}" (@as(u32, @truncate(timeout_ns_u))),
           [timeout_high] "{r4}" (@as(u32, @truncate(timeout_ns_u >> 32))),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, id);
@@ -953,7 +953,7 @@ pub fn duplicateHandle(original: Object) Result(Object) {
         : [code] "={r0}" (-> result.Code),
           [duplicated] "={r1}" (duplicated),
         : [original] "{r0}" (original),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, duplicated);
@@ -967,7 +967,7 @@ pub fn getSystemTick() i64 {
         : [lo] "={r0}" (lo),
           [hi] "={r1}" (hi),
         :
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return @bitCast((@as(u64, hi) << 32) | lo);
@@ -985,7 +985,7 @@ pub fn getSystemInfo(info: SystemInfo.Type, param: u32) Result(i64) {
           [hi] "={r2}" (hi),
         : [type] "{r1}" (info),
           [param] "{r2}" (param),
-        : "r3", "r12", "cc", "memory"
+        : .{ .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, @bitCast((@as(u64, hi) << 32) | lo));
@@ -1001,7 +1001,7 @@ pub fn getProcessInfo(process: Process, info: ProcessInfoType) Result(i64) {
           [hi] "={r2}" (hi),
         : [process] "{r1}" (process),
           [type] "{r2}" (info),
-        : "r3", "r12", "cc", "memory"
+        : .{ .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, @bitCast((@as(u64, hi) << 32) | lo));
@@ -1017,7 +1017,7 @@ pub fn connectToPort(port: [:0]const u8) Result(ClientSession) {
           [session] "={r1}" (session),
         : [unknown] "{r0}" (0),
           [port] "{r1}" (port.ptr),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, session);
@@ -1032,7 +1032,7 @@ pub fn sendSyncRequest(session: ClientSession) result.Code {
     return asm volatile ("svc 0x32"
         : [code] "={r0}" (-> result.Code),
         : [session] "{r0}" (session),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -1043,7 +1043,7 @@ pub fn openProcess(process_id: u32) Result(Process) {
         : [code] "={r0}" (-> result.Code),
           [process] "={r1}" (process),
         : [process_id] "{r1}" (process_id),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, process);
@@ -1057,7 +1057,7 @@ pub fn openThread(process: Process, thread_id: u32) Result(Thread) {
           [thread] "={r1}" (thread),
         : [process] "{r1}" (process),
           [thread_id] "{r2}" (thread_id),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, thread);
@@ -1070,7 +1070,7 @@ pub fn getProcessId(process: Process) Result(u32) {
         : [code] "={r0}" (-> result.Code),
           [id] "={r1}" (id),
         : [process] "{r1}" (process),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, id);
@@ -1083,7 +1083,7 @@ pub fn getThreadProcessId(thread: Thread) Result(u32) {
         : [code] "={r0}" (-> result.Code),
           [id] "={r1}" (id),
         : [thread] "{r1}" (thread),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, id);
@@ -1096,7 +1096,7 @@ pub fn getThreadId(thread: Thread) Result(u32) {
         : [code] "={r0}" (-> result.Code),
           [id] "={r1}" (id),
         : [thread] "{r1}" (thread),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, id);
@@ -1109,7 +1109,7 @@ pub fn getResourceLimit(process: Process) Result(ResouceLimit) {
         : [code] "={r0}" (-> result.Code),
           [resource_limit] "={r1}" (resource_limit),
         : [process] "{r1}" (process),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, resource_limit);
@@ -1124,7 +1124,7 @@ pub fn getResourceLimitLimitValues(values: []i64, resource_limit: ResouceLimit, 
           [resource_limit] "{r1}" (resource_limit),
           [names_ptr] "{r2}" (names.ptr),
           [names_len] "{r3}" (names.len),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -1137,7 +1137,7 @@ pub fn getResourceLimitCurrentValues(values: []i64, resource_limit: ResouceLimit
           [resource_limit] "{r1}" (resource_limit),
           [names_ptr] "{r2}" (names.ptr),
           [names_len] "{r3}" (names.len),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -1147,7 +1147,7 @@ pub fn breakExecution(reason: BreakReason) void {
     asm volatile ("svc 0x3C"
         :
         : [reason] "{r0}" (reason),
-        : "r0", "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r0 = true, .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -1157,7 +1157,7 @@ pub fn breakDebug(reason: BreakReason, cro_info: []const u8) void {
         : [reason] "{r0}" (reason),
           [cro_info] "{r1}" (cro_info.ptr),
           [cro_info_size] "{r2}" (cro_info.len),
-        : "r0", "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r0 = true, .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -1166,7 +1166,7 @@ pub fn outputDebugString(str: []const u8) void {
         :
         : [str_ptr] "{r0}" (str.ptr),
           [str_len] "{r1}" (str.len),
-        : "r0", "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r0 = true, .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -1182,7 +1182,7 @@ pub fn createPort(name: [:0]const u8, max_sessions: i16) Result(Port) {
           [client_port] "={r2}" (client_port),
         : [name] "{r2}" (name),
           [max_sessions] "{r3}" (max_sessions),
-        : "r3", "r12", "cc", "memory"
+        : .{ .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, .{ .server = server_port, .client = client_port });
@@ -1195,7 +1195,7 @@ pub fn createSessionToPort(port: ClientPort) Result(ClientSession) {
         : [code] "={r0}" (-> result.Code),
           [session] "={r1}" (session),
         : [port] "{r1}" (port),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, session);
@@ -1210,7 +1210,7 @@ pub fn createSession() Result(Session) {
           [server_session] "={r1}" (server_session),
           [client_session] "={r2}" (client_session),
         :
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, .{ .server = server_session, .client = client_session });
@@ -1223,7 +1223,7 @@ pub fn acceptSession(port: ServerPort) Result(ServerSession) {
         : [code] "={r0}" (-> result.Code),
           [session] "={r1}" (session),
         : [port] "{r1}" (port),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, session);
@@ -1243,7 +1243,7 @@ pub fn replyAndReceive(port_sessions: []Object, reply_target: ServerSession) Res
         : [port_sessions] "{r1}" (port_sessions.ptr),
           [port_sessions_len] "{r2}" (port_sessions.len),
           [reply_target] "{r3}" (reply_target),
-        : "r2", "r3", "r12", "cc", "memory"
+        : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 
     return .of(code, index);
@@ -1256,7 +1256,7 @@ pub fn bindInterrupt(id: InterruptId, int: Interruptable, priority: i32, isHighA
           [int] "{r1}" (int),
           [priority] "{r2}" (priority),
           [isHighActive] "{r3}" (isHighActive),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -1265,7 +1265,7 @@ pub fn unbindInterrupt(id: InterruptId, int: Interruptable) result.Code {
         : [code] "={r0}" (-> result.Code),
         : [id] "{r0}" (id),
           [int] "{r1}" (int),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -1275,7 +1275,7 @@ pub fn invalidateProcessDataCache(process: Process, data: []u8) result.Code {
         : [process] "{r0}" (process),
           [data_ptr] "{r1}" (data.ptr),
           [data_len] "{r2}" (data.len),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -1285,7 +1285,7 @@ pub fn storeProcessDataCache(process: Process, data: []const u8) result.Code {
         : [process] "{r0}" (process),
           [data_ptr] "{r1}" (data.ptr),
           [data_len] "{r2}" (data.len),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -1295,7 +1295,7 @@ pub fn flushProcessDataCache(process: Process, data: []const u8) result.Code {
         : [process] "{r0}" (process),
           [data_ptr] "{r1}" (data.ptr),
           [data_len] "{r2}" (data.len),
-        : "r1", "r2", "r3", "r12", "cc", "memory"
+        : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true }
     );
 }
 
@@ -1308,7 +1308,7 @@ pub fn flushProcessDataCache(process: Process, data: []const u8) result.Code {
 // TODO: proccess handling svc's 0x70-0x7D
 
 pub fn breakpoint() noreturn {
-    asm volatile ("svc 0xFF" ::: "r0", "r1", "r2", "r3", "r12", "cc", "memory");
+    asm volatile ("svc 0xFF" ::: .{ .r0 = true, .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
 var sbrk_heap_top: usize = memory.heap_begin;

@@ -342,7 +342,7 @@ pub fn init(srv: ServiceManager) !GspGpu {
 pub fn deinit(gsp: *GspGpu) void {
     if (gsp.shared_memory_block.obj != .null) {
         if (gsp.shared_memory) |shm| {
-            gsp.shared_memory_block.unmap(@alignCast(@ptrCast(shm)));
+            gsp.shared_memory_block.unmap(@ptrCast(@alignCast(shm)));
             // TODO: change this when we find a solution to shared memory
             horizon.heap.non_thread_safe_shared_memory_address_allocator.free(std.mem.asBytes(shm));
         }

@@ -72,8 +72,8 @@ const SegmentData = struct {
 };
 
 const RelocationInfo = struct {
-    absolute: std.ArrayListUnmanaged(u32) = .{},
-    relative: std.ArrayListUnmanaged(u32) = .{},
+    absolute: std.ArrayList(u32) = .{},
+    relative: std.ArrayList(u32) = .{},
 
     pub fn deinit(info: *RelocationInfo, allocator: std.mem.Allocator) void {
         info.absolute.deinit(allocator);
@@ -82,7 +82,7 @@ const RelocationInfo = struct {
 };
 
 const ProcessedRelocations = struct {
-    const Data = std.EnumArray(Segment, std.ArrayListUnmanaged(Relocation));
+    const Data = std.EnumArray(Segment, std.ArrayList(Relocation));
 
     absolute: Data = .initFill(.{}),
     relative: Data = .initFill(.{}),
@@ -101,8 +101,15 @@ pub const MakeOptions = struct {
 };
 
 // TODO: Add support for embedding SMDH and RomFS data !!!
-pub fn make(in_elf: anytype, out_3dsx: anytype, options: MakeOptions) !void {
-    const elf_buff = try in_elf.readAllAlloc(options.allocator, std.math.maxInt(usize));
+pub fn make(in_elf: std.fs.File, out_3dsx: *std.Io.Writer, options: MakeOptions) !void {
+    const elf_buff = buff: {
+        var elf_reader_buf: [4096]u8 = undefined;
+        var in_elf_reader = in_elf.reader(&elf_reader_buf);
+        const elf_size = try in_elf_reader.getSize();
+        const elf_buff = try options.allocator.alloc(u8, elf_size);
+        try in_elf_reader.interface.readSliceAll(elf_buff);
+        break :buff elf_buff;
+    };
     defer options.allocator.free(elf_buff);
 
     const elf_header: elf.Elf32_Ehdr = std.mem.bytesToValue(elf.Elf32_Ehdr, elf_buff[0..@sizeOf(elf.Elf32_Ehdr)]);
@@ -132,7 +139,7 @@ pub fn make(in_elf: anytype, out_3dsx: anytype, options: MakeOptions) !void {
 
     const header_size: u16 = if (options.smdh != null) @sizeOf(Header) + @sizeOf(ExtendedHeader) else @sizeOf(Header);
 
-    try out_3dsx.writeStructEndian(Header{
+    try out_3dsx.writeStruct(Header{
         .header_size = header_size,
         .relocation_header_size = @sizeOf(RelocationHeader),
         .version = 0x0,
@@ -156,7 +163,7 @@ pub fn make(in_elf: anytype, out_3dsx: anytype, options: MakeOptions) !void {
         } else 0);
 
         var current_end = executable_end;
-        try out_3dsx.writeStructEndian(ExtendedHeader{
+        try out_3dsx.writeStruct(ExtendedHeader{
             .smdh_offset = current_end,
             .smdh_size = (if (options.smdh != null) size: {
                 current_end += @sizeOf(smdh.Smdh);
@@ -168,13 +175,13 @@ pub fn make(in_elf: anytype, out_3dsx: anytype, options: MakeOptions) !void {
 
     if (processed_relocations) |relocs| {
         inline for (comptime std.enums.values(Segment)) |segment| {
-            try out_3dsx.writeStructEndian(RelocationHeader{
+            try out_3dsx.writeStruct(RelocationHeader{
                 .absolute_relocations = @intCast(relocs.absolute.get(segment).items.len),
                 .relative_relocations = @intCast(relocs.relative.get(segment).items.len),
             }, .little);
         }
     } else inline for (comptime std.enums.values(Segment)) |_| {
-        try out_3dsx.writeStruct(std.mem.zeroes(RelocationHeader));
+        try out_3dsx.writeStruct(std.mem.zeroes(RelocationHeader), .little);
     }
 
     for (std.enums.values(Segment)) |segment| {
@@ -193,14 +200,14 @@ pub fn make(in_elf: anytype, out_3dsx: anytype, options: MakeOptions) !void {
         inline for (comptime std.enums.values(Segment)) |segment| {
             inline for (&.{ relocs.absolute.get(segment).items, relocs.relative.get(segment).items }) |segment_relocs| {
                 for (segment_relocs) |reloc| {
-                    try out_3dsx.writeStructEndian(reloc, .little);
+                    try out_3dsx.writeStruct(reloc, .little);
                 }
             }
         }
     }
 
     if (options.smdh) |smdh_data| {
-        try out_3dsx.writeStructEndian(smdh_data, .little);
+        try out_3dsx.writeStruct(smdh_data, .little);
     }
 }
 
@@ -303,7 +310,7 @@ fn readModifyRelocations(elf_buffer: []u8, segment_data: SegmentData, sections: 
 
     const base_addr = segment_data.segment_addresses[0];
 
-    var relocation_info: RelocationInfo = .{ .absolute = try std.ArrayListUnmanaged(u32).initCapacity(allocator, 32) };
+    var relocation_info: RelocationInfo = .{ .absolute = try std.ArrayList(u32).initCapacity(allocator, 32) };
     errdefer relocation_info.deinit(allocator);
 
     for (sections) |section| {
@@ -384,7 +391,7 @@ fn processRelocations(segment_data: SegmentData, relocation_info: RelocationInfo
                 last_relocation_address = segment_data.segment_addresses[@intFromEnum(current_segment)];
             }
 
-            const current_processed: *std.ArrayListUnmanaged(Relocation) = processed.*.getPtr(current_segment);
+            const current_processed: *std.ArrayList(Relocation) = processed.*.getPtr(current_segment);
             var skipped_words: usize = @divExact(relocs[current_absolute] - last_relocation_address, @sizeOf(u32));
 
             while (skipped_words > std.math.maxInt(u16)) : (skipped_words -= std.math.maxInt(u16)) {

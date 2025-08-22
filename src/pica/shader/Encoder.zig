@@ -4,7 +4,7 @@ pub const InstructionEncodingError = error{InvalidSourceRegisterCombination};
 
 const max_descriptors = std.math.maxInt(u7);
 
-instructions: ArrayList(Instruction),
+instructions: std.ArrayList(Instruction),
 descriptors: [max_descriptors]OperandDescriptor,
 masks: [max_descriptors]OperandDescriptor.Mask,
 allocated_descriptors: u8,
@@ -49,6 +49,7 @@ pub fn getOrAllocateOperandDescriptor(encoder: *Encoder, comptime T: type, compt
 
     if (encoder.allocated_descriptors < std.math.maxInt(T)) {
         encoder.descriptors[encoder.allocated_descriptors] = operand_descriptor;
+        encoder.masks[encoder.allocated_descriptors] = descriptor_mask;
         encoder.allocated_descriptors += 1;
         return @intCast(encoder.allocated_descriptors - 1);
     }
@@ -139,11 +140,11 @@ pub fn dp3(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_m
 }
 
 pub fn dp4(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
-    return encoder.binary(alloc, .dp3, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
+    return encoder.binary(alloc, .dp4, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
 }
 
 pub fn dph(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
-    return encoder.binary(alloc, .dp3, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
+    return encoder.binary(alloc, .dph, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
 }
 
 pub fn dst(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
@@ -357,7 +358,6 @@ const std = @import("std");
 const testing = std.testing;
 
 const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayListUnmanaged;
 
 const zitrus = @import("zitrus");
 const shader = zitrus.pica.shader;

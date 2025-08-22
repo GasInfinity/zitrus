@@ -41,6 +41,13 @@ pub const ColorComponentFlags = packed struct(u8) {
     _: u4 = 0,
 };
 
+pub const PresentMode = enum(u8) {
+    mailbox,
+    fifo,
+    fifo_relaxed,
+    fifo_latest_ready,
+};
+
 /// The 3DS always has 3 heaps.
 ///     - FCRAM
 ///     - VRAM (A, 3MiB always)
@@ -1135,7 +1142,8 @@ pub const ImageView = backend.ImageView.Handle;
 pub const Pipeline = backend.Pipeline.Handle;
 pub const CommandBuffer = backend.CommandBuffer;
 pub const Sampler = backend.Sampler.Handle;
-pub const Swapchain = backend.Swapchain;
+pub const Surface = backend.Surface.Handle;
+pub const Swapchain = backend.Swapchain.Handle;
 
 // NOTE: This is not pub as implementation details should not be exposed.
 const backend = @import("mango/backend.zig");

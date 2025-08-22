@@ -112,7 +112,7 @@ const Diagnostic = struct {
         };
     }
 
-    pub fn report(diagnostic: Diagnostic, writer: std.io.AnyWriter, tty_cfg: std.io.tty.Config, file_name: []const u8, source: [:0]const u8) !void {
+    pub fn report(diagnostic: Diagnostic, writer: *std.Io.Writer, tty_cfg: std.io.tty.Config, file_name: []const u8, source: [:0]const u8) !void {
         try tty_cfg.setColor(writer, .bold);
         try tty_cfg.setColor(writer, .bright_white);
 
@@ -145,7 +145,7 @@ const Diagnostic = struct {
             try writer.print("{s}\n", .{source[column_start..column_end]});
             
             try tty_cfg.setColor(writer, .bright_green);
-            try writer.writeByteNTimes(' ', (loc.start - column_start));
+            try writer.splatByteAll(' ', (loc.start - column_start));
             try writer.writeByte('^');
             try writer.writeByte('\n');
         }
@@ -206,60 +206,70 @@ const Diagnostic = struct {
 pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
     const cwd = std.fs.cwd();
 
-    const stderr_raw = std.io.getStdErr();
-    var stderr_buf = std.io.bufferedWriter(stderr_raw.writer());
-    const stderr = stderr_buf.writer();
+    var stderr_buf: [4096]u8 = undefined;
+    var stderr_raw = std.fs.File.stderr().writer(&stderr_buf);
+    const stderr = &stderr_raw.interface;
+    const tty_cfg: std.Io.tty.Config = .detect(std.fs.File.stderr());
 
     switch (arguments.command) {
         .@"asm" => |asm_options| {
             const file_path = asm_options.positional.file;
-            const file = cwd.openFile(file_path, .{ .mode = .read_only }) catch |err| {
-                std.debug.print("could not open input file '{s}': {s}\n", .{ file_path, @errorName(err) });
-                return 1;
-            };
+            const file_source = src: {
+                const file = cwd.openFile(file_path, .{ .mode = .read_only }) catch |err| {
+                    std.debug.print("could not open input file '{s}': {s}\n", .{ file_path, @errorName(err) });
+                    return 1;
+                };
+                defer file.close();
 
-            const file_source = file.readToEndAllocOptions(arena, std.math.maxInt(u32), null, @alignOf(usize), 0) catch |err| switch (err) {
-                error.FileTooBig => {
+                var buf: [4096]u8 = undefined;
+                var file_reader = file.reader(&buf);
+                const src_size = try file_reader.getSize();
+
+                if(src_size > std.math.maxInt(u32)) {
                     std.debug.print("could not read file as its larger than 4GB", .{});
                     return 1;
-                },
-                else => return err,
+                }
+
+                const file_source = try arena.allocWithOptions(u8, src_size, null, 0);
+                try file_reader.interface.readSliceAll(file_source);
+                break :src file_source;
             };
             defer arena.free(file_source);
 
             var assembled: Assembled = try .assemble(arena, file_source);
             defer assembled.deinit(arena);
 
-            const tty_cfg = std.io.tty.detectConfig(stderr_raw);
-
             if(assembled.errors.len > 0) {
                 for (assembled.errors) |err| {
                     const diagnostic: Diagnostic = .fromError(err, assembled);
 
-                    try diagnostic.report(stderr.any(), tty_cfg, file_path, file_source);
+                    try diagnostic.report(stderr, tty_cfg, file_path, file_source);
                 }
 
-                try stderr_buf.flush();
+                try stderr.flush();
                 return 1;
             }
 
             const output_path = asm_options.output;
             const output_file = try cwd.createFile(output_path, .{});
 
-            var output_buffered = std.io.bufferedWriter(output_file.writer());
-            const out = output_buffered.writer();
+            var out_buf: [4096]u8 = undefined;
+            var output_writer = output_file.writer(&out_buf);
+            const out = &output_writer.interface;
 
             switch (asm_options.ofmt) {
                 .zpsh => {
                     if(assembled.encoded.instructions.items.len > 512) {
                         try tty_cfg.setColor(stderr, .red);
                         try stderr.print("cannot output zpsh, encoded shader has too many instructions ({})", .{assembled.encoded.instructions.items.len});
+                        try stderr.flush();
                         return 1;
                     }
 
                     if(assembled.entries.count() > std.math.maxInt(u8)) {
                         try tty_cfg.setColor(stderr, .red);
                         try stderr.print("cannot output zpsh, encoded shader has too many entrypoints ({})", .{assembled.entries.count()});
+                        try stderr.flush();
                         return 1;
                     }
 
@@ -273,7 +283,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 
                     padded_strings_size = std.mem.alignForward(u32, padded_strings_size, @sizeOf(u32));
 
-                    var string_table: std.ArrayListUnmanaged(u8) = try .initCapacity(arena, padded_strings_size);
+                    var string_table: std.ArrayList(u8) = try .initCapacity(arena, padded_strings_size);
                     defer string_table.deinit(arena);
 
                     entry_it.reset();
@@ -285,7 +295,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                     // Align the section 
                     string_table.appendNTimesAssumeCapacity(0, padded_strings_size - string_table.items.len);
 
-                    try out.writeStructEndian(zpsh.Header{
+                    try out.writeStruct(zpsh.Header{
                         .shader_size = .init(encoded.instructions.items.len, encoded.allocated_descriptors),
                         .string_table_size = padded_strings_size,
                         .entrypoints = @intCast(assembled.entries.count()),
@@ -301,7 +311,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                     while(entry_it.next()) |entrypoint| {
                         const processed_info = entrypoint.value_ptr.*;
 
-                        try out.writeStructEndian(zpsh.EntrypointHeader{
+                        try out.writeStruct(zpsh.EntrypointHeader{
                             .name_string_offset = @intCast(current_string_offset),
                             .code_offset = processed_info.offset,
                             .info = .{
@@ -323,16 +333,16 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 
                         var flt_it = assembled.flt_const.iterator();
                         while (flt_it.next()) |entry| {
-                            try out.writeStructEndian(entry.value.*, .little);
+                            try out.writeStruct(entry.value.*, .little);
                         }
 
                         var out_it = assembled.outputs.iterator();
                         while (out_it.next()) |entry| {
-                            try out.writeInt(u32, @bitCast(entry.value.*), .little);
+                            try out.writeStruct(entry.value.*, .little);
                         }
                     }
 
-                    try output_buffered.flush();
+                    try out.flush();
                     return 0;
                 },
             }

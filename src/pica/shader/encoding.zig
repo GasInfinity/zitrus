@@ -517,7 +517,12 @@ pub const OperandDescriptor = packed struct(u32) {
     _unused0: u1 = 0,
 
     pub fn equalsMasked(desc: OperandDescriptor, mask: Mask, other: OperandDescriptor) bool {
-        return (!mask.dst or (mask.dst and (desc.destination_mask == other.destination_mask))) and (!mask.src1 or (mask.src1 and (desc.src1_neg == other.src1_neg and desc.src1_selector == other.src1_selector))) and (!mask.src2 or (mask.src2 and (desc.src2_neg == other.src2_neg and desc.src2_selector == other.src2_selector))) and (!mask.src3 or (mask.src3 and (desc.src3_neg == other.src3_neg and desc.src3_selector == other.src3_selector)));
+        // zig fmt: off
+        return (!mask.dst  or (desc.destination_mask == other.destination_mask))
+           and (!mask.src1 or (desc.src1_neg == other.src1_neg and desc.src1_selector == other.src1_selector))
+           and (!mask.src2 or (desc.src2_neg == other.src2_neg and desc.src2_selector == other.src2_selector))
+           and (!mask.src3 or (desc.src3_neg == other.src3_neg and desc.src3_selector == other.src3_selector));
+        // zig fmt: on
     }
 };
 

@@ -42,11 +42,11 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 
             const result_code: result.Code = @bitCast(result_int);
             
-            const stdout = std.io.getStdOut();
-            const stdout_writer = stdout.writer();
-            var stdout_buffered = std.io.bufferedWriter(stdout_writer);
+            var stdout_buffer: [256]u8 = undefined;
+            var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+            const stdout = &stdout_writer.interface;
 
-            try stdout_writer.print(
+            try stdout.print(
                 \\.{{
                 \\    .level = .{s}, // ({})
                 \\    .module = .{s}, // ({})
@@ -64,7 +64,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                 std.enums.tagName(result.Description, result_code.description) orelse "<unknown>",
                 @intFromEnum(result_code.description),
             });
-            try stdout_buffered.flush();
+            try stdout.flush();
             return 0;
         }
     };

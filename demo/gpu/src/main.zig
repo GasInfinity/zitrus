@@ -22,7 +22,7 @@ pub const std_options: std.Options = .{
 
 pub fn log(comptime message_level: std.log.Level, comptime scope: @TypeOf(.enum_literal), comptime format: []const u8, args: anytype) void {
     var buf: [512]u8 = undefined;
-    const prefix = std.fmt.bufPrint(&buf, "[{s}] ({s}): ", .{@tagName(message_level), @tagName(scope)}) catch {
+    const prefix = std.fmt.bufPrint(&buf, "[{s}] ({s}): ", .{ @tagName(message_level), @tagName(scope) }) catch {
         horizon.outputDebugString("fatal: logged message prefix does not fit into the buffer. message skipped!");
         return;
     };
@@ -52,7 +52,7 @@ pub fn main() !void {
     var gsp = try GspGpu.init(srv);
     defer gsp.deinit();
 
-    const raw_command_queue = try horizon.heap.linear_page_allocator.alignedAlloc(u32, 8, 4096);
+    const raw_command_queue = try horizon.heap.linear_page_allocator.alignedAlloc(u32, .@"8", 4096);
     defer horizon.heap.linear_page_allocator.free(raw_command_queue);
 
     const Vertex = extern struct {
@@ -88,7 +88,7 @@ pub fn main() !void {
         .format = .b8g8r8_unorm,
         // FIXME: These values are currently ignored
         .mip_levels = 1,
-        .array_layers = 1,  
+        .array_layers = 1,
     }, gpa);
     defer device.destroyImage(top_presentable_image, gpa);
     try device.bindImageMemory(top_presentable_image, top_presentable_image_memory, 0);
@@ -154,7 +154,7 @@ pub fn main() !void {
 
     {
         // TODO: DeviceSize and whole_size in it
-        const mapped_vtx = try device.mapMemory(vtx_buffer_memory, 0, std.math.maxInt(u32)); 
+        const mapped_vtx = try device.mapMemory(vtx_buffer_memory, 0, std.math.maxInt(u32));
         defer device.unmapMemory(vtx_buffer_memory);
 
         // TODO: return slices for better safety
@@ -172,18 +172,15 @@ pub fn main() !void {
         };
         idx_data.* = .{ 0, 1, 2, 3 };
 
-        try device.flushMappedMemoryRanges(&.{
-            .{
-                .memory = vtx_buffer_memory,
-                .offset = .size(0),
-                .size = .size(@sizeOf(Vertex) * 4),
-            },
-            .{
-                .memory = index_buffer_memory,
-                .offset = .size(0),
-                .size = .size(4),
-            }
-        });
+        try device.flushMappedMemoryRanges(&.{ .{
+            .memory = vtx_buffer_memory,
+            .offset = .size(0),
+            .size = .size(@sizeOf(Vertex) * 4),
+        }, .{
+            .memory = index_buffer_memory,
+            .offset = .size(0),
+            .size = .size(4),
+        } });
     }
 
     const color_attachment_image_memory = try device.allocateMemory(&.{
@@ -230,7 +227,7 @@ pub fn main() !void {
     defer device.destroyImage(color_attachment_image, gpa);
     try device.bindImageMemory(color_attachment_image, color_attachment_image_memory, 0);
 
-    try device.clearColorImage(color_attachment_image, &@splat(32));
+    try device.clearColorImage(color_attachment_image, &@splat(16));
 
     const staging_buffer_memory = try device.allocateMemory(&.{
         .memory_type = 0,
@@ -242,24 +239,22 @@ pub fn main() !void {
         .size = .size(64 * 64 * 3),
         .usage = .{
             .transfer_src = true,
-        }, 
+        },
     }, gpa);
     defer device.destroyBuffer(staging_buffer, gpa);
     try device.bindBufferMemory(staging_buffer, staging_buffer_memory, 0);
 
     {
-        const mapped_staging = try device.mapMemory(staging_buffer_memory, 0, std.math.maxInt(u32)); 
-        defer device.unmapMemory(staging_buffer_memory); 
+        const mapped_staging = try device.mapMemory(staging_buffer_memory, 0, std.math.maxInt(u32));
+        defer device.unmapMemory(staging_buffer_memory);
 
         @memcpy(mapped_staging[0..(64 * 64 * 3)], test_bgr);
 
-        try device.flushMappedMemoryRanges(&.{
-            .{
-                .memory = staging_buffer_memory,
-                .offset = .size(0),
-                .size = .size(64 * 64 * 3),
-            }
-        });
+        try device.flushMappedMemoryRanges(&.{.{
+            .memory = staging_buffer_memory,
+            .offset = .size(0),
+            .size = .size(64 * 64 * 3),
+        }});
     }
 
     const test_sampled_image_memory = try device.allocateMemory(&.{
@@ -294,7 +289,7 @@ pub fn main() !void {
             .memcpy = false,
         },
     });
-    
+
     const test_sampled_image_view = try device.createImageView(.{
         .type = .@"2d",
         .format = .b8g8r8_unorm,
@@ -331,28 +326,24 @@ pub fn main() !void {
             .color_attachment_format = .a8b8g8r8_unorm,
             .depth_stencil_attachment_format = .undefined,
         },
-        .vertex_input_state = &.init(
-            &.{
-                .{
-                    .stride = @sizeOf(Vertex),
-                },
+        .vertex_input_state = &.init(&.{
+            .{
+                .stride = @sizeOf(Vertex),
             },
-            &.{
-                .{
-                    .location = .v0,
-                    .binding = .@"0",
-                    .format = .r8g8b8a8_sscaled,
-                    .offset = 0,
-                },
-                .{
-                    .location = .v1,
-                    .binding = .@"0",
-                    .format = .r8g8_uscaled,
-                    .offset = 4,
-                },
+        }, &.{
+            .{
+                .location = .v0,
+                .binding = .@"0",
+                .format = .r8g8b8a8_sscaled,
+                .offset = 0,
             },
-            &.{}
-        ),
+            .{
+                .location = .v1,
+                .binding = .@"0",
+                .format = .r8g8_uscaled,
+                .offset = 4,
+            },
+        }, &.{}),
         .vertex_shader_state = &.init(simple_vtx, "main"),
         .geometry_shader_state = null,
         .input_assembly_state = &.{
@@ -383,28 +374,26 @@ pub fn main() !void {
             .texture_enable = .{ true, false, false, false },
 
             .texture_2_coordinates = .@"2",
-            .texture_3_coordinates = .@"2", 
+            .texture_3_coordinates = .@"2",
         },
-        .lighting_state = &.{}, 
-        .texture_combiner_state = &.init(&.{
-            .{
-                .color_src = @splat(.texture_0),
-                .alpha_src = @splat(.primary_color),
-                .color_factor = @splat(.src_color),
-                .alpha_factor = @splat(.src_alpha),
-                .color_op = .replace,
-                .alpha_op = .replace,
+        .lighting_state = &.{},
+        .texture_combiner_state = &.init(&.{.{
+            .color_src = @splat(.texture_0),
+            .alpha_src = @splat(.primary_color),
+            .color_factor = @splat(.src_color),
+            .alpha_factor = @splat(.src_alpha),
+            .color_op = .replace,
+            .alpha_op = .replace,
 
-                .color_scale = .@"1x",
-                .alpha_scale = .@"1x",
+            .color_scale = .@"1x",
+            .alpha_scale = .@"1x",
 
-                .constant = @splat(0),
-            }
-        }, &.{}),
+            .constant = @splat(0),
+        }}, &.{}),
         .color_blend_state = &.{
             .logic_op_enable = false,
             .logic_op = .clear,
-            
+
             .attachment = .{
                 .blend_equation = .{
                     .src_color_factor = .one,
@@ -451,17 +440,20 @@ pub fn main() !void {
                 .depth_stencil_attachment = .null,
             });
             defer cmdbuf.endRendering();
-            
+
             cmdbuf.bindFloatUniforms(.vertex, 0, &zitrus.math.mat.perspRotate90Cw(std.math.degreesToRadians(90.0), 240.0 / 320.0, 1, 1000));
-            cmdbuf.bindCombinedImageSamplers(0, &.{
-                .{
-                    .image = test_sampled_image_view,
-                    .sampler = simple_sampler,
-                }
-            });
+            cmdbuf.bindCombinedImageSamplers(0, &.{.{
+                .image = test_sampled_image_view,
+                .sampler = simple_sampler,
+            }});
             cmdbuf.drawIndexed(4, 0, 0);
         }
     }
+
+    // XXX: This blocks currently as we don't have synchronization primitives.
+    device.submit(&.init(&.{&cmdbuf}));
+
+    try device.blitImage(color_attachment_image, bottom_presentable_images[0]);
 
     // TODO: Say goodbye to using the gsp directly, use mango when available.
     while (true) {
@@ -484,7 +476,7 @@ pub fn main() !void {
 
         while (try app.pollNotification(apt, srv)) |n| switch (n) {
             .jump_home, .jump_home_by_power => {
-                j_h: switch(try app.jumpToHome(apt, srv, &gsp, .none)) {
+                j_h: switch (try app.jumpToHome(apt, srv, &gsp, .none)) {
                     .resumed => {},
                     .jump_home => continue :j_h (try app.jumpToHome(apt, srv, &gsp, .none)),
                     .must_close => break :main_loop,
@@ -504,11 +496,6 @@ pub fn main() !void {
         if (input.current.start) {
             break :main_loop;
         }
-
-        // XXX: This blocks currently as we don't have synchronization primitives.
-        device.submit(&.init(&.{ &cmdbuf }));
-
-        try device.blitImage(color_attachment_image, bottom_presentable_images[0]);
 
         // try framebuffer.flushBuffers(&gsp);
         // try framebuffer.present(&gsp);

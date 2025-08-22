@@ -40,11 +40,17 @@ pub fn build(b: *std.Build) void {
     zitrus.addImport("zalloc", zalloc_mod);
     zitrus.addImport("zsflt", zsflt_mod);
 
-    const static_zitrus_lib = b.addStaticLibrary(.{
-        .name = "zitrus",
+    const static_zitrus_lib_mod = b.createModule(.{
         .root_source_file = b.path("src/zitrus.zig"),
         .target = b.resolveTargetQuery(target.horizon_arm11),
     });
+
+    const static_zitrus_lib = b.addLibrary(.{
+        .name = "zitrus",
+        .root_module = static_zitrus_lib_mod,    
+        .linkage = .static,
+    });
+
     static_zitrus_lib.root_module.addImport("zitrus", static_zitrus_lib.root_module);
     static_zitrus_lib.root_module.addImport("zalloc", zalloc_mod);
     static_zitrus_lib.root_module.addImport("zsflt", zsflt_mod);
@@ -58,10 +64,19 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Install docs");
     docs_step.dependOn(&install_docs.step);
 
-    const zitrus_tests = b.addTest(.{ .name = "zitrus-tests", .root_source_file = b.path("src/zitrus.zig"), .target = b.resolveTargetQuery(.{}) });
-    zitrus_tests.root_module.addImport("zitrus", zitrus_tests.root_module);
-    zitrus_tests.root_module.addImport("zalloc", zalloc_mod);
-    zitrus_tests.root_module.addImport("zsflt", zsflt_mod);
+    const zitrus_tests_mod = b.createModule(.{
+        .root_source_file = b.path("src/zitrus.zig"),
+        .target = b.resolveTargetQuery(.{})
+    });
+
+    zitrus_tests_mod.addImport("zitrus", zitrus_tests_mod);
+    zitrus_tests_mod.addImport("zalloc", zalloc_mod);
+    zitrus_tests_mod.addImport("zsflt", zsflt_mod);
+
+    const zitrus_tests = b.addTest(.{
+        .name = "zitrus-tests",
+        .root_module = zitrus_tests_mod, 
+    });
 
     const run_tests = b.addRunArtifact(zitrus_tests);
     const run_tests_step = b.step("test", "Runs zitrus tests");
@@ -71,6 +86,8 @@ pub fn build(b: *std.Build) void {
 }
 
 fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: std.Build.ResolvedTarget, zitrus_mod: *std.Build.Module) void {
+    const no_bin = b.option(bool, "no-bin", "Don't emit a binary (incremental compilation)") orelse false;
+
     const tools = b.createModule(.{
         .root_source_file = b.path("tools/main.zig"),
         .target = tools_target,
@@ -85,8 +102,9 @@ fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: s
     const ziggy = b.dependency("ziggy", .{});
     tools.addImport("ziggy", ziggy.module("ziggy"));
 
-    const zigimg = b.dependency("zigimg", .{});
-    tools.addImport("zigimg", zigimg.module("zigimg"));
+    // TODO: wait until it gets updated
+    // const zigimg = b.dependency("zigimg", .{});
+    // tools.addImport("zigimg", zigimg.module("zigimg"));
 
     const tool_tests = b.addTest(.{ .name = "zitrus-tools-tests", .root_module = tools });
 
@@ -96,7 +114,9 @@ fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: s
 
     const tools_executable = b.addExecutable(.{ .name = "zitrus-tools", .root_module = tools });
 
-    b.installArtifact(tools_executable);
+    if(no_bin) {
+        b.getInstallStep().dependOn(&tools_executable.step);
+    } else b.installArtifact(tools_executable);
 
     const run_tool = b.addRunArtifact(tools_executable);
 
@@ -110,13 +130,12 @@ fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: s
 
 pub const ExecutableOptions = struct {
     name: []const u8,
+    root_module: *std.Build.Module,
     version: ?std.SemanticVersion = null,
     max_rss: usize = 0,
     use_llvm: ?bool = null,
     use_lld: ?bool = null,
     zig_lib_dir: ?std.Build.LazyPath = null,
-
-    root_module: ?*std.Build.Module = null,
 };
 
 pub fn addExecutable(b: *std.Build, options: ExecutableOptions) *std.Build.Step.Compile {
@@ -124,13 +143,13 @@ pub fn addExecutable(b: *std.Build, options: ExecutableOptions) *std.Build.Step.
 
     const exe = b.addExecutable(.{
         .name = options.name,
+        .root_module = options.root_module,
         .version = options.version,
         .linkage = .static,
         .max_rss = options.max_rss,
         .use_llvm = options.use_llvm,
         .use_lld = options.use_lld,
         .zig_lib_dir = options.zig_lib_dir,
-        .root_module = options.root_module,
     });
 
     exe.link_emit_relocs = true;

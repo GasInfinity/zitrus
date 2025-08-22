@@ -59,7 +59,9 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                     break :m 1;
                 };
 
-                var smdh_data: smdh.Smdh = smdh_file.reader().readStructEndian(smdh.Smdh, .little) catch |err| {
+                var buf: [@sizeOf(smdh.Smdh)]u8 = undefined;
+                var smdh_reader = smdh_file.reader(&buf);
+                const smdh_data: smdh.Smdh = smdh_reader.interface.peekStruct(smdh.Smdh, .little) catch |err| {
                     std.debug.print("could not read smdh file '{s}': {s}\n", .{ smdh_path, @errorName(err) });
                     break :m 1;
                 };
@@ -78,9 +80,10 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
             };
             defer output_file.close();
 
-            var output_buffered = std.io.bufferedWriter(output_file.writer());
+            var output_buffer: [8192]u8 = undefined;
+            var output_writer = output_file.writer(&output_buffer);
 
-            zitrus.fmt.@"3dsx".make(input_file.reader(), output_buffered.writer(), .{
+            zitrus.fmt.@"3dsx".make(input_file, &output_writer.interface, .{
                 .allocator = arena,
                 .smdh = smdh_data,
             }) catch |err| switch (err) {
@@ -134,7 +137,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                 },
             };
 
-            try output_buffered.flush();
+            try output_writer.interface.flush();
             break :m 0;
         },
     };

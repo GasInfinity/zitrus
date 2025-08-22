@@ -498,7 +498,7 @@ pub fn submit(device: *Device, submit_info: *const SubmitInfo) void {
     const gsp = device.gsp;
 
     for (command_buffers) |cmd_buf| {
-        gsp.submitProcessCommandList(cmd_buf.queue.buffer[0..cmd_buf.queue.current_index], .none, .flush, .none) catch unreachable;
+        gsp.submitProcessCommandList(@alignCast(cmd_buf.queue.buffer[0..cmd_buf.queue.current_index]), .none, .flush, .none) catch unreachable;
 
         while (true) {
             const int = gsp.waitInterrupts() catch unreachable;

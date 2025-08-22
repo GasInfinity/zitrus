@@ -175,7 +175,7 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
     queue.add(internal_regs, &internal_regs.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
 
     var last_vertex_info = first_draw;
-    var current_vertex_info_ptr: *const mango.MultiDrawInfo = @alignCast(@ptrCast(@as([*]const u8, @ptrCast(vertex_info)) + stride));
+    var current_vertex_info_ptr: *const mango.MultiDrawInfo = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(vertex_info)) + stride));
 
     for (1..draw_count) |_| {
         std.debug.assertReadable(std.mem.asBytes(current_vertex_info_ptr));
@@ -195,7 +195,7 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
         queue.add(internal_regs, &internal_regs.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
 
         last_vertex_info = current_vertex_info;
-        current_vertex_info_ptr = @alignCast(@ptrCast(@as([*]const u8, @ptrCast(current_vertex_info_ptr)) + stride));
+        current_vertex_info_ptr = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(current_vertex_info_ptr)) + stride));
     }
     queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config_2, .{ .inputting_vertices_or_draw_arrays = false }, 0b0001);
 }
@@ -254,7 +254,7 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
     queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
 
     var last_index_info = first_draw;
-    var current_index_info_ptr: *const mango.MultiDrawIndexedInfo = @alignCast(@ptrCast(@as([*]const u8, @ptrCast(index_info)) + stride));
+    var current_index_info_ptr: *const mango.MultiDrawIndexedInfo = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(index_info)) + stride));
 
     for (1..draw_count) |_| {
         std.debug.assertReadable(std.mem.asBytes(current_index_info_ptr));
@@ -289,7 +289,7 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
         queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
 
         last_index_info = current_index_info;
-        current_index_info_ptr = @alignCast(@ptrCast(@as([*]const u8, @ptrCast(current_index_info_ptr)) + stride));
+        current_index_info_ptr = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(current_index_info_ptr)) + stride));
     }
 }
 

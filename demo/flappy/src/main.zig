@@ -43,8 +43,6 @@ const Pipe = struct {
     index: u1,
 };
 
-const BoundedPipes = std.BoundedArray(Pipe, 4);
-
 const GamingState = struct {
     bird_velocity: f32 = 0,
 };
@@ -57,7 +55,8 @@ const GameState = union(enum) {
 
 const AppState = struct {
     game: GameState = .get_ready,
-    pipes: BoundedPipes = BoundedPipes.init(0) catch unreachable,
+    pipes: [4]Pipe = undefined,
+    pipes_end: u8 = 0,
     ground_y: f32 = 0,
     bird_x: f32 = (Screen.top.width() / 2),
     current_bird_sprite: f32 = 0,
@@ -98,7 +97,7 @@ const AppState = struct {
                     const bird_y1 = bird_y + (bird_image_size - bird_collider_size);
                     const bird_y2 = bird_y1 + (bird_collider_size / 2);
 
-                    for (state.pipes.slice()) |pipe| {
+                    for (state.pipes[0..state.pipes_end]) |pipe| {
                         const upper_start = (Screen.top.width() - pipe.upper_size);
 
                         const pipe_down_x1: f32 = ground_total_width;
@@ -120,28 +119,37 @@ const AppState = struct {
 
                 var last_pipe_y: f32 = 0;
 
-                for (state.pipes.slice()) |*pipe| {
+                for (state.pipes[0..state.pipes_end]) |*pipe| {
                     pipe.y -= pipe_velocity * (1.0 / 60.0);
-                    last_pipe_y = pipe.y;
+
+                    // Pipes go screen_height -> 0
+                    if(pipe.y > last_pipe_y) {
+                        last_pipe_y = pipe.y;
+                    }
                 }
 
-                if (state.pipes.slice().len < state.pipes.capacity() and last_pipe_y < (Screen.top.height() / 2)) {
-                    state.pipes.append(Pipe{
+                if (state.pipes_end < state.pipes.len and last_pipe_y < (Screen.top.height() / 2)) {
+                    state.pipes[state.pipes_end] = Pipe{
                         .y = Screen.top.height(),
                         .upper_size = random.intRangeAtMost(u8, 25, 150),
                         .index = random.int(u1),
-                    }) catch unreachable;
+                    };
+                    state.pipes_end += 1;
                 }
 
                 // Remove unreachable pipes
                 while (true) {
-                    const unreachable_pipe = unr: for (state.pipes.slice(), 0..) |pipe, i| {
+                    const unreachable_pipe = unr: for (state.pipes[0..state.pipes_end], 0..) |pipe, i| {
                         if (pipe.y <= -pipe_image_height) {
                             break :unr i;
                         }
                     } else break;
 
-                    _ = state.pipes.orderedRemove(unreachable_pipe);
+                    if(unreachable_pipe < state.pipes_end - 1) {
+                        std.mem.swap(Pipe, &state.pipes[unreachable_pipe], &state.pipes[state.pipes_end - 1]);
+                    }
+
+                    state.pipes_end -= 1;
                 }
 
                 state.ground_y -= pipe_velocity * (1.0 / 60.0);
@@ -163,7 +171,7 @@ const AppState = struct {
             .game_over => {
                 if (pressed.a) {
                     state.game = .get_ready;
-                    state.pipes.clear();
+                    state.pipes_end = 0;
                 }
             },
         }
@@ -197,7 +205,7 @@ const AppState = struct {
     }
 
     fn drawPipes(state: AppState, ctx: ScreenCtx) void {
-        for (state.pipes.slice()) |pipe| {
+        for (state.pipes[0..state.pipes_end]) |pipe| {
             const pipe_image = pipes_sheet[(@as(usize, pipe.index) * (pipe_image_height * pipe_sheet_width))..][0..(pipe_image_height * pipe_sheet_width)];
             const yi: i32 = @intFromFloat(@round(pipe.y));
 
@@ -305,7 +313,7 @@ pub fn main() !void {
 
         while (try app.pollNotification(apt, srv)) |n| switch (n) {
             .jump_home, .jump_home_by_power => {
-                j_h: switch(try app.jumpToHome(apt, srv, &gsp, .none)) {
+                j_h: switch (try app.jumpToHome(apt, srv, &gsp, .none)) {
                     .resumed => {},
                     .jump_home => continue :j_h (try app.jumpToHome(apt, srv, &gsp, .none)),
                     .must_close => break :main_loop,

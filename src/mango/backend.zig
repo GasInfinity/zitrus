@@ -9,6 +9,7 @@ pub const Buffer = @import("Buffer.zig");
 pub const Pipeline = @import("Pipeline.zig");
 pub const CommandBuffer = @import("CommandBuffer.zig");
 pub const Sampler = @import("Sampler.zig");
+pub const Surface = @import("Surface.zig");
 pub const Swapchain = @import("Swapchain.zig");
 
 pub const GraphicsState = @import("GraphicsState.zig");

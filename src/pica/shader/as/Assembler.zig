@@ -469,7 +469,7 @@ const Alias = packed struct(u16) {
 
 gpa: std.mem.Allocator,
 aliases: Alias.Map,
-errors: std.ArrayListUnmanaged(Error),
+errors: std.ArrayList(Error),
 source: [:0]const u8,
 tokens: TokenList.Slice,
 encoder: Encoder,

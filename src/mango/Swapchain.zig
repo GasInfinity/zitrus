@@ -8,7 +8,29 @@
 //!
 //! As `Swapchain`s don't own its data, you're free to recreate swapchains with different formats dynamically.
 
+pub const Handle = enum(u32) {
+    null = 0,
+    _,
+};
+
+pub const Info = packed struct(u32) {
+    pub const PresentMode = enum(u2) {
+        mailbox,
+        fifo,
+        fifo_relaxed,
+        fifo_latest_ready,
+    };
+
+    present_mode: PresentMode,
+    is_stereo: bool,
+    fmt: pica.ColorFormat,
+};
+
+info: Info,
+images: backend.DeviceMemory.BoundMemoryInfo,
+
 const Swapchain = @This();
+const backend = @import("backend.zig");
 
 const std = @import("std");
 const zitrus = @import("zitrus");

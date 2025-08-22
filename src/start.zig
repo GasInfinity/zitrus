@@ -38,7 +38,7 @@ fn startup() linksection(".startup") callconv(.naked) noreturn {
 
           // Unused here but needed if we want zig to NOT optimize further reads!
           [program_meta] "r" (&environment.program_meta),
-        : "memory"
+        : .{ .memory = true }
     );
 }
 

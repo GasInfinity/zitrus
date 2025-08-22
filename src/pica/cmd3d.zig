@@ -27,8 +27,6 @@ pub const Queue = struct {
     current_index: usize,
 
     pub fn initBuffer(buffer: []align(8) u32) Queue {
-        std.debug.assert(std.mem.isAligned(buffer.len, 4));
-
         return .{
             .buffer = buffer,
             .current_index = 0,
@@ -113,6 +111,7 @@ pub const Queue = struct {
 
         var needed_fields: [st_ty.fields.len]std.builtin.Type.StructField = undefined;
 
+        @setEvalBranchQuota(st_ty.fields.len * 2000);
         for (st_ty.fields, 0..) |field, i| {
             std.debug.assert(@typeInfo(field.type) == .pointer);
 
@@ -151,7 +150,7 @@ pub const Queue = struct {
         const first_id: Id = .fromRegister(base, registers[0]);
 
         // NOTE: I do the ptrCast instead of a bitCast because enums cannot be bitcasted, its just a shortcut.
-        queue.buffer[queue.current_index] = @as(*const u32, @alignCast(@ptrCast(&values[0]))).*;
+        queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&values[0]))).*;
         queue.buffer[queue.current_index + 1] = @bitCast(Header{
             .id = first_id,
             .mask = mask,
@@ -161,7 +160,7 @@ pub const Queue = struct {
         queue.current_index += 2;
 
         inline for (1..values.len) |i| {
-            queue.buffer[queue.current_index] = @as(*const u32, @alignCast(@ptrCast(&values[i]))).*;
+            queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&values[i]))).*;
             queue.current_index += 1;
         }
 
@@ -189,7 +188,7 @@ pub const Queue = struct {
         std.debug.assert(@bitSizeOf(Child) == @bitSizeOf(u32));
         std.debug.assert(values.len <= std.math.maxInt(u8));
 
-        queue.buffer[queue.current_index] = @as(*const u32, @alignCast(@ptrCast(&values[0]))).*;
+        queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&values[0]))).*;
         queue.buffer[queue.current_index + 1] = @bitCast(Header{
             .id = id,
             .mask = mask,
@@ -199,7 +198,7 @@ pub const Queue = struct {
         queue.current_index += 2;
 
         for (1..values.len) |i| {
-            queue.buffer[queue.current_index] = @as(*const u32, @alignCast(@ptrCast(&values[i]))).*;
+            queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&values[i]))).*;
             queue.current_index += 1;
         }
 

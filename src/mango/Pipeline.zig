@@ -58,7 +58,7 @@ pub const Graphics = struct {
             .stencil_write_mask = undefined,
             .boolean_constants = undefined,
             .integer_constants = undefined,
-            .cmd3d_state = try gpa.alignedAlloc(u32, 8, 1024),
+            .cmd3d_state = try gpa.alignedAlloc(u32, .@"8", 1024),
         };
         errdefer gfx.deinit(gpa);
 
@@ -508,7 +508,7 @@ pub const Graphics = struct {
         gfx.cmd3d_state = if(gpa.remap(gfx.cmd3d_state, gfx_queue.current_index * @sizeOf(u32))) |remapped|
             remapped
         else manual: {
-            const new = try gpa.alignedAlloc(u32, 8, gfx_queue.current_index);
+            const new = try gpa.alignedAlloc(u32, .@"8", gfx_queue.current_index);
             @memcpy(new, gfx.cmd3d_state[0..new.len]);
 
             gpa.free(gfx.cmd3d_state);

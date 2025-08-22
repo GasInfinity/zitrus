@@ -79,21 +79,7 @@ pub fn main() !u8 {
     const args = try std.process.argsAlloc(arena);
     defer std.process.argsFree(arena, args);
 
-    var diagnostics: flags.Diagnostics = undefined;
-    const arguments = flags.parse(args, "zitrus-tools", Arguments, .{
-        .diagnostics = &diagnostics,
-    }) catch |err| switch (err) {
-        error.PrintedHelp => return 0,
-        error.EmptyArgument, error.MissingArgument, error.MissingCommand, error.MissingFlag, error.MissingValue, error.UnexpectedPositional, error.UnrecognizedArgument, error.UnrecognizedFlag, error.UnrecognizedOption, error.UnrecognizedSwitch => {
-            try diagnostics.printUsage(&flags.ColorScheme.default);
-            return 1;
-        },
-        else => {
-            std.debug.print("Encountered unknown error while parsing for command '{s}': {s}", .{ diagnostics.command_name, @errorName(err) });
-            return 1;
-        },
-    };
-
+    const arguments = flags.parse(args, "zitrus-tools", Arguments, .{});
     const applet = std.meta.activeTag(arguments.command);
 
     return switch (applet) {
