@@ -290,7 +290,7 @@ pub fn main() !void {
     while (true) {
         const interrupts = try gsp.waitInterrupts();
 
-        if (interrupts.get(.vblank_top) > 0) {
+        if (interrupts.contains(.vblank_top)) {
             break;
         }
     }
@@ -348,7 +348,7 @@ pub fn main() !void {
         while (true) {
             const interrupts = try gsp.waitInterrupts();
 
-            if (interrupts.get(.vblank_top) > 0) {
+            if (interrupts.contains(.vblank_top)) {
                 break;
             }
         }

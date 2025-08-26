@@ -490,7 +490,7 @@ pub const Thread = packed struct(u32) {
 
     sync: Synchronization,
 
-    pub fn create(entry: *fn (ctx: *anyopaque) void, ctx: *anyopaque, stack_top: [*]u8, priority: u6, processor_id: i32) UnexpectedError!Thread {
+    pub fn create(entry: *fn (ctx: *anyopaque) callconv(.c) void, ctx: *anyopaque, stack_top: [*]u8, priority: u6, processor_id: i32) UnexpectedError!Thread {
         return switch (createThread(entry, ctx, stack_top, priority, processor_id)) {
             .success => |s| s.value,
             .failure => |code| unexpectedResult(code),
@@ -512,8 +512,8 @@ pub const Process = packed struct(u32) {
     sync: Synchronization,
 };
 
-pub fn controlMemory(operation: MemoryOperation, addr0: ?*anyopaque, addr1: ?*anyopaque, size: usize, permissions: MemoryPermission) Result([*]u8) {
-    var mapped_addr: [*]u8 = undefined;
+pub fn controlMemory(operation: MemoryOperation, addr0: ?*anyopaque, addr1: ?*anyopaque, size: usize, permissions: MemoryPermission) Result([*]align(heap.page_size) u8) {
+    var mapped_addr: [*]align(heap.page_size) u8 = undefined;
 
     const code = asm volatile ("svc 0x01"
         : [code] "={r0}" (-> result.Code),

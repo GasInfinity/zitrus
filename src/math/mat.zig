@@ -1,7 +1,28 @@
 //! Useful matrix operations.
 //!
 //! They all transform to the PICA200 NDC volume (Same as OpenGL except Z [0, -1])
+//!
+//! Some operations are provided for the sake of completeness (translation, scale, ...)
+
 pub const @"4x4" = [4][4]f32;
+
+pub fn translate(x: f32, y: f32, z: f32) @"4x4" {
+    return .{
+        .{1, 0, 0, x},
+        .{0, 1, 0, y},
+        .{0, 0, 1, z},
+        .{0, 0, 0, 1},
+    };
+}
+
+pub fn scale(x: f32, y: f32, z: f32) @"4x4" {
+    return .{
+        .{x, 0, 0, 0},
+        .{0, y, 0, 0},
+        .{0, 0, z, 0},
+        .{0, 0, 0, 1},
+    };
+}
 
 pub fn ortho(l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
     const x_scale = r - l;

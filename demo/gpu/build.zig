@@ -3,6 +3,7 @@ const zitrus = @import("zitrus");
 
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
+    const no_bin = b.option(bool, "no-bin", "Don't emit a binary (incremental compilation)") orelse false;
 
     const zitrus_dep = b.dependency("zitrus", .{});
     const zitrus_mod = zitrus_dep.module("zitrus");
@@ -26,14 +27,18 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
 
-    b.installArtifact(exe);
+    if(no_bin) {
+        b.getInstallStep().dependOn(&exe.step);
+    } else {
+        b.installArtifact(exe);
 
-    const bitmap_smdh = zitrus.addMakeSmdh(b, .{
-        .name = "gpu.icn",
-        .settings = b.path("smdh-settings.ziggy"),
-    });
+        const bitmap_smdh = zitrus.addMakeSmdh(b, .{
+            .name = "gpu.icn",
+            .settings = b.path("smdh-settings.ziggy"),
+        });
 
-    const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "gpu.3dsx", .exe = exe, .smdh = bitmap_smdh });
+        const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "gpu.3dsx", .exe = exe, .smdh = bitmap_smdh });
 
-    b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "gpu.3dsx").step);
+        b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "gpu.3dsx").step);
+    }
 }

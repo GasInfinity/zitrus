@@ -7,27 +7,20 @@
 //! does a copyImageToImage before presentation.
 //!
 //! As `Swapchain`s don't own its data, you're free to recreate swapchains with different formats dynamically.
+//! As only 2 swapchains can be created at the same time (top and bottom), their data is embedded in the presentation engine.
 
 pub const Handle = enum(u32) {
     null = 0,
     _,
 };
 
-pub const Info = packed struct(u32) {
-    pub const PresentMode = enum(u2) {
-        mailbox,
-        fifo,
-        fifo_relaxed,
-        fifo_latest_ready,
-    };
+pub fn toHandle(screen: pica.Screen) Handle {
+    return @enumFromInt(@intFromEnum(screen) + 1); 
+}
 
-    present_mode: PresentMode,
-    is_stereo: bool,
-    fmt: pica.ColorFormat,
-};
-
-info: Info,
-images: backend.DeviceMemory.BoundMemoryInfo,
+pub fn fromHandle(handle: Handle) pica.Screen {
+    return @enumFromInt(@intFromEnum(handle) - 1); 
+}
 
 const Swapchain = @This();
 const backend = @import("backend.zig");
@@ -35,8 +28,5 @@ const backend = @import("backend.zig");
 const std = @import("std");
 const zitrus = @import("zitrus");
 const mango = zitrus.mango;
+
 const pica = zitrus.pica;
-
-const cmd3d = pica.cmd3d;
-
-const PhysicalAddress = zitrus.PhysicalAddress;

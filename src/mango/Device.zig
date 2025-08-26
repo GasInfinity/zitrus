@@ -19,16 +19,18 @@ pub const CreateInfo = struct {
     gsp: *GspGpu,
 };
 
-gsp: *GspGpu,
 vram_allocators: std.EnumArray(zitrus.memory.VRamBank, VRamBankAllocator),
+presentation_engine: PresentationEngine,
+gsp: *GspGpu,
 
 pub fn initTodo(gsp: *GspGpu) Device {
     return .{
-        .gsp = gsp,
         .vram_allocators = .init(.{
             .a = .init(@ptrFromInt(horizon.memory.vram_a_begin)),
             .b = .init(@ptrFromInt(horizon.memory.vram_b_begin)),
         }),
+        .presentation_engine = .init(),
+        .gsp = gsp,
     };
 }
 
@@ -136,6 +138,91 @@ pub fn flushMappedMemoryRanges(device: *Device, ranges: []const mango.MappedMemo
     }
 }
 
+pub fn createSemaphore(device: *Device, create_info: mango.SemaphoreCreateInfo, allocator: std.mem.Allocator) !mango.Semaphore {
+    _ = device;
+    const b_semaphore: *backend.Semaphore = try allocator.create(backend.Semaphore);
+    b_semaphore.* = .init(create_info);
+    return b_semaphore.toHandle();
+}
+
+pub fn destroySemaphore(device: *Device, semaphore: mango.Semaphore, allocator: std.mem.Allocator) void {
+    _ = device;
+    const b_semaphore: *backend.Semaphore = .fromHandleMutable(semaphore);
+    allocator.destroy(b_semaphore);
+}
+
+pub fn signalSemaphore(device: *Device, signal_info: mango.SemaphoreSignalInfo) !void {
+    _ = device;
+    const b_semaphore: *backend.Semaphore = .fromHandleMutable(signal_info.semaphore);
+    b_semaphore.signal(signal_info.value);
+}
+
+// XXX: Currently only wait_all semantics are implemented, investigate whether wait_any is approachable
+pub fn waitSemaphores(device: *Device, wait_info: mango.SemaphoreWaitInfo, timeout: i64) !void {
+    _ = device;
+    const semaphores = wait_info.semaphores[0..wait_info.semaphore_count];
+    const values = wait_info.values[0..wait_info.semaphore_count];
+
+    switch (timeout) {
+        -1 => for (semaphores, values) |b_semaphore, value| {
+            b_semaphore.wait(value, -1);
+        },
+        else => |ns| {
+            var accumulated_timeout = ns;
+            for (semaphores, values) |b_semaphore, value| {
+                const start = horizon.getSystemTick();
+                b_semaphore.wait(value, accumulated_timeout); 
+                const end = horizon.getSystemTick();
+                const elapsed = end - start;
+
+                if(elapsed >= accumulated_timeout) {
+                    return; 
+                }
+
+                accumulated_timeout -= elapsed;
+            }
+        }
+    }
+}
+
+pub fn createCommandPool(device: *Device, create_info: mango.CommandPoolCreateInfo, allocator: std.mem.Allocator) !mango.CommandPool {
+    _ = device;
+    const b_command_pool: *backend.CommandPool = try allocator.create(backend.CommandPool);
+    b_command_pool.* = .init(create_info, allocator);
+    return b_command_pool.toHandle();
+}
+
+pub fn destroyCommandPool(device: *Device, command_pool: mango.CommandPool, allocator: std.mem.Allocator) void {
+    _ = device;
+    const b_command_pool: *backend.CommandPool = .fromHandleMutable(command_pool);
+    b_command_pool.deinit(allocator);
+    allocator.destroy(b_command_pool);
+}
+
+pub fn resetCommandPool(device: *Device, command_pool: mango.CommandPool) void {
+    _ = device;
+    const b_command_pool: *backend.CommandPool = .fromHandleMutable(command_pool);
+    b_command_pool.reset();
+}
+
+pub fn trimCommandPool(device: *Device, command_pool: mango.CommandPool) void {
+    _ = device;
+    const b_command_pool: *backend.CommandPool = .fromHandleMutable(command_pool);
+    b_command_pool.trim();
+}
+
+pub fn allocateCommandBuffers(device: *Device, allocate_info: mango.CommandBufferAllocateInfo, buffers: []mango.CommandBuffer) !void {
+    _ = device;
+    const b_command_pool: *backend.CommandPool = .fromHandleMutable(allocate_info.pool);
+    return b_command_pool.allocate(buffers);
+}
+
+pub fn freeCommandBuffers(device: *Device, command_pool: mango.CommandPool, buffers: []const mango.CommandBuffer) void {
+    _ = device;
+    const b_command_pool: *backend.CommandPool = .fromHandleMutable(command_pool);
+    return b_command_pool.free(buffers);
+}
+
 pub fn createBuffer(device: *Device, create_info: mango.BufferCreateInfo, allocator: std.mem.Allocator) !mango.Buffer {
     _ = device;
 
@@ -157,16 +244,16 @@ pub fn destroyBuffer(device: *Device, buffer: mango.Buffer, allocator: std.mem.A
     allocator.destroy(b_buffer);
 }
 
-pub fn bindBufferMemory(device: *Device, buffer: mango.Buffer, memory: mango.DeviceMemory, memory_offset: u32) !void {
+pub fn bindBufferMemory(device: *Device, buffer: mango.Buffer, memory: mango.DeviceMemory, memory_offset: mango.DeviceSize) !void {
     _ = device;
 
     const b_buffer: *backend.Buffer = .fromHandleMutable(buffer);
     const b_memory: backend.DeviceMemory = .fromHandle(memory);
 
     std.debug.assert(b_buffer.memory_info.isUnbound());
-    std.debug.assert(memory_offset + b_buffer.size <= b_memory.size());
+    std.debug.assert(@intFromEnum(memory_offset) + b_buffer.size <= b_memory.size());
 
-    b_buffer.memory_info = .init(b_memory, memory_offset);
+    b_buffer.memory_info = .init(b_memory, @intFromEnum(memory_offset));
 }
 
 pub fn createImage(device: *Device, create_info: mango.ImageCreateInfo, allocator: std.mem.Allocator) !mango.Image {
@@ -200,7 +287,7 @@ pub fn destroyImage(device: *Device, image: mango.Image, allocator: std.mem.Allo
     allocator.destroy(b_image);
 }
 
-pub fn bindImageMemory(device: *Device, image: mango.Image, memory: mango.DeviceMemory, memory_offset: usize) !void {
+pub fn bindImageMemory(device: *Device, image: mango.Image, memory: mango.DeviceMemory, memory_offset: mango.DeviceSize) !void {
     _ = device;
 
     const b_image: *backend.Image = .fromHandleMutable(image);
@@ -209,7 +296,7 @@ pub fn bindImageMemory(device: *Device, image: mango.Image, memory: mango.Device
     std.debug.assert(b_image.memory_info.isUnbound());
     // TODO: std.debug.assert(memory_offset + image.size() <= memory.size);
 
-    b_image.memory_info = .init(b_memory, memory_offset);
+    b_image.memory_info = .init(b_memory, @intFromEnum(memory_offset));
 }
 
 pub fn createImageView(device: *Device, create_info: mango.ImageViewCreateInfo, allocator: std.mem.Allocator) !mango.ImageView {
@@ -261,6 +348,14 @@ pub fn destroyPipeline(device: *Device, pipeline: mango.Pipeline, allocator: std
 
     b_gfx_pipeline.deinit(allocator);
     allocator.destroy(b_gfx_pipeline);
+}
+
+pub fn createSwapchain(device: *Device, create_info: mango.SwapchainCreateInfo, allocator: std.mem.Allocator) !mango.Swapchain {
+    return device.presentation_engine.initSwapchain(create_info, allocator);
+}
+
+pub fn destroySwapchain(device: *Device, swapchain: mango.Swapchain, allocator: std.mem.Allocator) void {
+    return device.presentation_engine.deinitSwapchain(swapchain, allocator);
 }
 
 // TODO: Proper assertions.
@@ -320,7 +415,7 @@ pub fn copyBufferToImage(device: *Device, src_buffer: mango.Buffer, dst_image: m
         while (true) {
             const int = gsp.waitInterrupts() catch unreachable;
 
-            if (int.get(.dma) > 0) {
+            if (int.contains(.dma)) {
                 break;
             }
         }
@@ -341,7 +436,7 @@ pub fn copyBufferToImage(device: *Device, src_buffer: mango.Buffer, dst_image: m
     while (true) {
         const int = gsp.waitInterrupts() catch unreachable;
 
-        if (int.get(.ppf) > 0) {
+        if (int.contains(.ppf)) {
             break;
         }
     }
@@ -384,7 +479,7 @@ pub fn blitImage(device: *Device, src_image: mango.Image, dst_image: mango.Image
     while (true) {
         const int = gsp.waitInterrupts() catch unreachable;
 
-        if (int.get(.ppf) > 0) {
+        if (int.contains(.ppf)) {
             break;
         }
     }
@@ -467,7 +562,7 @@ pub fn clearColorImage(device: *Device, image: mango.Image, color: *const [4]u8)
     while (true) {
         const int = gsp.waitInterrupts() catch unreachable;
 
-        if (int.get(.psc0) > 0) {
+        if (int.contains(.psc0)) {
             break;
         }
     }
@@ -481,41 +576,36 @@ pub fn clearDepthStencilImage(device: *Device, image: mango.Image, depth: f32, s
     _ = stencil;
 }
 
-pub const SubmitInfo = extern struct {
-    command_buffers_len: usize,
-    command_buffers: [*]const *mango.CommandBuffer,
-
-    pub fn init(command_buffers: []const *mango.CommandBuffer) SubmitInfo {
-        return .{
-            .command_buffers = command_buffers.ptr,
-            .command_buffers_len = command_buffers.len,
-        };
-    }
-};
-
-pub fn submit(device: *Device, submit_info: *const SubmitInfo) void {
+pub fn submit(device: *Device, submit_info: mango.SubmitInfo) !void {
     const command_buffers = submit_info.command_buffers[0..submit_info.command_buffers_len];
     const gsp = device.gsp;
 
-    for (command_buffers) |cmd_buf| {
-        gsp.submitProcessCommandList(@alignCast(cmd_buf.queue.buffer[0..cmd_buf.queue.current_index]), .none, .flush, .none) catch unreachable;
+    for (command_buffers) |cmd| {
+        const b_cmd: *backend.CommandBuffer = .fromHandleMutable(cmd);
+        std.debug.assert(b_cmd.state == .executable);
+        // TODO: set to pending state and reset it to executable
+
+        try gsp.submitProcessCommandList(@alignCast(b_cmd.queue.buffer[0..b_cmd.queue.current_index]), .none, .flush, .none);
 
         while (true) {
-            const int = gsp.waitInterrupts() catch unreachable;
+            const int = try gsp.waitInterrupts();
 
-            if (int.get(.p3d) > 0) {
+            if (int.contains(.p3d)) {
                 break;
             }
         }
     }
 }
 
-pub const PresentInfo = extern struct {
-    swapchains_len: usize,
-    swapchains: [*]const mango.Swapchain,
-};
+pub fn getSwapchainImages(device: *Device, swapchain: mango.Swapchain, images: []mango.Image) void {
+    return device.presentation_engine.getSwapchainImages(swapchain, images);
+}
 
-pub fn present(device: *Device, present_info: *const PresentInfo) void {
+pub fn acquireNextImage(device: *Device, swapchain: mango.Swapchain) !u8 {
+    return device.presentation_engine.acquireNextImage(swapchain);
+}
+
+pub fn present(device: *Device, present_info: *const mango.PresentInfo) void {
     _ = device;
     _ = present_info;
 }
@@ -523,6 +613,26 @@ pub fn present(device: *Device, present_info: *const PresentInfo) void {
 pub fn waitIdle(device: *Device) void {
     _ = device;
     // TODO: Multithreading when the Io interface lands, this does nothing currently.
+}
+
+// XXX: Finish this when we can. Should this should be in the syscore? we must handle vblanks and the app may be badly programmed (no yields)...
+fn driverMain(ctx: *anyopaque) callconv(.c) noreturn {
+    const device: *Device = @ptrCast(@alignCast(ctx));
+    const presentation_engine = &device.presentation_engine;
+    const gsp = device.gsp;
+
+    while (true) {
+        const interrupts = gsp.waitInterrupts() catch continue;
+        var interrupts_it = interrupts.iterator();
+
+        while (interrupts_it.next()) |int| switch (int) {
+            .vblank_top => presentation_engine.refresh(gsp, .top),
+            .vblank_bottom => presentation_engine.refresh(gsp, .bottom),
+            else => {}
+        };
+    }
+
+    horizon.exitThread();
 }
 
 comptime {
@@ -534,6 +644,8 @@ const VRamBankAllocator = zalloc.bitmap.StaticBitmapAllocator(.fromByteUnits(409
 const Device = @This();
 const backend = @import("backend.zig");
 
+const PresentationEngine = backend.PresentationEngine;
+
 const std = @import("std");
 const zitrus = @import("zitrus");
 const zalloc = @import("zalloc");
@@ -544,8 +656,4 @@ const GspGpu = horizon.services.GspGpu;
 const mango = zitrus.mango;
 const pica = zitrus.pica;
 
-const cmd3d = pica.cmd3d;
-
 const PhysicalAddress = zitrus.PhysicalAddress;
-
-const internal_regs = &zitrus.memory.arm11.gpu.internal;

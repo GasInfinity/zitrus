@@ -35,7 +35,7 @@ pub fn main() !void {
     // var gpa_state: std.heap.DebugAllocator(.{}) = .init;
     // defer _ = gpa_state.deinit();
 
-    const gpa = horizon.heap.page_allocator;
+    const gpa = horizon.heap.page_allocator;// gpa_state.allocator();
 
     var srv = try ServiceManager.init();
     defer srv.deinit();
@@ -51,9 +51,6 @@ pub fn main() !void {
 
     var gsp = try GspGpu.init(srv);
     defer gsp.deinit();
-
-    const raw_command_queue = try horizon.heap.linear_page_allocator.alignedAlloc(u32, .@"8", 4096);
-    defer horizon.heap.linear_page_allocator.free(raw_command_queue);
 
     const Vertex = extern struct {
         pos: [4]i8,
@@ -91,7 +88,7 @@ pub fn main() !void {
         .array_layers = 1,
     }, gpa);
     defer device.destroyImage(top_presentable_image, gpa);
-    try device.bindImageMemory(top_presentable_image, top_presentable_image_memory, 0);
+    try device.bindImageMemory(top_presentable_image, top_presentable_image_memory, .size(0));
 
     // XXX: As we block, we dont need synchronization but it'll be a must!
     // NOTE: See we're using memory_type 1? Its a MUST for clearing images, they must be in DEVICE_LOCAL memory.
@@ -137,8 +134,28 @@ pub fn main() !void {
     };
 
     for (0..2) |i| {
-        try device.bindImageMemory(bottom_presentable_images[i], bottom_presentable_image_memory, i * (320 * 240 * 3));
+        try device.bindImageMemory(bottom_presentable_images[i], bottom_presentable_image_memory, .size(i * (320 * 240 * 3)));
     }
+
+    // XXX: We cannot have swapchains as we cannot have multithreading, we cannot have multithreading because we don't have Io.
+    // Also we don't have multithreading because 64-bit atomics are still not implemented :D
+    // const bottom_swapchain = try device.createSwapchain(.{
+    //     .surface = .bottom_240x320,
+    //     .present_mode = .fifo,
+    //     .image_format = .bgr888,
+    //     .image_array_layers = 1,
+    //     .image_count = 2,
+    //     .image_memory_info = &.{
+    //         .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(0) },
+    //         .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(320 * 240 * 3) },
+    //     }
+    // }, gpa);
+    // defer device.destroySwapchain(bottom_swapchain, gpa);
+    // const sw_bottom_presentable_images: [2]mango.Image = blk: {
+    //     var img: [2]mango.Image = undefined;
+    //     device.getSwapchainImages(swapchain: Handle)
+    // };
+    
 
     const vtx_buffer_memory = try device.allocateMemory(&.{
         .memory_type = 0,
@@ -196,7 +213,7 @@ pub fn main() !void {
         },
     }, gpa);
     defer device.destroyBuffer(index_buffer, gpa);
-    try device.bindBufferMemory(index_buffer, index_buffer_memory, 0);
+    try device.bindBufferMemory(index_buffer, index_buffer_memory, .size(0));
 
     const vtx_buffer = try device.createBuffer(.{
         .size = .size(@sizeOf(Vertex) * 4),
@@ -205,7 +222,7 @@ pub fn main() !void {
         },
     }, gpa);
     defer device.destroyBuffer(vtx_buffer, gpa);
-    try device.bindBufferMemory(vtx_buffer, vtx_buffer_memory, 0);
+    try device.bindBufferMemory(vtx_buffer, vtx_buffer_memory, .size(0));
 
     const color_attachment_image = try device.createImage(.{
         .flags = .{},
@@ -225,7 +242,7 @@ pub fn main() !void {
         .array_layers = 1,
     }, gpa);
     defer device.destroyImage(color_attachment_image, gpa);
-    try device.bindImageMemory(color_attachment_image, color_attachment_image_memory, 0);
+    try device.bindImageMemory(color_attachment_image, color_attachment_image_memory, .size(0));
 
     try device.clearColorImage(color_attachment_image, &@splat(16));
 
@@ -242,7 +259,7 @@ pub fn main() !void {
         },
     }, gpa);
     defer device.destroyBuffer(staging_buffer, gpa);
-    try device.bindBufferMemory(staging_buffer, staging_buffer_memory, 0);
+    try device.bindBufferMemory(staging_buffer, staging_buffer_memory, .size(0));
 
     {
         const mapped_staging = try device.mapMemory(staging_buffer_memory, 0, std.math.maxInt(u32));
@@ -281,7 +298,7 @@ pub fn main() !void {
         .array_layers = 1,
     }, gpa);
     defer device.destroyImage(test_sampled_image, gpa);
-    try device.bindImageMemory(test_sampled_image, test_sampled_image_memory, 0);
+    try device.bindImageMemory(test_sampled_image, test_sampled_image_memory, .size(0));
 
     try device.copyBufferToImage(staging_buffer, test_sampled_image, .{
         .src_offset = .size(0),
@@ -316,10 +333,6 @@ pub fn main() !void {
         .image = color_attachment_image,
     }, gpa);
     defer device.destroyImageView(color_attachment_image_view, gpa);
-
-    var cmdbuf: mango.CommandBuffer = .{
-        .queue = .initBuffer(raw_command_queue),
-    };
 
     const simple_pipeline = try device.createGraphicsPipeline(.{
         .rendering_info = &.{
@@ -414,61 +427,30 @@ pub fn main() !void {
     }, gpa);
     defer device.destroyPipeline(simple_pipeline, gpa);
 
-    {
-        cmdbuf.begin();
-        defer cmdbuf.end();
+    const command_pool = try device.createCommandPool(.{
+    }, gpa);
+    defer device.destroyCommandPool(command_pool, gpa);
+    
+    const cmd = blk: {
+        var cmd: mango.CommandBuffer = undefined;
+        try device.allocateCommandBuffers(.{
+            .pool = command_pool,
+            .command_buffer_count = 1,
+        }, @ptrCast(&cmd));
+        break :blk cmd;
+    };
+    defer device.freeCommandBuffers(command_pool, @ptrCast(&cmd));
 
-        cmdbuf.bindIndexBuffer(index_buffer, 0, .u8);
-        cmdbuf.bindVertexBuffersSlice(0, &.{vtx_buffer}, &.{0});
-        cmdbuf.bindPipeline(.graphics, simple_pipeline);
-
-        // Disabling depth test in mango ALSO disables depth writes.
-        cmdbuf.setViewport(&.{
-            .rect = .{
-                .offset = .{ .x = 0, .y = 0 },
-                .extent = .{ .width = 240, .height = 320 },
-            },
-            .min_depth = 0.0,
-            .max_depth = 1.0,
-        });
-        cmdbuf.setScissor(&.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 320 } }));
-
-        {
-            // We'll render to the bottom screen, images are 240x320 physically.
-            cmdbuf.beginRendering(&.{
-                .color_attachment = color_attachment_image_view,
-                .depth_stencil_attachment = .null,
-            });
-            defer cmdbuf.endRendering();
-
-            cmdbuf.bindFloatUniforms(.vertex, 0, &zitrus.math.mat.perspRotate90Cw(std.math.degreesToRadians(90.0), 240.0 / 320.0, 1, 1000));
-            cmdbuf.bindCombinedImageSamplers(0, &.{.{
-                .image = test_sampled_image_view,
-                .sampler = simple_sampler,
-            }});
-            cmdbuf.drawIndexed(4, 0, 0);
-        }
-    }
-
-    // XXX: This blocks currently as we don't have synchronization primitives.
-    device.submit(&.init(&.{&cmdbuf}));
-
-    try device.blitImage(color_attachment_image, bottom_presentable_images[0]);
-
-    // TODO: Say goodbye to using the gsp directly, use mango when available.
-    while (true) {
-        const interrupts = try gsp.waitInterrupts();
-
-        if (interrupts.get(.vblank_top) > 0) {
-            break;
-        }
-    }
-
-    // Flush entire linear memory again just in case before main loop...
     try gsp.sendSetLcdForceBlack(false);
     defer if (gsp.has_right) gsp.sendSetLcdForceBlack(true) catch {};
 
+    // XXX: Bad, but we know this is not near graphicaly intensive and we'll always be near 60 FPS.
+    const default_delta_time = 1.0/60.0;
+    var current_time: f32 = 0.0;
+    // var current_scale: f32 = 1.0;
     main_loop: while (true) {
+        defer current_time += default_delta_time;
+
         while (try srv.pollNotification()) |notif| switch (notif) {
             .must_terminate => break :main_loop,
             else => {},
@@ -497,16 +479,68 @@ pub fn main() !void {
             break :main_loop;
         }
 
-        // try framebuffer.flushBuffers(&gsp);
-        // try framebuffer.present(&gsp);
+        // if(input.current.up) {
+        //     current_scale += 1.0 * default_delta_time * 5;
+        // } else if(input.current.down) {
+        //     current_scale -= 1.0 * default_delta_time * 5;
+        // }
+        // current_scale = std.math.clamp(current_scale, -1.0, 1.0);
+
+        try cmd.begin();
+
+        cmd.bindIndexBuffer(index_buffer, 0, .u8);
+        cmd.bindVertexBuffersSlice(0, &.{vtx_buffer}, &.{0});
+        cmd.bindPipeline(.graphics, simple_pipeline);
+
+        // Disabling depth test in mango ALSO disables depth writes.
+        cmd.setViewport(&.{
+            .rect = .{
+                .offset = .{ .x = 0, .y = 0 },
+                .extent = .{ .width = 240, .height = 320 },
+            },
+            .min_depth = 0.0,
+            .max_depth = 1.0,
+        });
+        cmd.setScissor(&.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 320 } }));
+
+        {
+            // We'll render to the bottom screen, images are 240x320 physically.
+            cmd.beginRendering(.{
+                .color_attachment = color_attachment_image_view,
+                .depth_stencil_attachment = .null,
+            });
+            defer cmd.endRendering();
+
+            const zmath = zitrus.math;
+
+            cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(std.math.degreesToRadians(90.0), 240.0 / 320.0, 1, 1000));
+
+            const current_scale = @sin(current_time);
+            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scale(current_scale, @abs(current_scale), 1));
+
+            cmd.bindCombinedImageSamplers(0, &.{.{
+                .image = test_sampled_image_view,
+                .sampler = simple_sampler,
+            }});
+            cmd.drawIndexed(4, 0, 0);
+        }
+
+        try cmd.end();
+
+        // XXX: Semaphores must be used when available. Everything is blocking now (literally waits until the GPU finishes, a no-no), that's why this can work without syncronization!
+        try device.clearColorImage(color_attachment_image, &@splat(0));
+        try device.submit(.init(&.{cmd}));
+        try device.blitImage(color_attachment_image, bottom_presentable_images[0]);
+
         while (true) {
             const interrupts = try gsp.waitInterrupts();
 
-            if (interrupts.get(.vblank_top) > 0) {
+            if (interrupts.contains(.vblank_top)) {
                 break;
             }
         }
 
+        // TODO: Use swapchains
         {
             const mapped_bottom_presentable = try device.mapMemory(bottom_presentable_image_memory, 0, 320 * 240 * 3);
             defer device.unmapMemory(bottom_presentable_image_memory);

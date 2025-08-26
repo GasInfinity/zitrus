@@ -1,4 +1,4 @@
-const UniformLocation = enum {
+pub const UniformLocation = enum {
     float,
     int,
     bool,
@@ -48,9 +48,9 @@ pub const UniformState = struct {
     floating_dirty: std.EnumArray(mango.ShaderStage, std.EnumSet(pica.shader.register.Source.Constant)) = .initFill(.initEmpty()),
 
     // NOTE: Stored in reverse order (wzyx, PICA200 native)
-    floating_constants: std.EnumArray(mango.ShaderStage, std.EnumArray(pica.shader.register.Source.Constant, [4]f32)) = .initUndefined(),
-    integer_constants: std.EnumArray(mango.ShaderStage, std.EnumArray(pica.shader.register.Integral.Integer, [4]i8)) = .initUndefined(),
-    boolean_constants: std.EnumArray(mango.ShaderStage, std.EnumSet(pica.shader.register.Integral.Boolean)) = .initUndefined(),
+    floating_constants: std.EnumArray(mango.ShaderStage, std.EnumArray(pica.shader.register.Source.Constant, [4]f32)),
+    integer_constants: std.EnumArray(mango.ShaderStage, std.EnumArray(pica.shader.register.Integral.Integer, [4]i8)),
+    boolean_constants: std.EnumArray(mango.ShaderStage, std.EnumSet(pica.shader.register.Integral.Boolean)),
 };
 
 pub const TextureUnitState = struct {
@@ -61,22 +61,34 @@ pub const TextureUnitState = struct {
         _: u6 = 0,
     };
 
-    info: [3]ImageInfo = undefined,
-    address: [3]zitrus.PhysicalAddress = undefined,
-    sampler: [3]backend.Sampler = undefined,
+    info: [3]ImageInfo,
+    address: [3]zitrus.PhysicalAddress,
+    sampler: [3]backend.Sampler,
 };
 
-misc: Misc = undefined,
-index_buffer_offset: u28 = undefined,
-vertex_buffers_offset: [12]u32 = undefined,
+pub const empty: RenderingState = .{
+    .misc = undefined,
+    .index_buffer_offset = undefined,
+    .vertex_buffers_offset = undefined,
+    .color_attachment = undefined,
+    .depth_stencil_attachment = undefined,
+    .dimensions = undefined,
+    .uniform_state = undefined,
+    .texture_unit_state = undefined,
+    .dirty = .{},
+};
 
-color_attachment: PhysicalAddress = undefined,
-depth_stencil_attachment: PhysicalAddress = undefined,
+misc: Misc,
+index_buffer_offset: u28,
+vertex_buffers_offset: [12]u32,
+
+color_attachment: PhysicalAddress,
+depth_stencil_attachment: PhysicalAddress,
 dimensions: pica.U16x2 = undefined,
 
-uniform_state: UniformState = .{},
-texture_unit_state: TextureUnitState = .{},
-dirty: Dirty = .{},
+uniform_state: UniformState,
+texture_unit_state: TextureUnitState,
+dirty: Dirty,
 
 pub fn bindVertexBuffers(rnd: *RenderingState, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
     if (binding_count == 0) {

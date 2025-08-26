@@ -3,6 +3,212 @@
 //! As the PICA200 is limited to what it can do with 3D drawing commands,
 //! things like clearing an `Image` or copying data is done with the `Device`.
 
+pub const Handle = enum(u32) {
+    null = 0,
+    _,
+
+    pub fn begin(cmd: Handle) !void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.begin();
+    }
+
+    pub fn end(cmd: Handle) !void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.end();
+    }
+
+    pub fn bindPipeline(cmd: Handle, bind_point: mango.PipelineBindPoint, pipeline: mango.Pipeline) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.bindPipeline(bind_point, pipeline);
+    }
+
+    pub fn bindVertexBuffersSlice(cmd: Handle, first_binding: u32, buffers: []const mango.Buffer, offsets: []const u32) void {
+        std.debug.assert(buffers.len == offsets.len);
+        return cmd.bindVertexBuffers(first_binding, buffers.len, buffers.ptr, offsets.ptr);
+    }
+
+    pub fn bindVertexBuffers(cmd: Handle, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.bindVertexBuffers(first_binding, binding_count, buffers, offsets);
+    }
+
+    pub fn bindIndexBuffer(cmd: Handle, buffer: mango.Buffer, offset: u32, index_type: mango.IndexType) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.bindIndexBuffer(buffer, offset, index_type);
+    }
+
+    pub fn bindFloatUniforms(cmd: Handle, stage: mango.ShaderStage, first_uniform: u32, uniforms: []const [4]f32) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.bindFloatUniforms(stage, first_uniform, uniforms);
+    }
+
+    pub fn bindCombinedImageSamplers(cmd: Handle, first_combined: u32, combined_image_samplers: []const mango.CombinedImageSampler) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.bindCombinedImageSamplers(first_combined, combined_image_samplers);
+    }
+
+    pub fn beginRendering(cmd: Handle, rendering_info: mango.RenderingInfo) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.beginRendering(rendering_info);
+    }
+
+    pub fn endRendering(cmd: Handle) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.endRendering();
+    }
+
+    pub fn draw(cmd: Handle, vertex_count: u32, first_vertex: u32) void {
+        return cmd.drawMultiSlice(&.{ .vertex_count = vertex_count, .first_vertex = first_vertex });
+    }
+
+    pub fn drawMultiSlice(cmd: Handle, vertex_info: []const mango.MultiDrawInfo) void {
+        return cmd.drawMulti(vertex_info.len, vertex_info.ptr, @sizeOf(mango.MultiDrawInfo));
+    }
+
+    pub fn drawMulti(cmd: Handle, draw_count: u32, vertex_info: [*]const mango.MultiDrawInfo, stride: u32) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.drawMulti(draw_count, vertex_info, stride);
+    }
+
+    pub fn drawIndexed(cmd: Handle, index_count: u32, first_index: u32, vertex_offset: i32) void {
+        return cmd.drawMultiIndexedSlice(&.{.{ .first_index = first_index, .index_count = index_count, .vertex_offset = vertex_offset }});
+    }
+
+    pub fn drawMultiIndexedSlice(cmd: Handle, index_info: []const mango.MultiDrawIndexedInfo) void {
+        return cmd.drawMultiIndexed(index_info.len, index_info.ptr, @sizeOf(mango.MultiDrawIndexedInfo));
+    }
+
+    pub fn drawMultiIndexed(cmd: Handle, draw_count: u32, index_info: [*]const mango.MultiDrawIndexedInfo, stride: u32) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.drawMultiIndexed(draw_count, index_info, stride);
+    }
+
+    pub fn setDepthMode(cmd: Handle, mode: mango.DepthMode) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setDepthMode(mode);
+    }
+
+    pub fn setCullMode(cmd: Handle, cull_mode: mango.CullMode) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setCullMode(cull_mode);
+    }
+
+    pub fn setFrontFace(cmd: Handle, front_face: mango.FrontFace) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setFrontFace(front_face);
+    }
+
+    pub fn setPrimitiveTopology(cmd: Handle, primitive_topology: mango.PrimitiveTopology) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setPrimitiveTopology(primitive_topology);
+    }
+
+    pub fn setViewport(cmd: Handle, viewport: *const mango.Viewport) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setViewport(viewport);
+    }
+
+    pub fn setScissor(cmd: Handle, scissor: *const mango.Scissor) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setScissor(scissor);
+    }
+
+    pub fn setTextureCombiners(cmd: Handle, texture_combiners_len: u32, texture_combiners: [*]const mango.TextureCombiner, texture_combiner_buffer_sources_len: u32, texture_combiner_buffer_sources: [*]const mango.TextureCombiner.BufferSources) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setTextureCombiners(texture_combiners_len, texture_combiners, texture_combiner_buffer_sources_len, texture_combiner_buffer_sources);
+    }
+
+    pub fn setBlendEquation(cmd: Handle, blend_equation: *const mango.ColorBlendEquation) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setBlendEquation(blend_equation);
+    }
+
+    pub fn setColorWriteMask(cmd: Handle, write_mask: mango.ColorComponentFlags) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setColorWriteMask(write_mask);
+    }
+
+    pub fn setDepthTestEnable(cmd: Handle, enable: bool) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setDepthTestEnable(enable);
+    }
+
+    pub fn setDepthCompareOp(cmd: Handle, op: mango.CompareOperation) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setDepthTestEnable(op);
+    }
+
+    pub fn setDepthWriteEnable(cmd: Handle, enable: bool) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setDepthWriteEnable(enable);
+    }
+
+    pub fn setLogicOpEnable(cmd: Handle, enable: bool) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setLogicOpEnable(enable);
+    }
+
+    pub fn setLogicOp(cmd: Handle, logic_op: mango.LogicOperation) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setLogicOp(logic_op);
+    }
+
+    pub fn setAlphaTestEnable(cmd: Handle, enable: bool) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setAlphaTestEnable(enable);
+    }
+
+    pub fn setAlphaTestCompareOp(cmd: Handle, compare_op: mango.CompareOperation) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setAlphaTestCompareOp(compare_op);
+    }
+
+    pub fn setAlphaTestReference(cmd: Handle, reference: u8) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setAlphaTestReference(reference);
+    }
+
+    pub fn setStencilEnable(cmd: Handle, enable: bool) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setStencilEnable(enable);
+    }
+
+    pub fn setStencilOp(cmd: Handle, fail_op: mango.StencilOperation, pass_op: mango.StencilOperation, depth_fail_op: mango.StencilOperation, op: mango.CompareOperation) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setStencilOp(fail_op, pass_op, depth_fail_op, op);
+    }
+
+    pub fn setStencilCompareMask(cmd: Handle, compare_mask: u8) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setStencilCompareMask(compare_mask);
+    }
+
+    pub fn setStencilWriteMask(cmd: Handle, write_mask: u8) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setStencilWriteMask(write_mask);
+    }
+
+    pub fn setStencilReference(cmd: Handle, reference: u8) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setStencilReference(reference);
+    }
+
+    pub fn setTextureEnable(cmd: Handle, enable: *const [4]bool) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setTextureEnable(enable);
+    }
+
+    pub fn setTextureCoordinates(cmd: Handle, texture_2_coordinates: mango.TextureCoordinateSource, texture_3_coordinates: mango.TextureCoordinateSource) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setTextureCoordinates(texture_2_coordinates, texture_3_coordinates);
+    }
+
+    pub fn reset(cmd: Handle) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.reset();
+    }
+};
+
 pub const State = enum {
     initial,
     recording,
@@ -16,21 +222,46 @@ pub const Scope = enum {
     render_pass,
 };
 
+pool: *backend.CommandPool,
+node: std.DoublyLinkedList.Node = .{},
+
 queue: cmd3d.Queue,
-gfx_state: GraphicsState = .{},
-rnd_state: RenderingState = .{},
+gfx_state: GraphicsState = .empty,
+rnd_state: RenderingState = .empty,
 emitted_graphics_pipeline: ?*backend.Pipeline.Graphics = null,
 bound_graphics_pipeline: ?*backend.Pipeline.Graphics = null,
+current_error: ?anyerror = null,
 state: State = .initial,
 scope: Scope = .none,
 
-pub fn begin(cmd: *CommandBuffer) void {
-    std.debug.assert(cmd.state == .initial);
+pub fn init(pool: *backend.CommandPool, native_buffer: []align(8) u32) CommandBuffer {
+    return .{
+        .pool = pool,
+        .queue = .{
+            .buffer = native_buffer,
+            .current_index = 0,
+        }
+    };
+}
+
+pub fn deinit(command_buffer: *CommandBuffer) void {
+    command_buffer.pool.freeNative(command_buffer.queue.buffer); 
+    command_buffer.* = undefined;
+}
+
+pub fn begin(cmd: *CommandBuffer) !void {
+    std.debug.assert(cmd.state == .initial or cmd.state == .executable);
+    cmd.reset();
     cmd.state = .recording;
 }
 
-pub fn end(cmd: *CommandBuffer) void {
+pub fn end(cmd: *CommandBuffer) !void {
     std.debug.assert(cmd.state == .recording);
+
+    if(cmd.current_error) |err| {
+        cmd.state = .invalid;
+        return err;
+    }
 
     // XXX: Homebrew apps expect start_draw_function to start in configuration mode. Or you have a dreaded black screen of death x-x
     cmd.queue.add(internal_regs, &internal_regs.geometry_pipeline.start_draw_function, .config);
@@ -51,12 +282,6 @@ pub fn bindPipeline(cmd: *CommandBuffer, bind_point: mango.PipelineBindPoint, pi
             cmd.bound_graphics_pipeline = .fromHandleMutable(pipeline);
         },
     }
-}
-
-pub fn bindVertexBuffersSlice(cmd: *CommandBuffer, first_binding: u32, buffers: []const mango.Buffer, offsets: []const u32) void {
-    std.debug.assert(buffers.len == offsets.len);
-
-    return cmd.bindVertexBuffers(first_binding, buffers.len, buffers.ptr, offsets.ptr);
 }
 
 pub fn bindVertexBuffers(cmd: *CommandBuffer, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
@@ -83,7 +308,7 @@ pub fn bindCombinedImageSamplers(cmd: *CommandBuffer, first_combined: u32, combi
     return cmd.rnd_state.bindCombinedImageSamplers(first_combined, combined_image_samplers);
 }
 
-pub fn beginRendering(cmd: *CommandBuffer, rendering_info: *const mango.RenderingInfo) void {
+pub fn beginRendering(cmd: *CommandBuffer, rendering_info: mango.RenderingInfo) void {
     std.debug.assert(cmd.state == .recording);
     std.debug.assert(cmd.scope == .none);
 
@@ -133,14 +358,6 @@ pub fn endRendering(cmd: *CommandBuffer) void {
     cmd.scope = .none;
 }
 
-pub fn draw(cmd: *CommandBuffer, vertex_count: u32, first_vertex: u32) void {
-    return cmd.drawMultiSlice(&.{.{ .first_vertex = first_vertex, .vertex_count = vertex_count }});
-}
-
-pub fn drawMultiSlice(cmd: *CommandBuffer, vertex_info: []const mango.MultiDrawInfo) void {
-    return cmd.drawMulti(vertex_info.len, vertex_info.ptr, @sizeOf(mango.MultiDrawInfo));
-}
-
 pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const mango.MultiDrawInfo, stride: u32) void {
     std.debug.assert(cmd.state == .recording);
     std.debug.assert(cmd.scope == .render_pass);
@@ -152,7 +369,9 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
     std.debug.assert(stride >= @sizeOf(mango.MultiDrawInfo) and std.mem.isAligned(stride, 4));
     std.debug.assertReadable(std.mem.asBytes(&vertex_info[0]));
 
-    cmd.beforeDraw();
+    if(!cmd.beforeDraw()) {
+        return;
+    }
 
     const queue = &cmd.queue;
     queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config_2, .{ .inputting_vertices_or_draw_arrays = true }, 0b0001);
@@ -200,14 +419,6 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
     queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config_2, .{ .inputting_vertices_or_draw_arrays = false }, 0b0001);
 }
 
-pub fn drawIndexed(cmd: *CommandBuffer, index_count: u32, first_index: u32, vertex_offset: i32) void {
-    return cmd.drawMultiIndexedSlice(&.{.{ .first_index = first_index, .index_count = index_count, .vertex_offset = vertex_offset }});
-}
-
-pub fn drawMultiIndexedSlice(cmd: *CommandBuffer, index_info: []const mango.MultiDrawIndexedInfo) void {
-    return cmd.drawMultiIndexed(index_info.len, index_info.ptr, @sizeOf(mango.MultiDrawIndexedInfo));
-}
-
 pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]const mango.MultiDrawIndexedInfo, stride: u32) void {
     std.debug.assert(cmd.state == .recording);
     std.debug.assert(cmd.scope == .render_pass);
@@ -219,7 +430,9 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
     std.debug.assert(stride >= @sizeOf(mango.MultiDrawIndexedInfo) and std.mem.isAligned(stride, 4));
     std.debug.assertReadable(std.mem.asBytes(&index_info[0]));
 
-    cmd.beforeDraw();
+    if(!cmd.beforeDraw()) {
+        return;
+    }
 
     const queue = &cmd.queue;
     const dynamic_graphics_state = cmd.gfx_state;
@@ -415,10 +628,17 @@ pub fn setTextureCoordinates(cmd: *CommandBuffer, texture_2_coordinates: mango.T
     cmd.gfx_state.setTextureCoordinates(texture_2_coordinates, texture_3_coordinates);
 }
 
-fn beforeDraw(cmd: *CommandBuffer) void {
-    const queue = &cmd.queue;
+fn beforeDraw(cmd: *CommandBuffer) bool {
+    if(cmd.current_error) |_| {
+        return false;
+    }
+    
+    cmd.growIfNeeded() catch |err| {
+        cmd.current_error = err;
+        return false;
+    };
 
-    // TODO: Check if we have enough space in the queue. If not, grow it from the pool (TODO)
+    const queue = &cmd.queue;
 
     if (cmd.bound_graphics_pipeline != cmd.emitted_graphics_pipeline) if (cmd.bound_graphics_pipeline) |bound_gfx_pipeline| {
         @memcpy(cmd.queue.buffer[cmd.queue.current_index..][0..bound_gfx_pipeline.cmd3d_state.len], bound_gfx_pipeline.cmd3d_state);
@@ -431,6 +651,31 @@ fn beforeDraw(cmd: *CommandBuffer) void {
 
     cmd.gfx_state.emitDirty(queue);
     cmd.rnd_state.emitDirty(queue);
+    return true;
+}
+
+fn growIfNeeded(cmd: *CommandBuffer) !void {
+    // TODO: grow native queue from the pool, we can avoid doing this until we have more complex scenes.
+    _ = cmd;
+}
+
+pub fn reset(cmd: *CommandBuffer) void {
+    cmd.queue.current_index = 0;
+    cmd.gfx_state = .empty;
+    cmd.rnd_state = .empty;
+    cmd.bound_graphics_pipeline = null;
+    cmd.emitted_graphics_pipeline = null;
+    cmd.current_error = null;
+    cmd.scope = .none;
+    cmd.state = .initial;
+}
+
+pub fn toHandle(image: *CommandBuffer) Handle {
+    return @enumFromInt(@intFromPtr(image));
+}
+
+pub fn fromHandleMutable(handle: Handle) *CommandBuffer {
+    return @as(*CommandBuffer, @ptrFromInt(@intFromEnum(handle)));
 }
 
 const CommandBuffer = @This();

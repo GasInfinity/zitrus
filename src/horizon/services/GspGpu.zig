@@ -33,7 +33,7 @@ pub const Interrupt = enum(u8) {
     p3d,
     dma,
 
-    pub const Set = std.EnumArray(Interrupt, u32);
+    pub const Set = std.EnumSet(Interrupt);
 
     pub const Queue = extern struct {
         pub const Header = packed struct(u32) {
@@ -377,10 +377,10 @@ pub fn waitInterruptsTimeout(gsp: *GspGpu, timeout_ns: i64) Error!?Interrupt.Set
         else => |e| return e,
     };
 
-    var interrupts = Interrupt.Set.initFill(0);
+    var interrupts = Interrupt.Set.initEmpty();
 
     while (gsp.dequeueInterrupt()) |int| {
-        interrupts.set(int, interrupts.get(int) + 1);
+        interrupts.setPresent(int, true);
     }
 
     return interrupts;

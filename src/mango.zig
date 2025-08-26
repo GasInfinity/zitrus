@@ -44,8 +44,6 @@ pub const ColorComponentFlags = packed struct(u8) {
 pub const PresentMode = enum(u8) {
     mailbox,
     fifo,
-    fifo_relaxed,
-    fifo_latest_ready,
 };
 
 /// The 3DS always has 3 heaps.
@@ -623,6 +621,33 @@ pub const PipelineBindPoint = enum(u8) {
     graphics,
 };
 
+pub const SwapchainCreateInfo = extern struct {
+    pub const ImageMemoryInfo = extern struct {
+        memory: DeviceMemory,
+        memory_offset: DeviceMemory, 
+    };
+
+    surface: Surface,
+    present_mode: PresentMode,
+    image_format: Format,
+    image_array_layers: u8,
+    image_count: u8,
+    image_memory_info: [*]const ImageMemoryInfo,
+};
+
+pub const SemaphoreCreateInfo = extern struct {
+    initial_value: u64,
+};
+
+pub const CommandPoolCreateInfo = extern struct {
+    // TODO: Preheat info
+};
+
+pub const CommandBufferAllocateInfo = extern struct {
+    pool: CommandPool,
+    command_buffer_count: u32,
+};
+
 pub const BufferCreateInfo = extern struct {
     pub const Usage = packed struct(u8) {
         /// Specifies that the buffer can be used as the source of a transfer operation.
@@ -1052,6 +1077,17 @@ pub const BufferImageCopy = extern struct {
     flags: Flags,
 };
 
+pub const SemaphoreSignalInfo = extern struct {
+    value: u64,
+    semaphore: Semaphore,
+};
+
+pub const SemaphoreWaitInfo = extern struct {
+    semaphore_count: u32,
+    semaphores: [*]const Semaphore,
+    values: [*]const u64,
+};
+
 pub const MultiDrawInfo = extern struct {
     first_vertex: u32,
     vertex_count: u32,
@@ -1134,13 +1170,40 @@ pub const TextureCombiner = extern struct {
     }
 };
 
+pub const SubmitInfo = extern struct {
+    command_buffers_len: usize,
+    command_buffers: [*]const CommandBuffer,
+
+    pub fn init(command_buffers: []const CommandBuffer) SubmitInfo {
+        return .{
+            .command_buffers = command_buffers.ptr,
+            .command_buffers_len = command_buffers.len,
+        };
+    }
+};
+
+pub const PresentInfo = extern struct {
+    pub const Flags = packed struct(u8) {
+        /// Ignore the array layers of presented swapchain images and present it as a non-stereoscopic image.
+        ignore_stereoscopic: bool = false,
+        _: u7 = 0,
+    };
+
+    swapchains_len: usize,
+    swapchains: [*]const Swapchain,
+    image_indices: [*]const u8,
+    flags: Flags,
+};
+
 pub const Device = backend.Device;
 pub const DeviceMemory = backend.DeviceMemory.Handle;
-pub const Image = backend.Image.Handle;
+pub const Semaphore = backend.Semaphore.Handle;
 pub const Buffer = backend.Buffer.Handle;
+pub const Image = backend.Image.Handle;
 pub const ImageView = backend.ImageView.Handle;
 pub const Pipeline = backend.Pipeline.Handle;
-pub const CommandBuffer = backend.CommandBuffer;
+pub const CommandPool = backend.CommandPool.Handle;
+pub const CommandBuffer = backend.CommandBuffer.Handle;
 pub const Sampler = backend.Sampler.Handle;
 pub const Surface = backend.Surface.Handle;
 pub const Swapchain = backend.Swapchain.Handle;

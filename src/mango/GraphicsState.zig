@@ -95,6 +95,19 @@ pub const Stencil = struct {
 
 const GpuBlendConfig = pica.Registers.Internal.Framebuffer.BlendConfig;
 
+pub const empty: GraphicsState = .{
+    .misc = undefined,
+    .stencil = undefined,
+    .blend_config = undefined,
+    .blend_constants = undefined,
+    .depth_map_parameters = undefined,
+    .viewport = undefined,
+    .scissor = undefined,
+    .combiners = undefined,
+    .vtx_input = undefined,
+    .dirty = .{},
+};
+
 misc: Misc = undefined,
 stencil: Stencil = undefined,
 blend_config: GpuBlendConfig = undefined,

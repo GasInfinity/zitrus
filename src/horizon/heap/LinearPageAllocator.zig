@@ -33,7 +33,7 @@ pub fn resize(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usiz
 
     const aligned_len = std.mem.alignForward(usize, memory.len, horizon.heap.page_size);
 
-    if (aligned_len >= new_len) {
+    if (new_len <= memory.len or aligned_len >= new_len) {
         return true;
     }
 

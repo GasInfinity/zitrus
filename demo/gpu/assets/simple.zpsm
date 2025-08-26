@@ -13,14 +13,26 @@
 .alias uPerspM2 f2
 .alias uPerspM3 f3
 
+; layout(location = 4) uniform mat4x4 uModel;
+.alias uModelM0 f4
+.alias uModelM1 f5
+.alias uModelM2 f6
+.alias uModelM3 f7
+
 .entry main vertex
 
 main:
-    ; oPos = uPersp * iPos;
-    dp4 oPos.x, uPerspM0, iPos 
-    dp4 oPos.y, uPerspM1, iPos 
-    dp4 oPos.z, uPerspM2, iPos 
-    dp4 oPos.w, uPerspM3, iPos 
+    ; tmp_ModelxiPos = uModel * iPos;
+    dp4 r0.x, uModelM0, iPos
+    dp4 r0.y, uModelM1, iPos
+    dp4 r0.z, uModelM2, iPos
+    dp4 r0.w, uModelM3, iPos
+
+    ; oPos = uPersp * tmp_uModelxiPos;
+    dp4 oPos.x, uPerspM0, r0
+    dp4 oPos.y, uPerspM1, r0 
+    dp4 oPos.z, uPerspM2, r0
+    dp4 oPos.w, uPerspM3, r0 
 
     ; oUv = iUv;
     mov oUv, iUv

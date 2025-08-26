@@ -21,10 +21,14 @@ pub const Encoder = @import("shader/Encoder.zig");
 pub const register = @import("shader/register.zig");
 pub const encoding = @import("shader/encoding.zig");
 
+pub const spirv = @import("shader/spirv.zig");
+
 comptime {
     _ = as;
     _ = Encoder;
 
     _ = register;
     _ = encoding;
+
+    // _ = spirv;
 }
