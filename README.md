@@ -66,6 +66,8 @@ Currently there are 5 examples in the `demo/` directory:
 
 # Legend
 ⚠️ Feature regressed temporarily due to dependency or upstream (usually when zig updates this can happen)
+ 
+⛔ Blocked due to upstream. Impossible to do until something gets fixed or added, usually listed in https://github.com/GasInfinity/zitrus/issues/1
 
 🟢 Fully implemented
 🟡 Partially implemented
@@ -99,8 +101,8 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 
 ## Runtime support
 - 🟢 crt0/startup code
-- 🟡🔋 panic and error reporting and tracing
-- 🔴🔋 Io interface support (zig 0.16).
+- 🟡⛔🔋 panic and error reporting and tracing
+- 🔴⛔🔋 Io interface support (zig 0.16).
 - 🔴🔋 Test runner.
 
 ## Gpu Support
@@ -128,12 +130,12 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 - 🟡 Device HOS abstraction.
 - 🟡 Memory / Buffers
 - 🟡 Pipelines
-- 🔴 CommandPool
+- 🟡 CommandPool
 - 🟡 CommandBuffer's
 - 🟡 Images / ImageViews
 - 🟡 Image Sampling
-- 🔴 Synchronization primitives / driver thread.
-- 🔴 Presentation engine.
+- 🔴⛔ Synchronization primitives / driver thread.
+- 🔴⛔ Presentation engine.
 
 - 🔴🪫 Device baremetal interface.
 
