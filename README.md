@@ -6,6 +6,12 @@
 
 ## Installation
 
+> [!NOTE]
+> Not even the language this project is written in is 1.0
+>
+> You acknowledge that any amount of breaking changes may occur until 
+> the first stable (minor) release, a.k.a `0.1.0`. No ETA is given.
+
 ```bash
 # supporting zig 0.15.1
 zig fetch --save git+https://github.com/GasInfinity/zitrus
@@ -57,7 +63,7 @@ comptime {
 ```
 
 ## Examples / Demos
-Currently there are 5 examples in the `demo/` directory:
+Currently there are 5 examples in the `demo/` directory. To build them, you must have `zig 0.15.1` in your path and run `zig build`.
 - [panic](demo/panic/) is a simple example that panics when opened to test panics and traces.
 - [info](demo/info) is a simple app that currently shows the console region and model (will be updated to show more info over time).
 - [bitmap](demo/bitmap/) is a port of the bitmap example in libctru's 3ds-examples.
@@ -123,6 +129,11 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 - 🟢 `gsp::Gpu`
 - 🟡🪫 `gsp::Lcd`
 - 🔴 All other [services](https://www.3dbrew.org/wiki/Services_API) not listed here
+
+## Applet Support
+- 🟢 `error`
+- 🟡 `swkbd`
+- 🔴 All other [applets](https://www.3dbrew.org/wiki/NS_and_APT_Services#AppIDs) not listed here.
 
 # Mango coverage
 
