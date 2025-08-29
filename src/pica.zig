@@ -48,6 +48,8 @@ pub const F7_16x4 = extern struct {
 };
 
 pub const Screen = enum(u1) {
+    pub const width_po2 = 256;
+
     top,
     bottom,
 

@@ -6,7 +6,6 @@ pub const description = "extract / make / show ncch (cxi/cfa) files";
 pub const Arguments = struct {
     pub const description = Self.description;
 
-
     command: union(Subcommand) {
         pub const descriptions = .{
             .info = "show info about a ncch",
@@ -20,7 +19,7 @@ pub const Arguments = struct {
 
                 ncch: []const u8,
             },
-        }
+        },
     },
 };
 
@@ -42,8 +41,8 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 
             const header = try reader.peekStruct(ncch.Header, .little);
 
-            if(!std.mem.eql(u8, &header.magic, ncch.magic)) {
-                std.debug.print("invalid/corrupted ncch '{s}', header magic check failed\n", .{ ncch_path });
+            if (!std.mem.eql(u8, &header.magic, ncch.magic)) {
+                std.debug.print("invalid/corrupted ncch '{s}', header magic check failed\n", .{ncch_path});
                 break :m 1;
             }
 

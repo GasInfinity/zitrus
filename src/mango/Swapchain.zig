@@ -15,11 +15,11 @@ pub const Handle = enum(u32) {
 };
 
 pub fn toHandle(screen: pica.Screen) Handle {
-    return @enumFromInt(@intFromEnum(screen) + 1); 
+    return @enumFromInt(@intFromEnum(screen) + 1);
 }
 
 pub fn fromHandle(handle: Handle) pica.Screen {
-    return @enumFromInt(@intFromEnum(handle) - 1); 
+    return @enumFromInt(@intFromEnum(handle) - 1);
 }
 
 const Swapchain = @This();

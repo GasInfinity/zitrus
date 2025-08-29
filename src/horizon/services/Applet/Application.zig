@@ -1,5 +1,9 @@
 //! Applet abstraction to manage and handle Application state
 // NOTE: Lots of assumptions are made as there's not a lot of documentation.
+// TODO: Do Applications get request's like lib/sys-applets? Wouldn't make sense but still needs research.
+
+pub const Error = @import("Application/Error.zig");
+pub const SoftwareKeyboard = @import("Application/SoftwareKeyboard.zig");
 
 pub const NotificationResult = enum {
     no_operation,
@@ -12,7 +16,16 @@ pub const NotificationResult = enum {
     must_close,
 };
 
-pub const MessageResult = union {};
+pub const ExecutionResult = enum {
+    resumed,
+    jump_home,
+    must_close,
+};
+
+pub const AppletResult = union(enum) {
+    execution: ExecutionResult,
+    message: Applet.ParameterResult,
+};
 
 pub const State = packed struct(u8) {
     pub const default: State = .{ .allow_home = true, .allow_sleep = true };
@@ -160,7 +173,7 @@ pub fn waitNotificationTimeout(app: *Application, apt: Applet, srv: ServiceManag
     return .no_operation;
 }
 
-fn waitParameterConsumingNotifications(app: *Application, apt: Applet, srv: ServiceManager) !Applet.ParameterResult {
+fn waitParameterConsumingNotifications(app: *Application, apt: Applet, srv: ServiceManager, parameter: []u8) !Applet.ParameterResult {
     while (true) {
         const is_parameter = try Event.waitMultiple(&.{ app.notification_event, app.parameters_event }, false, -1) == 1;
 
@@ -172,18 +185,45 @@ fn waitParameterConsumingNotifications(app: *Application, apt: Applet, srv: Serv
             continue;
         }
 
-        return try apt.sendReceiveParameter(srv, environment.program_meta.app_id, &.{});
+        return try apt.sendReceiveParameter(srv, environment.program_meta.app_id, parameter);
     }
 }
 
-pub const JumpToHomeResult = enum {
-    resumed,
-    jump_home,
-    must_close,
-};
+pub fn waitAppletResult(app: *Application, apt: Applet, srv: ServiceManager, gsp: *GspGpu, parameter: []u8) !AppletResult {
+    const parameters = try app.waitParameterConsumingNotifications(apt, srv, parameter);
+    switch (parameters.cmd) {
+        .wakeup, .request, .response => unreachable, // NOTE: Should only be sent at Application start? + do we get requests? + we're not waiting for a response!
+        .wakeup_by_exit, .wakeup_by_cancel, .wakeup_by_cancelall, .wakeup_by_pause, .wakeup_to_jump_home, .wakeup_by_power_button_click => |cmd| {
+            defer switch (cmd) {
+                .wakeup_to_jump_home, .wakeup_by_power_button_click => apt.sendLockTransition(srv, .jump_home, true) catch unreachable,
+                else => {
+                    resumeApplication(apt, srv);
+                    clearJumpToHome(apt, srv);
+                },
+            };
+
+            switch (cmd) {
+                .wakeup_by_cancel, .wakeup_by_cancelall => app.flags.must_close = true,
+                else => {
+                    try gsp.acquireRight(0x0);
+                    try gsp.sendRestoreVRAMSysArea();
+                },
+            }
+
+            return .{ .execution = switch (cmd) {
+                .wakeup_by_pause, .wakeup_by_exit => .resumed,
+                .wakeup_by_cancel, .wakeup_by_cancelall => .must_close,
+                .wakeup_to_jump_home, .wakeup_by_power_button_click => .jump_home,
+                else => unreachable,
+            } };
+        },
+        .message => return .{ .message = parameters },
+        else => unreachable,
+    }
+}
 
 // NOTE: we also need to wakeup the dsp if needed when implemented
-pub fn jumpToHome(app: *Application, apt: Applet, srv: ServiceManager, gsp: *GspGpu, params: Applet.JumpToHomeParameters) !JumpToHomeResult {
+pub fn jumpToHome(app: *Application, apt: Applet, srv: ServiceManager, gsp: *GspGpu, params: Applet.JumpToHomeParameters) !ExecutionResult {
     const last_allow_sleep = app.flags.allow_sleep;
 
     app.setSleepAllowed(apt, srv, false);
@@ -199,45 +239,30 @@ pub fn jumpToHome(app: *Application, apt: Applet, srv: ServiceManager, gsp: *Gsp
     try gsp.releaseRight();
     try apt.sendJumpToHomeMenu(srv, params);
 
-    // XXX: Check if we can do this or its better to split it into a shared function like before
-    var parameters = try app.waitParameterConsumingNotifications(apt, srv);
-    defer parameters.deinit();
-
-    switch (parameters.cmd) {
-        // XXX: Can we get a cancelall, jump to home or power button click from here?
-        .wakeup_by_cancel, .wakeup_by_cancelall, .wakeup_by_pause, .wakeup_to_jump_home, .wakeup_by_power_button_click => |cmd| {
-            defer switch (cmd) {
-                .wakeup_to_jump_home, .wakeup_by_power_button_click => apt.sendLockTransition(srv, .jump_home, true) catch unreachable,
-                else => {
-                    resumeApplication(apt, srv);
-                    clearJumpToHome(apt, srv);
-                },
-            };
-
-            switch (cmd) {
-                .wakeup_by_cancel, .wakeup_by_cancelall => {},
-                else => {
-                    try gsp.acquireRight(0x0);
-                    try gsp.sendRestoreVRAMSysArea();
-                },
-            }
-
-            if (parameters.cmd == .wakeup_by_pause) {
-                return .resumed;
-            }
-
-            return switch (cmd) {
-                .wakeup_by_pause => .resumed,
-                .wakeup_by_cancel, .wakeup_by_cancelall => c: {
-                    app.flags.must_close = true;
-                    break :c .must_close;
-                },
-                .wakeup_to_jump_home, .wakeup_by_power_button_click => .jump_home,
-                else => unreachable,
-            };
+    // XXX: Does the home menu return any kind of parameters?
+    return switch (try app.waitAppletResult(apt, srv, gsp, &.{})) {
+        .execution => |e| switch (e) {
+            .jump_home => unreachable, // NOTE: Doesn't make sense, you jump home and wake me up to return to you again? Only makes sense for applets.
+            else => e,
         },
-        else => unreachable,
-    }
+        .message => unreachable,
+    };
+}
+
+pub fn startLibraryApplet(app: *Application, apt: Applet, srv: ServiceManager, gsp: *GspGpu, app_id: Applet.AppId, param_handle: Object, param: []const u8) !void {
+    const last_allow_sleep = app.flags.allow_sleep;
+
+    app.setSleepAllowed(apt, srv, false);
+    defer app.setSleepAllowed(apt, srv, last_allow_sleep);
+
+    try apt.sendPrepareToStartLibraryApplet(srv, app_id);
+    try gsp.sendSaveVRAMSysArea();
+
+    try app.screenTransfer(apt, srv, gsp, app_id, true);
+
+    // Sleep dsp
+    try gsp.releaseRight();
+    try apt.sendStartLibraryApplet(srv, app_id, param_handle, param);
 }
 
 // NOTE: This is just straight up taken from libctru. I didn't know why jumping to home was not working, now I know :p
@@ -247,7 +272,7 @@ pub fn screenTransfer(app: *Application, apt: Applet, srv: ServiceManager, gsp: 
 
     while (!(try apt.sendIsRegistered(srv, target_app_id))) {
         // XXX: Maybe this could be adjusted? Currently it follows the same behaviour as libctru
-        horizon.sleepThread(10000000);
+        horizon.sleepThread(1000000);
     }
 
     try apt.sendSendParameter(srv, environment.program_meta.app_id, target_app_id, if (is_library_applet) .request else .request_for_sys_applet, .null, std.mem.asBytes(&apt_capture_info));
@@ -259,7 +284,8 @@ pub fn screenTransfer(app: *Application, apt: Applet, srv: ServiceManager, gsp: 
     std.debug.assert(parameters.cmd == .response);
 
     if (is_library_applet) {
-        @panic("TODO");
+        // TODO: We need to convert the framebuffers to a texture sized 256*Height (we must perform the swizzling ourselves). Could we take advantage of mango?
+        // XXX: Do nothing right now (Garbage data will be shown instead)
     }
 
     try apt.sendSendCaptureBufferInfo(srv, &apt_capture_info);

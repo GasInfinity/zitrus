@@ -123,7 +123,7 @@ const AppState = struct {
                     pipe.y -= pipe_velocity * (1.0 / 60.0);
 
                     // Pipes go screen_height -> 0
-                    if(pipe.y > last_pipe_y) {
+                    if (pipe.y > last_pipe_y) {
                         last_pipe_y = pipe.y;
                     }
                 }
@@ -145,7 +145,7 @@ const AppState = struct {
                         }
                     } else break;
 
-                    if(unreachable_pipe < state.pipes_end - 1) {
+                    if (unreachable_pipe < state.pipes_end - 1) {
                         std.mem.swap(Pipe, &state.pipes[unreachable_pipe], &state.pipes[state.pipes_end - 1]);
                     }
 
@@ -263,6 +263,9 @@ pub fn main() !void {
     var hid = try Hid.init(srv);
     defer hid.deinit();
 
+    var input = try Hid.Input.init(hid);
+    defer input.deinit();
+
     var gsp = try GspGpu.init(srv);
     defer gsp.deinit();
 
@@ -328,13 +331,13 @@ pub fn main() !void {
             else => {},
         };
 
-        const input = hid.readPadInput();
-        const changed = input.current.changed(last_current);
-        last_current = input.current;
+        const pad = input.pollPad();
+        const changed = pad.current.changed(last_current);
+        last_current = pad.current;
 
-        const pressed = changed.same(input.current);
+        const pressed = changed.same(pad.current);
 
-        if (input.current.start) {
+        if (pad.current.start) {
             break :main_loop;
         }
 

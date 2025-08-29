@@ -27,7 +27,7 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
 
-    if(no_bin) {
+    if (no_bin) {
         b.getInstallStep().dependOn(&exe.step);
     } else {
         b.installArtifact(exe);

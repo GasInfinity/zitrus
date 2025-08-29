@@ -47,7 +47,7 @@ pub fn build(b: *std.Build) void {
 
     const static_zitrus_lib = b.addLibrary(.{
         .name = "zitrus",
-        .root_module = static_zitrus_lib_mod,    
+        .root_module = static_zitrus_lib_mod,
         .linkage = .static,
     });
 
@@ -64,10 +64,7 @@ pub fn build(b: *std.Build) void {
     const docs_step = b.step("docs", "Install docs");
     docs_step.dependOn(&install_docs.step);
 
-    const zitrus_tests_mod = b.createModule(.{
-        .root_source_file = b.path("src/zitrus.zig"),
-        .target = b.resolveTargetQuery(.{})
-    });
+    const zitrus_tests_mod = b.createModule(.{ .root_source_file = b.path("src/zitrus.zig"), .target = b.resolveTargetQuery(.{}) });
 
     zitrus_tests_mod.addImport("zitrus", zitrus_tests_mod);
     zitrus_tests_mod.addImport("zalloc", zalloc_mod);
@@ -75,7 +72,7 @@ pub fn build(b: *std.Build) void {
 
     const zitrus_tests = b.addTest(.{
         .name = "zitrus-tests",
-        .root_module = zitrus_tests_mod, 
+        .root_module = zitrus_tests_mod,
     });
 
     const run_tests = b.addRunArtifact(zitrus_tests);
@@ -114,7 +111,7 @@ fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: s
 
     const tools_executable = b.addExecutable(.{ .name = "zitrus-tools", .root_module = tools });
 
-    if(no_bin) {
+    if (no_bin) {
         b.getInstallStep().dependOn(&tools_executable.step);
     } else b.installArtifact(tools_executable);
 

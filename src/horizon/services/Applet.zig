@@ -3,8 +3,6 @@ pub const Application = @import("Applet/Application.zig");
 
 const service_names = [_][]const u8{ "APT:S", "APT:A", "APT:U" };
 
-pub const Error = Mutex.WaitError || Event.WaitError || Session.RequestError;
-
 pub const AppId = enum(u32) {
     none = 0x00,
     home_menu = 0x101,
@@ -130,18 +128,28 @@ pub const CaptureBuffer = extern struct {
 
     // TODO: Finish this
     pub inline fn init(capture: GspGpu.ScreenCapture) CaptureBuffer {
+        const top_framebuffers: usize, const top_scale: usize = switch (capture.top.format.mode()) {
+            .@"2d" => .{ 1, 1 },
+            .@"3d" => .{ 2, 1 },
+            .full_resolution => .{ 1, 2 },
+        };
+
+        const top_framebuffer_size = top_scale * zitrus.pica.Screen.top.height() * zitrus.pica.Screen.width_po2 * capture.top.format.color_format.bytesPerPixel();
+        const top_size = top_framebuffers * top_framebuffer_size;
+        const bottom_size = zitrus.pica.Screen.bottom.height() * zitrus.pica.Screen.width_po2 * capture.bottom.format.color_format.bytesPerPixel();
+
         return CaptureBuffer{
-            .size = 0,
+            // So, the GSP trips when this value is exactly what it should? XXX: Why do I need to multiply bottom_size by 2 for library applets?
+            .size = (top_size + bottom_size * 2),
             .enabled_3d = capture.top.format.mode() == .@"3d",
             .top = Info{
                 .left_offset = 0,
-                .right_offset = 0,
+                .right_offset = top_framebuffer_size * (top_framebuffers - 1),
                 .color_format = @intFromEnum(capture.top.format.color_format),
             },
             .bottom = Info{
-                // XXX: These values work? Why? They've been tested with Bgr8 (24bpp tf?)
-                .left_offset = 400 * 240 * 4,
-                .right_offset = 0,
+                .left_offset = top_size,
+                .right_offset = top_size,
                 .color_format = @intFromEnum(capture.bottom.format.color_format),
             },
         };
@@ -198,14 +206,14 @@ pub fn deinit(apt: *Applet) void {
     apt.* = undefined;
 }
 
-pub fn sendInitialize(apt: Applet, srv: ServiceManager, id: AppId, attr: Attributes) Error![2]Event {
+pub fn sendInitialize(apt: Applet, srv: ServiceManager, id: AppId, attr: Attributes) ![2]Event {
     return switch (try apt.lockSendCommand(srv, command.Initialize, .{ .id = id, .attributes = attr }, .{})) {
         .success => |s| s.value.response.notification_resume,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendEnable(apt: Applet, srv: ServiceManager, attr: Attributes) Error!void {
+pub fn sendEnable(apt: Applet, srv: ServiceManager, attr: Attributes) !void {
     return switch (try apt.lockSendCommand(srv, command.Enable, .{ .attributes = attr }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -271,11 +279,10 @@ pub const ParameterResult = struct {
         };
     }
 
-    pub fn deinit(parameter: *ParameterResult) void {
+    pub fn deinit(parameter: ParameterResult) void {
         if (parameter.handle != .null) {
             _ = horizon.closeHandle(parameter.handle);
         }
-        parameter.* = undefined;
     }
 };
 
@@ -300,8 +307,36 @@ pub fn sendCancelParameter(apt: Applet, srv: ServiceManager, src: AppId, dst: Ap
     };
 }
 
+pub fn sendPrepareToStartLibraryApplet(apt: Applet, srv: ServiceManager, app: AppId) !void {
+    return switch (try apt.lockSendCommand(srv, command.PrepareToStartLibraryApplet, .{ .app = app }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendPrepareToStartSystemApplet(apt: Applet, srv: ServiceManager, app: AppId) !void {
+    return switch (try apt.lockSendCommand(srv, command.PrepareToStartSystemApplet, .{ .app = app }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
 pub fn sendPrepareToCloseApplication(apt: Applet, srv: ServiceManager, cancel_preload: bool) !void {
     return switch (try apt.lockSendCommand(srv, command.PrepareToCloseApplication, .{ .cancel_preload = cancel_preload }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendStartLibraryApplet(apt: Applet, srv: ServiceManager, app: AppId, param_handle: Object, param: []const u8) !void {
+    return switch (try apt.lockSendCommand(srv, command.StartLibraryApplet, .{ .app = app, .parameters_size = param.len, .parameter_handle = param_handle, .parameters = .init(param) }, .{})) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendStartSystemApplet(apt: Applet, srv: ServiceManager, app: AppId, param_handle: Object, param: []const u8) !void {
+    return switch (try apt.lockSendCommand(srv, command.StartSystemApplet, .{ .app = app, .parameters_size = param.len, .parameter_handle = param_handle, .parameters = .init(param) }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -336,7 +371,7 @@ pub const JumpToHomeParameters = union(JumpToHomeCommand) {
     open_badge_picker,
 };
 
-pub fn sendJumpToHomeMenu(apt: Applet, srv: ServiceManager, params: JumpToHomeParameters) Error!void {
+pub fn sendJumpToHomeMenu(apt: Applet, srv: ServiceManager, params: JumpToHomeParameters) !void {
     const parameters: []const u8 = &(switch (params) {
         .download_theme => |theme| .{ 'A', 'S', 'H', 'P', @intFromEnum(JumpToHomeCommand.download_theme), 0x00, 0x00, 0x00 } ++ std.mem.asBytes(&theme).*,
         else => .{ 'A', 'S', 'H', 'P', @intFromEnum(params) },
@@ -355,21 +390,21 @@ pub fn sendPrepareToDoApplicationJump(apt: Applet, srv: ServiceManager, flags: c
     };
 }
 
-pub fn sendDoApplicationJump(apt: Applet, srv: ServiceManager, parameters: []const u8, hmac: *const [0x20]u8) Error!void {
+pub fn sendDoApplicationJump(apt: Applet, srv: ServiceManager, parameters: []const u8, hmac: *const [0x20]u8) !void {
     return switch (try apt.lockSendCommand(srv, command.DoApplicationJump, .{ .parameter_size = parameters.len, .hmac_size = hmac.len, .parameter = .init(parameters), .hmac = .init(hmac[0..20]) }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSendDspSleep(apt: Applet, srv: ServiceManager, source: AppId, handle: Object) Error!void {
+pub fn sendSendDspSleep(apt: Applet, srv: ServiceManager, source: AppId, handle: Object) !void {
     return switch (try apt.lockSendCommand(srv, command.SendDspSleep, .{ .source = source, .handle = handle }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSendDspWakeup(apt: Applet, srv: ServiceManager, source: AppId, handle: Object) Error!void {
+pub fn sendSendDspWakeup(apt: Applet, srv: ServiceManager, source: AppId, handle: Object) !void {
     return switch (try apt.lockSendCommand(srv, command.SendDspWakeup, .{ .source = source, .handle = handle }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -377,7 +412,7 @@ pub fn sendSendDspWakeup(apt: Applet, srv: ServiceManager, source: AppId, handle
 }
 
 // Possible errors: 0xc880cffa
-pub fn sendReplySleepQuery(apt: Applet, srv: ServiceManager, id: AppId, reply: QueryReply) Error!void {
+pub fn sendReplySleepQuery(apt: Applet, srv: ServiceManager, id: AppId, reply: QueryReply) !void {
     return switch (try apt.lockSendCommand(srv, command.ReplySleepQuery, .{ .id = id, .reply = reply }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -385,14 +420,14 @@ pub fn sendReplySleepQuery(apt: Applet, srv: ServiceManager, id: AppId, reply: Q
 }
 
 // Possible errors: 0xc880cffa
-pub fn sendReplySleepNotificationComplete(apt: Applet, srv: ServiceManager, id: AppId) Error!void {
+pub fn sendReplySleepNotificationComplete(apt: Applet, srv: ServiceManager, id: AppId) !void {
     return switch (try apt.lockSendCommand(srv, command.ReplySleepNotificationComplete, .{ .id = id }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSendCaptureBufferInfo(apt: Applet, srv: ServiceManager, info: *const CaptureBuffer) Error!void {
+pub fn sendSendCaptureBufferInfo(apt: Applet, srv: ServiceManager, info: *const CaptureBuffer) !void {
     return switch (try apt.lockSendCommand(srv, command.SendCaptureBufferInfo, .{ .capture_size = @sizeOf(CaptureBuffer), .capture = .init(std.mem.asBytes(info)) }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -400,7 +435,7 @@ pub fn sendSendCaptureBufferInfo(apt: Applet, srv: ServiceManager, info: *const 
 }
 
 // No errors, stub
-pub fn sendNotifyToWait(apt: Applet, srv: ServiceManager, id: AppId) Error!void {
+pub fn sendNotifyToWait(apt: Applet, srv: ServiceManager, id: AppId) !void {
     return switch (try apt.lockSendCommand(srv, command.NotifyToWait, .{ .id = id }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -408,7 +443,7 @@ pub fn sendNotifyToWait(apt: Applet, srv: ServiceManager, id: AppId) Error!void 
 }
 
 // No errors
-pub fn sendAppletUtility(apt: Applet, srv: ServiceManager, utility: Utility, input: []const u8, output: []u8) Error!void {
+pub fn sendAppletUtility(apt: Applet, srv: ServiceManager, utility: Utility, input: []const u8, output: []u8) !void {
     // TODO: return the ResultCode from applet_result in the Response, waiting for ziglang# #24231
     return switch (try apt.lockSendCommand(srv, command.AppletUtility, .{ .utility = utility, .input_size = input.len, .output_size = output.len, .input = .init(input) }, .{output})) {
         .success => {},
@@ -416,23 +451,23 @@ pub fn sendAppletUtility(apt: Applet, srv: ServiceManager, utility: Utility, inp
     };
 }
 
-pub fn sendSleepIfShellClosed(apt: Applet, srv: ServiceManager) Error!void {
+pub fn sendSleepIfShellClosed(apt: Applet, srv: ServiceManager) !void {
     return apt.sendAppletUtility(srv, .sleep_if_shell_closed, &.{}, &.{});
 }
 
-pub fn sendLockTransition(apt: Applet, srv: ServiceManager, transition: Transition, flag: bool) Error!void {
+pub fn sendLockTransition(apt: Applet, srv: ServiceManager, transition: Transition, flag: bool) !void {
     const transition_data: extern struct { transition: Transition, flag: bool, pad: [3]u8 = @splat(0) } = .{ .transition = transition, .flag = flag };
     return apt.sendAppletUtility(srv, .lock_transition, std.mem.asBytes(&transition_data), &.{});
 }
 
-pub fn sendTryLockTransition(apt: Applet, srv: ServiceManager, transition: Transition) Error!bool {
+pub fn sendTryLockTransition(apt: Applet, srv: ServiceManager, transition: Transition) !bool {
     var success: bool = undefined;
     try apt.sendAppletUtility(srv, .try_lock_transition, std.mem.asBytes(&transition), std.mem.asBytes(&success));
     return success;
 }
 
 // FIXME: returns wrong_arg error?
-pub fn sendUnlockTransition(apt: Applet, srv: ServiceManager, transition: Transition) Error!void {
+pub fn sendUnlockTransition(apt: Applet, srv: ServiceManager, transition: Transition) !void {
     return apt.sendAppletUtility(srv, .unlock_transition, std.mem.asBytes(&transition), &.{});
 }
 
@@ -543,16 +578,26 @@ pub const command = struct {
     // TODO: PrepareToStartApplication
     // TODO: PreloadLibraryApplet
     // TODO: FinishPreloadingLibraryApplet
-    // TODO: PrepareToStartLibraryApplet
-    // TODO: PrepareToStartSystemApplet
+    pub const PrepareToStartLibraryApplet = ipc.Command(Id, .prepare_to_start_library_applet, struct { app: AppId }, struct {});
+    pub const PrepareToStartSystemApplet = ipc.Command(Id, .prepare_to_start_system_applet, struct { app: AppId }, struct {});
     // TODO: PrepareToStartNewestHomeMenu
     // TODO: StartApplication
 
     /// Errors: 0xc8a0cc04,
     pub const WakeupApplication = ipc.Command(Id, .wakeup_application, struct {}, struct {});
     // TODO: CancelApplication
-    // TODO: StartLibraryApplet
-    // TODO: StartSystemApplet
+    pub const StartLibraryApplet = ipc.Command(Id, .start_library_applet, struct {
+        app: AppId,
+        parameters_size: usize,
+        parameter_handle: horizon.Object,
+        parameters: ipc.StaticSlice(0),
+    }, struct {});
+    pub const StartSystemApplet = ipc.Command(Id, .start_system_applet, struct {
+        app: AppId,
+        parameters_size: usize,
+        parameter_handle: horizon.Object,
+        parameters: ipc.StaticSlice(0),
+    }, struct {});
     // TODO: StartNewestHomeMenu
     // TODO: OrderToCloseApplcation
     ///

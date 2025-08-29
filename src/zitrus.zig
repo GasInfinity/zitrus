@@ -43,6 +43,16 @@ pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, com
     };
 }
 
+comptime {
+    _ = start;
+
+    _ = fmt;
+    _ = horizon;
+
+    _ = pica;
+    _ = mango;
+}
+
 pub const fmt = @import("fmt.zig");
 pub const panic = @import("panic.zig");
 pub const arm = @import("arm.zig");
@@ -56,10 +66,3 @@ pub const mango = @import("mango.zig");
 
 const builtin = @import("builtin");
 const std = @import("std");
-
-comptime {
-    _ = start;
-
-    _ = mango;
-    _ = pica;
-}

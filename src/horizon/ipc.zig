@@ -154,92 +154,60 @@ pub fn calculateParameters(comptime T: type) Buffer.PackedCommand.Header.Paramet
     comptime var normal = 0;
     comptime var translate = 0;
 
-    inline for (fields) |f| ty: switch (f.type) {
-        else => |typ| switch (@typeInfo(typ)) {
+    inline for (fields) |f| {
+        comptime calculateParametersType(f.type, &normal, &translate);
+    }
+
+    return .{ .normal = normal, .translate = translate };
+}
+
+fn calculateParametersType(comptime T: type, comptime normal: *comptime_int, comptime translate: *comptime_int) void {
+    switch (@typeInfo(T)) {
+        .undefined, .void, .noreturn, .@"opaque" => {},
+        .bool, .int, .float => {
+            if (translate.* != 0) {
+                @compileError("normal parameters cannot be added after adding translate parameters");
+            }
+
+            normal.* += (@sizeOf(T) + (@sizeOf(u32) - 1)) / @sizeOf(u32);
+        },
+        .@"enum" => |e| {
+            if (T == horizon.Object or T == ReplaceByProcessId) {
+                translate.* += 2; // descriptor + handle
+                return;
+            }
+
+            return calculateParametersType(e.tag_type, normal, translate);
+        },
+        .array => |a| switch (@typeInfo(a.child)) {
             .undefined, .void, .noreturn, .@"opaque" => {},
             .bool, .int, .float => {
-                if (translate != 0) {
+                if (translate.* != 0) {
                     @compileError("normal parameters cannot be added after adding translate parameters");
                 }
 
-                normal += (@sizeOf(typ) + (@sizeOf(u32) - 1)) / @sizeOf(u32);
+                normal.* += (@sizeOf(T) + (@sizeOf(u32) - 1)) / @sizeOf(u32);
             },
             .@"enum" => |e| {
-                if (typ == horizon.Object or typ == ReplaceByProcessId) {
-                    translate += 2; // descriptor + handle
-                    continue;
+                if (a.child == horizon.Object or a.child == ReplaceByProcessId) {
+                    translate.* += 1 + a.len;
+                    return;
                 }
 
-                continue :ty e.tag_type;
-            },
-            .array => |a| arr: switch (a.child) {
-                else => |at| switch (@typeInfo(at)) {
-                    .undefined, .void, .noreturn, .@"opaque" => {},
-                    .bool, .int, .float => {
-                        if (translate != 0) {
-                            @compileError("normal parameters cannot be added after adding translate parameters");
-                        }
-
-                        normal += (@sizeOf(typ) + (@sizeOf(u32) - 1)) / @sizeOf(u32);
-                    },
-                    .@"enum" => |e| {
-                        if (at == horizon.Object or at == ReplaceByProcessId) {
-                            translate += 1 + a.len;
-                            continue;
-                        }
-
-                        continue :arr e.tag_type;
-                    },
-                    .@"struct" => |s| {
-                        if (s.layout == .@"packed" or s.layout == .@"extern") {
-                            if (@hasDecl(at, "Handle") and @bitSizeOf(@field(at, "Handle")) == @bitSizeOf(u32) and at == MoveHandle(@field(at, "Handle"))) {
-                                translate += 1 + a.len;
-                                continue;
-                            }
-
-                            if (s.fields.len == 1) {
-                                continue :arr s.fields[0].type;
-                            }
-
-                            continue :arr std.meta.Int(.unsigned, @bitSizeOf(at));
-                        }
-
-                        @compileError("cannot serialize struct with non-defined layout");
-                    },
-                    .@"union" => |u| {
-                        if (u.layout != .@"packed" or u.layout != .@"extern") {
-                            @compileError("cannot serialize union with non-defined layout");
-                        }
-
-                        continue :arr std.meta.Int(.unsigned, @bitSizeOf(at));
-                    },
-                    .@"fn" => @compileError("cannot serialize fn"),
-                    .optional => @compileError("cannot serialize optional as it doesn't have a defined layout"),
-                    .error_union, .error_set => @compileError("cannot serialize errors as they are obviously not supported"),
-                    .array => @compileError("nested arrays are not supported"),
-                    .pointer => @compileError("pointers/slices are not supported, please use mapped and static slice types"),
-                    else => @compileError("cannot serialize " ++ @typeName(f.type) ++ " (in array)"),
-                },
+                return calculateParametersType([a.len]e.tag_type, normal, translate);
             },
             .@"struct" => |s| {
-                // NOTE: looks like a hack, is there a better way to do this?
-
-                // zig fmt: off
-                if ((@hasDecl(typ, "static_buffer_index") and @TypeOf(@field(typ, "static_buffer_index")) == u4 and typ == StaticSlice(@field(typ, "static_buffer_index")))
-                or (@hasDecl(typ, "modifier") and @TypeOf(@field(typ, "modifier")) == MappingModifier and typ == MappedSlice(@field(typ, "modifier")))
-                or (@hasDecl(typ, "Handle") and @bitSizeOf(@field(typ, "Handle")) == @bitSizeOf(u32)) and typ == MoveHandle(@field(typ, "Handle"))) {
-                // zig fmt: on
-
-                    translate += 2;
-                    continue;
-                }
-
                 if (s.layout == .@"packed" or s.layout == .@"extern") {
-                    if (s.fields.len == 1) {
-                        continue :ty s.fields[0].type;
+                    if (@hasDecl(a.child, "Handle") and @bitSizeOf(@field(a.child, "Handle")) == @bitSizeOf(u32) and a.child == MoveHandle(@field(a.child, "Handle"))) {
+                        translate.* += 1 + a.len;
+                        return;
                     }
 
-                    continue :ty std.meta.Int(.unsigned, @bitSizeOf(typ));
+                    if (s.fields.len == 1) {
+                        return calculateParametersType([a.len]s.fields[0].type, normal, translate);
+                    }
+
+                    return calculateParametersType(std.meta.Int(.unsigned, @bitSizeOf(a.child)), normal, translate);
                 }
 
                 @compileError("cannot serialize struct with non-defined layout");
@@ -249,16 +217,50 @@ pub fn calculateParameters(comptime T: type) Buffer.PackedCommand.Header.Paramet
                     @compileError("cannot serialize union with non-defined layout");
                 }
 
-                continue :ty std.meta.Int(.unsigned, @bitSizeOf(typ));
+                return calculateParametersType(std.meta.Int(.unsigned, @bitSizeOf(a.child)), normal, translate);
             },
             .@"fn" => @compileError("cannot serialize fn"),
             .optional => @compileError("cannot serialize optional as it doesn't have a defined layout"),
             .error_union, .error_set => @compileError("cannot serialize errors as they are obviously not supported"),
-            else => @compileError("cannot serialize " ++ @typeName(f.type)),
+            .array => @compileError("nested arrays are not supported, if"),
+            .pointer => @compileError("pointers/slices are not supported, please use mapped and static slice types"),
+            else => @compileError("cannot serialize " ++ @typeName(a.child) ++ " (in array)"),
         },
-    };
+        .@"struct" => |s| {
+            // NOTE: looks like a hack, is there a better way to do this?
 
-    return .{ .normal = normal, .translate = translate };
+            // zig fmt: off
+            if ((@hasDecl(T, "static_buffer_index") and @TypeOf(@field(T, "static_buffer_index")) == u4 and T == StaticSlice(@field(T, "static_buffer_index")))
+            or (@hasDecl(T, "modifier") and @TypeOf(@field(T, "modifier")) == MappingModifier and T == MappedSlice(@field(T, "modifier")))
+            or (@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32)) and T == MoveHandle(@field(T, "Handle"))) {
+            // zig fmt: on
+
+                translate.* += 2;
+                return;
+            }
+
+            if (s.layout == .@"packed" or s.layout == .@"extern") {
+                if (s.fields.len == 1) {
+                    return calculateParametersType(s.fields[0].type, normal, translate);
+                }
+
+                return calculateParametersType(std.meta.Int(.unsigned, @bitSizeOf(T)), normal, translate);
+            }
+
+            @compileError("cannot serialize struct with non-defined layout");
+        },
+        .@"union" => |u| {
+            if (u.layout != .@"packed" or u.layout != .@"extern") {
+                @compileError("cannot serialize union with non-defined layout");
+            }
+
+            return calculateParametersType(std.meta.Int(.unsigned, @bitSizeOf(T)), normal, translate);
+        },
+        .@"fn" => @compileError("cannot serialize fn"),
+        .optional => @compileError("cannot serialize optional as it doesn't have a defined layout"),
+        .error_union, .error_set => @compileError("cannot serialize errors as they are obviously not supported"),
+        else => @compileError("cannot serialize " ++ @typeName(T)),
+    }
 }
 
 pub fn Response(comptime T: type, comptime static_buffers: usize) type {
@@ -362,12 +364,6 @@ pub const Buffer = extern struct {
                 current_parameter.* += 1;
             },
             .int, .float => {
-                if (@bitSizeOf(T) < @bitSizeOf(u32)) {
-                    parameters[current_parameter.*] = value;
-                    current_parameter.* += 1;
-                    return;
-                }
-
                 const parameters_size = (@sizeOf(T) + (@sizeOf(u32) - 1)) / @sizeOf(u32);
                 std.mem.sliceAsBytes(parameters[current_parameter.*..])[0..@sizeOf(T)].* = std.mem.asBytes(&value)[0..@sizeOf(T)].*;
                 current_parameter.* += parameters_size;
@@ -529,17 +525,8 @@ pub const Buffer = extern struct {
 
         return switch (@typeInfo(T)) {
             .undefined, .void, .noreturn, .@"opaque" => {},
-            .bool => b: {
-                defer current_parameter.* += 1;
-                break :b parameters[current_parameter.*] != 0;
-            },
-            .int, .float => fi: {
-                if (@bitSizeOf(T) < @bitSizeOf(u32)) {
-                    defer current_parameter.* += 1;
-                    break :fi @truncate(parameters[current_parameter.*]);
-                }
-
-                defer current_parameter.* += (@sizeOf(T) + (@sizeOf(u32) - 1)) / 4;
+            .bool, .int, .float => fi: {
+                defer current_parameter.* += (@sizeOf(T) + (@sizeOf(u32) - 1)) / @sizeOf(u32);
                 break :fi std.mem.bytesAsValue(T, std.mem.sliceAsBytes(parameters[current_parameter.*..])).*;
             },
             .@"enum" => |e| en: {
@@ -651,13 +638,66 @@ pub const Buffer = extern struct {
 };
 
 const testing = std.testing;
-comptime {
-    // TODO: These should be tests
-    testing.expectEqual(Buffer.PackedCommand.Header.Parameters{ .normal = 2, .translate = 2 }, calculateParameters(struct {
-        first_param: u8,
-        second_param: u32,
-        test_handle: horizon.Synchronization,
-    })) catch unreachable;
+
+test calculateParameters {
+    const Params = Buffer.PackedCommand.Header.Parameters;
+
+    // NOTE: When a struct is not extern, each parameter will (at minimum) span 4-bytes as each field is independent.
+    try testing.expectEqual(Params{ .normal = 1, .translate = 0 }, calculateParameters(struct { x: u8 }));
+    try testing.expectEqual(Params{ .normal = 1, .translate = 0 }, calculateParameters(struct { x: u16 }));
+    try testing.expectEqual(Params{ .normal = 1, .translate = 0 }, calculateParameters(struct { x: u32 }));
+
+    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u32, y: u8 }));
+    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u32, y: u16 }));
+    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u32, y: u32 }));
+
+    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u8, y: u32 }));
+    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u16, y: u32 }));
+
+    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u8, y: u8 }));
+    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u16, y: u16 }));
+
+    // NOTE: Otherwise, it is basically written as-is.
+    try testing.expectEqual(Params{ .normal = 1, .translate = 0 }, calculateParameters(extern struct { x: u8, y: u8 }));
+    try testing.expectEqual(Params{ .normal = 1, .translate = 0 }, calculateParameters(extern struct { x: u16, y: u16 }));
+    try testing.expectEqual(Params{ .normal = 1, .translate = 0 }, calculateParameters(extern struct { x: u8, y: u8, z: u8, w: u8 }));
+    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(extern struct { x: u16, y: u16, z: u16 }));
+    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(extern struct { x: u16, y: u16, z: u16, w: u16 }));
+}
+
+test "packType and unpackType are idempotent for extern or packed structs" {
+    const TestStruct = extern struct {
+        a: bool,
+        b: u32,
+        c: bool,
+        d: u64,
+        x: extern struct { r: u16, s: u16 },
+        y: u16,
+        z: [4]u8,
+        w: [2]u16,
+    };
+
+    // bogus data, doesn't mean anything
+    const test_value: TestStruct = .{
+        .a = false,
+        .b = 0xCAFEBABE,
+        .c = true,
+        .d = 0xFFAADDBBEE,
+        .x = .{ .r = 42, .s = 69 },
+        .y = 0xEEBB,
+        .z = .{ 4, 3, 2, 1 },
+        .w = .{ 64, 32 },
+    };
+
+    var buf: Buffer = undefined;
+    var current_parameter: u6 = 0;
+
+    buf.packType(&current_parameter, TestStruct, test_value);
+
+    current_parameter = 0;
+    const unpacked_value = buf.unpackType(&current_parameter, TestStruct);
+
+    try testing.expectEqual(test_value, unpacked_value);
 }
 
 const std = @import("std");

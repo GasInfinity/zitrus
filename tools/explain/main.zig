@@ -6,7 +6,6 @@ pub const description = "explain an horizon result code";
 pub const Arguments = struct {
     pub const description = Self.description;
 
-
     command: union(Subcommand) {
         pub const descriptions = .{
             .result = "decompose a result into its components (level, module, summary and description)",
@@ -20,7 +19,7 @@ pub const Arguments = struct {
 
                 result: []const u8,
             },
-        }
+        },
     },
 };
 
@@ -31,17 +30,17 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
             const result_str = r.positional.result;
             const result_int = std.fmt.parseUnsigned(u32, result_str, 0) catch |err| switch (err) {
                 error.Overflow => {
-                    std.debug.print("integer '{s}' does not fit into an u32\n", .{ result_str });
+                    std.debug.print("integer '{s}' does not fit into an u32\n", .{result_str});
                     return 1;
                 },
                 error.InvalidCharacter => {
-                    std.debug.print("integer '{s}' has an invalid character\n", .{ result_str });
+                    std.debug.print("integer '{s}' has an invalid character\n", .{result_str});
                     return 1;
                 },
             };
 
             const result_code: result.Code = @bitCast(result_int);
-            
+
             var stdout_buffer: [256]u8 = undefined;
             var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
             const stdout = &stdout_writer.interface;
@@ -66,7 +65,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
             });
             try stdout.flush();
             return 0;
-        }
+        },
     };
 }
 

@@ -624,7 +624,7 @@ pub const PipelineBindPoint = enum(u8) {
 pub const SwapchainCreateInfo = extern struct {
     pub const ImageMemoryInfo = extern struct {
         memory: DeviceMemory,
-        memory_offset: DeviceMemory, 
+        memory_offset: DeviceMemory,
     };
 
     surface: Surface,

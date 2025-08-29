@@ -35,7 +35,7 @@ pub fn main() !void {
     // var gpa_state: std.heap.DebugAllocator(.{}) = .init;
     // defer _ = gpa_state.deinit();
 
-    const gpa = horizon.heap.page_allocator;// gpa_state.allocator();
+    const gpa = horizon.heap.page_allocator; // gpa_state.allocator();
 
     var srv = try ServiceManager.init();
     defer srv.deinit();
@@ -48,6 +48,9 @@ pub fn main() !void {
 
     var hid = try Hid.init(srv);
     defer hid.deinit();
+
+    var input = try Hid.Input.init(hid);
+    defer input.deinit();
 
     var gsp = try GspGpu.init(srv);
     defer gsp.deinit();
@@ -155,7 +158,6 @@ pub fn main() !void {
     //     var img: [2]mango.Image = undefined;
     //     device.getSwapchainImages(swapchain: Handle)
     // };
-    
 
     const vtx_buffer_memory = try device.allocateMemory(&.{
         .memory_type = 0,
@@ -427,10 +429,9 @@ pub fn main() !void {
     }, gpa);
     defer device.destroyPipeline(simple_pipeline, gpa);
 
-    const command_pool = try device.createCommandPool(.{
-    }, gpa);
+    const command_pool = try device.createCommandPool(.{}, gpa);
     defer device.destroyCommandPool(command_pool, gpa);
-    
+
     const cmd = blk: {
         var cmd: mango.CommandBuffer = undefined;
         try device.allocateCommandBuffers(.{
@@ -445,7 +446,7 @@ pub fn main() !void {
     defer if (gsp.has_right) gsp.sendSetLcdForceBlack(true) catch {};
 
     // XXX: Bad, but we know this is not near graphicaly intensive and we'll always be near 60 FPS.
-    const default_delta_time = 1.0/60.0;
+    const default_delta_time = 1.0 / 60.0;
     var current_time: f32 = 0.0;
     // var current_scale: f32 = 1.0;
     main_loop: while (true) {
@@ -473,9 +474,9 @@ pub fn main() !void {
             else => {},
         };
 
-        const input = hid.readPadInput();
+        const pad = input.pollPad();
 
-        if (input.current.start) {
+        if (pad.current.start) {
             break :main_loop;
         }
 

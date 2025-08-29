@@ -1,8 +1,7 @@
 // XXX: We should try to connect first to SPRV, shouldn't we?
 const service_names = [_][]const u8{ "hid:USER", "hid:SPRV" };
 
-// TODO: Refactor and finish HID
-pub const Error = ClientSession.RequestError;
+pub const Input = @import("Hid/Input.zig");
 
 pub const Pad = extern struct {
     pub const State = packed struct(u32) {
@@ -56,6 +55,59 @@ pub const Pad = extern struct {
     entries: [8]Entry,
 };
 
+pub const Touch = extern struct {
+    pub const State = extern struct { x: i16, y: i16, pressed: bool, _pad0: [3]u8 };
+
+    tick: i64,
+    previous_tick: i64,
+    index: u32,
+    _pad0: u32 = 0,
+    raw: State,
+    entries: [8]State,
+};
+
+pub const Accelerometer = extern struct {
+    pub const State = extern struct { x: i16, y: i16, z: i16 };
+
+    tick: i64,
+    previous_tick: i64,
+    index: u32,
+    _pad0: u32 = 0,
+    raw: State,
+    _pad1: u16 = 0,
+    entries: [8]State,
+};
+
+pub const Gyroscope = extern struct {
+    pub const State = extern struct { x: i16, y: i16, z: i16 };
+
+    tick: i64,
+    previous_tick: i64,
+    index: u32,
+    _pad0: u32 = 0,
+    raw: State,
+    _pad1: u16 = 0,
+    entries: [32]State,
+};
+
+pub const DebugPad = extern struct {
+    pub const State = extern struct { _: [12]u8 };
+
+    tick: i64,
+    previous_tick: i64,
+    index: u32,
+    _pad0: u32 = 0,
+    entries: [8]State,
+};
+
+pub const Shared = extern struct {
+    pad: Pad,
+    touch: Touch,
+    accelerometer: Accelerometer,
+    gyroscope: Gyroscope,
+    debug_pad: DebugPad,
+};
+
 pub const ControllerState = struct {
     current: Pad.State,
     pressed: Pad.State,
@@ -64,11 +116,9 @@ pub const ControllerState = struct {
 };
 
 session: ClientSession,
-input: ?Handles = null,
-shm_memory_data: ?[]u8 = null,
 
-pub fn init(srv: ServiceManager) (error{OutOfMemory} || MemoryBlock.MapError || Error)!Hid {
-    var last_error: Error = undefined;
+pub fn init(srv: ServiceManager) !Hid {
+    var last_error: anyerror = undefined;
     const hid_session = used: for (service_names) |service_name| {
         const hid_session = srv.getService(service_name, .wait) catch |err| {
             last_error = err;
@@ -78,45 +128,15 @@ pub fn init(srv: ServiceManager) (error{OutOfMemory} || MemoryBlock.MapError || 
         break :used hid_session;
     } else return last_error;
 
-    var hid = Hid{
-        .session = hid_session,
-    };
-    errdefer hid.deinit();
-
-    const input = try hid.sendGetIPCHandles();
-    hid.input = input;
-
-    const shm_memory_data = try horizon.heap.non_thread_safe_shared_memory_address_allocator.alloc(0x2B0, .@"1");
-    hid.shm_memory_data = shm_memory_data;
-
-    try input.shm.map(@alignCast(shm_memory_data.ptr), .r, .dont_care);
-    return hid;
+    return .{ .session = hid_session };
 }
 
 pub fn deinit(hid: *Hid) void {
-    if (hid.input) |*input| {
-        if (hid.shm_memory_data) |shm_data| {
-            input.shm.unmap(@alignCast(shm_data.ptr));
-            horizon.heap.non_thread_safe_shared_memory_address_allocator.free(shm_data);
-        }
-
-        input.deinit();
-    }
-
     hid.session.deinit();
     hid.* = undefined;
 }
 
-// TODO: Proper event handling
-pub fn readPadInput(hid: *Hid) Pad.Entry {
-    const hid_data = hid.shm_memory_data.?;
-    const pad_data: *const Pad = @alignCast(std.mem.bytesAsValue(Pad, hid_data));
-
-    const current_index = pad_data.index;
-    return pad_data.entries[current_index];
-}
-
-const Handles = struct {
+pub const Handles = struct {
     shm: MemoryBlock,
     pad_0: Event,
     pad_1: Event,
@@ -134,9 +154,8 @@ const Handles = struct {
     }
 };
 
-pub fn sendGetIPCHandles(hid: Hid) Error!Handles {
+pub fn sendGetIPCHandles(hid: Hid) !Handles {
     const data = tls.getThreadLocalStorage();
-
     return switch (try data.ipc.sendRequest(hid.session, command.GetIPCHandles, .{}, .{})) {
         .success => |s| .{
             .shm = @bitCast(@intFromEnum(s.value.response.handles[0])),
@@ -194,5 +213,3 @@ const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;
 
 const ServiceManager = zitrus.horizon.ServiceManager;
-
-const SharedMemoryAddressAllocator = horizon.SharedMemoryAddressAllocator;

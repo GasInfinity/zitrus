@@ -11,6 +11,9 @@ pub fn main() !void {
     var hid = try Hid.init(srv);
     defer hid.deinit();
 
+    var input = try Hid.Input.init(hid);
+    defer input.deinit();
+
     var gsp = try GspGpu.init(srv);
     defer gsp.deinit();
 
@@ -93,9 +96,9 @@ pub fn main() !void {
             else => {},
         };
 
-        const input = hid.readPadInput();
+        const pad = input.pollPad();
 
-        if (input.current.start) {
+        if (pad.current.start) {
             break :main_loop;
         }
 

@@ -1,0 +1,15 @@
+.{
+    .name = .libapplets,
+    .version = "0.0.0",
+    .fingerprint = 0x28dd6bea013cc8aa,
+    .minimum_zig_version = "0.15.1",
+    .dependencies = .{
+        .zitrus = .{ .path = "../../" },
+    },
+    .paths = .{
+        "assets",
+        "src",
+        "build.zig",
+        "build.zig.zon",
+    },
+}

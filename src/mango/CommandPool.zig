@@ -24,7 +24,7 @@ pub fn deinit(pool: *CommandPool, allocator: std.mem.Allocator) void {
     _ = allocator;
     {
         var maybe_current_allocated = pool.allocated_buffers.first;
-        while(maybe_current_allocated) |current| {
+        while (maybe_current_allocated) |current| {
             maybe_current_allocated = current.next;
 
             const command_buffer: *CommandBuffer = @alignCast(@fieldParentPtr("node", current));
@@ -55,7 +55,7 @@ pub fn allocate(pool: *CommandPool, buffers: []mango.CommandBuffer) !void {
 pub fn free(pool: *CommandPool, buffers: []const mango.CommandBuffer) void {
     for (buffers) |buffer| {
         const b_cmd: *CommandBuffer = .fromHandleMutable(buffer);
-        pool.recycle(b_cmd); 
+        pool.recycle(b_cmd);
     }
 }
 

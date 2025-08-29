@@ -29,7 +29,7 @@ pub fn initSwapchain(pe: *PresentationEngine, create_info: mango.SwapchainCreate
             .present_mode = .pack(create_info.present_mode),
             .fmt = create_info,
             .width_minus_one = @intCast(dimensions[1] - 1),
-            .height_minus_one = @intCast(dimensions[1] - 1),    
+            .height_minus_one = @intCast(dimensions[1] - 1),
         },
         .presentation = .{
             .present_info = .{},
@@ -46,7 +46,7 @@ pub fn deinitSwapchain(pe: *PresentationEngine, swapchain: mango.Swapchain, allo
 
     const screen = backend.Swapchain.fromHandle(swapchain);
     std.debug.assert(pe.chains.contains(screen));
-    
+
     pe.chains.remove(screen);
 }
 
@@ -64,12 +64,12 @@ pub fn getSwapchainImages(pe: *PresentationEngine, swapchain: mango.Swapchain, i
 pub fn acquireNextImage(pe: *PresentationEngine, swapchain: mango.Swapchain) !u8 {
     const screen = backend.Swapchain.fromHandle(swapchain);
     const chain = pe.chains.getPtr(screen) orelse unreachable;
-    
+
     return chain.acquireNextIndex() orelse return error.NotReady;
 }
 
 pub fn refresh(pe: PresentationEngine, gsp: *GspGpu, screen: pica.Screen) !void {
-    if(pe.chains.getPtr(screen)) |swapchain| {
+    if (pe.chains.getPtr(screen)) |swapchain| {
         const present_info = swapchain.presentation;
         const swapchain_new_presented = swapchain.acquireNextPresent() orelse return;
 
@@ -81,14 +81,15 @@ pub fn refresh(pe: PresentationEngine, gsp: *GspGpu, screen: pica.Screen) !void 
         std.debug.assert(b_image.info.width() == 240);
 
         const left: [*]const u8 = b_image.memory_info.boundVirtualAddress();
-        const right: [*]const u8 = if(!swapchain.misc.is_stereo or present_info.presented_flags.ignore_stereoscopic)
+        const right: [*]const u8 = if (!swapchain.misc.is_stereo or present_info.presented_flags.ignore_stereoscopic)
             left
-        else (left + (stride * swapchain.misc.width()));
+        else
+            (left + (stride * swapchain.misc.width()));
 
         try gsp.writeFramebufferInfo(screen, .{
             .active = 0,
             .left_vaddr = left,
-            .right_vaddr = if(present_info.last_presented_flags.ignore_stereoscopic) left else right,
+            .right_vaddr = if (present_info.last_presented_flags.ignore_stereoscopic) left else right,
             .stride = stride,
             .format = swapchain.misc.fmt,
             .select = 0,
@@ -101,7 +102,7 @@ pub fn present(pe: PresentationEngine, swapchains: []const mango.Swapchain, imag
     for (swapchains, image_indices) |swapchain, image_index| {
         const screen = backend.Swapchain.fromHandle(swapchain);
         const swapchain_info = pe.chains.getPtr(screen) orelse unreachable;
-        
+
         swapchain_info.present(.{
             .index = image_index,
             .flags = flags,
@@ -160,8 +161,8 @@ const Swapchain = struct {
             .fifo => chain.presentation.new.fifo.pushFront(slot),
             .mailbox => {
                 defer chain.presentation.new.single = slot;
-                
-                if(chain.presentation.new.single) |last| {
+
+                if (chain.presentation.new.single) |last| {
                     chain.available.pushFront(last.index);
                 }
             },
@@ -169,7 +170,7 @@ const Swapchain = struct {
     }
 
     pub fn acquireNextPresent(chain: *Swapchain) ?PresentSlot {
-        const new= switch (chain.misc.present_mode) {
+        const new = switch (chain.misc.present_mode) {
             .fifo => chain.presentation.new.fifo.popFront(),
             .mailbox => chain.presentation.new.single,
         } orelse return null;
@@ -178,7 +179,7 @@ const Swapchain = struct {
             chain.available.pushFront(chain.presentation.current_index);
             chain.presentation.current_index = new.index;
         }
-        
+
         return new;
     }
 
@@ -201,27 +202,27 @@ fn Fifo(comptime T: type) type {
             count: u4 = 0,
         };
 
-        info : Info = .{},
+        info: Info = .{},
         buffer: [2]T = @splat(undefined),
 
         pub fn pushFrontAssumeCapacity(fifo: *SmallFifo, value: T) void {
-            if(fifo.data.head == 0) {
+            if (fifo.data.head == 0) {
                 fifo.data.head = fifo.indices.len;
             }
 
             fifo.data.head -= 1;
-            fifo.buffer[fifo.data.head] = value; 
+            fifo.buffer[fifo.data.head] = value;
             fifo.data.count += 1;
         }
 
         pub fn popFront(fifo: *SmallFifo) ?T {
-            if(fifo.data.count == 0) {
+            if (fifo.data.count == 0) {
                 return null;
             }
 
             defer {
                 fifo.data.count -= 1;
-                fifo.data.head = if(fifo.data.head >= fifo.buffer.len - 1) 0 else fifo.data.head + 1; 
+                fifo.data.head = if (fifo.data.head >= fifo.buffer.len - 1) 0 else fifo.data.head + 1;
             }
 
             return fifo.buffer[fifo.data.head];

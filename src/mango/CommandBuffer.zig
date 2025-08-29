@@ -235,17 +235,14 @@ state: State = .initial,
 scope: Scope = .none,
 
 pub fn init(pool: *backend.CommandPool, native_buffer: []align(8) u32) CommandBuffer {
-    return .{
-        .pool = pool,
-        .queue = .{
-            .buffer = native_buffer,
-            .current_index = 0,
-        }
-    };
+    return .{ .pool = pool, .queue = .{
+        .buffer = native_buffer,
+        .current_index = 0,
+    } };
 }
 
 pub fn deinit(command_buffer: *CommandBuffer) void {
-    command_buffer.pool.freeNative(command_buffer.queue.buffer); 
+    command_buffer.pool.freeNative(command_buffer.queue.buffer);
     command_buffer.* = undefined;
 }
 
@@ -258,7 +255,7 @@ pub fn begin(cmd: *CommandBuffer) !void {
 pub fn end(cmd: *CommandBuffer) !void {
     std.debug.assert(cmd.state == .recording);
 
-    if(cmd.current_error) |err| {
+    if (cmd.current_error) |err| {
         cmd.state = .invalid;
         return err;
     }
@@ -369,7 +366,7 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
     std.debug.assert(stride >= @sizeOf(mango.MultiDrawInfo) and std.mem.isAligned(stride, 4));
     std.debug.assertReadable(std.mem.asBytes(&vertex_info[0]));
 
-    if(!cmd.beforeDraw()) {
+    if (!cmd.beforeDraw()) {
         return;
     }
 
@@ -430,7 +427,7 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
     std.debug.assert(stride >= @sizeOf(mango.MultiDrawIndexedInfo) and std.mem.isAligned(stride, 4));
     std.debug.assertReadable(std.mem.asBytes(&index_info[0]));
 
-    if(!cmd.beforeDraw()) {
+    if (!cmd.beforeDraw()) {
         return;
     }
 
@@ -629,10 +626,10 @@ pub fn setTextureCoordinates(cmd: *CommandBuffer, texture_2_coordinates: mango.T
 }
 
 fn beforeDraw(cmd: *CommandBuffer) bool {
-    if(cmd.current_error) |_| {
+    if (cmd.current_error) |_| {
         return false;
     }
-    
+
     cmd.growIfNeeded() catch |err| {
         cmd.current_error = err;
         return false;

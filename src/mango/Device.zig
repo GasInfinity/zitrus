@@ -171,17 +171,17 @@ pub fn waitSemaphores(device: *Device, wait_info: mango.SemaphoreWaitInfo, timeo
             var accumulated_timeout = ns;
             for (semaphores, values) |b_semaphore, value| {
                 const start = horizon.getSystemTick();
-                b_semaphore.wait(value, accumulated_timeout); 
+                b_semaphore.wait(value, accumulated_timeout);
                 const end = horizon.getSystemTick();
                 const elapsed = end - start;
 
-                if(elapsed >= accumulated_timeout) {
-                    return; 
+                if (elapsed >= accumulated_timeout) {
+                    return;
                 }
 
                 accumulated_timeout -= elapsed;
             }
-        }
+        },
     }
 }
 
@@ -628,7 +628,7 @@ fn driverMain(ctx: *anyopaque) callconv(.c) noreturn {
         while (interrupts_it.next()) |int| switch (int) {
             .vblank_top => presentation_engine.refresh(gsp, .top),
             .vblank_bottom => presentation_engine.refresh(gsp, .bottom),
-            else => {}
+            else => {},
         };
     }
 

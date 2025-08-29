@@ -1,3 +1,4 @@
+// TODO: use the json spec to generate this. don't even bother to work on this until that script is done.
 pub const magic_value: u32 = 0x07230203;
 
 pub const Version = packed struct(u32) {
@@ -12,7 +13,7 @@ pub fn detectEndianness(magic: [4]u8) ?std.builtin.Endian {
 
     return switch (magic_word) {
         magic_value => builtin.cpu.arch.endian(),
-        @byteSwap(magic_value) => switch(builtin.cpu.arch.endian()) {
+        @byteSwap(magic_value) => switch (builtin.cpu.arch.endian()) {
             .little => .big,
             .big => .little,
         },
@@ -182,7 +183,7 @@ pub const Instruction = union(Prefix.Op) {
     member_name,
     ext_inst_import: struct {
         id: Id,
-        name: []const u8,   
+        name: []const u8,
     },
     memory_model: struct {
         addressing: AddressingModel,
@@ -265,6 +266,7 @@ pub const Instruction = union(Prefix.Op) {
     @"return",
 };
 
+// TODO: Source generate this!
 pub const InstructionIterator = struct {
     reader: *std.Io.Reader,
     endian: std.builtin.Endian,
@@ -280,9 +282,9 @@ pub const InstructionIterator = struct {
         const reader = it.reader;
         const endian = it.endian;
 
-        var builder: std.ArrayList(u8) = try .initCapacity(gpa, (maybe_literal_word_count orelse 1) * @sizeOf(u32)); 
+        var builder: std.ArrayList(u8) = try .initCapacity(gpa, (maybe_literal_word_count orelse 1) * @sizeOf(u32));
 
-        if(maybe_literal_word_count) |literal_word_count| {
+        if (maybe_literal_word_count) |literal_word_count| {
             for (0..literal_word_count) |_| {
                 const current = try reader.takeInt(u32, endian);
 
@@ -323,7 +325,7 @@ pub const InstructionIterator = struct {
         const reader = it.reader;
         const endian = it.endian;
 
-        while(true) { 
+        while (true) {
             const prefix = reader.takeStruct(Instruction.Prefix, endian) catch |err| switch (err) {
                 error.EndOfStream => return null,
                 else => return err,
@@ -335,19 +337,19 @@ pub const InstructionIterator = struct {
                 .undef => return .{ .undef = .{
                     .type = try reader.takeEnum(Id, endian),
                     .result = try reader.takeEnum(Id, endian),
-                }},
+                } },
                 .ext_inst_import => return .{ .ext_inst_import = .{
                     .id = try reader.takeEnum(Id, endian),
                     .name = try it.takeLiteral(prefix.word_count - 2, gpa),
-                }},
+                } },
                 .memory_model => return .{ .memory_model = .{
                     .addressing = try reader.takeEnum(AddressingModel, endian),
                     .memory = try reader.takeEnum(MemoryModel, endian),
-                }},
+                } },
                 .entry_point => {
                     const execution_mode = try reader.takeEnum(ExecutionMode, endian);
                     const entry = try reader.takeEnum(Id, endian);
-                    const name = try it.takeLiteral(null, gpa); 
+                    const name = try it.takeLiteral(null, gpa);
 
                     const aligned_name_len = std.mem.alignForward(usize, name.len + 1, @sizeOf(u32));
                     const interface = try reader.readSliceEndianAlloc(gpa, u32, prefix.word_count - (3 + @divExact(aligned_name_len, @sizeOf(u32))), endian);
@@ -357,14 +359,14 @@ pub const InstructionIterator = struct {
                         .entry = entry,
                         .name = name,
                         .interface = @ptrCast(interface),
-                    }};
+                    } };
                 },
                 .capability => return .{ .capability = try reader.takeEnum(Capability, endian) },
                 .decorate => {
-                    const target= try reader.takeEnum(Id, endian);
+                    const target = try reader.takeEnum(Id, endian);
                     const decoration = try reader.takeEnum(Decoration, endian);
 
-                    if(!decoration.isSupported()) {
+                    if (!decoration.isSupported()) {
                         return error.UnsupportedDecoration;
                     }
 
@@ -372,14 +374,14 @@ pub const InstructionIterator = struct {
                         .target = target,
                         .decoration = decoration,
                         .extra = try it.takeDecorationExtra(decoration),
-                    }};
+                    } };
                 },
                 .member_decorate => {
                     const target = try reader.takeEnum(Id, endian);
                     const member = try reader.takeInt(u32, endian);
                     const decoration = try reader.takeEnum(Decoration, endian);
 
-                    if(!decoration.isSupported()) {
+                    if (!decoration.isSupported()) {
                         return error.UnsupportedDecoration;
                     }
 
@@ -388,15 +390,15 @@ pub const InstructionIterator = struct {
                         .member = member,
                         .decoration = decoration,
                         .extra = try it.takeDecorationExtra(decoration),
-                    }};
+                    } };
                 },
                 _ => {
-                    std.debug.print("unhandled op {}! skipping...\n", .{op});       
+                    std.debug.print("unhandled op {}! skipping...\n", .{op});
                     try reader.discardAll((prefix.word_count - 1) * @sizeOf(u32));
                 },
                 else => {
                     try reader.discardAll((prefix.word_count - 1) * @sizeOf(u32));
-                }
+                },
             }
         }
     }

@@ -117,33 +117,33 @@ const Diagnostic = struct {
         try tty_cfg.setColor(writer, .bright_white);
 
         try writer.print("{s}", .{file_name});
-        
-        if(diagnostic.loc) |loc| {
+
+        if (diagnostic.loc) |loc| {
             const line = std.mem.count(u8, source[0..loc.start], &.{'\n'}) + 1;
             const column = (loc.start - (std.mem.lastIndexOfScalar(u8, source[0..loc.start], '\n') orelse 0)) + 1;
-            
-            try writer.print(":{}:{}: ", .{line, column});
+
+            try writer.print(":{}:{}: ", .{ line, column });
         } else try writer.writeAll(": ");
 
         try tty_cfg.setColor(writer, .bright_red);
         try writer.writeAll("error: ");
-        
+
         try tty_cfg.setColor(writer, .bright_white);
         try writer.writeAll(diagnostic.message);
 
-        if(diagnostic.tok_ctx) |tag| {
+        if (diagnostic.tok_ctx) |tag| {
             _ = try writer.print(" '{s}' ", .{@tagName(tag)});
         }
 
         _ = try writer.writeByte('\n');
 
-        if(diagnostic.loc) |loc| {
-            const column_start = if(std.mem.lastIndexOfScalar(u8, source[0..loc.start], '\n')) |col_start| col_start + 1 else 0;
+        if (diagnostic.loc) |loc| {
+            const column_start = if (std.mem.lastIndexOfScalar(u8, source[0..loc.start], '\n')) |col_start| col_start + 1 else 0;
             const column_end = (std.mem.indexOfScalarPos(u8, source, loc.start, '\n') orelse (source.len - 1));
 
             try tty_cfg.setColor(writer, .reset);
             try writer.print("{s}\n", .{source[column_start..column_end]});
-            
+
             try tty_cfg.setColor(writer, .bright_green);
             try writer.splatByteAll(' ', (loc.start - column_start));
             try writer.writeByte('^');
@@ -158,7 +158,7 @@ const Diagnostic = struct {
         const tok_start = assembled.tokenStart(tok_i);
         const tok_slice = assembled.tokenSlice(tok_i);
         const tok_end = tok_start + @as(u32, @intCast(tok_slice.len));
-        
+
         const loc: Location = .{
             .start = tok_start,
             .end = tok_end,
@@ -225,7 +225,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                 var file_reader = file.reader(&buf);
                 const src_size = try file_reader.getSize();
 
-                if(src_size > std.math.maxInt(u32)) {
+                if (src_size > std.math.maxInt(u32)) {
                     std.debug.print("could not read file as its larger than 4GB", .{});
                     return 1;
                 }
@@ -239,7 +239,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
             var assembled: Assembled = try .assemble(arena, file_source);
             defer assembled.deinit(arena);
 
-            if(assembled.errors.len > 0) {
+            if (assembled.errors.len > 0) {
                 for (assembled.errors) |err| {
                     const diagnostic: Diagnostic = .fromError(err, assembled);
 
@@ -259,14 +259,14 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 
             switch (asm_options.ofmt) {
                 .zpsh => {
-                    if(assembled.encoded.instructions.items.len > 512) {
+                    if (assembled.encoded.instructions.items.len > 512) {
                         try tty_cfg.setColor(stderr, .red);
                         try stderr.print("cannot output zpsh, encoded shader has too many instructions ({})", .{assembled.encoded.instructions.items.len});
                         try stderr.flush();
                         return 1;
                     }
 
-                    if(assembled.entries.count() > std.math.maxInt(u8)) {
+                    if (assembled.entries.count() > std.math.maxInt(u8)) {
                         try tty_cfg.setColor(stderr, .red);
                         try stderr.print("cannot output zpsh, encoded shader has too many entrypoints ({})", .{assembled.entries.count()});
                         try stderr.flush();
@@ -277,7 +277,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 
                     var padded_strings_size: u32 = 0;
                     var entry_it = assembled.entries.iterator();
-                    while(entry_it.next()) |entrypoint| {
+                    while (entry_it.next()) |entrypoint| {
                         padded_strings_size += @intCast(entrypoint.key_ptr.*.len + 1);
                     }
 
@@ -287,12 +287,12 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                     defer string_table.deinit(arena);
 
                     entry_it.reset();
-                    while(entry_it.next()) |entrypoint| {
+                    while (entry_it.next()) |entrypoint| {
                         string_table.appendSliceAssumeCapacity(entrypoint.key_ptr.*);
                         string_table.appendAssumeCapacity(0);
                     }
 
-                    // Align the section 
+                    // Align the section
                     string_table.appendNTimesAssumeCapacity(0, padded_strings_size - string_table.items.len);
 
                     try out.writeStruct(zpsh.Header{
@@ -300,15 +300,15 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                         .string_table_size = padded_strings_size,
                         .entrypoints = @intCast(assembled.entries.count()),
                     }, .little);
-                    
+
                     try out.writeAll(std.mem.sliceAsBytes(encoded.instructions.items));
                     try out.writeAll(std.mem.sliceAsBytes(encoded.descriptors[0..encoded.allocated_descriptors]));
-                    try out.writeAll(string_table.items); 
+                    try out.writeAll(string_table.items);
 
                     var current_string_offset: u32 = 0;
-                    
+
                     entry_it.reset();
-                    while(entry_it.next()) |entrypoint| {
+                    while (entry_it.next()) |entrypoint| {
                         const processed_info = entrypoint.value_ptr.*;
 
                         try out.writeStruct(zpsh.EntrypointHeader{
@@ -324,8 +324,8 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                         }, .little);
 
                         // NOTE: We can do this because two entrypoints cannot have the same name.
-                        current_string_offset += @intCast(entrypoint.key_ptr.len + 1); 
-                        
+                        current_string_offset += @intCast(entrypoint.key_ptr.len + 1);
+
                         var int_it = assembled.int_const.iterator();
                         while (int_it.next()) |entry| {
                             try out.writeAll(std.mem.asBytes(entry.value));

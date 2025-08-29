@@ -69,7 +69,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                 var file_reader = file.reader(&buffer);
                 const file_size = try file_reader.getSize();
                 const code = try arena.allocWithOptions(u8, file_size, null, 0);
-                try file_reader.interface.readSliceAll(code); 
+                try file_reader.interface.readSliceAll(code);
 
                 break :code code;
             };
@@ -89,7 +89,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                     var stderr_writer = std.fs.File.stderr().writer(&buf);
                     const stderr = &stderr_writer.interface;
 
-                    try stderr.print("error parsing {s}\n{f}", .{settings_path, diagnostic.fmt(settings_code)});
+                    try stderr.print("error parsing {s}\n{f}", .{ settings_path, diagnostic.fmt(settings_code) });
                     try stderr.flush();
                     break :m 1;
                 },
@@ -164,7 +164,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                 try writer.flush();
             }
 
-            inline for(&.{ dump.@"24x24", dump.@"48x48" }, &.{ &input_smdh.icons.small, &input_smdh.icons.large }, &.{ smdh.Icons.small_size,smdh.Icons.large_size }) |out_icon_path, icon, icon_size| if(out_icon_path) |path| {
+            inline for (&.{ dump.@"24x24", dump.@"48x48" }, &.{ &input_smdh.icons.small, &input_smdh.icons.large }, &.{ smdh.Icons.small_size, smdh.Icons.large_size }) |out_icon_path, icon, icon_size| if (out_icon_path) |path| {
                 _ = icon;
                 _ = icon_size;
                 _ = path;
@@ -176,7 +176,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                 // processImage(.untile, icon_size, @ptrCast(out.pixels.rgb565), std.mem.bytesAsSlice(Bgr565, icon));
                 //
                 // try out.convert(arena, .rgb24);
-                // try out.writeToFilePath(arena, path, .{ .png = .{} }); 
+                // try out.writeToFilePath(arena, path, .{ .png = .{} });
             };
 
             break :d 0;
@@ -262,7 +262,7 @@ fn processImage(comptime strategy: TilingStrategy, size: usize, dst_pixels: []Bg
             for (0..(tile_size * tile_size)) |tile| {
                 // NOTE: We know the max size is 63 so we can squeeze it into 6 bits
                 const x, const y = morton.toDimensions(u6, 2, @intCast(tile));
-                const src_pixel, const dst_pixel = switch(strategy) {
+                const src_pixel, const dst_pixel = switch (strategy) {
                     .tile => .{ &src_pixels[(y_start + y) * size + x_start + x], &dst_pixels[i] },
                     .untile => .{ &src_pixels[i], &dst_pixels[(y_start + y) * size + x_start + x] },
                 };
