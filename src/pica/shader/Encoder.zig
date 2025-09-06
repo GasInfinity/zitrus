@@ -274,7 +274,6 @@ pub fn cmp(encoder: *Encoder, alloc: Allocator, src1_neg: Negate, src1: SourceRe
         return error.InvalidSourceRegisterCombination;
     }
 
-    // FIXME: Negate comparison
     const descriptor_id, const i_src1, const i_src2, const x_cmp, const y_cmp = if (!src2.isLimited())
         .{ try encoder.getOrAllocateOperandDescriptor(u7, .comparison, .{ .src1_neg = src2_neg == .@"-", .src1_selector = src2_selector, .src2_neg = src1_neg == .@"-", .src2_selector = src1_selector }), src2, src1.toLimited().?, x.invert(), y.invert() }
     else

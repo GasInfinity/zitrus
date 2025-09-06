@@ -173,7 +173,7 @@ pub const ChainloadTarget = union(enum) {
 lock: Mutex,
 available_service_name: []const u8,
 
-pub fn init(srv: ServiceManager) !Applet {
+pub fn open(srv: ServiceManager) !Applet {
     var last_error: anyerror = undefined;
     const available_service_name, var available_service: Session = used: for (service_names) |service_name| {
         const service_handle = srv.sendGetServiceHandle(service_name, .wait) catch |err| {
@@ -187,7 +187,7 @@ pub fn init(srv: ServiceManager) !Applet {
     const data = tls.getThreadLocalStorage();
 
     const lock: Mutex = lock: {
-        defer available_service.deinit();
+        defer available_service.close();
 
         break :lock switch (try data.ipc.sendRequest(available_service, command.GetLockHandle, .{ .flags = 0x0 }, .{})) {
             .success => |s| s.value.response.lock,
@@ -201,9 +201,8 @@ pub fn init(srv: ServiceManager) !Applet {
     };
 }
 
-pub fn deinit(apt: *Applet) void {
-    apt.lock.deinit();
-    apt.* = undefined;
+pub fn close(apt: Applet) void {
+    apt.lock.close();
 }
 
 pub fn sendInitialize(apt: Applet, srv: ServiceManager, id: AppId, attr: Attributes) ![2]Event {
@@ -476,7 +475,7 @@ pub fn lockSendCommand(apt: Applet, srv: ServiceManager, comptime DefinedCommand
     defer apt.lock.release();
 
     var fresh_session = try srv.sendGetServiceHandle(apt.available_service_name, .wait);
-    defer fresh_session.deinit();
+    defer fresh_session.close();
 
     const data = tls.getThreadLocalStorage();
 

@@ -294,7 +294,7 @@ pub const Directory = packed struct(u32) {
 
 session: ClientSession,
 
-pub fn init(srv: ServiceManager) !Filesystem {
+pub fn open(srv: ServiceManager) !Filesystem {
     var last_error: anyerror = undefined;
     const fs_session = used: for (service_names) |service_name| {
         const fs_session = srv.getService(service_name, .wait) catch |err| {
@@ -305,9 +305,11 @@ pub fn init(srv: ServiceManager) !Filesystem {
         break :used fs_session;
     } else return last_error;
 
-    return .{
-        .session = fs_session,
-    };
+    return .{ .session = fs_session };
+}
+
+pub fn close(fs: Filesystem) void {
+    fs.session.close();
 }
 
 pub fn sendInitialize(fs: Filesystem) void {
@@ -515,11 +517,6 @@ pub fn sendCloseArchive(fs: Filesystem, transaction: usize, archive: Archive) !v
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
-}
-
-pub fn deinit(fs: *Filesystem) void {
-    fs.session.deinit();
-    fs.* = undefined;
 }
 
 pub const command = struct {

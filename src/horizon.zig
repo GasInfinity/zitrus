@@ -98,7 +98,7 @@ pub const ResetType = enum(u32) { oneshot, sticky, pulse };
 
 pub const Arbitration = union(Type) {
     pub const Type = enum(u32) { signal, wait_if_less_than, decrement_and_wait_if_less_than, wait_if_less_than_timeout, decrement_and_wait_if_less_than_timeout };
-    pub const TimeoutValue = extern struct { value: i32, timeout_ns: i64 };
+    pub const TimeoutValue = extern struct { value: i32, timeout: i64 };
 
     signal: i32,
     wait_if_less_than: i32,
@@ -156,25 +156,33 @@ pub const ResouceLimit = packed struct(u32) {
 pub const AddressArbiter = packed struct(u32) {
     obj: Object,
 
-    pub fn init() UnexpectedError!AddressArbiter {
+    pub fn create() UnexpectedError!AddressArbiter {
         return switch (createAddressArbiter()) {
             .success => |s| s.value,
             .failure => |code| unexpectedResult(code),
         };
     }
 
-    pub fn arbitrate(arbiter: AddressArbiter, address: *i32, arbitration: Arbitration) UnexpectedError!AddressArbiter {
-        const value: u32, const timeout_ns: i64 = switch (arbitration) {
+    pub fn arbitrate(arbiter: AddressArbiter, address: *i32, arbitration: Arbitration) !void {
+        const value: i32, const timeout_ns: i64 = switch (arbitration) {
             inline .signal, .wait_if_less_than, .decrement_and_wait_if_less_than => |value| .{ value, 0 },
-            inline .wait_if_less_than_timeout, .decrement_and_wait_if_less_than_timeout => |timeout_value| .{ timeout_value.value, timeout_value.timeout_ns },
+            inline .wait_if_less_than_timeout, .decrement_and_wait_if_less_than_timeout => |timeout_value| .{ timeout_value.value, timeout_value.timeout },
         };
 
-        return arbitrateAddress(arbiter, address, std.meta.activeTag(arbitration), value, timeout_ns);
+        const res = arbitrateAddress(arbiter, address, std.meta.activeTag(arbitration), value, timeout_ns);
+
+        // TODO: switch on packed struct when implemented
+        if (!res.isSuccess()) {
+            if (res == result.Code.timeout) {
+                return error.Timeout;
+            }
+
+            unreachable; // NOTE: Basically invalid address
+        }
     }
 
-    pub fn deinit(arbiter: *AddressArbiter) void {
+    pub fn close(arbiter: AddressArbiter) void {
         _ = closeHandle(arbiter.obj);
-        arbiter.* = undefined;
     }
 };
 
@@ -237,9 +245,8 @@ pub const Mutex = packed struct(u32) {
         return Synchronization.waitMultiple(@ptrCast(mutexes), wait_all, timeout_ns);
     }
 
-    pub fn deinit(mutex: *Mutex) void {
+    pub fn close(mutex: Mutex) void {
         _ = closeHandle(mutex.sync.obj);
-        mutex.* = undefined;
     }
 };
 
@@ -265,9 +272,8 @@ pub const Semaphore = packed struct(u32) {
         return Synchronization.waitMultiple(@ptrCast(semaphore), wait_all, timeout_ns);
     }
 
-    pub fn deinit(semaphore: *Semaphore) void {
+    pub fn close(semaphore: Semaphore) void {
         _ = closeHandle(semaphore.int.sync.obj);
-        semaphore.* = undefined;
     }
 };
 
@@ -297,9 +303,8 @@ pub const Event = packed struct(u32) {
         return Synchronization.waitMultiple(@ptrCast(evs), wait_all, timeout_ns);
     }
 
-    pub fn deinit(ev: *Event) void {
+    pub fn close(ev: Event) void {
         _ = closeHandle(ev.int.sync.obj);
-        ev.* = undefined;
     }
 };
 
@@ -333,9 +338,8 @@ pub const Timer = packed struct(u32) {
         return Synchronization.waitMultiple(@ptrCast(timers), wait_all, timeout_ns);
     }
 
-    pub fn deinit(timer: *Timer) void {
+    pub fn close(timer: Timer) void {
         _ = closeHandle(timer.sync.obj);
-        timer.* = undefined;
     }
 };
 
@@ -369,18 +373,16 @@ pub const MemoryBlock = packed struct(u32) {
         _ = unmapMemoryBlock(mem, address);
     }
 
-    pub fn deinit(mem: *MemoryBlock) void {
+    pub fn close(mem: MemoryBlock) void {
         _ = closeHandle(mem.obj);
-        mem.* = undefined;
     }
 };
 
 pub const ServerSession = packed struct(u32) {
     sync: Synchronization,
 
-    pub fn deinit(session: *ServerSession) void {
+    pub fn close(session: ServerSession) void {
         _ = closeHandle(session.sync.obj);
-        session.* = undefined;
     }
 };
 
@@ -409,9 +411,8 @@ pub const ClientSession = packed struct(u32) {
         }
     }
 
-    pub fn deinit(session: *ClientSession) void {
+    pub fn close(session: ClientSession) void {
         _ = closeHandle(session.sync.obj);
-        session.* = undefined;
     }
 };
 
@@ -426,10 +427,9 @@ pub const Session = struct {
         };
     }
 
-    pub fn deinit(session: *Session) void {
-        session.server.deinit();
-        session.client.deinit();
-        session.* = undefined;
+    pub fn close(session: Session) void {
+        session.server.close();
+        session.client.close();
     }
 };
 
@@ -443,9 +443,8 @@ pub const ServerPort = packed struct(u32) {
         };
     }
 
-    pub fn deinit(port: *ServerPort) void {
+    pub fn close(port: ServerPort) void {
         _ = closeHandle(port.sync.obj);
-        port.* = undefined;
     }
 };
 
@@ -459,9 +458,8 @@ pub const ClientPort = packed struct(u32) {
         };
     }
 
-    pub fn deinit(port: *ClientPort) void {
+    pub fn close(port: ClientPort) void {
         _ = closeHandle(port.sync.obj);
-        port.* = undefined;
     }
 };
 
@@ -476,10 +474,9 @@ pub const Port = struct {
         };
     }
 
-    pub fn deinit(port: *Port) void {
-        port.server.deinit();
-        port.client.deinit();
-        port.* = undefined;
+    pub fn close(port: *Port) void {
+        port.server.close();
+        port.client.close();
     }
 };
 
@@ -490,7 +487,7 @@ pub const Thread = packed struct(u32) {
 
     sync: Synchronization,
 
-    pub fn create(entry: *fn (ctx: *anyopaque) callconv(.c) void, ctx: *anyopaque, stack_top: [*]u8, priority: u6, processor_id: i32) UnexpectedError!Thread {
+    pub fn create(entry: *const fn (ctx: *anyopaque) callconv(.c) void, ctx: *anyopaque, stack_top: [*]u8, priority: u6, processor_id: i32) UnexpectedError!Thread {
         return switch (createThread(entry, ctx, stack_top, priority, processor_id)) {
             .success => |s| s.value,
             .failure => |code| unexpectedResult(code),
@@ -503,6 +500,10 @@ pub const Thread = packed struct(u32) {
 
     pub fn waitMultiple(threads: []const Thread, wait_all: bool, timeout_ns: i64) WaitError!usize {
         return Synchronization.waitMultiple(@ptrCast(threads), wait_all, timeout_ns);
+    }
+
+    pub fn close(thread: Thread) void {
+        _ = closeHandle(thread.sync.obj);
     }
 };
 
@@ -596,7 +597,7 @@ pub fn setProcessIdealProcessor(process: Process, ideal_processor: i32) result.C
 }
 
 // TODO: processor_id type?
-pub fn createThread(entry: *fn (ctx: *anyopaque) void, ctx: *anyopaque, stack_top: [*]u8, priority: u6, processor_id: i32) Result(Thread) {
+pub fn createThread(entry: *const fn (ctx: *anyopaque) callconv(.c) void, ctx: *anyopaque, stack_top: [*]u8, priority: u6, processor_id: i32) Result(Thread) {
     var handle: Thread = undefined;
 
     const code = asm volatile ("svc 0x08"
@@ -710,7 +711,7 @@ pub fn createMutex(initial_locked: bool) Result(Mutex) {
     const code = asm volatile ("svc 0x13"
         : [code] "={r0}" (-> result.Code),
           [mutex] "={r1}" (mutex),
-        : [initial_locked] "{r0}" (initial_locked),
+        : [initial_locked] "{r1}" (initial_locked),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, mutex);
@@ -729,8 +730,8 @@ pub fn createSemaphore(initial_count: usize, max_count: usize) Result(Semaphore)
     const code = asm volatile ("svc 0x15"
         : [code] "={r0}" (-> result.Code),
           [semaphore] "={r1}" (semaphore),
-        : [initial_count] "{r0}" (initial_count),
-          [max_count] "{r1}" (max_count),
+        : [initial_count] "{r1}" (initial_count),
+          [max_count] "{r2}" (max_count),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, semaphore);
@@ -742,8 +743,8 @@ pub fn releaseSemaphore(semaphore: Semaphore, release_count: usize) Result(usize
     const code = asm volatile ("svc 0x16"
         : [code] "={r0}" (-> result.Code),
           [count] "={r1}" (count),
-        : [semaphore] "{r0}" (semaphore),
-          [release_count] "{r1}" (release_count),
+        : [semaphore] "{r1}" (semaphore),
+          [release_count] "{r2}" (release_count),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, count);
@@ -755,7 +756,7 @@ pub fn createEvent(reset_type: ResetType) Result(Event) {
     const code = asm volatile ("svc 0x17"
         : [code] "={r0}" (-> result.Code),
           [event] "={r1}" (event),
-        : [reset_type] "{r0}" (reset_type),
+        : [reset_type] "{r1}" (reset_type),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, @bitCast(event));
@@ -781,7 +782,7 @@ pub fn createTimer(reset_type: ResetType) Result(Timer) {
     const code = asm volatile ("svc 0x1A"
         : [code] "={r0}" (-> result.Code),
           [timer] "={r1}" (timer),
-        : [reset_type] "{r0}" (reset_type),
+        : [reset_type] "{r1}" (reset_type),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, timer);
@@ -976,8 +977,7 @@ pub fn connectToPort(port: [:0]const u8) Result(ClientSession) {
     const code = asm volatile ("svc 0x2D"
         : [code] "={r0}" (-> result.Code),
           [session] "={r1}" (session),
-        : [unknown] "{r0}" (0),
-          [port] "{r1}" (port.ptr),
+        : [port] "{r1}" (port.ptr),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, session);

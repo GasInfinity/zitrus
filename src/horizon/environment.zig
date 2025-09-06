@@ -27,7 +27,6 @@ pub const ProgramMeta = extern struct {
 };
 
 pub var program_meta: ProgramMeta linksection(".prm") = .{};
-pub var exit_fn: ?*const fn () noreturn = null;
 
 const ProvidedService = struct {
     name: [8]u8,

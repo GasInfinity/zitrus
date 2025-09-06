@@ -46,6 +46,12 @@ pub const PresentMode = enum(u8) {
     fifo,
 };
 
+pub const QueueFamily = enum(u8) {
+    fill,
+    transfer,
+    submit,
+};
+
 /// The 3DS always has 3 heaps.
 ///     - FCRAM
 ///     - VRAM (A, 3MiB always)
@@ -624,11 +630,12 @@ pub const PipelineBindPoint = enum(u8) {
 pub const SwapchainCreateInfo = extern struct {
     pub const ImageMemoryInfo = extern struct {
         memory: DeviceMemory,
-        memory_offset: DeviceMemory,
+        memory_offset: DeviceSize,
     };
 
     surface: Surface,
     present_mode: PresentMode,
+    image_usage: ImageCreateInfo.Usage,
     image_format: Format,
     image_array_layers: u8,
     image_count: u8,
@@ -1077,17 +1084,6 @@ pub const BufferImageCopy = extern struct {
     flags: Flags,
 };
 
-pub const SemaphoreSignalInfo = extern struct {
-    value: u64,
-    semaphore: Semaphore,
-};
-
-pub const SemaphoreWaitInfo = extern struct {
-    semaphore_count: u32,
-    semaphores: [*]const Semaphore,
-    values: [*]const u64,
-};
-
 pub const MultiDrawInfo = extern struct {
     first_vertex: u32,
     vertex_count: u32,
@@ -1170,16 +1166,32 @@ pub const TextureCombiner = extern struct {
     }
 };
 
-pub const SubmitInfo = extern struct {
-    command_buffers_len: usize,
-    command_buffers: [*]const CommandBuffer,
+pub const CopyBufferToImageInfo = extern struct {
+    wait_semaphore: ?*const SemaphoreOperation = null,
+    src_buffer: Buffer,
+    dst_image: Image,
+    src_offset: DeviceSize,
+    signal_semaphore: ?*const SemaphoreOperation = null,
+};
 
-    pub fn init(command_buffers: []const CommandBuffer) SubmitInfo {
-        return .{
-            .command_buffers = command_buffers.ptr,
-            .command_buffers_len = command_buffers.len,
-        };
-    }
+pub const BlitImageInfo = extern struct {
+    wait_semaphore: ?*const SemaphoreOperation = null,
+    src_image: Image,
+    dst_image: Image,
+    signal_semaphore: ?*const SemaphoreOperation = null,
+};
+
+pub const ClearColorInfo = extern struct {
+    wait_semaphore: ?*const SemaphoreOperation = null,
+    image: Image,
+    color: [4]u8,
+    signal_semaphore: ?*const SemaphoreOperation = null,
+};
+
+pub const SubmitInfo = extern struct {
+    wait_semaphore: ?*const SemaphoreOperation = null,
+    command_buffer: CommandBuffer,
+    signal_semaphore: ?*const SemaphoreOperation = null,
 };
 
 pub const PresentInfo = extern struct {
@@ -1189,13 +1201,26 @@ pub const PresentInfo = extern struct {
         _: u7 = 0,
     };
 
-    swapchains_len: usize,
-    swapchains: [*]const Swapchain,
-    image_indices: [*]const u8,
+    wait_semaphore: ?*const SemaphoreOperation = null,
+    swapchain: Swapchain,
+    image_index: u8,
     flags: Flags,
 };
 
+pub const SemaphoreOperation = extern struct {
+    value: u64,
+    semaphore: Semaphore,
+
+    pub fn init(semaphore: Semaphore, value: u64) SemaphoreOperation {
+        return .{
+            .semaphore = semaphore,
+            .value = value,
+        };
+    }
+};
+
 pub const Device = backend.Device;
+pub const Queue = backend.Queue.Handle;
 pub const DeviceMemory = backend.DeviceMemory.Handle;
 pub const Semaphore = backend.Semaphore.Handle;
 pub const Buffer = backend.Buffer.Handle;
@@ -1207,6 +1232,10 @@ pub const CommandBuffer = backend.CommandBuffer.Handle;
 pub const Sampler = backend.Sampler.Handle;
 pub const Surface = backend.Surface.Handle;
 pub const Swapchain = backend.Swapchain.Handle;
+
+comptime {
+    _ = backend;
+}
 
 // NOTE: This is not pub as implementation details should not be exposed.
 const backend = @import("mango/backend.zig");

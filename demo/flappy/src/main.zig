@@ -62,17 +62,17 @@ const AppState = struct {
     current_bird_sprite: f32 = 0,
     current_bird_sprite_framerate: f32 = (1.0 / 6.0),
 
-    pub fn update(state: *AppState, pressed: Hid.Pad.State, random: std.Random) void {
+    pub fn update(state: *AppState, pressed: Hid.Pad.State, touch_pressed: bool, random: std.Random) void {
         switch (state.game) {
             .get_ready => {
-                if (pressed.a) {
+                if (pressed.a or touch_pressed) {
                     state.game = .{ .gaming = .{} };
                 }
 
                 state.bird_x = (Screen.top.width() / 2);
             },
             .gaming => |*g| {
-                if (pressed.a) {
+                if (pressed.a or touch_pressed) {
                     g.bird_velocity = 100;
                 } else {
                     g.bird_velocity -= 150 * (1.0 / 60.0);
@@ -169,7 +169,7 @@ const AppState = struct {
                 }
             },
             .game_over => {
-                if (pressed.a) {
+                if (pressed.a or touch_pressed) {
                     state.game = .get_ready;
                     state.pipes_end = 0;
                 }
@@ -254,20 +254,23 @@ pub fn main() !void {
     var srv = try ServiceManager.init();
     defer srv.deinit();
 
-    var apt = try Applet.init(srv);
-    defer apt.deinit();
+    const apt = try Applet.open(srv);
+    defer apt.close();
+
+    const hid = try Hid.open(srv);
+    defer hid.close();
+
+    const gsp = try GspGpu.open(srv);
+    defer gsp.close();
 
     var app = try Applet.Application.init(apt, srv);
     defer app.deinit(apt, srv);
 
-    var hid = try Hid.init(srv);
-    defer hid.deinit();
-
     var input = try Hid.Input.init(hid);
     defer input.deinit();
 
-    var gsp = try GspGpu.init(srv);
-    defer gsp.deinit();
+    var gfx = try GspGpu.Graphics.init(gsp);
+    defer gfx.deinit(gsp);
 
     var framebuffer = try Framebuffer.init(.{
         .double_buffer = .init(.{
@@ -288,18 +291,18 @@ pub fn main() !void {
         bottom.drawSprite(.transparent_bitmap, 2 * (Screen.bottom.width() / 3), (Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ .transparent = transparent_color }, .{});
     }
 
-    try framebuffer.flushBuffers(&gsp);
-    try framebuffer.swapBuffers(&gsp);
+    try framebuffer.flushBuffers(gsp);
     while (true) {
-        const interrupts = try gsp.waitInterrupts();
+        const interrupts = try gfx.waitInterrupts();
 
         if (interrupts.contains(.vblank_top)) {
             break;
         }
     }
+    try framebuffer.swapBuffers(&gfx);
 
     try gsp.sendSetLcdForceBlack(false);
-    defer if (gsp.has_right) gsp.sendSetLcdForceBlack(true) catch unreachable;
+    defer gsp.sendSetLcdForceBlack(true) catch unreachable;
 
     var app_state: AppState = .{};
 
@@ -307,6 +310,7 @@ pub fn main() !void {
     const random = rand.random();
 
     var last_current: Hid.Pad.State = std.mem.zeroes(Hid.Pad.State);
+    var last_pressed: bool = false;
 
     main_loop: while (true) {
         while (try srv.pollNotification()) |notif| switch (notif) {
@@ -316,9 +320,9 @@ pub fn main() !void {
 
         while (try app.pollNotification(apt, srv)) |n| switch (n) {
             .jump_home, .jump_home_by_power => {
-                j_h: switch (try app.jumpToHome(apt, srv, &gsp, .none)) {
+                j_h: switch (try app.jumpToHome(apt, srv, gsp, .none)) {
                     .resumed => {},
-                    .jump_home => continue :j_h (try app.jumpToHome(apt, srv, &gsp, .none)),
+                    .jump_home => continue :j_h (try app.jumpToHome(apt, srv, gsp, .none)),
                     .must_close => break :main_loop,
                 }
             },
@@ -341,20 +345,25 @@ pub fn main() !void {
             break :main_loop;
         }
 
+        const touch = input.pollTouch();
+        const touch_changed = touch.pressed ^ last_pressed;
+        const touch_pressed = touch.pressed and touch_changed;
+
+        last_pressed = touch.pressed;
         const top = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.top), Screen.top.width());
 
-        app_state.update(pressed, random);
+        app_state.update(pressed, touch_pressed, random);
         app_state.draw(top);
 
-        try framebuffer.flushBuffers(&gsp);
-        try framebuffer.swapBuffers(&gsp);
+        try framebuffer.flushBuffers(gsp);
         while (true) {
-            const interrupts = try gsp.waitInterrupts();
+            const interrupts = try gfx.waitInterrupts();
 
             if (interrupts.contains(.vblank_top)) {
                 break;
             }
         }
+        try framebuffer.swapBuffers(&gfx);
     }
 }
 
@@ -374,7 +383,7 @@ const ServiceManager = horizon.ServiceManager;
 const Applet = horizon.services.Applet;
 const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
-const Framebuffer = zitrus.pica.Framebuffer;
+const Framebuffer = GspGpu.Graphics.Framebuffer;
 
 pub const panic = zitrus.panic;
 const zitrus = @import("zitrus");

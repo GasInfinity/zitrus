@@ -26,13 +26,11 @@ fn startup() linksection(".startup") callconv(.naked) noreturn {
     @setRuntimeSafety(false);
     // TODO: Add .cantunwind: https://github.com/llvm/llvm-project/issues/115891
     asm volatile (
-        \\ str lr, [%[exit_fn]]
         \\ mov sp, %[allocated_stack]
         \\ add sp, sp, %[stack_size]
         \\ b %[callMainAndExit]
         :
         : [callMainAndExit] "X" (&callMainAndExit),
-          [exit_fn] "r" (&environment.exit_fn),
           [allocated_stack] "r" (&allocated_stack),
           [stack_size] "r" (stack_size),
 
@@ -69,11 +67,6 @@ fn callMainAndExit() callconv(.c) noreturn {
 
     // TODO: Log to errdisp if return was not 0?
     _ = callMainWithArgs(argc, argv);
-
-    if (environment.exit_fn) |exit_fn| {
-        exit_fn();
-    }
-
     horizon.exit();
 }
 

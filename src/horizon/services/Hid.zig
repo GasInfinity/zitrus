@@ -117,7 +117,7 @@ pub const ControllerState = struct {
 
 session: ClientSession,
 
-pub fn init(srv: ServiceManager) !Hid {
+pub fn open(srv: ServiceManager) !Hid {
     var last_error: anyerror = undefined;
     const hid_session = used: for (service_names) |service_name| {
         const hid_session = srv.getService(service_name, .wait) catch |err| {
@@ -131,9 +131,8 @@ pub fn init(srv: ServiceManager) !Hid {
     return .{ .session = hid_session };
 }
 
-pub fn deinit(hid: *Hid) void {
-    hid.session.deinit();
-    hid.* = undefined;
+pub fn close(hid: Hid) void {
+    hid.session.close();
 }
 
 pub const Handles = struct {
@@ -144,13 +143,13 @@ pub const Handles = struct {
     gyroscope: Event,
     debug_pad: Event,
 
-    pub fn deinit(handles: *Handles) void {
-        handles.shm.deinit();
-        handles.pad_0.deinit();
-        handles.pad_1.deinit();
-        handles.accelerometer.deinit();
-        handles.gyroscope.deinit();
-        handles.debug_pad.deinit();
+    pub fn close(handles: *Handles) void {
+        handles.shm.close();
+        handles.pad_0.close();
+        handles.pad_1.close();
+        handles.accelerometer.close();
+        handles.gyroscope.close();
+        handles.debug_pad.close();
     }
 };
 

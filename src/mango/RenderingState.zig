@@ -179,6 +179,7 @@ pub fn emitDirty(rnd: *RenderingState, queue: *cmd3d.Queue) void {
 
     if (dirty.isAnyUniformsDirty()) {
         queue.add(internal_regs, &internal_regs.geometry_pipeline.start_draw_function, .config);
+        defer queue.add(internal_regs, &internal_regs.geometry_pipeline.start_draw_function, .drawing);
 
         if (dirty.isUniformsDirty(.vertex, .bool)) {
             queue.add(internal_regs, &internal_regs.vertex_shader.bool_uniform, @bitCast(@as(u32, 0x7FFF0000) | @as(u16, @bitCast(rnd.uniform_state.boolean_constants.get(.vertex).bits))));
@@ -203,8 +204,6 @@ pub fn emitDirty(rnd: *RenderingState, queue: *cmd3d.Queue) void {
         if (dirty.isUniformsDirty(.geometry, .float)) {
             emitFloatUniforms(rnd.uniform_state.floating_dirty.get(.geometry), rnd.uniform_state.floating_constants.get(.geometry), &internal_regs.geometry_shader, queue);
         }
-
-        queue.add(internal_regs, &internal_regs.geometry_pipeline.start_draw_function, .drawing);
     }
 
     if (dirty.isAnyTextureUnitDirty()) {

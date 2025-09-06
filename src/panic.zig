@@ -7,13 +7,12 @@ pub fn throw(msg: []const u8, ret_trace: ?*std.builtin.StackTrace) noreturn {
         while (true) {
             horizon.breakExecution(.panic);
         }
+
         horizon.exit();
     }
 
-    var errdisp = ErrorDisplayManager.init() catch {
-        return;
-    };
-    defer errdisp.deinit();
+    const errdisp = try ErrorDisplayManager.open();
+    defer errdisp.close();
 
     var stack_trace_buffer: [1024]u8 = undefined;
     var stack_trace_writer: std.Io.Writer = .fixed(&stack_trace_buffer);

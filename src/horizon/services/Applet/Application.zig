@@ -4,6 +4,7 @@
 
 pub const Error = @import("Application/Error.zig");
 pub const SoftwareKeyboard = @import("Application/SoftwareKeyboard.zig");
+pub const InternetBrowser = @import("Application/InternetBrowser.zig");
 
 pub const NotificationResult = enum {
     no_operation,
@@ -92,7 +93,6 @@ pub fn deinit(app: *Application, apt: Applet, srv: ServiceManager) void {
                 @panic("TODO: 'Dirty' Luma3DS chainloading");
             }
 
-            environment.exit_fn = null;
             break :close false;
         },
     };
@@ -102,8 +102,8 @@ pub fn deinit(app: *Application, apt: Applet, srv: ServiceManager) void {
         apt.sendCloseApplication(srv, &.{}, .null) catch {};
     }
 
-    app.notification_event.deinit();
-    app.parameters_event.deinit();
+    app.notification_event.close();
+    app.parameters_event.close();
     app.* = undefined;
 }
 
@@ -189,7 +189,7 @@ fn waitParameterConsumingNotifications(app: *Application, apt: Applet, srv: Serv
     }
 }
 
-pub fn waitAppletResult(app: *Application, apt: Applet, srv: ServiceManager, gsp: *GspGpu, parameter: []u8) !AppletResult {
+pub fn waitAppletResult(app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu, parameter: []u8) !AppletResult {
     const parameters = try app.waitParameterConsumingNotifications(apt, srv, parameter);
     switch (parameters.cmd) {
         .wakeup, .request, .response => unreachable, // NOTE: Should only be sent at Application start? + do we get requests? + we're not waiting for a response!
@@ -205,7 +205,7 @@ pub fn waitAppletResult(app: *Application, apt: Applet, srv: ServiceManager, gsp
             switch (cmd) {
                 .wakeup_by_cancel, .wakeup_by_cancelall => app.flags.must_close = true,
                 else => {
-                    try gsp.acquireRight(0x0);
+                    try gsp.sendAcquireRight(0x0);
                     try gsp.sendRestoreVRAMSysArea();
                 },
             }
@@ -223,7 +223,7 @@ pub fn waitAppletResult(app: *Application, apt: Applet, srv: ServiceManager, gsp
 }
 
 // NOTE: we also need to wakeup the dsp if needed when implemented
-pub fn jumpToHome(app: *Application, apt: Applet, srv: ServiceManager, gsp: *GspGpu, params: Applet.JumpToHomeParameters) !ExecutionResult {
+pub fn jumpToHome(app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu, params: Applet.JumpToHomeParameters) !ExecutionResult {
     const last_allow_sleep = app.flags.allow_sleep;
 
     app.setSleepAllowed(apt, srv, false);
@@ -236,7 +236,7 @@ pub fn jumpToHome(app: *Application, apt: Applet, srv: ServiceManager, gsp: *Gsp
     try app.screenTransfer(apt, srv, gsp, home_app_id, false);
 
     // Sleep dsp
-    try gsp.releaseRight();
+    try gsp.sendReleaseRight();
     try apt.sendJumpToHomeMenu(srv, params);
 
     // XXX: Does the home menu return any kind of parameters?
@@ -249,7 +249,7 @@ pub fn jumpToHome(app: *Application, apt: Applet, srv: ServiceManager, gsp: *Gsp
     };
 }
 
-pub fn startLibraryApplet(app: *Application, apt: Applet, srv: ServiceManager, gsp: *GspGpu, app_id: Applet.AppId, param_handle: Object, param: []const u8) !void {
+pub fn startLibraryApplet(app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu, app_id: Applet.AppId, param_handle: Object, param: []const u8) !void {
     const last_allow_sleep = app.flags.allow_sleep;
 
     app.setSleepAllowed(apt, srv, false);
@@ -257,16 +257,36 @@ pub fn startLibraryApplet(app: *Application, apt: Applet, srv: ServiceManager, g
 
     try apt.sendPrepareToStartLibraryApplet(srv, app_id);
     try gsp.sendSaveVRAMSysArea();
-
     try app.screenTransfer(apt, srv, gsp, app_id, true);
 
     // Sleep dsp
-    try gsp.releaseRight();
+    try gsp.sendReleaseRight();
     try apt.sendStartLibraryApplet(srv, app_id, param_handle, param);
 }
 
+// NOTE: This will stay with the same interface as jump to home as I don't know of a system applet which returns data.
+pub fn launchSystemApplet(app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu, app_id: Applet.AppId, param_handle: Object, param: []const u8) !ExecutionResult {
+    const last_allow_sleep = app.flags.allow_sleep;
+
+    app.setSleepAllowed(apt, srv, false);
+    defer app.setSleepAllowed(apt, srv, last_allow_sleep);
+
+    try apt.sendPrepareToStartSystemApplet(srv, app_id);
+    try gsp.sendSaveVRAMSysArea();
+
+    // Sleep dsp
+    try gsp.sendReleaseRight();
+    try apt.sendStartSystemApplet(srv, app_id, param_handle, param);
+    try app.screenTransfer(apt, srv, gsp, app_id, false);
+
+    return switch (try app.waitAppletResult(apt, srv, gsp, &.{})) {
+        .execution => |e| e,
+        .message => unreachable, // XXX: Same as with jumping to home...
+    };
+}
+
 // NOTE: This is just straight up taken from libctru. I didn't know why jumping to home was not working, now I know :p
-pub fn screenTransfer(app: *Application, apt: Applet, srv: ServiceManager, gsp: *GspGpu, target_app_id: Applet.AppId, is_library_applet: bool) !void {
+pub fn screenTransfer(app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu, target_app_id: Applet.AppId, is_library_applet: bool) !void {
     const gsp_capture_info = try gsp.sendImportDisplayCaptureInfo();
     const apt_capture_info = Applet.CaptureBuffer.init(gsp_capture_info);
 

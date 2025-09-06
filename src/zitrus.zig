@@ -3,6 +3,43 @@ pub const ZitrusOptions = struct {
     stack_size: u32,
 };
 
+// XXX: Remove this when zig finally supports 64-bit atomics in ARMv6K+
+pub fn atomicLoad64(comptime T: type, ptr: *T) T {
+    if (@sizeOf(T) != 8) @compileError("only supported with 64-bit types");
+
+    var lo: u32 = undefined;
+    var hi: u32 = undefined;
+
+    asm volatile ("ldrexd %[lo], %[hi], [%[ptr]]"
+        : [lo] "={r0}" (lo),
+          [hi] "={r1}" (hi),
+        : [ptr] "{r0}" (ptr),
+    );
+
+    return @bitCast((@as(u64, hi) << 32) | @as(u64, lo));
+}
+
+pub fn atomicStore64(comptime T: type, ptr: *T, value: T) void {
+    if (@sizeOf(T) != 8) @compileError("only supported with 64-bit types");
+
+    const value_u64: u64 = @bitCast(value);
+
+    while (true) {
+        asm volatile ("ldrexd r4, r5, [%[ptr]]"
+            :
+            : [ptr] "{r0}" (ptr),
+            : .{ .r4 = true, .r5 = true, .memory = true });
+
+        if (asm volatile ("strexd %[fail], %[lo], %[hi], [%[ptr]]"
+            : [fail] "={r1}" (-> u32),
+            : [lo] "{r2}" (@as(u32, @truncate(value_u64))),
+              [hi] "{r3}" (@as(u32, @truncate(value_u64 >> 32))),
+              [ptr] "{r0}" (ptr),
+            : .{ .memory = true }) == 0)
+            break;
+    }
+}
+
 pub const PhysicalAddress = AlignedPhysicalAddress(.@"1", .@"1");
 
 pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, comptime address_shift: std.mem.Alignment) type {
@@ -55,7 +92,6 @@ comptime {
 
 pub const fmt = @import("fmt.zig");
 pub const panic = @import("panic.zig");
-pub const arm = @import("arm.zig");
 pub const memory = @import("memory.zig");
 pub const start = @import("start.zig");
 pub const horizon = @import("horizon.zig");

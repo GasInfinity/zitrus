@@ -2,7 +2,7 @@
 
 3DS homebrew library and toolchain written entirely in zig.
 
-![bitmap example in a 2ds](https://github.com/GasInfinity/zitrus/blob/main/docs/images/bitmap-2ds.png?raw=true)
+![2DS running the flappy demo](https://github.com/GasInfinity/zitrus/blob/main/docs/images/2ds-flappy.jpg?raw=true)
 
 ## Installation
 
@@ -63,12 +63,15 @@ comptime {
 ```
 
 ## Examples / Demos
-Currently there are 5 examples in the `demo/` directory. To build them, you must have `zig 0.15.1` in your path and run `zig build`.
+Currently there are multiple examples in the `demo/` directory. To build them, you must have `zig 0.15.1` in your path and run `zig build`.
+- [mango](demo/mango/) contains samples of how to use the mango graphics api.
+
 - [panic](demo/panic/) is a simple example that panics when opened to test panics and traces.
 - [info](demo/info) is a simple app that currently shows the console region and model (will be updated to show more info over time).
 - [bitmap](demo/bitmap/) is a port of the bitmap example in libctru's 3ds-examples.
 - [flappy](demo/flappy) is a simple fully functional flappy bird clone written entirely with software blitting.
-- [gpu](demo/gpu/) is a playground for [mango](src/mango.zig), a vulkan-like graphics API for the PICA200. All new features are tested there before getting pushed to the repo.
+- [gpu](demo/gpu/) is a playground for [mango](src/mango.zig), bleeding edge features are tested there. Not really an example per-se.
+
 
 # Legend
 ⚠️ Feature regressed temporarily due to dependency or upstream (usually when zig updates this can happen)
@@ -138,15 +141,15 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 # Mango coverage
 
 - 🔴 Tests
-- 🟡 Device HOS abstraction.
+- 🟡 Device HOS implementation.
 - 🟡 Memory / Buffers
 - 🟡 Pipelines
 - 🟡 CommandPool
 - 🟡 CommandBuffer's
 - 🟡 Images / ImageViews
 - 🟡 Image Sampling
-- 🔴⛔ Synchronization primitives / driver thread.
-- 🔴⛔ Presentation engine.
+- 🟢 Synchronization primitives / driver thread.
+- 🟡 Presentation engine.
 
 - 🔴🪫 Device baremetal interface.
 

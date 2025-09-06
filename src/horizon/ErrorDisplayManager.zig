@@ -28,14 +28,13 @@ pub const FatalErrorInfo = extern struct {
 
 session: Session,
 
-pub fn init() !ErrDispManager {
+pub fn open() !ErrDispManager {
     const errdisp_session = try Session.connect(port_name);
     return ErrDispManager{ .session = errdisp_session };
 }
 
-pub fn deinit(errdisp: *ErrDispManager) void {
-    errdisp.session.deinit();
-    errdisp.* = undefined;
+pub fn close(errdisp: ErrDispManager) void {
+    errdisp.session.close();
 }
 
 pub fn sendSetUserString(errdisp: ErrDispManager, str: []const u8) !void {

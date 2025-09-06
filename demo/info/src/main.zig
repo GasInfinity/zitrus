@@ -2,27 +2,30 @@ pub fn main() !void {
     var srv = try ServiceManager.init();
     defer srv.deinit();
 
-    var apt = try Applet.init(srv);
-    defer apt.deinit();
+    const apt = try Applet.open(srv);
+    defer apt.close();
+
+    const hid = try Hid.open(srv);
+    defer hid.close();
+
+    const gsp = try GspGpu.open(srv);
+    defer gsp.close();
+
+    const cfg = try Config.open(srv);
+    defer cfg.close();
 
     var app = try Applet.Application.init(apt, srv);
     defer app.deinit(apt, srv);
 
-    var hid = try Hid.init(srv);
-    defer hid.deinit();
-
     var input = try Hid.Input.init(hid);
     defer input.deinit();
 
-    var gsp = try GspGpu.init(srv);
-    defer gsp.deinit();
-
-    var cfg = try Config.init(srv);
-    defer cfg.deinit();
+    var gfx = try GspGpu.Graphics.init(gsp);
+    defer gfx.deinit(gsp);
 
     var framebuffer = try Framebuffer.init(.{
         .double_buffer = .init(.{
-            .top = false,
+            .top = true,
             .bottom = false,
         }),
         .color_format = .init(.{
@@ -33,47 +36,43 @@ pub fn main() !void {
     });
     defer framebuffer.deinit();
 
-    const top = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.top), Screen.top.width());
-    @memset(top.framebuffer, std.mem.zeroes(Bgr888));
+    {
+        const top = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.top), Screen.top.width());
+        @memset(top.framebuffer, std.mem.zeroes(Bgr888));
 
-    const bottom = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.bottom), Screen.bottom.width());
-    @memset(bottom.framebuffer, std.mem.zeroes(Bgr888));
+        const bottom = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.bottom), Screen.bottom.width());
+        @memset(bottom.framebuffer, std.mem.zeroes(Bgr888));
+    }
 
     const model = try cfg.sendGetSystemModel();
-    var fmt_buffer: [512]u8 = undefined;
-    drawString(top, 0, 0, try std.fmt.bufPrint(&fmt_buffer, "Model: {s} ({s})", .{ @tagName(model), model.description() }), .{});
-    drawString(top, font_width + 1, 0, try std.fmt.bufPrint(&fmt_buffer, "Region: {s}", .{@tagName(try cfg.sendGetRegion())}), .{});
 
     var utf8_buf: [128]u8 = undefined;
     const name = try cfg.getConfigUser(.user_name);
     const name_written = try std.unicode.utf16LeToUtf8(&utf8_buf, &name.name);
-    drawString(top, 2 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Name: {s}", .{utf8_buf[0..name_written]}), .{});
-
     const language = try cfg.getConfigUser(.language);
-    drawString(top, 3 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Language: {s}", .{@tagName(language)}), .{});
-
     const birthday = try cfg.getConfigUser(.birthday);
-    drawString(top, 4 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Birthday: {}/{}", .{ birthday.day, birthday.month }), .{});
-
     const country_info = try cfg.getConfigUser(.country_info);
-    drawString(top, 5 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Country: {}/{}", .{ country_info.province_code, country_info.country_code }), .{});
 
-    try framebuffer.flushBuffers(&gsp);
-    try framebuffer.present(&gsp);
+    try framebuffer.flushBuffers(gsp);
 
     // TODO: This is currently not that great...
     while (true) {
-        const interrupts = try gsp.waitInterrupts();
+        const interrupts = try gfx.waitInterrupts();
 
         if (interrupts.contains(.vblank_top)) {
             break;
         }
     }
 
-    try gsp.sendSetLcdForceBlack(false);
-    defer if (gsp.has_right) gsp.sendSetLcdForceBlack(true) catch {};
+    try framebuffer.swapBuffers(&gfx);
 
+    try gsp.sendSetLcdForceBlack(false);
+    defer gsp.sendSetLcdForceBlack(true) catch {};
+
+    var last_elapsed: f32 = 0.0;
     main_loop: while (true) {
+        const start = horizon.getSystemTick();
+
         while (try srv.pollNotification()) |notif| switch (notif) {
             .must_terminate => break :main_loop,
             else => {},
@@ -81,9 +80,9 @@ pub fn main() !void {
 
         while (try app.pollNotification(apt, srv)) |n| switch (n) {
             .jump_home, .jump_home_by_power => {
-                j_h: switch (try app.jumpToHome(apt, srv, &gsp, .none)) {
+                j_h: switch (try app.jumpToHome(apt, srv, gsp, .none)) {
                     .resumed => {},
-                    .jump_home => continue :j_h (try app.jumpToHome(apt, srv, &gsp, .none)),
+                    .jump_home => continue :j_h (try app.jumpToHome(apt, srv, gsp, .none)),
                     .must_close => break :main_loop,
                 }
             },
@@ -102,13 +101,32 @@ pub fn main() !void {
             break :main_loop;
         }
 
+        const top = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.top), Screen.top.width());
+        @memset(top.framebuffer, std.mem.zeroes(Bgr888));
+
+        var fmt_buffer: [512]u8 = undefined;
+        drawString(top, 0, 0, try std.fmt.bufPrint(&fmt_buffer, "Model: {s} ({s})", .{ @tagName(model), model.description() }), .{});
+        drawString(top, font_width + 1, 0, try std.fmt.bufPrint(&fmt_buffer, "Region: {s}", .{@tagName(try cfg.sendGetRegion())}), .{});
+
+        drawString(top, 2 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Name: {s}", .{utf8_buf[0..name_written]}), .{});
+        drawString(top, 3 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Language: {s}", .{@tagName(language)}), .{});
+        drawString(top, 4 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Birthday: {}/{}", .{ birthday.day, birthday.month }), .{});
+        drawString(top, 5 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Country: {}/{}", .{ country_info.province_code, country_info.country_code }), .{});
+        drawString(top, 6 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Last elapsed: {}", .{last_elapsed}), .{});
+
+        try framebuffer.flushBuffers(gsp);
+
         while (true) {
-            const interrupts = try gsp.waitInterrupts();
+            const interrupts = try gfx.waitInterrupts();
 
             if (interrupts.contains(.vblank_top)) {
                 break;
             }
         }
+        try framebuffer.swapBuffers(&gfx);
+
+        const elapsed_ticks: f32 = @floatFromInt(horizon.getSystemTick() - start);
+        last_elapsed = (elapsed_ticks / 268111856.0);
     }
 }
 
@@ -197,7 +215,9 @@ const Applet = horizon.services.Applet;
 const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
 const Config = horizon.services.Config;
-const Framebuffer = zitrus.pica.Framebuffer;
+const Framebuffer = GspGpu.Graphics.Framebuffer;
+
+const mango = zitrus.mango;
 
 pub const panic = zitrus.panic;
 const zitrus = @import("zitrus");

@@ -14,23 +14,108 @@
 
 pub const Handle = enum(u32) { _ };
 
-// NOTE: The C API will have other entrypoint for creating a device.
-pub const CreateInfo = struct {
-    gsp: *GspGpu,
+pub const Native = struct {
+    driver_thread: horizon.Thread,
+    driver_stack: [16 * 1024]u8 align(8),
 };
 
-vram_allocators: std.EnumArray(zitrus.memory.VRamBank, VRamBankAllocator),
-presentation_engine: PresentationEngine,
-gsp: *GspGpu,
+pub const QueueStatus = enum(i32) {
+    working = -1,
+    waiting = 0,
+    idle = 1,
+};
 
-pub fn initTodo(gsp: *GspGpu) Device {
-    return .{
+gsp: GspGpu,
+gsp_thread_index: u8,
+gsp_shm_memory_block: MemoryBlock,
+gsp_shm: *GspGpu.Shared,
+interrupt_event: Event,
+arbiter: AddressArbiter,
+driver_thread: horizon.Thread,
+driver_stack: [8 * 1024]u8 align(8),
+
+running: std.atomic.Value(bool),
+vram_allocators: std.EnumArray(zitrus.memory.VRamBank, VRamBankAllocator),
+
+// TODO: We can allow asking to create X queues, e.g the user may only want a transfer queue + submit queue only (we can basically do a clear by drawing a fullscreen quad!)
+// This would introduce an extra indirection, but would reduce mem usage. Look into it sometime pls.
+fill_queue: backend.Queue.Fill,
+transfer_queue: backend.Queue.Transfer,
+submit_queue: backend.Queue.Submit,
+presentation_engine: PresentationEngine,
+
+/// Whether we're waiting for operations to complete or not.
+/// Waiting for a semaphore is NOT considered idle as we'll eventually wake.
+queue_statuses: std.EnumArray(Queue.Type, std.atomic.Value(QueueStatus)),
+
+pub fn initTodo(gsp: GspGpu, arbiter: horizon.AddressArbiter, allocator: std.mem.Allocator) !*Device {
+    const device = try allocator.create(Device);
+    errdefer allocator.destroy(device);
+
+    try gsp.sendAcquireRight(0x0);
+
+    const interrupt_event: Event = try .create(.oneshot);
+    errdefer interrupt_event.close();
+
+    // XXX: What does this flag mean?
+    const queue_result = try gsp.sendRegisterInterruptRelayQueue(0x1, interrupt_event);
+
+    if (queue_result.first_initialization) {
+        try GspGpu.Graphics.initializeHardware(gsp);
+    }
+
+    // FIXME: As everywhere else we use this, this is NOT thread-safe and IS global, two big no-nos (it's easy to replace tho so defer the design!)
+    const shared_memory = try horizon.heap.non_thread_safe_shared_memory_address_allocator.alloc(@sizeOf(GspGpu.Shared), .fromByteUnits(4096));
+    errdefer horizon.heap.non_thread_safe_shared_memory_address_allocator.free(shared_memory);
+
+    try queue_result.response.gsp_memory.map(@alignCast(shared_memory.ptr), .rw, .dont_care);
+    errdefer device.gsp_shm_memory_block.unmap(shared_memory.ptr);
+
+    device.* = .{
+        .running = .init(true),
         .vram_allocators = .init(.{
             .a = .init(@ptrFromInt(horizon.memory.vram_a_begin)),
             .b = .init(@ptrFromInt(horizon.memory.vram_b_begin)),
         }),
-        .presentation_engine = .init(),
+        .presentation_engine = .init(device),
         .gsp = gsp,
+        .gsp_thread_index = @intCast(queue_result.response.thread_index),
+        .gsp_shm_memory_block = queue_result.response.gsp_memory,
+        .gsp_shm = @ptrCast(shared_memory),
+        .interrupt_event = interrupt_event,
+        .arbiter = arbiter,
+        .driver_thread = undefined, // NOTE: The driver thread creation is deferred as we want to fully initialize things first!
+        .driver_stack = undefined,
+        .queue_statuses = .initDefault(.init(.idle), .{}),
+        .fill_queue = .init(device),
+        .transfer_queue = .init(device),
+        .submit_queue = .init(device),
+    };
+
+    device.driver_thread = try .create(driverMain, device, (&device.driver_stack).ptr + (device.driver_stack.len - 1), 0x1A, -2);
+    return device;
+}
+
+pub fn deinit(device: *Device, allocator: std.mem.Allocator) void {
+    device.running.store(false, .monotonic);
+    device.driver_thread.wait(-1) catch unreachable;
+    device.driver_thread.close();
+    device.gsp_shm_memory_block.unmap(@ptrCast(@alignCast(device.gsp_shm)));
+
+    // FIXME: Same as the comment in `init`. See above
+    horizon.heap.non_thread_safe_shared_memory_address_allocator.free(std.mem.asBytes(device.gsp_shm));
+    device.gsp_shm_memory_block.close();
+    device.gsp.sendUnregisterInterruptRelayQueue() catch unreachable;
+    device.gsp.sendReleaseRight() catch {};
+    device.interrupt_event.close();
+    allocator.destroy(device);
+}
+
+pub fn getQueue(device: *Device, family: mango.QueueFamily) mango.Queue {
+    return switch (family) {
+        .transfer => device.transfer_queue.toHandle(),
+        .fill => device.fill_queue.toHandle(),
+        .submit => device.submit_queue.toHandle(),
     };
 }
 
@@ -92,20 +177,20 @@ pub fn freeMemory(device: *Device, memory: mango.DeviceMemory, allocator: std.me
     }
 }
 
-// TODO: DeviceSize and whole_size
-pub fn mapMemory(device: *Device, memory: mango.DeviceMemory, offset: u32, size: u32) ![*]u8 {
+pub fn mapMemory(device: *Device, memory: mango.DeviceMemory, offset: u32, size: mango.DeviceSize) ![]u8 {
     _ = device;
 
     const b_memory: backend.DeviceMemory = .fromHandle(memory);
 
     std.debug.assert(std.mem.isAligned(offset, horizon.heap.page_size) and offset <= b_memory.size());
 
-    // TODO: see above
-    if (size != std.math.maxInt(u32)) {
-        std.debug.assert(size <= (b_memory.size() - offset));
+    if (size != .whole_size) {
+        std.debug.assert(@intFromEnum(size) <= (b_memory.size() - offset));
+
+        return (b_memory.virtualAddress() + offset)[0..@intFromEnum(size)];
     }
 
-    return (b_memory.virtualAddress() + offset);
+    return (b_memory.virtualAddress() + offset)[0 .. b_memory.size() - offset];
 }
 
 pub fn unmapMemory(device: *Device, memory: mango.DeviceMemory) void {
@@ -123,8 +208,7 @@ pub fn flushMappedMemoryRanges(device: *Device, ranges: []const mango.MappedMemo
         const offset = @intFromEnum(range.offset);
         const flushed_memory = switch (range.size) {
             .whole_size => b_memory.virtualAddress()[offset..][0..(b_memory.size() - offset)],
-            // TODO: 0.15 use '_'
-            else => |sz| sz: {
+            _ => |sz| sz: {
                 const size = @intFromEnum(sz);
 
                 std.debug.assert(size <= (b_memory.size() - offset));
@@ -151,37 +235,25 @@ pub fn destroySemaphore(device: *Device, semaphore: mango.Semaphore, allocator: 
     allocator.destroy(b_semaphore);
 }
 
-pub fn signalSemaphore(device: *Device, signal_info: mango.SemaphoreSignalInfo) !void {
-    _ = device;
+pub fn signalSemaphore(device: *Device, signal_info: mango.SemaphoreOperation) !void {
     const b_semaphore: *backend.Semaphore = .fromHandleMutable(signal_info.semaphore);
-    b_semaphore.signal(signal_info.value);
+
+    zitrus.atomicStore64(u64, &b_semaphore.raw_value, signal_info.value);
+    device.arbiter.arbitrate(&b_semaphore.wake, .{ .signal = -1 }) catch unreachable;
 }
 
-// XXX: Currently only wait_all semantics are implemented, investigate whether wait_any is approachable
-pub fn waitSemaphores(device: *Device, wait_info: mango.SemaphoreWaitInfo, timeout: i64) !void {
-    _ = device;
-    const semaphores = wait_info.semaphores[0..wait_info.semaphore_count];
-    const values = wait_info.values[0..wait_info.semaphore_count];
+pub fn waitSemaphore(device: *Device, wait_info: mango.SemaphoreOperation, timeout: i64) !void {
+    const b_semaphore: *backend.Semaphore = .fromHandleMutable(wait_info.semaphore);
 
-    switch (timeout) {
-        -1 => for (semaphores, values) |b_semaphore, value| {
-            b_semaphore.wait(value, -1);
-        },
-        else => |ns| {
-            var accumulated_timeout = ns;
-            for (semaphores, values) |b_semaphore, value| {
-                const start = horizon.getSystemTick();
-                b_semaphore.wait(value, accumulated_timeout);
-                const end = horizon.getSystemTick();
-                const elapsed = end - start;
+    while (true) {
+        if (b_semaphore.counterValue() >= wait_info.value) {
+            return;
+        }
 
-                if (elapsed >= accumulated_timeout) {
-                    return;
-                }
-
-                accumulated_timeout -= elapsed;
-            }
-        },
+        try device.arbiter.arbitrate(&b_semaphore.wake, .{ .wait_if_less_than_timeout = .{
+            .value = 0,
+            .timeout = timeout,
+        } });
     }
 }
 
@@ -358,278 +430,131 @@ pub fn destroySwapchain(device: *Device, swapchain: mango.Swapchain, allocator: 
     return device.presentation_engine.deinitSwapchain(swapchain, allocator);
 }
 
-// TODO: Proper assertions.
-pub fn copyBuffer(device: *Device, src_buffer: mango.Buffer, dst_buffer: mango.Buffer, regions: []const mango.BufferCopy) void {
-    const gsp = device.gsp;
-
-    const b_src_buffer: backend.Buffer = .fromHandle(src_buffer);
-    const b_dst_buffer: backend.Buffer = .fromHandle(dst_buffer);
-
-    const b_src_virt = b_src_buffer.memory_info.virtual();
-    const b_dst_virt = b_dst_buffer.memory_info.virtual();
-
-    for (regions) |region| {
-        const src = b_src_virt[region.src_offset..][0..region.size];
-        const dst = b_dst_virt[region.dst_offset..][0..region.size];
-
-        // TODO: Errors?
-        gsp.submitRequestDma(src, dst, .none, .none) catch unreachable;
-
-        while (true) {
-            const int = gsp.waitInterrupts() catch unreachable;
-
-            if (int.get(.dma) > 0) {
-                break;
-            }
-        }
-    }
-}
-
-// TODO: Provide a software callback for directly using host memory (akin to VK_EXT_host_image_copy)
-pub fn copyBufferToImage(device: *Device, src_buffer: mango.Buffer, dst_image: mango.Image, info: mango.BufferImageCopy) !void {
-    const gsp = device.gsp;
-
-    const b_src_buffer: *backend.Buffer = .fromHandleMutable(src_buffer);
-    const b_dst_image: *backend.Image = .fromHandleMutable(dst_image);
-
-    const b_src_memory: backend.DeviceMemory.BoundMemoryInfo = b_src_buffer.memory_info;
-    const b_dst_memory: backend.DeviceMemory.BoundMemoryInfo = b_dst_image.memory_info;
-
-    const src_offset = @intFromEnum(info.src_offset);
-
-    const native_fmt = b_dst_image.format.nativeColorFormat();
-    const pixel_size = native_fmt.bytesPerPixel();
-
-    const img_width = b_dst_image.info.width();
-    const img_height = b_dst_image.info.height();
-    const full_image_size = img_width * img_height * pixel_size;
-
-    const src_virt = b_src_memory.boundVirtualAddress()[src_offset..][0..full_image_size];
-    const dst_virt = b_dst_memory.boundVirtualAddress()[0..full_image_size];
-
-    std.debug.assert(img_width >= 64 and img_height >= 16);
-
-    if (info.flags.memcpy) {
-        try gsp.submitRequestDma(src_virt, dst_virt, .none, .none);
-
-        while (true) {
-            const int = gsp.waitInterrupts() catch unreachable;
-
-            if (int.contains(.dma)) {
-                break;
-            }
-        }
-
-        return;
-    }
-
-    try gsp.submitDisplayTransfer(src_virt.ptr, dst_virt.ptr, native_fmt, .{
-        .x = @intCast(img_width),
-        .y = @intCast(img_height),
-    }, native_fmt, .{
-        .x = @intCast(img_width),
-        .y = @intCast(img_height),
-    }, .{
-        .mode = .linear_tiled,
-    }, .none);
-
-    while (true) {
-        const int = gsp.waitInterrupts() catch unreachable;
-
-        if (int.contains(.ppf)) {
-            break;
-        }
-    }
-}
-
-pub fn copyImageToBuffer() void {}
-
-pub fn blitImage(device: *Device, src_image: mango.Image, dst_image: mango.Image) !void {
-    const gsp = device.gsp;
-
-    const b_src_image: *backend.Image = .fromHandleMutable(src_image);
-    const b_dst_image: *backend.Image = .fromHandleMutable(dst_image);
-
-    const b_src_virt = b_src_image.memory_info.boundVirtualAddress();
-    const b_dst_virt = b_dst_image.memory_info.boundVirtualAddress();
-
-    const b_src_color_format = b_src_image.format.nativeColorFormat();
-    const b_dst_color_format = b_dst_image.format.nativeColorFormat();
-
-    gsp.submitDisplayTransfer(b_src_virt, b_dst_virt, b_src_color_format, .{
-        .x = @intCast(b_src_image.info.width()),
-        .y = @intCast(b_src_image.info.height()),
-    }, b_dst_color_format, .{
-        .x = @intCast(b_dst_image.info.width()),
-        .y = @intCast(b_dst_image.info.height()),
-    }, .{
-        .flip_v = false,
-        .mode = switch (b_src_image.info.optimally_tiled) {
-            false => switch (b_dst_image.info.optimally_tiled) {
-                false => unreachable, // TODO: Linear -> Linear
-                true => .linear_tiled,
-            },
-            true => switch (b_dst_image.info.optimally_tiled) {
-                false => .tiled_linear,
-                true => .tiled_tiled,
-            },
-        },
-    }, .none) catch unreachable;
-
-    while (true) {
-        const int = gsp.waitInterrupts() catch unreachable;
-
-        if (int.contains(.ppf)) {
-            break;
-        }
-    }
-}
-
-// TODO: Merge memory fills
-pub fn fillBuffer(device: *Device, dst_buffer: mango.Buffer, dst_offset: usize, data: u32) !void {
-    const gsp = device.gsp;
-    const b_dst_buffer: backend.Buffer = .fromHandle(dst_buffer);
-
-    std.debug.assert(dst_offset <= b_dst_buffer.size);
-
-    const b_dst_virt = b_dst_buffer.memory_info.virtual() + dst_offset;
-    const dst_fill_size = b_dst_buffer.size - dst_offset;
-
-    gsp.submitMemoryFill(.{ .init(@alignCast(b_dst_virt[0..dst_fill_size]), .fill32(data)), null }, .none) catch unreachable;
-
-    while (true) {
-        const int = gsp.waitInterrupts() catch unreachable;
-
-        if (int.get(.psc0) > 0) {
-            break;
-        }
-    }
-}
-
-pub fn clearColorImage(device: *Device, image: mango.Image, color: *const [4]u8) !void {
-    const gsp = device.gsp;
-
-    const b_image: *backend.Image = .fromHandleMutable(image);
-    const bound_virtual = b_image.memory_info.boundVirtualAddress();
-
-    const clear_slice, const clear_value: GspGpu.gx.MemoryFillUnit.Value = switch (b_image.format) {
-        .a8b8g8r8_unorm => .{
-            bound_virtual[0 .. b_image.info.width() * b_image.info.height() * @sizeOf(u32)],
-            .fill32(@bitCast(color.*)),
-        },
-        .b8g8r8_unorm => .{
-            bound_virtual[0 .. b_image.info.width() * b_image.info.height() * 3],
-            .fill24(@bitCast(pica.ColorFormat.Bgr888{
-                .r = color[0],
-                .g = color[1],
-                .b = color[2],
-            })),
-        },
-        // .a8b8g8r8_unorm =>,
-        .r5g6b5_unorm_pack16, .r5g5b5a1_unorm_pack16, .r4g4b4a4_unorm_pack16, .g8r8_unorm => .{
-            bound_virtual[0 .. b_image.info.width() * b_image.info.height() * @sizeOf(u16)],
-            .fill16(switch (b_image.format) {
-                .r5g6b5_unorm_pack16 => @bitCast(pica.ColorFormat.Rgb565{
-                    .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
-                    .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u6)) / std.math.maxInt(u8)),
-                    .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
-                }),
-                .r5g5b5a1_unorm_pack16 => @bitCast(pica.ColorFormat.Rgba5551{
-                    .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
-                    .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
-                    .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
-                    .a = @intFromBool(color[3] != 0),
-                }),
-                .r4g4b4a4_unorm_pack16 => @bitCast(pica.ColorFormat.Rgba4444{
-                    .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
-                    .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
-                    .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
-                    .a = @intCast((@as(usize, color[3]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
-                }),
-                .g8r8_unorm => @bitCast(pica.TextureUnitFormat.Hilo88{
-                    .r = color[0],
-                    .g = color[1],
-                }),
-                else => unreachable,
-            }),
-        },
-        else => unreachable,
-    };
-
-    // TODO: Also applies for above: Maybe we can use the two memory fill units by splitting the addresses?
-    gsp.submitMemoryFill(.{ .init(@alignCast(clear_slice), clear_value), null }, .none) catch unreachable;
-
-    while (true) {
-        const int = gsp.waitInterrupts() catch unreachable;
-
-        if (int.contains(.psc0)) {
-            break;
-        }
-    }
-}
-
-// TODO: Depth-stencil
-pub fn clearDepthStencilImage(device: *Device, image: mango.Image, depth: f32, stencil: u8) void {
-    _ = device;
-    _ = image;
-    _ = depth;
-    _ = stencil;
-}
-
-pub fn submit(device: *Device, submit_info: mango.SubmitInfo) !void {
-    const command_buffers = submit_info.command_buffers[0..submit_info.command_buffers_len];
-    const gsp = device.gsp;
-
-    for (command_buffers) |cmd| {
-        const b_cmd: *backend.CommandBuffer = .fromHandleMutable(cmd);
-        std.debug.assert(b_cmd.state == .executable);
-        // TODO: set to pending state and reset it to executable
-
-        try gsp.submitProcessCommandList(@alignCast(b_cmd.queue.buffer[0..b_cmd.queue.current_index]), .none, .flush, .none);
-
-        while (true) {
-            const int = try gsp.waitInterrupts();
-
-            if (int.contains(.p3d)) {
-                break;
-            }
-        }
-    }
-}
-
-pub fn getSwapchainImages(device: *Device, swapchain: mango.Swapchain, images: []mango.Image) void {
+pub fn getSwapchainImages(device: *Device, swapchain: mango.Swapchain, images: []mango.Image) u8 {
     return device.presentation_engine.getSwapchainImages(swapchain, images);
 }
 
-pub fn acquireNextImage(device: *Device, swapchain: mango.Swapchain) !u8 {
-    return device.presentation_engine.acquireNextImage(swapchain);
+pub fn acquireNextImage(device: *Device, swapchain: mango.Swapchain, timeout: i64) !u8 {
+    return device.presentation_engine.acquireNextImage(swapchain, timeout);
 }
 
-pub fn present(device: *Device, present_info: *const mango.PresentInfo) void {
-    _ = device;
-    _ = present_info;
+pub fn present(device: *Device, info: mango.PresentInfo) !void {
+    return device.presentation_engine.present(info);
 }
 
-pub fn waitIdle(device: *Device) void {
-    _ = device;
-    // TODO: Multithreading when the Io interface lands, this does nothing currently.
+pub fn waitIdle(device: *Device) !void {
+    inline for (comptime std.enums.values(Queue.Type)) |kind| {
+        const queue_status = device.queue_statuses.getPtr(kind);
+
+        switch (queue_status.load(.monotonic)) {
+            .idle => {},
+            .waiting, .working => _ = device.arbiter.arbitrate(@ptrCast(&queue_status.raw), .{ .wait_if_less_than = @intFromEnum(QueueStatus.idle) }) catch unreachable,
+        }
+    }
 }
 
-// XXX: Finish this when we can. Should this should be in the syscore? we must handle vblanks and the app may be badly programmed (no yields)...
-fn driverMain(ctx: *anyopaque) callconv(.c) noreturn {
+pub fn driverWake(device: *Device, reason: Queue.Type) void {
+    if (device.queue_statuses.getPtr(reason).load(.monotonic) == .idle) {
+        device.interrupt_event.signal();
+    }
+}
+
+// XXX: Should this should be in the syscore? we must handle vblanks and the app may be badly programmed (no yields)...
+// FIXME: Currently if some error happens in the driver, the entire app crashes! Should we report an error condition?
+fn driverMain(ctx: *anyopaque) callconv(.c) void {
     const device: *Device = @ptrCast(@alignCast(ctx));
     const presentation_engine = &device.presentation_engine;
     const gsp = device.gsp;
 
-    while (true) {
-        const interrupts = gsp.waitInterrupts() catch continue;
-        var interrupts_it = interrupts.iterator();
+    while (device.running.load(.monotonic)) {
+        device.interrupt_event.wait(-1) catch unreachable;
 
-        while (interrupts_it.next()) |int| switch (int) {
-            .vblank_top => presentation_engine.refresh(gsp, .top),
-            .vblank_bottom => presentation_engine.refresh(gsp, .bottom),
-            else => {},
-        };
+        const interrupts = device.gsp_shm.interrupt_queue[device.gsp_thread_index].popBackAll();
+
+        // NOTE: The application may have wanted to wake us up!
+        if (!interrupts.eql(.initEmpty())) {
+            var interrupts_it = interrupts.iterator();
+
+            while (interrupts_it.next()) |int| {
+                switch (int) {
+                    .dma => {}, // XXX: Should we use the CPU DMA engines?
+                    .psc0, .psc1 => _ = device.fill_queue.complete() catch unreachable,
+                    .ppf => _ = device.transfer_queue.complete() catch unreachable,
+                    .p3d => {
+                        const last_submission = device.submit_queue.complete() catch unreachable;
+
+                        last_submission.cmd_buffer.notifyCompleted();
+                    },
+                    .vblank_top => _ = presentation_engine.refresh(&device.gsp_shm.framebuffers[device.gsp_thread_index], .top),
+                    .vblank_bottom => _ = presentation_engine.refresh(&device.gsp_shm.framebuffers[device.gsp_thread_index], .bottom),
+                }
+            }
+        }
+
+        var enqueued_commands: usize = 0;
+        inline for (comptime std.enums.values(Queue.Type)) |kind| {
+            const queue = switch (kind) {
+                .fill => &device.fill_queue,
+                .transfer => &device.transfer_queue,
+                .submit => &device.submit_queue,
+                .present => &presentation_engine.queue,
+            };
+
+            const queue_status = device.queue_statuses.getPtr(kind);
+            switch (queue.workPopBack()) {
+                .empty => {
+                    const empty_status: QueueStatus = switch (kind) {
+                        .fill, .transfer, .submit => .idle,
+
+                        // NOTE: The present queue is considered idle when all outstanding present operations are handled, a.k.a: unless we presented all frames we're still working!
+                        .present => present_status: inline for (comptime std.enums.values(pica.Screen)) |screen| {
+                            if (presentation_engine.chain_presents.getPtr(screen).load(.monotonic) > 0) {
+                                break :present_status .working;
+                            }
+                        } else .idle,
+                    };
+
+                    _ = queue_status.store(empty_status, .monotonic);
+
+                    // Is anyone waiting for us? Wake them!
+                    if (empty_status == .idle) {
+                        device.arbiter.arbitrate(@ptrCast(&queue_status.raw), .{ .signal = -1 }) catch unreachable;
+                    }
+                },
+                .wait => _ = queue_status.store(.waiting, .monotonic),
+                .work => |itm| {
+                    _ = queue_status.store(.working, .monotonic);
+
+                    switch (kind) {
+                        .fill => {
+                            device.gsp_shm.command_queue[device.gsp_thread_index].pushFrontAssumeCapacity(.initMemoryFill(.{ .init(itm.data, itm.value), null }, .none));
+                        },
+                        .transfer => {
+                            device.gsp_shm.command_queue[device.gsp_thread_index].pushFrontAssumeCapacity(.initDisplayTransfer(itm.src, itm.dst, itm.flags.src_fmt, itm.input_gap_size, itm.flags.dst_fmt, itm.output_gap_size, .{
+                                .mode = switch (itm.flags.kind) {
+                                    .copy => @panic("TODO"),
+                                    .linear_tiled => .linear_tiled,
+                                    .tiled_linear => .tiled_linear,
+                                    .tiled_tiled => .tiled_tiled,
+                                },
+                            }, .none));
+                        },
+                        .submit => {
+                            const b_cmd = itm.cmd_buffer;
+
+                            device.gsp_shm.command_queue[device.gsp_thread_index].pushFrontAssumeCapacity(.initProcessCommandList(b_cmd.queue.buffer[0..b_cmd.queue.current_index], .none, .flush, .none));
+                        },
+                        .present => presentation_engine.queueWork(itm),
+                    }
+
+                    enqueued_commands += 1;
+                },
+            }
+        }
+
+        if (enqueued_commands > 0) {
+            gsp.sendTriggerCmdReqQueue() catch unreachable;
+        }
     }
 
     horizon.exitThread();
@@ -644,6 +569,7 @@ const VRamBankAllocator = zalloc.bitmap.StaticBitmapAllocator(.fromByteUnits(409
 const Device = @This();
 const backend = @import("backend.zig");
 
+const Queue = backend.Queue;
 const PresentationEngine = backend.PresentationEngine;
 
 const std = @import("std");
@@ -651,7 +577,11 @@ const zitrus = @import("zitrus");
 const zalloc = @import("zalloc");
 
 const horizon = zitrus.horizon;
+const AddressArbiter = horizon.AddressArbiter;
+const Event = horizon.Event;
+const MemoryBlock = horizon.MemoryBlock;
 const GspGpu = horizon.services.GspGpu;
+const Thread = horizon.Thread;
 
 const mango = zitrus.mango;
 const pica = zitrus.pica;

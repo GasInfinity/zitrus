@@ -1,10 +1,18 @@
-// XXX: I don't know why I started this if I cannot use it. I need synchronization primitives and -fno-single-threaded 😭
-// The presentation engine will be something like this.
-chains: std.enums.EnumMap(pica.Screen, Swapchain) = .init(.{}),
+//! Presentation Engine a.k.a handles swapchains, presentation and their images
+//!
+//! Like `Device`, this depends on the platform to truly present images!
 
-pub fn init() PresentationEngine {
+queue: PresentationQueue,
+chain_created: std.enums.EnumArray(pica.Screen, std.atomic.Value(bool)),
+chain_presents: std.enums.EnumArray(pica.Screen, std.atomic.Value(u8)),
+chains: std.enums.EnumArray(pica.Screen, Swapchain),
+
+pub fn init(device: *backend.Device) PresentationEngine {
     return .{
-        .chains = .init(.{}),
+        .queue = .init(device),
+        .chain_created = .initDefault(.init(false), .{}),
+        .chain_presents = .initDefault(.init(0), .{}),
+        .chains = .initUndefined(),
     };
 }
 
@@ -20,24 +28,52 @@ pub fn initSwapchain(pe: *PresentationEngine, create_info: mango.SwapchainCreate
     };
 
     // TODO: Should this return an error instead?
-    std.debug.assert(pe.swapchains.getPtr(screen) == null);
+    std.debug.assert(!pe.chain_created.getPtr(screen).load(.monotonic));
     std.debug.assert(create_info.image_array_layers == 1 or (create_info.image_array_layers == 2 and screen == .top));
 
-    pe.chains.putUninitialized(screen).* = .{
+    const chain = pe.chains.getPtr(screen);
+    chain.* = .{
         .misc = .{
             .is_stereo = create_info.image_array_layers == 2,
             .present_mode = .pack(create_info.present_mode),
-            .fmt = create_info,
+            .fmt = create_info.image_format.nativeColorFormat(),
             .width_minus_one = @intCast(dimensions[1] - 1),
             .height_minus_one = @intCast(dimensions[1] - 1),
         },
         .presentation = .{
-            .present_info = .{},
-            .presented_index = 0,
-            .presented_flags = .{},
+            .new = switch (create_info.present_mode) {
+                .fifo => .{ .fifo = .initEmpty },
+                .mailbox => .{ .single = null },
+            },
+            .displayed = null,
         },
+        .images = undefined,
+        .image_count = create_info.image_count,
+        .available = .initEmpty,
+        .available_wake = .init(create_info.image_count),
     };
 
+    for (0..create_info.image_count) |i| {
+        const memory_info = create_info.image_memory_info[i];
+        const b_memory: backend.DeviceMemory = .fromHandle(memory_info.memory);
+
+        chain.images[i] = .{
+            .memory_info = .init(b_memory, @intFromEnum(memory_info.memory_offset)),
+            .format = create_info.image_format,
+            .info = .{
+                .width_minus_one = @intCast(dimensions[0] - 1),
+                .height_minus_one = @intCast(dimensions[1] - 1),
+                .usage = create_info.image_usage,
+                .optimally_tiled = false,
+                .mutable_format = false,
+                .cube_compatible = false,
+            },
+        };
+
+        chain.available.pushFrontAssumeCapacity(@intCast(i));
+    }
+
+    pe.chain_created.getPtr(screen).store(true, .release);
     return backend.Swapchain.toHandle(screen);
 }
 
@@ -45,70 +81,129 @@ pub fn deinitSwapchain(pe: *PresentationEngine, swapchain: mango.Swapchain, allo
     _ = allocator;
 
     const screen = backend.Swapchain.fromHandle(swapchain);
-    std.debug.assert(pe.chains.contains(screen));
+    std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
+    std.debug.assert(pe.chain_presents.getPtr(screen).load(.monotonic) == 0);
 
-    pe.chains.remove(screen);
+    pe.chains.getPtr(screen).* = undefined;
+    pe.chain_created.getPtr(screen).store(false, .release);
 }
 
-pub fn getSwapchainImages(pe: *PresentationEngine, swapchain: mango.Swapchain, images: []mango.Image) !void {
+pub fn getSwapchainImages(pe: *PresentationEngine, swapchain: mango.Swapchain, images: []mango.Image) u8 {
     const screen = backend.Swapchain.fromHandle(swapchain);
-    const chain = pe.chains.getPtr(screen) orelse unreachable;
-    const imgs = images orelse return chain.image_count;
-    std.debug.assert(imgs.len == chain.image_count);
+    std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
 
-    for (imgs, 0..) |*img, i| {
+    const chain = pe.chains.getPtr(screen);
+    std.debug.assert(images.len <= chain.image_count);
+
+    for (images, 0..) |*img, i| {
         img.* = chain.images[i].toHandle();
     }
+
+    return chain.image_count;
 }
 
-pub fn acquireNextImage(pe: *PresentationEngine, swapchain: mango.Swapchain) !u8 {
+pub fn acquireNextImage(pe: *PresentationEngine, swapchain: mango.Swapchain, timeout: i64) !u8 {
     const screen = backend.Swapchain.fromHandle(swapchain);
-    const chain = pe.chains.getPtr(screen) orelse unreachable;
+    std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
 
-    return chain.acquireNextIndex() orelse return error.NotReady;
+    const chain = pe.chains.getPtr(screen);
+    return chain.acquireNextIndex(timeout, pe.queue.device.arbiter);
 }
 
-pub fn refresh(pe: PresentationEngine, gsp: *GspGpu, screen: pica.Screen) !void {
-    if (pe.chains.getPtr(screen)) |swapchain| {
-        const present_info = swapchain.presentation;
-        const swapchain_new_presented = swapchain.acquireNextPresent() orelse return;
+pub fn present(pe: *PresentationEngine, info: mango.PresentInfo) !void {
+    const screen = backend.Swapchain.fromHandle(info.swapchain);
+    std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
 
-        const b_image: *backend.Image = &swapchain.images[swapchain_new_presented];
-        std.debug.assert(!b_image.memory_info.isUnbound());
+    return pe.queue.wakePushFront(.{
+        .misc = .{
+            .screen = screen,
+            .ignore_stereo = info.flags.ignore_stereoscopic,
+        },
+        .index = info.image_index,
+    }, .initSemaphoreOperation(info.wait_semaphore), null);
+}
 
-        // NOTE: Currently width is always 240 for any mode/screen.
-        const stride = (240 * swapchain.misc.fmt.bytesPerPixel());
-        std.debug.assert(b_image.info.width() == 240);
+/// Returns if the presentation engine is fully idle (No more presentation requests to handle).
+pub fn queueWork(pe: *PresentationEngine, item: PresentationQueueItem) void {
+    const screen = item.misc.screen;
 
-        const left: [*]const u8 = b_image.memory_info.boundVirtualAddress();
-        const right: [*]const u8 = if (!swapchain.misc.is_stereo or present_info.presented_flags.ignore_stereoscopic)
-            left
-        else
-            (left + (stride * swapchain.misc.width()));
+    std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
+    const chain = pe.chains.getPtr(screen);
+    const presents = pe.chain_presents.getPtr(screen);
 
-        try gsp.writeFramebufferInfo(screen, .{
-            .active = 0,
-            .left_vaddr = left,
-            .right_vaddr = if (present_info.last_presented_flags.ignore_stereoscopic) left else right,
-            .stride = stride,
-            .format = swapchain.misc.fmt,
-            .select = 0,
-            .attribute = 0,
-        });
+    // NOTE: The swapchain present queue already handles memory order.
+    _ = presents.fetchAdd(1, .monotonic);
+
+    chain.present(.{
+        .flags = .{
+            .ignore_stereo = item.misc.ignore_stereo,
+        },
+        .index = item.index,
+    }, pe.queue.device.arbiter);
+}
+
+pub fn refresh(pe: *PresentationEngine, fb_info: *[2]GspGpu.FramebufferInfo, screen: pica.Screen) void {
+    const presents = pe.chain_presents.getPtr(screen);
+
+    if (presents.load(.monotonic) == 0) {
+        return;
     }
+
+    _ = presents.fetchSub(1, .monotonic);
+
+    const created = pe.chain_created.getPtr(screen).load(.acquire);
+    std.debug.assert(created);
+
+    const chain = pe.chains.getPtr(screen);
+
+    // NOTE: We MUST have a present as we had a request!
+    const swapchain_new_presented = chain.acquireNextPresent(pe.queue.device.arbiter) orelse unreachable;
+
+    const b_image: *backend.Image = &chain.images[swapchain_new_presented.index];
+    std.debug.assert(!b_image.memory_info.isUnbound());
+
+    // NOTE: Currently width is always 240 for any mode/screen.
+    const stride = (240 * chain.misc.fmt.bytesPerPixel());
+    std.debug.assert(b_image.info.width() == 240);
+
+    const left: [*]const u8 = b_image.memory_info.boundVirtualAddress();
+    const right: [*]const u8 = if (!chain.misc.is_stereo or swapchain_new_presented.flags.ignore_stereo)
+        left
+    else
+        (left + (stride * chain.misc.height()));
+
+    const was_updating = fb_info[@intFromEnum(screen)].update(.{
+        .active = .first,
+        .left_vaddr = left,
+        .right_vaddr = right,
+        .stride = stride,
+        .format = .{
+            .color_format = chain.misc.fmt,
+            .dma_size = .@"128",
+
+            .interlacing_mode = .none,
+            .alternative_pixel_output = screen == .top,
+        },
+        .select = 0,
+        .attribute = 0,
+    });
+
+    // Should NOT happen, we're literally updating the fb on vblank!
+    std.debug.assert(!was_updating);
 }
 
-pub fn present(pe: PresentationEngine, swapchains: []const mango.Swapchain, image_indices: []const u8, flags: mango.PresentInfo.Flags) void {
-    for (swapchains, image_indices) |swapchain, image_index| {
-        const screen = backend.Swapchain.fromHandle(swapchain);
-        const swapchain_info = pe.chains.getPtr(screen) orelse unreachable;
+pub const PresentationQueueItem = struct {
+    pub const Misc = packed struct(u8) {
+        screen: pica.Screen,
+        ignore_stereo: bool,
+        _: u6 = 0,
+    };
 
-        swapchain_info.present(.{
-            .index = image_index,
-            .flags = flags,
-        });
-    }
-}
+    misc: Misc,
+    index: u8,
+};
+
+pub const PresentationQueue = backend.Queue.State(.present, PresentationQueueItem, 6);
 
 const Swapchain = struct {
     pub const Misc = packed struct(u32) {
@@ -140,97 +235,96 @@ const Swapchain = struct {
         }
     };
 
+    const PresentSlot = struct {
+        pub const Flags = packed struct(u8) {
+            ignore_stereo: bool,
+            _: u7 = 0,
+        };
+
+        flags: Flags,
+        index: u8,
+    };
+
     pub const Presentation = struct {
         pub const State = union {
-            fifo: Fifo(PresentSlot),
+            fifo: backend.SingleProducerSingleConsumerBoundedQueue(PresentSlot, 3),
             single: ?PresentSlot,
         };
 
         new: State,
-        current_index: u8,
+        displayed: ?u8,
     };
 
     misc: Misc,
     images: [3]backend.Image,
     image_count: u8,
     presentation: Presentation,
-    available: Fifo(u8),
+    available: backend.SingleProducerSingleConsumerBoundedQueue(u8, 3),
+    available_wake: std.atomic.Value(i32),
 
-    pub fn present(chain: *Swapchain, slot: PresentSlot) void {
+    pub fn present(chain: *Swapchain, slot: PresentSlot, arbiter: horizon.AddressArbiter) void {
         switch (chain.misc.present_mode) {
-            .fifo => chain.presentation.new.fifo.pushFront(slot),
+            .fifo => chain.presentation.new.fifo.pushFrontAssumeCapacity(slot),
             .mailbox => {
                 defer chain.presentation.new.single = slot;
 
                 if (chain.presentation.new.single) |last| {
-                    chain.available.pushFront(last.index);
+                    chain.wakePushAvailable(last.index, arbiter);
                 }
             },
         }
     }
 
-    pub fn acquireNextPresent(chain: *Swapchain) ?PresentSlot {
+    pub fn acquireNextPresent(chain: *Swapchain, arbiter: horizon.AddressArbiter) ?PresentSlot {
+        const presentation = &chain.presentation;
+
         const new = switch (chain.misc.present_mode) {
-            .fifo => chain.presentation.new.fifo.popFront(),
-            .mailbox => chain.presentation.new.single,
+            .fifo => presentation.new.fifo.popBack(),
+            .mailbox => presentation.new.single,
         } orelse return null;
 
         defer {
-            chain.available.pushFront(chain.presentation.current_index);
-            chain.presentation.current_index = new.index;
+            if (presentation.displayed) |displayed| {
+                chain.wakePushAvailable(displayed, arbiter);
+            }
+
+            presentation.displayed = new.index;
         }
 
         return new;
     }
 
-    pub fn acquireNextIndex(chain: *Swapchain) ?u8 {
-        return chain.available.popFront();
+    pub fn wakePushAvailable(chain: *Swapchain, index: u8, arbiter: horizon.AddressArbiter) void {
+        chain.available.pushFrontAssumeCapacity(index);
+
+        _ = chain.available_wake.fetchAdd(1, .monotonic);
+        arbiter.arbitrate(&chain.available_wake.raw, .{ .signal = 1 }) catch unreachable;
+    }
+
+    pub fn acquireNextIndex(chain: *Swapchain, timeout: i64, arbiter: horizon.AddressArbiter) !u8 {
+        while (true) {
+            const maybe_next = chain.available.popBack();
+
+            if (maybe_next) |next| {
+                _ = chain.available_wake.fetchSub(1, .monotonic);
+                return next;
+            }
+
+            try arbiter.arbitrate(&chain.available_wake.raw, .{ .wait_if_less_than_timeout = .{
+                .value = 1,
+                .timeout = timeout,
+            } });
+        }
     }
 };
 
-const PresentSlot = struct {
-    flags: mango.PresentInfo.Flags,
-    index: u8,
-};
+const testing = std.testing;
 
-fn Fifo(comptime T: type) type {
-    return struct {
-        const SmallFifo = @This();
-
-        pub const Info = packed struct(u8) {
-            head: u4 = 0,
-            count: u4 = 0,
-        };
-
-        info: Info = .{},
-        buffer: [2]T = @splat(undefined),
-
-        pub fn pushFrontAssumeCapacity(fifo: *SmallFifo, value: T) void {
-            if (fifo.data.head == 0) {
-                fifo.data.head = fifo.indices.len;
-            }
-
-            fifo.data.head -= 1;
-            fifo.buffer[fifo.data.head] = value;
-            fifo.data.count += 1;
-        }
-
-        pub fn popFront(fifo: *SmallFifo) ?T {
-            if (fifo.data.count == 0) {
-                return null;
-            }
-
-            defer {
-                fifo.data.count -= 1;
-                fifo.data.head = if (fifo.data.head >= fifo.buffer.len - 1) 0 else fifo.data.head + 1;
-            }
-
-            return fifo.buffer[fifo.data.head];
-        }
-    };
-}
+// TODO: !
+test {}
 
 const PresentationEngine = @This();
+
 const backend = @import("backend.zig");
 
 const std = @import("std");

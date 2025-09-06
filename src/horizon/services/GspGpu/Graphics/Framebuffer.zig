@@ -1,4 +1,4 @@
-// TODO: Deprecate this or make it handle one screen only (one framebuffer per screen), or use mango instead
+// XXX: Deprecate/Delete this? It's still useful for simple software rendering but mango exists...
 
 pub const Error = error{};
 
@@ -20,7 +20,7 @@ bottom_allocation: []u8,
 top_framebuffer_bytes: usize,
 bottom_framebuffer_bytes: usize,
 
-pub fn init(config: Config) !Framebuffer {
+pub fn init(config: Config) !Framebuffers {
     // a.k.a: bpp * w * h * (2 if double buffering) * (2 if running at 240x800, by full_res or 3d)
     const top_framebuffer_bytes = (config.color_format.get(.top).bytesPerPixel() * Screen.top.width() * Screen.top.height()) << @intFromBool(config.top_mode != .@"2d");
     const top_allocation_bytes = top_framebuffer_bytes << @intFromBool(config.double_buffer.get(.top));
@@ -32,7 +32,7 @@ pub fn init(config: Config) !Framebuffer {
     const top_allocation = try config.phys_linear_allocator.alloc(u8, top_allocation_bytes);
     const bottom_allocation = try config.phys_linear_allocator.alloc(u8, bottom_allocation_bytes);
 
-    return Framebuffer{
+    return Framebuffers{
         .config = config,
         .top_allocation = top_allocation,
         .bottom_allocation = bottom_allocation,
@@ -41,13 +41,13 @@ pub fn init(config: Config) !Framebuffer {
     };
 }
 
-pub fn deinit(fb: *Framebuffer) void {
+pub fn deinit(fb: *Framebuffers) void {
     fb.config.phys_linear_allocator.free(fb.top_allocation);
     fb.config.phys_linear_allocator.free(fb.bottom_allocation);
     fb.* = undefined;
 }
 
-pub fn currentTopFramebuffers(fb: *Framebuffer) [2][]u8 {
+pub fn currentTopFramebuffers(fb: *Framebuffers) [2][]u8 {
     std.debug.assert(fb.config.top_mode == .@"3d");
 
     const half_framebuffer_bytes = fb.top_framebuffer_bytes >> 1;
@@ -57,7 +57,7 @@ pub fn currentTopFramebuffers(fb: *Framebuffer) [2][]u8 {
     };
 }
 
-pub fn currentFramebuffer(fb: *Framebuffer, comptime screen: Screen) []u8 {
+pub fn currentFramebuffer(fb: *Framebuffers, comptime screen: Screen) []u8 {
     std.debug.assert(fb.config.top_mode != .@"3d");
 
     return switch (screen) {
@@ -66,8 +66,7 @@ pub fn currentFramebuffer(fb: *Framebuffer, comptime screen: Screen) []u8 {
     };
 }
 
-// TODO: We can abstract this to not directly depend on the GSP services always (for example when booting as a firm)
-pub fn flushBuffers(fb: *Framebuffer, gsp: *GspGpu) !void {
+pub fn flushBuffers(fb: *Framebuffers, gsp: GspGpu) !void {
     if (fb.config.top_mode == .@"3d") {
         for (fb.currentTopFramebuffers()) |buffer| {
             try gsp.sendFlushDataCache(buffer);
@@ -79,17 +78,15 @@ pub fn flushBuffers(fb: *Framebuffer, gsp: *GspGpu) !void {
     try gsp.sendFlushDataCache(fb.currentFramebuffer(.bottom));
 }
 
-pub fn swapBuffers(fb: *Framebuffer, gsp: *GspGpu) !void {
-    // Swap buffers after presenting the current back-buffer
-    defer inline for (comptime std.enums.values(Screen)) |screen| {
+pub fn swapBuffers(fb: *Framebuffers, gfx: *Graphics) !void {
+    inline for (comptime std.enums.values(Screen)) |screen| {
         fb.current_framebuffer.set(screen, fb.current_framebuffer.get(screen) ^ @intFromBool(fb.config.double_buffer.get(screen)));
-    };
+    }
 
-    return fb.present(gsp);
+    return fb.present(gfx);
 }
 
-pub fn present(fb: *Framebuffer, gsp: *GspGpu) !void {
-    const current_top_framebuffer: usize = fb.current_framebuffer.get(.top);
+pub fn present(fb: *Framebuffers, gfx: *Graphics) !void {
     const top_left_framebuffer, const top_right_framebuffer = switch (fb.config.top_mode) {
         .@"2d", .full_resolution => top_fb: {
             const top_framebuffer = fb.currentFramebuffer(.top);
@@ -98,30 +95,45 @@ pub fn present(fb: *Framebuffer, gsp: *GspGpu) !void {
         .@"3d" => fb.currentTopFramebuffers(),
     };
 
-    _ = try gsp.presentFramebuffer(.top, .{
-        .active = @enumFromInt(current_top_framebuffer),
-        .color_format = fb.config.color_format.get(.top),
+    _ = gfx.shared_memory.framebuffers[gfx.thread_index][@intFromEnum(Screen.top)].update(.{
+        .active = .first,
         .left_vaddr = top_left_framebuffer.ptr,
         .right_vaddr = top_right_framebuffer.ptr,
         .stride = (fb.config.color_format.get(.top).bytesPerPixel() * Screen.top.width()) << (if (fb.config.top_mode == .full_resolution) 1 else 0),
-        .mode = fb.config.top_mode,
-        .dma_size = fb.config.dma_size,
+        .format = .{
+            .color_format = fb.config.color_format.get(.top),
+            .dma_size = fb.config.dma_size,
+
+            .interlacing_mode = switch (fb.config.top_mode) {
+                .@"2d", .full_resolution => .none,
+                .@"3d" => .enable,
+            },
+            .alternative_pixel_output = fb.config.top_mode == .@"2d",
+        },
+        .select = 0,
+        .attribute = 0,
     });
 
-    const current_bottom_framebuffer: usize = fb.current_framebuffer.get(.bottom);
     const bottom_framebuffer = fb.currentFramebuffer(.bottom);
-    _ = try gsp.presentFramebuffer(.bottom, .{
-        .active = @enumFromInt(current_bottom_framebuffer),
-        .color_format = fb.config.color_format.get(.bottom),
+    _ = gfx.shared_memory.framebuffers[gfx.thread_index][@intFromEnum(Screen.bottom)].update(.{
+        .active = .first,
         .left_vaddr = bottom_framebuffer.ptr,
         .right_vaddr = bottom_framebuffer.ptr,
         .stride = fb.config.color_format.get(.bottom).bytesPerPixel() * Screen.bottom.width(),
-        .dma_size = fb.config.dma_size,
+        .format = .{
+            .color_format = fb.config.color_format.get(.bottom),
+            .dma_size = fb.config.dma_size,
+
+            .interlacing_mode = .none,
+            .alternative_pixel_output = false,
+        },
+        .select = 0,
+        .attribute = 0,
     });
 }
 
 const DoubleBufferIndex = std.EnumArray(Screen, u1);
-const Framebuffer = @This();
+const Framebuffers = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");
@@ -131,6 +143,7 @@ const horizon = zitrus.horizon;
 
 const Allocator = std.mem.Allocator;
 const GspGpu = horizon.services.GspGpu;
+const Graphics = horizon.services.GspGpu.Graphics;
 
 const Screen = gpu.Screen;
 const ColorFormat = gpu.ColorFormat;

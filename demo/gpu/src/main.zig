@@ -40,124 +40,81 @@ pub fn main() !void {
     var srv = try ServiceManager.init();
     defer srv.deinit();
 
-    var apt = try Applet.init(srv);
-    defer apt.deinit();
+    const apt = try Applet.open(srv);
+    defer apt.close();
 
     var app = try Applet.Application.init(apt, srv);
     defer app.deinit(apt, srv);
 
-    var hid = try Hid.init(srv);
-    defer hid.deinit();
+    const hid = try Hid.open(srv);
+    defer hid.close();
 
     var input = try Hid.Input.init(hid);
     defer input.deinit();
 
-    var gsp = try GspGpu.init(srv);
-    defer gsp.deinit();
+    const gsp = try GspGpu.open(srv);
+    defer gsp.close();
 
     const Vertex = extern struct {
         pos: [4]i8,
         uv: [2]u8,
     };
 
-    var device: mango.Device = .initTodo(&gsp);
+    const arbiter: horizon.AddressArbiter = try .create();
+    defer arbiter.close();
+
+    var device: *mango.Device = try .initTodo(gsp, arbiter, gpa);
+    defer device.deinit(gpa);
+
+    const transfer_queue = device.getQueue(.transfer);
+    const fill_queue = device.getQueue(.fill);
+    const submit_queue = device.getQueue(.submit);
+
+    const global_semaphore = try device.createSemaphore(.{
+        .initial_value = 0,
+    }, gpa);
+    defer device.destroySemaphore(global_semaphore, gpa);
+    var global_sync_counter: u64 = 0;
 
     const bottom_presentable_image_memory = try device.allocateMemory(&.{
-        .memory_type = 0,
+        .memory_type = 1,
         .allocation_size = .size(320 * 240 * 3 * 2),
     }, gpa);
     defer device.freeMemory(bottom_presentable_image_memory, gpa);
 
     const top_presentable_image_memory = try device.allocateMemory(&.{
         .memory_type = 1,
-        .allocation_size = .size(400 * 240 * 3),
+        .allocation_size = .size(400 * 240 * 3 * 2),
     }, gpa);
     defer device.freeMemory(top_presentable_image_memory, gpa);
 
-    const top_presentable_image = try device.createImage(.{
-        .flags = .{},
-        .type = .@"2d",
-        .tiling = .linear,
-        .usage = .{
-            .transfer_dst = true,
-        },
-        .extent = .{
-            .width = 240,
-            .height = 400,
-        },
-        .format = .b8g8r8_unorm,
-        // FIXME: These values are currently ignored
-        .mip_levels = 1,
-        .array_layers = 1,
-    }, gpa);
-    defer device.destroyImage(top_presentable_image, gpa);
-    try device.bindImageMemory(top_presentable_image, top_presentable_image_memory, .size(0));
+    const top_swapchain = try device.createSwapchain(.{ .surface = .top_240x400, .present_mode = .fifo, .image_format = .b8g8r8_unorm, .image_array_layers = 1, .image_count = 2, .image_usage = .{
+        .transfer_dst = true,
+    }, .image_memory_info = &.{
+        .{ .memory = top_presentable_image_memory, .memory_offset = .size(0) },
+        .{ .memory = top_presentable_image_memory, .memory_offset = .size(400 * 240 * 3) },
+    } }, gpa);
+    defer device.destroySwapchain(top_swapchain, gpa);
 
-    // XXX: As we block, we dont need synchronization but it'll be a must!
-    // NOTE: See we're using memory_type 1? Its a MUST for clearing images, they must be in DEVICE_LOCAL memory.
-    try device.clearColorImage(top_presentable_image, &@splat(255));
-
-    const bottom_presentable_images: [2]mango.Image = .{
-        try device.createImage(.{
-            .flags = .{},
-            .type = .@"2d",
-            .tiling = .linear,
-            .usage = .{
-                .transfer_dst = true,
-            },
-            .extent = .{
-                .width = 240,
-                .height = 320,
-            },
-            .format = .b8g8r8_unorm,
-            // FIXME: These values are currently ignored
-            .mip_levels = 1,
-            .array_layers = 1,
-        }, gpa),
-        try device.createImage(.{
-            .flags = .{},
-            .type = .@"2d",
-            .tiling = .linear,
-            .usage = .{
-                .transfer_dst = true,
-            },
-            .extent = .{
-                .width = 240,
-                .height = 320,
-            },
-            .format = .b8g8r8_unorm,
-            // FIXME: These values are currently ignored
-            .mip_levels = 1,
-            .array_layers = 1,
-        }, gpa),
+    const top_images: [2]mango.Image = blk: {
+        var img: [2]mango.Image = undefined;
+        _ = device.getSwapchainImages(top_swapchain, &img);
+        break :blk img;
     };
 
-    defer for (bottom_presentable_images) |image| {
-        device.destroyImage(image, gpa);
+    const bottom_swapchain = try device.createSwapchain(.{ .surface = .bottom_240x320, .present_mode = .fifo, .image_format = .b8g8r8_unorm, .image_array_layers = 1, .image_count = 2, .image_usage = .{
+        .transfer_dst = true,
+    }, .image_memory_info = &.{
+        .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(0) },
+        .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(320 * 240 * 3) },
+    } }, gpa);
+    defer device.destroySwapchain(bottom_swapchain, gpa);
+
+    const bottom_images: [2]mango.Image = blk: {
+        var img: [2]mango.Image = undefined;
+        _ = device.getSwapchainImages(bottom_swapchain, &img);
+        break :blk img;
     };
-
-    for (0..2) |i| {
-        try device.bindImageMemory(bottom_presentable_images[i], bottom_presentable_image_memory, .size(i * (320 * 240 * 3)));
-    }
-
-    // XXX: We cannot have swapchains as we cannot have multithreading, we cannot have multithreading because we don't have Io.
-    // Also we don't have multithreading because 64-bit atomics are still not implemented :D
-    // const bottom_swapchain = try device.createSwapchain(.{
-    //     .surface = .bottom_240x320,
-    //     .present_mode = .fifo,
-    //     .image_format = .bgr888,
-    //     .image_array_layers = 1,
-    //     .image_count = 2,
-    //     .image_memory_info = &.{
-    //         .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(0) },
-    //         .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(320 * 240 * 3) },
-    //     }
-    // }, gpa);
-    // defer device.destroySwapchain(bottom_swapchain, gpa);
-    // const sw_bottom_presentable_images: [2]mango.Image = blk: {
-    //     var img: [2]mango.Image = undefined;
-    //     device.getSwapchainImages(swapchain: Handle)
-    // };
 
     const vtx_buffer_memory = try device.allocateMemory(&.{
         .memory_type = 0,
@@ -173,15 +130,15 @@ pub fn main() !void {
 
     {
         // TODO: DeviceSize and whole_size in it
-        const mapped_vtx = try device.mapMemory(vtx_buffer_memory, 0, std.math.maxInt(u32));
+        const mapped_vtx = try device.mapMemory(vtx_buffer_memory, 0, .whole_size);
         defer device.unmapMemory(vtx_buffer_memory);
 
         // TODO: return slices for better safety
-        const mapped_idx = try device.mapMemory(index_buffer_memory, 0, std.math.maxInt(u32));
+        const mapped_idx = try device.mapMemory(index_buffer_memory, 0, .whole_size);
         defer device.unmapMemory(index_buffer_memory);
 
-        const vtx_data: *[4]Vertex = @ptrCast(mapped_vtx);
-        const idx_data: *[4]u8 = @ptrCast(mapped_idx);
+        const vtx_data: *[4]Vertex = std.mem.bytesAsValue([4]Vertex, mapped_vtx);
+        const idx_data: *[4]u8 = std.mem.bytesAsValue([4]u8, mapped_idx);
 
         vtx_data.* = .{
             .{ .pos = .{ -1, -1, 2, 1 }, .uv = .{ 0, 0 } },
@@ -202,12 +159,6 @@ pub fn main() !void {
         } });
     }
 
-    const color_attachment_image_memory = try device.allocateMemory(&.{
-        .memory_type = 1,
-        .allocation_size = .size(320 * 240 * 4),
-    }, gpa);
-    defer device.freeMemory(color_attachment_image_memory, gpa);
-
     const index_buffer = try device.createBuffer(.{
         .size = .size(0x4),
         .usage = .{
@@ -226,7 +177,33 @@ pub fn main() !void {
     defer device.destroyBuffer(vtx_buffer, gpa);
     try device.bindBufferMemory(vtx_buffer, vtx_buffer_memory, .size(0));
 
-    const color_attachment_image = try device.createImage(.{
+    const color_attachment_image_memory = try device.allocateMemory(&.{
+        .memory_type = 1,
+        .allocation_size = .size(320 * 240 * 4 + 400 * 240 * 4),
+    }, gpa);
+    defer device.freeMemory(color_attachment_image_memory, gpa);
+
+    const top_color_attachment_image = try device.createImage(.{
+        .flags = .{},
+        .type = .@"2d",
+        .tiling = .optimal,
+        .usage = .{
+            .transfer_src = true,
+            .color_attachment = true,
+        },
+        .extent = .{
+            .width = 240,
+            .height = 400,
+        },
+        .format = .a8b8g8r8_unorm,
+        // FIXME: These values are currently ignored
+        .mip_levels = 1,
+        .array_layers = 1,
+    }, gpa);
+    defer device.destroyImage(top_color_attachment_image, gpa);
+    try device.bindImageMemory(top_color_attachment_image, color_attachment_image_memory, .size(320 * 240 * 4));
+
+    const bottom_color_attachment_image = try device.createImage(.{
         .flags = .{},
         .type = .@"2d",
         .tiling = .optimal,
@@ -243,10 +220,8 @@ pub fn main() !void {
         .mip_levels = 1,
         .array_layers = 1,
     }, gpa);
-    defer device.destroyImage(color_attachment_image, gpa);
-    try device.bindImageMemory(color_attachment_image, color_attachment_image_memory, .size(0));
-
-    try device.clearColorImage(color_attachment_image, &@splat(16));
+    defer device.destroyImage(bottom_color_attachment_image, gpa);
+    try device.bindImageMemory(bottom_color_attachment_image, color_attachment_image_memory, .size(0));
 
     const staging_buffer_memory = try device.allocateMemory(&.{
         .memory_type = 0,
@@ -264,7 +239,7 @@ pub fn main() !void {
     try device.bindBufferMemory(staging_buffer, staging_buffer_memory, .size(0));
 
     {
-        const mapped_staging = try device.mapMemory(staging_buffer_memory, 0, std.math.maxInt(u32));
+        const mapped_staging = try device.mapMemory(staging_buffer_memory, 0, .whole_size);
         defer device.unmapMemory(staging_buffer_memory);
 
         @memcpy(mapped_staging[0..(64 * 64 * 3)], test_bgr);
@@ -302,12 +277,20 @@ pub fn main() !void {
     defer device.destroyImage(test_sampled_image, gpa);
     try device.bindImageMemory(test_sampled_image, test_sampled_image_memory, .size(0));
 
-    try device.copyBufferToImage(staging_buffer, test_sampled_image, .{
+    try transfer_queue.copyBufferToImage(.{
+        .src_buffer = staging_buffer,
+        .dst_image = test_sampled_image,
         .src_offset = .size(0),
-        .flags = .{
-            .memcpy = false,
-        },
+        .signal_semaphore = &.init(global_semaphore, global_sync_counter + 1),
     });
+
+    // try fill_queue.clearColorImage(.{
+    //     .image = test_sampled_image,
+    //     .color = @splat(0xFF),
+    //     .signal_semaphore = &.init(global_semaphore, global_sync_counter + 1),
+    // });
+
+    global_sync_counter += 1;
 
     const test_sampled_image_view = try device.createImageView(.{
         .type = .@"2d",
@@ -329,12 +312,19 @@ pub fn main() !void {
     }, gpa);
     defer device.destroySampler(simple_sampler, gpa);
 
-    const color_attachment_image_view = try device.createImageView(.{
+    const bottom_color_attachment_image_view = try device.createImageView(.{
         .type = .@"2d",
         .format = .a8b8g8r8_unorm,
-        .image = color_attachment_image,
+        .image = bottom_color_attachment_image,
     }, gpa);
-    defer device.destroyImageView(color_attachment_image_view, gpa);
+    defer device.destroyImageView(bottom_color_attachment_image_view, gpa);
+
+    const top_color_attachment_image_view = try device.createImageView(.{
+        .type = .@"2d",
+        .format = .a8b8g8r8_unorm,
+        .image = top_color_attachment_image,
+    }, gpa);
+    defer device.destroyImageView(top_color_attachment_image_view, gpa);
 
     const simple_pipeline = try device.createGraphicsPipeline(.{
         .rendering_info = &.{
@@ -443,7 +433,7 @@ pub fn main() !void {
     defer device.freeCommandBuffers(command_pool, @ptrCast(&cmd));
 
     try gsp.sendSetLcdForceBlack(false);
-    defer if (gsp.has_right) gsp.sendSetLcdForceBlack(true) catch {};
+    defer gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right
 
     // XXX: Bad, but we know this is not near graphicaly intensive and we'll always be near 60 FPS.
     const default_delta_time = 1.0 / 60.0;
@@ -459,10 +449,12 @@ pub fn main() !void {
 
         while (try app.pollNotification(apt, srv)) |n| switch (n) {
             .jump_home, .jump_home_by_power => {
-                j_h: switch (try app.jumpToHome(apt, srv, &gsp, .none)) {
+                try device.waitIdle();
+
+                switch (try app.jumpToHome(apt, srv, gsp, .none)) {
                     .resumed => {},
-                    .jump_home => continue :j_h (try app.jumpToHome(apt, srv, &gsp, .none)),
                     .must_close => break :main_loop,
+                    .jump_home => unreachable,
                 }
             },
             .sleeping => {
@@ -487,13 +479,20 @@ pub fn main() !void {
         // }
         // current_scale = std.math.clamp(current_scale, -1.0, 1.0);
 
+        const bottom_first_image_idx = try device.acquireNextImage(bottom_swapchain, -1);
+        const top_first_image_idx = try device.acquireNextImage(top_swapchain, -1);
+
         try cmd.begin();
 
         cmd.bindIndexBuffer(index_buffer, 0, .u8);
         cmd.bindVertexBuffersSlice(0, &.{vtx_buffer}, &.{0});
         cmd.bindPipeline(.graphics, simple_pipeline);
+        cmd.bindCombinedImageSamplers(0, &.{.{
+            .image = test_sampled_image_view,
+            .sampler = simple_sampler,
+        }});
 
-        // Disabling depth test in mango ALSO disables depth writes.
+        // Render to the bottom screen
         cmd.setViewport(&.{
             .rect = .{
                 .offset = .{ .x = 0, .y = 0 },
@@ -505,9 +504,8 @@ pub fn main() !void {
         cmd.setScissor(&.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 320 } }));
 
         {
-            // We'll render to the bottom screen, images are 240x320 physically.
             cmd.beginRendering(.{
-                .color_attachment = color_attachment_image_view,
+                .color_attachment = bottom_color_attachment_image_view,
                 .depth_stencil_attachment = .null,
             });
             defer cmd.endRendering();
@@ -518,55 +516,95 @@ pub fn main() !void {
 
             const current_scale = @sin(current_time);
             cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scale(current_scale, @abs(current_scale), 1));
-
-            cmd.bindCombinedImageSamplers(0, &.{.{
-                .image = test_sampled_image_view,
-                .sampler = simple_sampler,
-            }});
             cmd.drawIndexed(4, 0, 0);
         }
 
+        // Render to the top screen
+        cmd.setViewport(&.{
+            .rect = .{
+                .offset = .{ .x = 0, .y = 0 },
+                .extent = .{ .width = 240, .height = 400 },
+            },
+            .min_depth = 0.0,
+            .max_depth = 1.0,
+        });
+        cmd.setScissor(&.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 400 } }));
+
+        {
+            cmd.beginRendering(.{
+                .color_attachment = top_color_attachment_image_view,
+                .depth_stencil_attachment = .null,
+            });
+            defer cmd.endRendering();
+
+            const zmath = zitrus.math;
+
+            cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(std.math.degreesToRadians(90.0), 240.0 / 400.0, 1, 1000));
+
+            const current_scale = @sin(-current_time);
+            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scale(current_scale, @abs(current_scale), 1));
+            cmd.drawIndexed(4, 0, 0);
+        }
         try cmd.end();
 
-        // XXX: Semaphores must be used when available. Everything is blocking now (literally waits until the GPU finishes, a no-no), that's why this can work without syncronization!
-        try device.clearColorImage(color_attachment_image, &@splat(0));
-        try device.submit(.init(&.{cmd}));
-        try device.blitImage(color_attachment_image, bottom_presentable_images[0]);
+        try fill_queue.clearColorImage(.{
+            .wait_semaphore = &.init(global_semaphore, global_sync_counter),
+            .image = bottom_color_attachment_image,
+            .color = @splat(0x33),
+            .signal_semaphore = &.init(global_semaphore, global_sync_counter + 1),
+        });
 
-        while (true) {
-            const interrupts = try gsp.waitInterrupts();
+        try fill_queue.clearColorImage(.{
+            .wait_semaphore = &.init(global_semaphore, global_sync_counter + 1),
+            .image = top_color_attachment_image,
+            .color = @splat(0x22),
+            .signal_semaphore = &.init(global_semaphore, global_sync_counter + 2),
+        });
 
-            if (interrupts.contains(.vblank_top)) {
-                break;
-            }
-        }
+        try submit_queue.submit(.{
+            .wait_semaphore = &.init(global_semaphore, global_sync_counter + 2),
+            .command_buffer = cmd,
+            .signal_semaphore = &.init(global_semaphore, global_sync_counter + 3),
+        });
 
-        // TODO: Use swapchains
-        {
-            const mapped_bottom_presentable = try device.mapMemory(bottom_presentable_image_memory, 0, 320 * 240 * 3);
-            defer device.unmapMemory(bottom_presentable_image_memory);
+        try transfer_queue.blitImage(.{
+            .wait_semaphore = &.init(global_semaphore, global_sync_counter + 3),
+            .src_image = bottom_color_attachment_image,
+            .dst_image = bottom_images[bottom_first_image_idx],
+            .signal_semaphore = &.init(global_semaphore, global_sync_counter + 4),
+        });
 
-            const mapped_top_presentable = try device.mapMemory(top_presentable_image_memory, 0, 400 * 240 * 3);
-            defer device.unmapMemory(top_presentable_image_memory);
+        try transfer_queue.blitImage(.{
+            .wait_semaphore = &.init(global_semaphore, global_sync_counter + 4),
+            .src_image = top_color_attachment_image,
+            .dst_image = top_images[top_first_image_idx],
+            .signal_semaphore = &.init(global_semaphore, global_sync_counter + 5),
+        });
 
-            _ = try gsp.presentFramebuffer(.top, .{
-                .active = @enumFromInt(0),
-                .color_format = .bgr888,
-                .left_vaddr = mapped_top_presentable,
-                .right_vaddr = mapped_top_presentable,
-                .stride = pica.ColorFormat.bgr888.bytesPerPixel() * pica.Screen.bottom.width(),
-                .dma_size = .@"128",
-            });
-            _ = try gsp.presentFramebuffer(.bottom, .{
-                .active = @enumFromInt(0),
-                .color_format = .bgr888,
-                .left_vaddr = mapped_bottom_presentable,
-                .right_vaddr = mapped_bottom_presentable,
-                .stride = pica.ColorFormat.bgr888.bytesPerPixel() * pica.Screen.bottom.width(),
-                .dma_size = .@"128",
-            });
-        }
+        try device.present(.{
+            .wait_semaphore = &.init(global_semaphore, global_sync_counter + 4),
+            .swapchain = bottom_swapchain,
+            .image_index = bottom_first_image_idx,
+            .flags = .{},
+        });
+
+        try device.present(.{
+            .wait_semaphore = &.init(global_semaphore, global_sync_counter + 5),
+            .swapchain = top_swapchain,
+            .image_index = top_first_image_idx,
+            .flags = .{},
+        });
+
+        // We're currently using one color attachment so even though we're double-buffered on the swapchain,
+        // we only have a single buffer to work on. We must wait until we finished with the color buffer.
+        try device.waitSemaphore(.{
+            .semaphore = global_semaphore,
+            .value = global_sync_counter + 5,
+        }, -1);
+        global_sync_counter += 5;
     }
+
+    try device.waitIdle();
 }
 
 const horizon = zitrus.horizon;

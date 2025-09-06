@@ -15,7 +15,7 @@ pub const Handle = enum(u32) {
 };
 
 pub fn toHandle(screen: pica.Screen) Handle {
-    return @enumFromInt(@intFromEnum(screen) + 1);
+    return @enumFromInt(@as(u32, @intFromEnum(screen)) + 1);
 }
 
 pub fn fromHandle(handle: Handle) pica.Screen {

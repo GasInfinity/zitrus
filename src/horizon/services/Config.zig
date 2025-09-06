@@ -375,7 +375,7 @@ pub const Block = enum(u32) {
 
 session: ClientSession,
 
-pub fn init(srv: ServiceManager) Error!Config {
+pub fn open(srv: ServiceManager) Error!Config {
     var last_error: Error = undefined;
     const config_session = used: for (service_names) |service_name| {
         const config_session = srv.getService(service_name, .wait) catch |err| {
@@ -389,9 +389,8 @@ pub fn init(srv: ServiceManager) Error!Config {
     return Config{ .session = config_session };
 }
 
-pub fn deinit(config: *Config) void {
-    config.session.deinit();
-    config.* = undefined;
+pub fn close(config: Config) void {
+    config.session.close();
 }
 
 pub fn getConfigUser(cfg: Config, comptime block: Block) Error!block.Data() {

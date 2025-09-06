@@ -167,16 +167,16 @@ pub const Graphics = struct {
         if(!dyn.primitive_topology) {
             const topo = create_info.input_assembly_state.?.topology;
 
-            gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{
-                .total_vertex_outputs = 0, // TODO: shaders
+            gfx_queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{
+                .total_vertex_outputs = 0, // NOTE: Ignored by mask
                 .topology = topo.native(),
-            });
+            }, 0b0010);
 
-            gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.config, .{
-                .geometry_shader_usage = .disabled,
+            gfx_queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config, .{
+                .geometry_shader_usage = .disabled, // NOTE: Ignored by mask
                 .drawing_triangles = topo == .triangle_list,
-                .use_reserved_geometry_subdivision = false,
-            });
+                .use_reserved_geometry_subdivision = false, // NOTE: Ignored by mask
+            }, 0b0010);
 
             gfx_queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config_2, .{
                 .drawing_triangles = topo == .triangle_list,

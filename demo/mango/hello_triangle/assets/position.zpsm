@@ -1,0 +1,10 @@
+.out o0 position
+
+.alias iPos v0
+.alias oPos o0
+
+.entry main vertex
+
+main:
+    mov oPos, iPos
+    end

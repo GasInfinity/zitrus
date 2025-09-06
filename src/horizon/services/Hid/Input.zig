@@ -3,7 +3,7 @@ shm_memory_data: *align(horizon.heap.page_size) Hid.Shared,
 
 pub fn init(hid: Hid) !Input {
     var handles = try hid.sendGetIPCHandles();
-    errdefer handles.deinit();
+    errdefer handles.close();
 
     const shm_memory_data = try horizon.heap.non_thread_safe_shared_memory_address_allocator.alloc(@sizeOf(Hid.Shared), .fromByteUnits(4096));
     errdefer horizon.heap.non_thread_safe_shared_memory_address_allocator.free(shm_memory_data);
@@ -18,7 +18,7 @@ pub fn init(hid: Hid) !Input {
 pub fn deinit(input: *Input) void {
     input.handles.shm.unmap(@ptrCast(input.shm_memory_data));
     horizon.heap.non_thread_safe_shared_memory_address_allocator.free(std.mem.asBytes(input.shm_memory_data));
-    input.handles.deinit();
+    input.handles.close();
     input.* = undefined;
 }
 

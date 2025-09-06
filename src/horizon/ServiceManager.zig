@@ -1,6 +1,7 @@
 const port_name = "srv:";
 
 pub const Error = ClientSession.RequestError;
+// TODO: Separate abstraction from the port/service!
 
 pub const Notification = enum(u32) {
     must_terminate = 0x100,
@@ -61,10 +62,10 @@ pub fn init() !SrvManager {
 
 pub fn deinit(srv: *SrvManager) void {
     if (srv.notification) |*notif| {
-        notif.deinit();
+        notif.close();
     }
 
-    srv.session.deinit();
+    srv.session.close();
     srv.* = undefined;
 }
 

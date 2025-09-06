@@ -215,7 +215,7 @@ pub fn agreeUpdate(flags: State.Flags) Error {
     return .{ .state = .agreeUpdate(flags) };
 }
 
-pub fn start(err: *Error, app: *Application, apt: Applet, srv: ServiceManager, gsp: *GspGpu) !Result {
+pub fn start(err: *Error, app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu) !Result {
     try app.startLibraryApplet(apt, srv, gsp, .application_error_display, .null, std.mem.asBytes(&err.state));
 
     return switch (try app.waitAppletResult(apt, srv, gsp, std.mem.asBytes(&err.state))) {

@@ -17,7 +17,6 @@
 
 pub const shader = @import("pica/shader.zig");
 pub const cmd3d = @import("pica/cmd3d.zig");
-pub const Framebuffer = @import("pica/Framebuffer.zig");
 
 pub const F3_12 = zsflt.Float(3, 12);
 pub const F7_12 = zsflt.Float(7, 12);

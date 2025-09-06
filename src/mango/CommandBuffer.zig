@@ -58,7 +58,7 @@ pub const Handle = enum(u32) {
     }
 
     pub fn draw(cmd: Handle, vertex_count: u32, first_vertex: u32) void {
-        return cmd.drawMultiSlice(&.{ .vertex_count = vertex_count, .first_vertex = first_vertex });
+        return cmd.drawMultiSlice(&.{.{ .vertex_count = vertex_count, .first_vertex = first_vertex }});
     }
 
     pub fn drawMultiSlice(cmd: Handle, vertex_info: []const mango.MultiDrawInfo) void {
@@ -665,6 +665,15 @@ pub fn reset(cmd: *CommandBuffer) void {
     cmd.current_error = null;
     cmd.scope = .none;
     cmd.state = .initial;
+}
+
+pub fn notifyPending(cmd: *CommandBuffer) void {
+    @atomicStore(backend.CommandBuffer.State, &cmd.state, .pending, .monotonic);
+}
+
+/// NOTE: Should we have a one-time submit?
+pub fn notifyCompleted(cmd: *CommandBuffer) void {
+    @atomicStore(backend.CommandBuffer.State, &cmd.state, .executable, .monotonic);
 }
 
 pub fn toHandle(image: *CommandBuffer) Handle {

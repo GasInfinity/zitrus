@@ -1,0 +1,16 @@
+.{
+    .name = .hello_triangle,
+    .version = "0.0.0",
+    .fingerprint = 0x3dc7c75722ec239d, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.15.1",
+    .dependencies = .{
+        .zitrus = .{ .path = "../../../" },
+    },
+
+    .paths = .{
+        "assets",
+        "src",
+        "build.zig",
+        "build.zig.zon",
+    },
+}

@@ -461,7 +461,7 @@ pub fn parental(language: State.Language, features: ParentalFeatures) SoftwareKe
 
 pub fn deinit(swkbd: *SoftwareKeyboard, allocator: std.mem.Allocator) void {
     if (swkbd.text_block.obj != .null) {
-        swkbd.text_block.deinit();
+        swkbd.text_block.close();
         allocator.free(swkbd.text);
     }
 
@@ -472,7 +472,7 @@ pub fn writtenText(swkbd: *SoftwareKeyboard) [:0]const u16 {
     return std.mem.bytesAsSlice(u16, swkbd.text)[swkbd.state.text_offset..swkbd.state.text_length :0];
 }
 
-pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, srv: ServiceManager, gsp: *GspGpu, context: anytype) !Result {
+pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu, context: anytype) !Result {
     std.debug.assert(if (swkbd.state.filter.callback) @TypeOf(context) != void else true);
     try app.startLibraryApplet(apt, srv, gsp, .application_software_keyboard, swkbd.text_block.obj, std.mem.asBytes(&swkbd.state));
 
@@ -501,7 +501,7 @@ pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, sr
             .jump_home => .jump_home,
             .must_close => unreachable,
         },
-        .message => |params| if(@TypeOf(context) != void) {
+        .message => |params| if (@TypeOf(context) != void) {
             std.debug.assert(params.handle == .null);
 
             const result = context.filter(swkbd.writtenText());
@@ -518,7 +518,7 @@ pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, sr
     };
 }
 
-pub fn start(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, srv: ServiceManager, gsp: *GspGpu) !Result {
+pub fn start(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu) !Result {
     return swkbd.startContext(app, apt, srv, gsp, {});
 }
 

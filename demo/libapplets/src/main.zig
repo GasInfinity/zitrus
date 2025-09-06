@@ -20,14 +20,17 @@ pub fn main() !void {
     var srv = try ServiceManager.init();
     defer srv.deinit();
 
-    var apt = try Applet.init(srv);
-    defer apt.deinit();
+    const apt = try Applet.open(srv);
+    defer apt.close();
+
+    const gsp = try GspGpu.open(srv);
+    defer gsp.close();
 
     var app = try Applet.Application.init(apt, srv);
     defer app.deinit(apt, srv);
 
-    var gsp = try GspGpu.init(srv);
-    defer gsp.deinit();
+    var gfx = try GspGpu.Graphics.init(gsp);
+    defer gfx.deinit(gsp);
 
     var framebuffer = try Framebuffer.init(.{
         .double_buffer = .init(.{
@@ -45,25 +48,25 @@ pub fn main() !void {
     @memset(framebuffer.currentFramebuffer(.top), 0xFF);
     @memset(framebuffer.currentFramebuffer(.bottom), 0xFF);
 
-    try framebuffer.flushBuffers(&gsp);
+    try framebuffer.flushBuffers(gsp);
 
     while (true) {
-        const interrupts = try gsp.waitInterrupts();
+        const interrupts = try gfx.waitInterrupts();
 
         if (interrupts.contains(.vblank_top)) {
             break;
         }
     }
 
-    try framebuffer.swapBuffers(&gsp);
+    try framebuffer.present(&gfx);
 
     try gsp.sendSetLcdForceBlack(false);
-    defer if (gsp.has_right) gsp.sendSetLcdForceBlack(true) catch {};
+    defer gsp.sendSetLcdForceBlack(true) catch {};
 
     {
         var initial: Applet.Application.Error = .textUtf8(.success, "All your codebase are belong to us?", .none);
 
-        switch (try initial.start(&app, apt, srv, &gsp)) {
+        switch (try initial.start(&app, apt, srv, gsp)) {
             .none,
             .action_performed,
             => {},
@@ -98,7 +101,7 @@ pub fn main() !void {
         }
     };
 
-    switch (try swkbd.startContext(&app, apt, srv, &gsp, CallbackContext{})) {
+    switch (try swkbd.startContext(&app, apt, srv, gsp, CallbackContext{})) {
         else => |e| switch (e) {
             .left, .right => {},
             else => unreachable,
@@ -108,7 +111,7 @@ pub fn main() !void {
     {
         var initial: Applet.Application.Error = .textUtf8(.success, "Correct! Have a great day :D", .none);
 
-        switch (try initial.start(&app, apt, srv, &gsp)) {
+        switch (try initial.start(&app, apt, srv, gsp)) {
             .none,
             .action_performed,
             => {},
@@ -127,7 +130,7 @@ const Applet = horizon.services.Applet;
 const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
 const Config = horizon.services.Config;
-const Framebuffer = zitrus.pica.Framebuffer;
+const Framebuffer = GspGpu.Graphics.Framebuffer;
 
 pub const panic = zitrus.panic;
 const zitrus = @import("zitrus");
