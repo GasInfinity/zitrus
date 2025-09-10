@@ -9,7 +9,7 @@ pub const Config = struct {
     double_buffer: ScreenDoubleBuffer = .initFill(true),
     top_mode: FramebufferMode = .@"2d",
     color_format: ScreenColorFormat = .initFill(.bgr888),
-    dma_size: DmaSize = .@"128",
+    dma_size: DmaSize = .@"64",
     phys_linear_allocator: Allocator = horizon.heap.linear_page_allocator,
 };
 

@@ -61,6 +61,7 @@ pub fn main() !void {
     const transfer_queue = device.getQueue(.transfer);
     const fill_queue = device.getQueue(.fill);
     const submit_queue = device.getQueue(.submit);
+    const present_queue = device.getQueue(.present);
 
     // Allocate the semaphore we will use to synchronize with the GPU
     // and between GPU operations.
@@ -95,14 +96,14 @@ pub fn main() !void {
     // to change the swapchain format dynamically), you should fill the LCD with a solid color.
     //
     // XXX: Should we fill the LCD ourselves?
-    const bottom_presentable_image_memory = try device.allocateMemory(&.{
-        .memory_type = 1,
+    const bottom_presentable_image_memory = try device.allocateMemory(.{
+        .memory_type = .vram_a,
         .allocation_size = .size(320 * 240 * 3 * 2),
     }, gpa);
     defer device.freeMemory(bottom_presentable_image_memory, gpa);
 
-    const top_presentable_image_memory = try device.allocateMemory(&.{
-        .memory_type = 1,
+    const top_presentable_image_memory = try device.allocateMemory(.{
+        .memory_type = .vram_a,
         .allocation_size = .size(400 * 240 * 3 * 2),
     }, gpa);
     defer device.freeMemory(top_presentable_image_memory, gpa);
@@ -124,23 +125,39 @@ pub fn main() !void {
     //  - top_240x800
     //  - bottom_240x320
     //
-    const top_swapchain = try device.createSwapchain(.{ .surface = .top_240x400, .present_mode = .fifo, .image_format = .b8g8r8_unorm, .image_array_layers = 1, .image_count = 2, .image_usage = .{
-        .transfer_dst = true,
-    }, .image_memory_info = &.{
-        .{ .memory = top_presentable_image_memory, .memory_offset = .size(0) },
-        .{ .memory = top_presentable_image_memory, .memory_offset = .size(400 * 240 * 3) },
-    } }, gpa);
+    const top_swapchain = try device.createSwapchain(.{
+        .surface = .top_240x400,
+        .present_mode = .fifo,
+        .image_format = .b8g8r8_unorm,
+        .image_array_layers = .@"1",
+        .image_count = 2,
+        .image_usage = .{
+            .transfer_dst = true,
+        },
+        .image_memory_info = &.{
+            .{ .memory = top_presentable_image_memory, .memory_offset = .size(0) },
+            .{ .memory = top_presentable_image_memory, .memory_offset = .size(400 * 240 * 3) },
+        },
+    }, gpa);
     defer device.destroySwapchain(top_swapchain, gpa);
 
     // Even though we'll only render in this example to the top screen,
     // we should remember that surface contents are UNDEFINED before
     // the first swapchain present and/or after swapchain destruction.
-    const bottom_swapchain = try device.createSwapchain(.{ .surface = .bottom_240x320, .present_mode = .fifo, .image_format = .b8g8r8_unorm, .image_array_layers = 1, .image_count = 2, .image_usage = .{
-        .transfer_dst = true,
-    }, .image_memory_info = &.{
-        .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(0) },
-        .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(320 * 240 * 3) },
-    } }, gpa);
+    const bottom_swapchain = try device.createSwapchain(.{
+        .surface = .bottom_240x320,
+        .present_mode = .fifo,
+        .image_format = .b8g8r8_unorm,
+        .image_array_layers = .@"1",
+        .image_count = 2,
+        .image_usage = .{
+            .transfer_dst = true,
+        },
+        .image_memory_info = &.{
+            .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(0) },
+            .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(320 * 240 * 3) },
+        },
+    }, gpa);
     defer device.destroySwapchain(bottom_swapchain, gpa);
 
     // Same as with Vulkan, you must get the swapchain images.
@@ -164,14 +181,14 @@ pub fn main() !void {
     //
     // You can use Vertex and Index buffers stored in FCRAM but they won't be as performant
     // as them being in VRAM.
-    const vtx_buffer_memory = try device.allocateMemory(&.{
-        .memory_type = 0,
+    const vtx_buffer_memory = try device.allocateMemory(.{
+        .memory_type = .fcram_cached,
         .allocation_size = .size(@sizeOf(Vertex) * 3),
     }, gpa);
     defer device.freeMemory(vtx_buffer_memory, gpa);
 
-    const index_buffer_memory = try device.allocateMemory(&.{
-        .memory_type = 0,
+    const index_buffer_memory = try device.allocateMemory(.{
+        .memory_type = .fcram_cached,
         .allocation_size = .size(3),
     }, gpa);
     defer device.freeMemory(index_buffer_memory, gpa);
@@ -180,10 +197,10 @@ pub fn main() !void {
     //
     // Same as in Vulkan.
     {
-        const mapped_vtx = try device.mapMemory(vtx_buffer_memory, 0, .whole_size);
+        const mapped_vtx = try device.mapMemory(vtx_buffer_memory, 0, .whole);
         defer device.unmapMemory(vtx_buffer_memory);
 
-        const mapped_idx = try device.mapMemory(index_buffer_memory, 0, .whole_size);
+        const mapped_idx = try device.mapMemory(index_buffer_memory, 0, .whole);
         defer device.unmapMemory(index_buffer_memory);
 
         const vtx_data: *[3]Vertex = std.mem.bytesAsValue([3]Vertex, mapped_vtx);
@@ -200,11 +217,11 @@ pub fn main() !void {
         try device.flushMappedMemoryRanges(&.{ .{
             .memory = vtx_buffer_memory,
             .offset = .size(0),
-            .size = .size(@sizeOf(Vertex) * 4),
+            .size = .size(@sizeOf(Vertex) * 3),
         }, .{
             .memory = index_buffer_memory,
             .offset = .size(0),
-            .size = .size(4),
+            .size = .size(3),
         } });
     }
 
@@ -212,7 +229,7 @@ pub fn main() !void {
     //
     // Same as in Vulkan.
     const index_buffer = try device.createBuffer(.{
-        .size = .size(0x4),
+        .size = .size(0x3),
         .usage = .{
             .index_buffer = true,
         },
@@ -221,7 +238,7 @@ pub fn main() !void {
     try device.bindBufferMemory(index_buffer, index_buffer_memory, .size(0));
 
     const vtx_buffer = try device.createBuffer(.{
-        .size = .size(@sizeOf(Vertex) * 4),
+        .size = .size(@sizeOf(Vertex) * 3),
         .usage = .{
             .vertex_buffer = true,
         },
@@ -232,8 +249,8 @@ pub fn main() !void {
     // Create the color attachment that will be used for the TOP screen as we'll render to only one screen for simplicity.
     //
     // Same workflow as in Vulkan.
-    const color_attachment_image_memory = try device.allocateMemory(&.{
-        .memory_type = 1,
+    const color_attachment_image_memory = try device.allocateMemory(.{
+        .memory_type = .vram_a,
         .allocation_size = .size(400 * 240 * 4),
     }, gpa);
     defer device.freeMemory(color_attachment_image_memory, gpa);
@@ -252,9 +269,8 @@ pub fn main() !void {
             .height = 400,
         },
         .format = .a8b8g8r8_unorm,
-        // FIXME: These values are currently ignored
-        .mip_levels = 1,
-        .array_layers = 1,
+        .mip_levels = .@"1",
+        .array_layers = .@"1",
     }, gpa);
     defer device.destroyImage(top_color_attachment_image, gpa);
     try device.bindImageMemory(top_color_attachment_image, color_attachment_image_memory, .size(0));
@@ -266,6 +282,7 @@ pub fn main() !void {
         .type = .@"2d",
         .format = .a8b8g8r8_unorm,
         .image = top_color_attachment_image,
+        .subresource_range = .full,
     }, gpa);
     defer device.destroyImageView(top_color_attachment_image_view, gpa);
 
@@ -391,7 +408,7 @@ pub fn main() !void {
     //
     // Screen contents are undefined until we present the first frame, for simplicity we'll ignore that.
     try gsp.sendSetLcdForceBlack(false);
-    defer gsp.sendSetLcdForceBlack(true) catch {};
+    defer if(!app.flags.must_close) gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
 
     main_loop: while (true) {
         while (try srv.pollNotification()) |notif| switch (notif) {
@@ -401,10 +418,10 @@ pub fn main() !void {
 
         while (try app.pollNotification(apt, srv)) |n| switch (n) {
             .jump_home, .jump_home_by_power => {
-                j_h: switch (try app.jumpToHome(apt, srv, gsp, .none)) {
+                switch (try app.jumpToHome(apt, srv, gsp, .none)) {
                     .resumed => {},
-                    .jump_home => continue :j_h (try app.jumpToHome(apt, srv, gsp, .none)),
                     .must_close => break :main_loop,
+                    .jump_home => unreachable,
                 }
             },
             .sleeping => {
@@ -435,7 +452,7 @@ pub fn main() !void {
         cmd.bindPipeline(.graphics, simple_pipeline);
 
         // Render to the top screen
-        cmd.setViewport(&.{
+        cmd.setViewport(.{
             .rect = .{
                 .offset = .{ .x = 0, .y = 0 },
                 .extent = .{ .width = 240, .height = 400 },
@@ -443,7 +460,7 @@ pub fn main() !void {
             .min_depth = 0.0,
             .max_depth = 1.0,
         });
-        cmd.setScissor(&.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 400 } }));
+        cmd.setScissor(.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 400 } }));
 
         {
             cmd.beginRendering(.{
@@ -460,6 +477,7 @@ pub fn main() !void {
             .wait_semaphore = &.init(sync_semaphore, sync_counter),
             .image = bottom_images[bottom_current_image_idx],
             .color = @splat(0xFF),
+            .subresource_range = .full,
             .signal_semaphore = &.init(sync_semaphore, sync_counter + 1),
         });
 
@@ -467,6 +485,7 @@ pub fn main() !void {
             .wait_semaphore = &.init(sync_semaphore, sync_counter + 1),
             .image = top_color_attachment_image,
             .color = @splat(0x22),
+            .subresource_range = .full,
             .signal_semaphore = &.init(sync_semaphore, sync_counter + 2),
         });
 
@@ -480,17 +499,19 @@ pub fn main() !void {
             .wait_semaphore = &.init(sync_semaphore, sync_counter + 3),
             .src_image = top_color_attachment_image,
             .dst_image = top_images[top_current_image_idx],
+            .src_subresource = .full,
+            .dst_subresource = .full,
             .signal_semaphore = &.init(sync_semaphore, sync_counter + 4),
         });
 
-        try device.present(.{
+        try present_queue.present(.{
             .wait_semaphore = &.init(sync_semaphore, sync_counter + 3),
             .swapchain = bottom_swapchain,
             .image_index = bottom_current_image_idx,
             .flags = .{},
         });
 
-        try device.present(.{
+        try present_queue.present(.{
             .wait_semaphore = &.init(sync_semaphore, sync_counter + 4),
             .swapchain = top_swapchain,
             .image_index = top_current_image_idx,

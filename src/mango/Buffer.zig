@@ -7,6 +7,27 @@ memory_info: DeviceMemory.BoundMemoryInfo,
 size: usize,
 usage: mango.BufferCreateInfo.Usage,
 
+pub fn init(create_info: mango.BufferCreateInfo) Buffer {
+    return .{
+        .memory_info = .empty,
+        .size = @intFromEnum(create_info.size),
+        .usage = create_info.usage,
+    };
+}
+
+pub fn sizeByAmount(buffer: Buffer, size: mango.DeviceSize, offset: mango.DeviceSize) usize {
+    return switch (size) {
+        .whole => blk: {
+            std.debug.assert(@intFromEnum(offset) <= buffer.size);
+            break :blk (buffer.size - @intFromEnum(offset));
+        },
+        _ => blk: {
+            std.debug.assert(@intFromEnum(offset) + @intFromEnum(size) <= buffer.size);
+            break :blk @intFromEnum(size);
+        },
+    };
+}
+
 pub fn toHandle(buffer: *Buffer) Handle {
     return @enumFromInt(@intFromPtr(buffer));
 }

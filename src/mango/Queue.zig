@@ -11,105 +11,227 @@ pub const Handle = enum(u32) {
     null = 0,
     _,
 
-    pub fn copyBuffer(queue: Handle, src_buffer: mango.Buffer, dst_buffer: mango.Buffer, regions: []const mango.BufferCopy) void {
+    /// Copies the region specified onto the destination buffer.
+    ///
+    /// Valid Usage:
+    /// - Offsets must be aligned to 8 bytes.
+    pub fn copyBuffer(queue: Handle, info: mango.CopyBufferInfo) !void {
         const transfer: *Transfer = .fromHandleMutable(queue);
-        _ = transfer;
-        _ = src_buffer;
-        _ = dst_buffer;
-        _ = regions;
-        // const gsp = device.gsp;
-        //
-        // const b_src_buffer: backend.Buffer = .fromHandle(src_buffer);
-        // const b_dst_buffer: backend.Buffer = .fromHandle(dst_buffer);
-        //
-        // const b_src_virt = b_src_buffer.memory_info.virtual();
-        // const b_dst_virt = b_dst_buffer.memory_info.virtual();
-        //
-        // for (regions) |region| {
-        //     const src = b_src_virt[region.src_offset..][0..region.size];
-        //     const dst = b_dst_virt[region.dst_offset..][0..region.size];
-        //
-        //     // TODO: Errors?
-        //     gsp.submitRequestDma(src, dst, .none, .none) catch unreachable;
-        //
-        // }
+        const b_src_buffer: backend.Buffer = .fromHandle(info.src_buffer);
+        const b_dst_buffer: backend.Buffer = .fromHandle(info.dst_buffer);
+
+        const src_virt = b_src_buffer.memory_info.boundVirtualAddress();
+        const dst_virt = b_dst_buffer.memory_info.boundVirtualAddress();
+
+        const src_size = b_src_buffer.sizeByAmount(info.size, info.src_offset);
+        const dst_size = b_dst_buffer.sizeByAmount(info.size, info.src_offset);
+        std.debug.assert(src_size == dst_size);
+
+        const src = src_virt[@intFromEnum(info.src_offset)..][0..src_size];
+        const dst = dst_virt[@intFromEnum(info.dst_offset)..][0..dst_size];
+        
+        return transfer.wakePushFront(.{
+            .flags = .{
+                .kind = .copy,
+                .extra = .{
+                    // XXX: Yes this could fail but how can the size be higher than 2^29 really?
+                    .copy = @intCast(src_size),
+                },
+            },
+            .src = @alignCast(src.ptr),
+            .dst = @alignCast(dst.ptr),
+            .input_gap_size = @splat(0),
+            .output_gap_size = @splat(0),
+        }, .initSemaphoreOperation(info.wait_semaphore), .initSemaphoreOperation(info.signal_semaphore));
     }
 
-    // TODO: Provide a software callback for directly using host memory (akin to VK_EXT_host_image_copy)
+    // TODO: Provide a software fallback for directly using host memory (akin to VK_EXT_host_image_copy)
     pub fn copyBufferToImage(queue: Handle, info: mango.CopyBufferToImageInfo) !void {
         const transfer: *Transfer = .fromHandleMutable(queue);
         const b_src_buffer: *backend.Buffer = .fromHandleMutable(info.src_buffer);
         const b_dst_image: *backend.Image = .fromHandleMutable(info.dst_image);
 
-        const b_src_memory: backend.DeviceMemory.BoundMemoryInfo = b_src_buffer.memory_info;
-        const b_dst_memory: backend.DeviceMemory.BoundMemoryInfo = b_dst_image.memory_info;
+        const src_memory: backend.DeviceMemory.BoundMemoryInfo = b_src_buffer.memory_info;
+        const dst_memory: backend.DeviceMemory.BoundMemoryInfo = b_dst_image.memory_info;
 
-        const src_offset = @intFromEnum(info.src_offset);
-
-        const native_fmt = b_dst_image.format.nativeColorFormat();
+        const native_fmt = b_dst_image.info.format.nativeColorFormat();
         const pixel_size = native_fmt.bytesPerPixel();
 
-        const img_width = b_dst_image.info.width();
-        const img_height = b_dst_image.info.height();
-        const full_image_size = img_width * img_height * pixel_size;
+        const dst_width = b_dst_image.info.width();
+        const dst_height = b_dst_image.info.height();
 
-        const src_virt = b_src_memory.boundVirtualAddress()[src_offset..][0..full_image_size];
-        const dst_virt = b_dst_memory.boundVirtualAddress()[0..full_image_size];
+        const dst_mip_width = backend.imageLevelSize(dst_width, @intFromEnum(info.dst_subresource.mip_level));
+        const dst_mip_height = backend.imageLevelSize(dst_height, @intFromEnum(info.dst_subresource.mip_level));
 
-        std.debug.assert(img_width >= 64 and img_height >= 16);
+        std.debug.assert(dst_mip_width >= 64 and dst_mip_height >= 16);
 
-        try transfer.wakePushFront(.{
-            .flags = .{
-                .kind = .linear_tiled,
-                .src_fmt = native_fmt,
-                .dst_fmt = native_fmt,
-            },
-            .src = src_virt.ptr,
-            .dst = dst_virt.ptr,
-            .size = 0, // NOTE: Only used when copying data
-            .input_gap_size = .{ @intCast(b_dst_image.info.width()), @intCast(b_dst_image.info.height()) },
-            .output_gap_size = .{ @intCast(b_dst_image.info.width()), @intCast(b_dst_image.info.height()) },
-        }, .initSemaphoreOperation(info.wait_semaphore), .initSemaphoreOperation(info.signal_semaphore));
+        const dst_mip_offset = pixel_size * backend.imageLevelOffset(dst_width * dst_height, dst_mip_width * dst_mip_height);
+        const dst_mip_size = pixel_size * dst_mip_width * dst_mip_height;
+
+        const dst_image_full_layer_size = @as(usize, b_dst_image.info.layer_size) * pixel_size;
+
+        const src_virt = src_memory.boundVirtualAddress();
+        const dst_virt = dst_memory.boundVirtualAddress();
+
+        const dst_blitting_layers = b_dst_image.info.layersByAmount(info.dst_subresource.layer_count, info.dst_subresource.base_array_layer);
+
+        var src_virt_offset = src_virt + @intFromEnum(info.src_offset);
+        var dst_image_layer_virt_offset = dst_virt + dst_image_full_layer_size * @intFromEnum(info.dst_subresource.base_array_layer) + dst_mip_offset;
+        var i: usize = 0;
+
+        // TODO: Add the memcpy flag again
+
+        while (i < dst_blitting_layers) : ({
+            i += 1;
+            dst_image_layer_virt_offset += dst_image_full_layer_size;
+            src_virt_offset += dst_mip_size;
+        }) {
+            // NOTE: Queue operations start and execute sequentially within a queue.
+            const wait_op: ?SemaOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else null;
+            const signal_op: ?SemaOperation = if (i == (dst_blitting_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else null;
+
+            try transfer.wakePushFront(.{
+                .flags = .{
+                    .kind = .linear_tiled,
+                    .extra = .{
+                        .transfer = .{
+                            .src_fmt = native_fmt,
+                            .dst_fmt = native_fmt,
+                            .downscale = .none,
+                        },
+                    },
+                },
+                .src = @alignCast(src_virt_offset),
+                .dst = @alignCast(dst_image_layer_virt_offset),
+                .input_gap_size = .{ @intCast(dst_mip_width), @intCast(dst_mip_height) },
+                .output_gap_size = .{ @intCast(dst_mip_width), @intCast(dst_mip_height) },
+            }, wait_op, signal_op);
+        }
     }
 
     pub fn copyImageToBuffer(queue: Handle) void {
         const transfer: *Transfer = .fromHandleMutable(queue);
         _ = transfer;
+        @panic("TODO");
     }
 
-    pub fn blitImage(queue: Handle, blit_image_info: mango.BlitImageInfo) !void {
+    pub fn copyImageToImage(queue: Handle) void {
+        const transfer: *Transfer = .fromHandleMutable(queue);
+        _ = transfer;
+        @panic("TODO");
+    }
+
+    /// Blit an image onto another performing format conversion and scaling when appropiate.
+    ///
+    /// The operation is done layer by layer on the specified mip levels. When scaling is done,
+    /// a linear (also called box) filter is applied.
+    ///
+    /// Valid Usage:
+    /// The tiling of the source and destination images **must** not be both LINEAR.
+    ///
+    /// The sizes of the source and destination image dimensions **can** *only* differ when:
+    /// - The width of the destination is half the width of the source.
+    /// - The width and height of the destination is half the width of the source.
+    pub fn blitImage(queue: Handle, info: mango.BlitImageInfo) !void {
         const transfer: *Transfer = .fromHandleMutable(queue);
 
-        const b_src_image: *backend.Image = .fromHandleMutable(blit_image_info.src_image);
-        const b_dst_image: *backend.Image = .fromHandleMutable(blit_image_info.dst_image);
+        const b_src_image: *backend.Image = .fromHandleMutable(info.src_image);
+        const b_dst_image: *backend.Image = .fromHandleMutable(info.dst_image);
 
-        const b_src_virt = b_src_image.memory_info.boundVirtualAddress();
-        const b_dst_virt = b_dst_image.memory_info.boundVirtualAddress();
+        const src_blitting_layers = b_src_image.info.layersByAmount(info.src_subresource.layer_count, info.src_subresource.base_array_layer);
+        const dst_blitting_layers = b_dst_image.info.layersByAmount(info.dst_subresource.layer_count, info.dst_subresource.base_array_layer);
 
-        const b_src_color_format = b_src_image.format.nativeColorFormat();
-        const b_dst_color_format = b_dst_image.format.nativeColorFormat();
+        std.debug.assert(src_blitting_layers == dst_blitting_layers); // Obvously, we must have matching layers to copy.
 
-        try transfer.wakePushFront(.{
-            .flags = .{
-                .kind = switch (b_src_image.info.optimally_tiled) {
-                    false => switch (b_dst_image.info.optimally_tiled) {
-                        false => unreachable, // TODO: Linear -> Linear (is just doing a memcpy)
-                        true => .linear_tiled,
-                    },
-                    true => switch (b_dst_image.info.optimally_tiled) {
-                        false => .tiled_linear,
-                        true => .tiled_tiled,
+        const src_color_format = b_src_image.info.format.nativeColorFormat();
+        const dst_color_format = b_dst_image.info.format.nativeColorFormat();
+
+        const src_width = b_src_image.info.width();
+        const src_height = b_src_image.info.height();
+
+        const src_mip_width = backend.imageLevelSize(src_width, @intFromEnum(info.src_subresource.mip_level));
+        const src_mip_height = backend.imageLevelSize(src_height, @intFromEnum(info.src_subresource.mip_level));
+
+        const dst_width = b_dst_image.info.width();
+        const dst_height = b_dst_image.info.height();
+
+        const dst_mip_width = backend.imageLevelSize(dst_width, @intFromEnum(info.src_subresource.mip_level));
+        const dst_mip_height = backend.imageLevelSize(dst_height, @intFromEnum(info.src_subresource.mip_level));
+
+        std.debug.assert(src_mip_width >= dst_mip_width and src_mip_height >= dst_mip_height); // Output must not be bigger than input.
+
+        // Only allow downscale of the X or XY axes. Otherwise sizes must match (for simplicity, the hardware allows bigger inputs than outputs, does that have an use-case?).
+        const downscale: pica.Registers.MemoryCopy.Flags.Downscale = if (dst_mip_width < src_mip_width and dst_mip_height < src_mip_height) blk: {
+            std.debug.assert(dst_mip_width == (src_mip_width >> 1) and dst_mip_height == (src_mip_height >> 1));
+            break :blk .@"2x2";
+        } else if (dst_mip_width < src_mip_width) blk: {
+            std.debug.assert(dst_mip_width == (src_mip_width >> 1) and dst_mip_height == (src_mip_height >> 1));
+            break :blk .@"2x1";
+        } else blk: {
+            @branchHint(.likely);
+            std.debug.assert(src_mip_width == dst_mip_width and src_mip_height == dst_mip_height and !(b_src_image.info.optimally_tiled and b_dst_image.info.optimally_tiled));
+            break :blk .none;
+        };
+
+        const kind: TransferItem.Flags.Kind = switch (b_src_image.info.optimally_tiled) {
+            false => switch (b_dst_image.info.optimally_tiled) {
+                false => unreachable, // NOTE: Blits are not supported between LINEAR -> LINEAR, hardware doesn't support it explicitly.
+                true => .linear_tiled,
+            },
+            true => switch (b_dst_image.info.optimally_tiled) {
+                false => .tiled_linear,
+                true => .tiled_tiled,
+            },
+        };
+
+        switch (kind) {
+            .linear_tiled, .tiled_linear => std.debug.assert(src_width >= 64 and src_height >= 16),
+            .tiled_tiled => std.debug.assert(src_width >= 64 and src_height >= 32),
+            .copy => unreachable,
+        }
+
+        const src_bpp = src_color_format.bytesPerPixel();
+        const dst_bpp = dst_color_format.bytesPerPixel();
+
+        const src_image_full_layer_size: usize = @as(usize, b_src_image.info.layer_size) * src_bpp;
+        const dst_image_full_layer_size: usize = @as(usize, b_dst_image.info.layer_size) * dst_bpp;
+
+        const src_virt = b_src_image.memory_info.boundVirtualAddress();
+        const dst_virt = b_dst_image.memory_info.boundVirtualAddress();
+
+        const src_mip_offset = src_bpp * backend.imageLevelOffset(src_width * src_height, src_mip_width * src_mip_height);
+        const dst_mip_offset = dst_bpp * backend.imageLevelOffset(dst_width * dst_height, dst_mip_width * dst_mip_height);
+
+        var i: usize = 0;
+        var src_image_layer_virt_offset = src_virt + src_image_full_layer_size * @intFromEnum(info.src_subresource.base_array_layer) + src_mip_offset;
+        var dst_image_layer_virt_offset = dst_virt + dst_image_full_layer_size * @intFromEnum(info.dst_subresource.base_array_layer) + dst_mip_offset;
+
+        while (i < dst_blitting_layers) : ({
+            i += 1;
+            src_image_layer_virt_offset += src_image_full_layer_size;
+            dst_image_layer_virt_offset += dst_image_full_layer_size;
+        }) {
+            // NOTE: Queue operations start and execute sequentially within a queue.
+            const wait_op: ?SemaOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else null;
+            const signal_op: ?SemaOperation = if (i == (dst_blitting_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else null;
+
+            try transfer.wakePushFront(.{
+                .flags = .{
+                    .kind = kind,
+                    .extra = .{
+                        .transfer = .{
+                            .src_fmt = src_color_format,
+                            .dst_fmt = dst_color_format,
+                            .downscale = downscale,
+                        },
                     },
                 },
-                .src_fmt = b_src_color_format,
-                .dst_fmt = b_dst_color_format,
-            },
-            .src = b_src_virt,
-            .dst = b_dst_virt,
-            .size = 0, // NOTE: Only used when copying data
-            .input_gap_size = .{ @intCast(b_src_image.info.width()), @intCast(b_src_image.info.height()) },
-            .output_gap_size = .{ @intCast(b_dst_image.info.width()), @intCast(b_dst_image.info.height()) },
-        }, .initSemaphoreOperation(blit_image_info.wait_semaphore), .initSemaphoreOperation(blit_image_info.signal_semaphore));
+                .src = @alignCast(src_image_layer_virt_offset),
+                .dst = @alignCast(dst_image_layer_virt_offset),
+                .input_gap_size = .{ @intCast(b_src_image.info.width()), @intCast(b_src_image.info.height()) },
+                .output_gap_size = .{ @intCast(b_src_image.info.width()), @intCast(b_src_image.info.height()) },
+            }, wait_op, signal_op);
+        }
     }
 
     pub fn fillBuffer(queue: Handle, dst_buffer: mango.Buffer, dst_offset: usize, data: u32) !void {
@@ -118,6 +240,7 @@ pub const Handle = enum(u32) {
         _ = dst_buffer;
         _ = dst_offset;
         _ = data;
+        @panic("TODO");
         // const b_dst_buffer: backend.Buffer = .fromHandle(dst_buffer);
         //
         // std.debug.assert(dst_offset <= b_dst_buffer.size);
@@ -129,15 +252,15 @@ pub const Handle = enum(u32) {
         //
     }
 
-    pub fn clearColorImage(queue: Handle, clear_color_info: mango.ClearColorInfo) !void {
+    /// Clear one color attachment image.
+    pub fn clearColorImage(queue: Handle, info: mango.ClearColorInfo) !void {
         const fill: *Fill = .fromHandleMutable(queue);
-        const color = clear_color_info.color;
-        const b_image: *backend.Image = .fromHandleMutable(clear_color_info.image);
-        const bound_virtual = b_image.memory_info.boundVirtualAddress();
+        const color = info.color;
+        const b_image: *backend.Image = .fromHandleMutable(info.image);
 
-        const clear_slice, const clear_value: GspGpu.GxCommand.MemoryFill.Unit.Value = switch (b_image.format) {
+        const clear_scale: usize, const clear_value: GspGpu.GxCommand.MemoryFill.Unit.Value = switch (b_image.info.format) {
             .a8b8g8r8_unorm => .{
-                bound_virtual[0 .. b_image.info.width() * b_image.info.height() * @sizeOf(u32)],
+                @sizeOf(u32),
                 .fill32(@bitCast(pica.ColorFormat.Abgr8888{
                     .r = color[0],
                     .g = color[1],
@@ -146,7 +269,7 @@ pub const Handle = enum(u32) {
                 })),
             },
             .b8g8r8_unorm => .{
-                bound_virtual[0 .. b_image.info.width() * b_image.info.height() * 3],
+                3,
                 .fill24(@bitCast(pica.ColorFormat.Bgr888{
                     .r = color[0],
                     .g = color[1],
@@ -155,8 +278,8 @@ pub const Handle = enum(u32) {
             },
             // .a8b8g8r8_unorm =>,
             .r5g6b5_unorm_pack16, .r5g5b5a1_unorm_pack16, .r4g4b4a4_unorm_pack16, .g8r8_unorm => .{
-                bound_virtual[0 .. b_image.info.width() * b_image.info.height() * @sizeOf(u16)],
-                .fill16(switch (b_image.format) {
+                @sizeOf(u16),
+                .fill16(switch (b_image.info.format) {
                     .r5g6b5_unorm_pack16 => @bitCast(pica.ColorFormat.Rgb565{
                         .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
                         .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u6)) / std.math.maxInt(u8)),
@@ -184,19 +307,69 @@ pub const Handle = enum(u32) {
             else => unreachable,
         };
 
+        const cleared_levels = b_image.info.levelsByAmount(info.subresource_range.level_count, info.subresource_range.base_mip_level);
+        const cleared_layers = b_image.info.layersByAmount(info.subresource_range.layer_count, info.subresource_range.base_array_layer);
+
+        const virt_start = b_image.memory_info.boundVirtualAddress();
+        const full_layer_size = clear_scale * b_image.info.layer_size;
+
+        // We can fully clear all the layers! This common case must be optimized!
+        if (info.subresource_range.base_mip_level == .@"0" and cleared_levels == b_image.info.levels()) {
+            return fill.wakePushFront(.{
+                .data = @alignCast(virt_start[(full_layer_size * @intFromEnum(info.subresource_range.base_array_layer))..][0..(full_layer_size * cleared_layers)]),
+                .value = clear_value,
+            }, .initSemaphoreOperation(info.wait_semaphore), .initSemaphoreOperation(info.signal_semaphore));
+        }
+
+        const width = b_image.info.width();
+        const height = b_image.info.height();
+
+        const mip_width = backend.imageLevelSize(width, @intFromEnum(info.subresource_range.base_mip_level));
+        const mip_height = backend.imageLevelSize(height, @intFromEnum(info.subresource_range.base_mip_level));
+
+        const mip_offset = clear_scale * backend.imageLevelOffset(width * mip_height, mip_width * mip_height);
+        const full_cleared_size = clear_scale * backend.imageLayerSize(mip_width * mip_height, cleared_levels);
+
+        var current_virt_offset: [*]u8 = virt_start + full_layer_size * @intFromEnum(info.subresource_range.base_array_layer) + mip_offset;
+        var i: usize = 0;
+
+        while (i < cleared_layers) : ({
+            current_virt_offset += full_layer_size;
+            i += 1;
+        }) {
+            // NOTE: Queue operations start and execute sequentially within a queue.
+            const wait_op: ?SemaOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else null;
+            const signal_op: ?SemaOperation = if (i == (cleared_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else null;
+
+            try fill.wakePushFront(.{
+                .data = @alignCast(current_virt_offset[0..full_cleared_size]),
+                .value = clear_value,
+            }, wait_op, signal_op);
+        }
+    }
+
+    // TODO: Subresource range
+    pub fn clearDepthStencilImage(queue: Handle, info: mango.ClearDepthStencilInfo) void {
+        std.debug.assert(0.0 <= info.depth and info.depth <= 1.0);
+
+        const fill: *Fill = .fromHandleMutable(queue);
+        const depth = info.depth;
+        const stencil = info.stencil;
+
+        const b_image: *backend.Image = .fromHandleMutable(info.image);
+        const bound_virtual = b_image.memory_info.boundVirtualAddress();
+
+        const clear_slice, const clear_value: GspGpu.GxCommand.MemoryFill.Unit.Value = switch (b_image.info.format) {
+            .d16_unorm => .{ bound_virtual[0..(b_image.info.width() * b_image.info.height() * @sizeOf(u16))], .fill16(@intFromFloat(depth * @sizeOf(u16))) },
+            .d24_unorm => .{ bound_virtual[0..(b_image.info.width() * b_image.info.height() * 3)], .fill24(@intFromFloat(depth * @sizeOf(u24))) },
+            .d24_unorm_s8_uint => .{ bound_virtual[0..(b_image.info.width() * b_image.info.height() * @sizeOf(u32))], .fill32(@as(u32, @intFromFloat(depth * @sizeOf(u24))) | (@as(u32, stencil) << 24)) },
+            else => unreachable,
+        };
+
         return fill.wakePushFront(.{
             .data = @alignCast(clear_slice),
             .value = clear_value,
-        }, .initSemaphoreOperation(clear_color_info.wait_semaphore), .initSemaphoreOperation(clear_color_info.signal_semaphore));
-    }
-
-    // TODO: Depth-stencil
-    pub fn clearDepthStencilImage(queue: Handle, image: mango.Image, depth: f32, stencil: u8) void {
-        const fill: *Fill = .fromHandleMutable(queue);
-        _ = fill;
-        _ = image;
-        _ = depth;
-        _ = stencil;
+        }, .initSemaphoreOperation(info.wait_semaphore), .initSemaphoreOperation(info.signal_semaphore));
     }
 
     pub fn submit(queue: Handle, submit_info: mango.SubmitInfo) !void {
@@ -207,6 +380,19 @@ pub const Handle = enum(u32) {
         return submt.wakePushFront(.{
             .cmd_buffer = b_cmd,
         }, .initSemaphoreOperation(submit_info.wait_semaphore), .initSemaphoreOperation(submit_info.signal_semaphore));
+    }
+
+    pub fn present(queue: Handle, info: mango.PresentInfo) !void {
+        const prsent: *Presentation = .fromHandleMutable(queue);
+        const screen = backend.Swapchain.fromHandle(info.swapchain);
+
+        return prsent.wakePushFront(.{
+            .misc = .{
+                .screen = screen,
+                .ignore_stereo = info.flags.ignore_stereoscopic,
+            },
+            .index = info.image_index,
+        }, .initSemaphoreOperation(info.wait_semaphore), null);
     }
 };
 
@@ -229,35 +415,57 @@ pub const SemaOperation = struct {
     }
 };
 
-pub const Fill = State(.fill, struct {
+pub const FillItem = struct {
     data: []align(8) u8,
     value: GspGpu.GxCommand.MemoryFill.Unit.Value,
-}, backend.max_buffered_queue_commands);
+};
 
-pub const Transfer = State(.transfer, struct {
+
+pub const TransferItem = struct {
     pub const Flags = packed struct(u32) {
+        pub const Kind = enum(u2) {
+            copy,
+            linear_tiled,
+            tiled_linear,
+            tiled_tiled,
+        };
+
         kind: Kind,
-        src_fmt: pica.ColorFormat,
-        dst_fmt: pica.ColorFormat,
-        _: u24 = 0,
+        extra: packed union {
+            copy: u30,
+            transfer: packed struct(u30) {
+                src_fmt: pica.ColorFormat,
+                dst_fmt: pica.ColorFormat,
+                downscale: pica.Registers.MemoryCopy.Flags.Downscale,
+                _: u22 = 0,
+            },
+        },
     };
 
-    pub const Kind = enum(u2) {
-        copy,
-        linear_tiled,
-        tiled_linear,
-        tiled_tiled,
-    };
-
-    src: [*]const u8,
-    dst: [*]u8,
-    size: u32,
+    src: [*]align(8) const u8,
+    dst: [*]align(8) u8,
     input_gap_size: [2]u16,
     output_gap_size: [2]u16,
     flags: Flags,
-}, backend.max_buffered_queue_commands);
+};
 
-pub const Submit = State(.submit, struct { cmd_buffer: *backend.CommandBuffer }, backend.max_buffered_queue_commands);
+pub const SubmitItem = struct { cmd_buffer: *backend.CommandBuffer };
+
+pub const PresentationItem = struct {
+    pub const Misc = packed struct(u8) {
+        screen: pica.Screen,
+        ignore_stereo: bool,
+        _: u6 = 0,
+    };
+
+    misc: Misc,
+    index: u8,
+};
+
+pub const Fill = State(.fill, FillItem, backend.max_buffered_queue_items);
+pub const Transfer = State(.transfer, TransferItem, backend.max_buffered_queue_items);
+pub const Submit = State(.submit, SubmitItem, backend.max_buffered_queue_items);
+pub const Presentation = backend.Queue.State(.present, PresentationItem, backend.max_present_queue_items);
 
 pub fn State(comptime kind: Type, comptime T: type, comptime capacity: u16) type {
     return struct {

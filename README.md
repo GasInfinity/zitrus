@@ -1,6 +1,6 @@
 # 🍊 zitrus
 
-3DS homebrew library and toolchain written entirely in zig.
+3DS homebrew sdk written entirely in zig.
 
 ![2DS running the flappy demo](https://github.com/GasInfinity/zitrus/blob/main/docs/images/2ds-flappy.jpg?raw=true)
 
@@ -107,6 +107,8 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 Zitrus is currently very work in progress, it's able to run basic homebrew but lots of things are missing (services, io, etc...)
 
 - 🔴 Tests
+- 🔴 C API
+- 🔴 Docs
 
 ## Runtime support
 - 🟢 crt0/startup code
@@ -141,20 +143,34 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 # Mango coverage
 
 - 🔴 Tests
+- 🟡 C API
+- 🟡 Docs
+
 - 🟡 Device HOS implementation.
+- 🟡 Queues
+    - 🟡 Fill (clear and fill operations)
+    - 🟡 Transfer (copy and blit operations)
+    - 🟢 Submit (`CommandBuffer` submission)
+    - 🟡 Present (see `PresentationEngine` support)
 - 🟡 Memory / Buffers
 - 🟡 Pipelines
 - 🟡 CommandPool
+    - 🟢 `CommandBuffer` recycling
+    - 🔴 Native buffer pooling/reusing
+    - 🔴 Prewarm parameters.
 - 🟡 CommandBuffer's
 - 🟡 Images / ImageViews
+    - 🟡 Up to 8 `Image` layers
+    - 🟡 Up to 7 mipmap levels (1024x1024 -> 8x8)
 - 🟡 Image Sampling
 - 🟢 Synchronization primitives / driver thread.
 - 🟡 Presentation engine.
+    - 🟢 2D (Top and bottom)
+    - 🟢 3D (Top, 2 layers per image)
+    - 🟡 Full resolution (Top 240x800 swapchain, needs testing but should work)
 
-- 🔴🪫 Device baremetal interface.
-
-# Planned
-- 🔴 C API
+- 🔴🪫 Device `HAL` abstraction.
+- 🔴🪫 Device baremetal implementation (prerequsite: `HAL` abstraction).
 
 ## Why?
 I wanted to learn arm and always wanted to develop 3DS homebrew, also I searched and I haven't found any kind of zig package that doesn't use libctru, so I just started reading a lot and doing things. Furthermore, using only zig has a lot of advantages:

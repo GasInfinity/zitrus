@@ -90,6 +90,8 @@ comptime {
     _ = mango;
 }
 
+pub const c = @import("c.zig");
+
 pub const fmt = @import("fmt.zig");
 pub const panic = @import("panic.zig");
 pub const memory = @import("memory.zig");

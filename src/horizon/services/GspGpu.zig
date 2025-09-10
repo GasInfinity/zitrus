@@ -229,9 +229,9 @@ pub const GxCommand = extern struct {
         pub const Buffer = extern struct {
             pub const none: Buffer = .{ .start = null, .value = 0, .end = null };
 
-            start: ?*anyopaque,
+            start: ?[*]align(8) u8,
             value: u32,
-            end: ?*anyopaque,
+            end: ?[*]align(8) u8,
 
             pub fn init(fill: Unit) Buffer {
                 return .{
@@ -239,7 +239,7 @@ pub const GxCommand = extern struct {
                     .value = switch (fill.value) {
                         inline else => |v| v,
                     },
-                    .end = fill.buffer.ptr + fill.buffer.len,
+                    .end = @alignCast(fill.buffer.ptr + fill.buffer.len),
                 };
             }
         };
@@ -263,8 +263,8 @@ pub const GxCommand = extern struct {
             _: u2 = 0,
         };
 
-        source: [*]const u8,
-        destination: [*]u8,
+        source: [*]align(8) const u8,
+        destination: [*]align(8) u8,
         source_dimensions: [2]u16,
         destination_dimensions: [2]u16,
         flags: gpu.Registers.MemoryCopy.Flags,
@@ -272,11 +272,11 @@ pub const GxCommand = extern struct {
     };
 
     pub const TextureCopy = extern struct {
-        source: [*]const u8,
-        destination: [*]u8,
-        size: usize,
-        source_line_gap: gpu.U16x2,
-        destination_line_gap: gpu.U16x2,
+        source: [*]align(8) const u8,
+        destination: [*]align(8) u8,
+        size: u32,
+        source_line_gap: [2]u16,
+        destination_line_gap: [2]u16,
         flags: gpu.Registers.MemoryCopy.Flags,
         _unused0: u32 = 0,
     };
@@ -285,10 +285,10 @@ pub const GxCommand = extern struct {
         pub const Buffer = extern struct {
             pub const none: Buffer = .{ .address = null, .size = 0 };
 
-            address: ?*const anyopaque,
+            address: ?*align(8) const u8,
             size: usize,
 
-            pub fn init(buffer: []const u8) Buffer {
+            pub fn init(buffer: []align(8) const u8) Buffer {
                 return .{ .address = buffer.ptr, .size = buffer.len };
             }
         };
@@ -393,7 +393,7 @@ pub const GxCommand = extern struct {
         };
     }
 
-    pub fn initDisplayTransfer(src: [*]const u8, dst: [*]u8, src_color: gpu.ColorFormat, src_dimensions: [2]u16, dst_color: gpu.ColorFormat, dst_dimensions: [2]u16, transfer_flags: DisplayTransfer.Flags, flags: Header.Flags) GxCommand {
+    pub fn initDisplayTransfer(src: [*]align(8) const u8, dst: [*]align(8) u8, src_color: gpu.ColorFormat, src_dimensions: [2]u16, dst_color: gpu.ColorFormat, dst_dimensions: [2]u16, transfer_flags: DisplayTransfer.Flags, flags: Header.Flags) GxCommand {
         return .{ .header = .{
             .id = .display_transfer,
             .flags = flags,
@@ -416,10 +416,10 @@ pub const GxCommand = extern struct {
         } } };
     }
 
-    pub fn initTextureCopy(src: [*]const u8, dst: [*]u8, size: usize, src_gaps: [2]u16, dst_gaps: [2]u16, flags: Header.Flags) GxCommand {
+    pub fn initTextureCopy(src: [*]align(8) const u8, dst: [*]align(8) u8, size: u32, src_gaps: [2]u16, dst_gaps: [2]u16, flags: Header.Flags) GxCommand {
         return .{
             .header = .{
-                .id = .display_transfer,
+                .id = .texture_copy,
                 .flags = flags,
             },
             .command = .{ .texture_copy = .{
@@ -430,11 +430,11 @@ pub const GxCommand = extern struct {
                 .destination_line_gap = dst_gaps,
                 .flags = .{
                     .flip_v = false,
-                    .output_width_less_than_input = src_gaps.x > dst_gaps.x,
+                    .output_width_less_than_input = src_gaps[1] != 0 or dst_gaps[1] != 0, // Must be set when not doing contiguous copies.
                     .linear_tiled = false,
                     .tiled_tiled = false,
-                    .input_format = .bgra8888,
-                    .output_format = .bgra8888,
+                    .input_format = .abgr8888,
+                    .output_format = .abgr8888,
                     .use_32x32_tiles = false,
                     .downscale = .none,
                     .texture_copy_mode = true,

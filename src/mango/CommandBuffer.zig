@@ -103,12 +103,12 @@ pub const Handle = enum(u32) {
         return b_cmd.setPrimitiveTopology(primitive_topology);
     }
 
-    pub fn setViewport(cmd: Handle, viewport: *const mango.Viewport) void {
+    pub fn setViewport(cmd: Handle, viewport: mango.Viewport) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         return b_cmd.setViewport(viewport);
     }
 
-    pub fn setScissor(cmd: Handle, scissor: *const mango.Scissor) void {
+    pub fn setScissor(cmd: Handle, scissor: mango.Scissor) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         return b_cmd.setScissor(scissor);
     }
@@ -118,7 +118,7 @@ pub const Handle = enum(u32) {
         return b_cmd.setTextureCombiners(texture_combiners_len, texture_combiners, texture_combiner_buffer_sources_len, texture_combiner_buffer_sources);
     }
 
-    pub fn setBlendEquation(cmd: Handle, blend_equation: *const mango.ColorBlendEquation) void {
+    pub fn setBlendEquation(cmd: Handle, blend_equation: mango.ColorBlendEquation) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         return b_cmd.setBlendEquation(blend_equation);
     }
@@ -135,7 +135,7 @@ pub const Handle = enum(u32) {
 
     pub fn setDepthCompareOp(cmd: Handle, op: mango.CompareOperation) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.setDepthTestEnable(op);
+        return b_cmd.setDepthCompareOp(op);
     }
 
     pub fn setDepthWriteEnable(cmd: Handle, enable: bool) void {
@@ -235,10 +235,13 @@ state: State = .initial,
 scope: Scope = .none,
 
 pub fn init(pool: *backend.CommandPool, native_buffer: []align(8) u32) CommandBuffer {
-    return .{ .pool = pool, .queue = .{
-        .buffer = native_buffer,
-        .current_index = 0,
-    } };
+    return .{
+        .pool = pool,
+        .queue = .{
+            .buffer = native_buffer,
+            .current_index = 0,
+        },
+    };
 }
 
 pub fn deinit(command_buffer: *CommandBuffer) void {
@@ -264,6 +267,17 @@ pub fn end(cmd: *CommandBuffer) !void {
     cmd.queue.add(internal_regs, &internal_regs.geometry_pipeline.start_draw_function, .config);
     cmd.queue.finalize();
     cmd.state = .executable;
+}
+
+pub fn reset(cmd: *CommandBuffer) void {
+    cmd.queue.current_index = 0;
+    cmd.gfx_state = .empty;
+    cmd.rnd_state = .empty;
+    cmd.bound_graphics_pipeline = null;
+    cmd.emitted_graphics_pipeline = null;
+    cmd.current_error = null;
+    cmd.scope = .none;
+    cmd.state = .initial;
 }
 
 pub fn bindPipeline(cmd: *CommandBuffer, bind_point: mango.PipelineBindPoint, pipeline: mango.Pipeline) void {
@@ -308,51 +322,21 @@ pub fn bindCombinedImageSamplers(cmd: *CommandBuffer, first_combined: u32, combi
 pub fn beginRendering(cmd: *CommandBuffer, rendering_info: mango.RenderingInfo) void {
     std.debug.assert(cmd.state == .recording);
     std.debug.assert(cmd.scope == .none);
+    defer cmd.scope = .render_pass;
 
-    const color_width, const color_height, const color_physical_address: zitrus.PhysicalAddress = if (rendering_info.color_attachment != .null) info: {
-        @branchHint(.likely);
-        const color_attachment: backend.ImageView = .fromHandle(rendering_info.color_attachment);
-        const color_image: backend.Image = .fromHandle(color_attachment.data.image);
-
-        std.debug.assert(color_image.info.usage.color_attachment);
-        break :info .{ color_image.info.width(), color_image.info.height(), color_image.memory_info.boundPhysicalAddress() };
-    } else .{ 0, 0, .fromAddress(0) };
-
-    const depth_stencil_width, const depth_stencil_height, const depth_stencil_physical_address: zitrus.PhysicalAddress = if (rendering_info.depth_stencil_attachment != .null) info: {
-        const depth_stencil_attachment: backend.ImageView = .fromHandle(rendering_info.depth_stencil_attachment);
-        const depth_stencil_image: backend.Image = .fromHandle(depth_stencil_attachment.data.image);
-
-        std.debug.assert(depth_stencil_image.info.usage.depth_stencil_attachment);
-        break :info .{ depth_stencil_image.info.width(), depth_stencil_image.info.height(), depth_stencil_image.memory_info.boundPhysicalAddress() };
-    } else .{ 0, 0, .fromAddress(0) };
-
-    if (color_physical_address != .zero and depth_stencil_physical_address != .zero) {
-        std.debug.assert(color_width == depth_stencil_width and color_height == depth_stencil_height);
-    }
-
-    cmd.rnd_state.color_attachment = color_physical_address;
-    cmd.rnd_state.depth_stencil_attachment = depth_stencil_physical_address;
-    cmd.rnd_state.dimensions = if (color_physical_address != .zero)
-        .{ .x = @intCast(color_width), .y = @intCast(color_height) }
-    else
-        .{ .x = @intCast(depth_stencil_width), .y = @intCast(depth_stencil_height) };
-
-    cmd.rnd_state.dirty.rendering_data = true;
-    cmd.scope = .render_pass;
+    return cmd.rnd_state.beginRendering(rendering_info);
 }
 
 pub fn endRendering(cmd: *CommandBuffer) void {
     std.debug.assert(cmd.state == .recording);
     std.debug.assert(cmd.scope == .render_pass);
+    defer cmd.scope = .none;
+
     const queue = &cmd.queue;
 
-    // This means a drawcall has been issued so flush the render buffer.
-    if (!cmd.rnd_state.dirty.rendering_data) {
+    if (cmd.rnd_state.endRendering()) {
         queue.add(internal_regs, &internal_regs.framebuffer.render_buffer_flush, .init(.trigger));
     }
-
-    cmd.rnd_state.dirty.rendering_data = false;
-    cmd.scope = .none;
 }
 
 pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const mango.MultiDrawInfo, stride: u32) void {
@@ -525,12 +509,12 @@ pub fn setPrimitiveTopology(cmd: *CommandBuffer, primitive_topology: mango.Primi
     cmd.gfx_state.setPrimitiveTopology(primitive_topology);
 }
 
-pub fn setViewport(cmd: *CommandBuffer, viewport: *const mango.Viewport) void {
+pub fn setViewport(cmd: *CommandBuffer, viewport: mango.Viewport) void {
     std.debug.assert(cmd.state == .recording);
     cmd.gfx_state.setViewport(viewport);
 }
 
-pub fn setScissor(cmd: *CommandBuffer, scissor: *const mango.Scissor) void {
+pub fn setScissor(cmd: *CommandBuffer, scissor: mango.Scissor) void {
     std.debug.assert(cmd.state == .recording);
     cmd.gfx_state.setScissor(scissor);
 }
@@ -540,7 +524,7 @@ pub fn setTextureCombiners(cmd: *CommandBuffer, texture_combiners_len: u32, text
     cmd.gfx_state.setTextureCombiners(texture_combiners_len, texture_combiners, texture_combiner_buffer_sources_len, texture_combiner_buffer_sources);
 }
 
-pub fn setBlendEquation(cmd: *CommandBuffer, blend_equation: *const mango.ColorBlendEquation) void {
+pub fn setBlendEquation(cmd: *CommandBuffer, blend_equation: mango.ColorBlendEquation) void {
     std.debug.assert(cmd.state == .recording);
     cmd.gfx_state.setBlendEquation(blend_equation);
 }
@@ -557,7 +541,7 @@ pub fn setDepthTestEnable(cmd: *CommandBuffer, enable: bool) void {
 
 pub fn setDepthCompareOp(cmd: *CommandBuffer, op: mango.CompareOperation) void {
     std.debug.assert(cmd.state == .recording);
-    cmd.gfx_state.setDepthTestEnable(op);
+    cmd.gfx_state.setDepthCompareOp(op);
 }
 
 pub fn setDepthWriteEnable(cmd: *CommandBuffer, enable: bool) void {
@@ -654,17 +638,6 @@ fn beforeDraw(cmd: *CommandBuffer) bool {
 fn growIfNeeded(cmd: *CommandBuffer) !void {
     // TODO: grow native queue from the pool, we can avoid doing this until we have more complex scenes.
     _ = cmd;
-}
-
-pub fn reset(cmd: *CommandBuffer) void {
-    cmd.queue.current_index = 0;
-    cmd.gfx_state = .empty;
-    cmd.rnd_state = .empty;
-    cmd.bound_graphics_pipeline = null;
-    cmd.emitted_graphics_pipeline = null;
-    cmd.current_error = null;
-    cmd.scope = .none;
-    cmd.state = .initial;
 }
 
 pub fn notifyPending(cmd: *CommandBuffer) void {

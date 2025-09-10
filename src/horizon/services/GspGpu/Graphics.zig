@@ -120,10 +120,10 @@ pub fn initializeHardware(gsp: GspGpu) !void {
         .color_format = .abgr8888,
         .interlacing_mode = .none,
         .alternative_pixel_output = false,
-        .unknown0 = 1,
         .dma_size = .@"128",
-        .unknown1 = 1,
-        .unknown2 = 8,
+        ._unknown1 = 1,
+        ._unknown2 = 1,
+        ._unknown3 = 8,
     }));
     try gsp.writeHwRegs(&gpu_registers.pdc[0].control, std.mem.asBytes(&gpu.Registers.Pdc.Control{
         .enable = true,
@@ -175,10 +175,10 @@ pub fn initializeHardware(gsp: GspGpu) !void {
         .color_format = .abgr8888,
         .interlacing_mode = .none,
         .alternative_pixel_output = false,
-        .unknown0 = 1,
         .dma_size = .@"128",
-        .unknown1 = 1,
-        .unknown2 = 8,
+        ._unknown1 = 1,
+        ._unknown2 = 1,
+        ._unknown3 = 8,
     }));
     try gsp.writeHwRegs(&gpu_registers.pdc[1].control, std.mem.asBytes(&gpu.Registers.Pdc.Control{
         .enable = true,

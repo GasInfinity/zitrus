@@ -24,6 +24,16 @@ pub fn scale(x: f32, y: f32, z: f32) @"4x4" {
     };
 }
 
+/// Same operation as if you first scale and then translate.
+pub fn scaleTranslate(sx: f32, sy: f32, sz: f32, x: f32, y: f32, z: f32) @"4x4" {
+    return .{
+        .{ sx, 0, 0, x },
+        .{ 0, sy, 0, y },
+        .{ 0, 0, sz, z },
+        .{ 0, 0, 0, 1 },
+    };
+}
+
 pub fn ortho(l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
     const x_scale = r - l;
     const y_scale = b - t;

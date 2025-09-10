@@ -1,8 +1,5 @@
 //! Semaphores in mango are basically timeline semaphores in vulkan, they have a monotonically increasing 64-bit value.
 
-// XXX: Same as with the presentation engine, I CANNOT use this until I have -fno-single-threaded 😭
-// XXX: Blocker, 64-bit atomics are not supported in zig, as it doesn't implement the feature detection for it.
-
 pub const Handle = enum(u32) {
     null = 0,
     _,

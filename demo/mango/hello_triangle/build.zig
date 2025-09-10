@@ -25,6 +25,10 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
 
+    exe.build_id = .uuid;
+    exe.link_function_sections = true;
+    exe.link_gc_sections = true;
+
     b.installArtifact(exe);
 
     const smdh = zitrus.addMakeSmdh(b, .{

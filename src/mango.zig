@@ -14,14 +14,55 @@
 //! For more info see the top-level comments of each resource.
 
 // TODO: Have validation-layer behaviour with a toggle at the expense of more checks and more memory usage.
-// TODO: Move to a Handle based API. Internal implementation MUST not be exposed as it could be misused.
 
 pub const DeviceSize = enum(u32) {
-    whole_size = std.math.maxInt(u32),
+    whole = std.math.maxInt(u32),
     _,
 
     pub fn size(value: u32) DeviceSize {
         return @enumFromInt(value);
+    }
+};
+
+pub const ImageArrayLayer = enum(u8) {
+    // zig fmt: off
+    @"0", @"1", @"2", @"3", @"4", @"5", @"6", @"7",
+    // zig fmt: on
+
+    pub fn layer(index: u3) ImageArrayLayer {
+        return @enumFromInt(index);
+    }
+};
+
+pub const ImageArrayLayers = enum(u8) {
+    remaining = std.math.maxInt(u8),
+    // zig fmt: off
+    @"1" = 1, @"2", @"3", @"4", @"5", @"6", @"7", @"8",
+    // zig fmt: on
+
+    pub fn layers(amount: u3) ImageArrayLayers {
+        return @enumFromInt(amount);
+    }
+};
+
+pub const ImageMipLevel = enum(u8) {
+    // zig fmt: off
+    @"0", @"1", @"2", @"3", @"4", @"5", @"6", @"7",
+    // zig fmt: on
+
+    pub fn level(index: u3) ImageMipLevel {
+        return @enumFromInt(index);
+    }
+};
+
+pub const ImageMipLevels = enum(u8) {
+    remaining = std.math.maxInt(u8),
+    // zig fmt: off
+    @"1" = 1, @"2", @"3", @"4", @"5", @"6", @"7", @"8",
+    // zig fmt: on
+
+    pub fn levels(amount: u3) ImageArrayLayers {
+        return @enumFromInt(amount);
     }
 };
 
@@ -50,6 +91,7 @@ pub const QueueFamily = enum(u8) {
     fill,
     transfer,
     submit,
+    present,
 };
 
 /// The 3DS always has 3 heaps.
@@ -69,6 +111,12 @@ pub const MemoryHeap = extern struct {
 
 pub const MemoryHeapIndex = enum(u8) {
     fcram,
+    vram_a,
+    vram_b,
+};
+
+pub const KnownMemoryType = enum(u8) {
+    fcram_cached,
     vram_a,
     vram_b,
 };
@@ -93,7 +141,7 @@ pub const MemoryType = extern struct {
 
 pub const MemoryAllocateInfo = extern struct {
     allocation_size: DeviceSize,
-    memory_type: u8,
+    memory_type: KnownMemoryType,
 };
 
 pub const MappedMemoryRange = extern struct {
@@ -102,32 +150,15 @@ pub const MappedMemoryRange = extern struct {
     size: DeviceSize,
 };
 
+// Don't overlap ImageView formats with AttributeBuffer ones!
+// They're used for space optimization.
 pub const Format = enum(u8) {
     undefined,
 
+    // ImageView Supported Formats. Could be unsupported depending on usage.
     r5g6b5_unorm_pack16,
     r5g5b5a1_unorm_pack16,
     r4g4b4a4_unorm_pack16,
-
-    r8_uscaled,
-    r8_sscaled,
-    r16_sscaled,
-    r32_sfloat,
-
-    r8g8_uscaled,
-    r8g8_sscaled,
-    r16g16_sscaled,
-    r32g32_sfloat,
-
-    r8g8b8_uscaled,
-    r8g8b8_sscaled,
-    r16g16b16_sscaled,
-    r32g32b32_sfloat,
-
-    r8g8b8a8_uscaled,
-    r8g8b8a8_sscaled,
-    r16g16b16a16_sscaled,
-    r32g32b32a32_sfloat,
 
     g8r8_unorm,
     b8g8r8_unorm,
@@ -148,6 +179,78 @@ pub const Format = enum(u8) {
 
     etc1_unorm,
     etc1a4_unorm,
+
+    // Attribute Input Supported Formats
+    r8_uscaled,
+    r8_sscaled,
+    r16_sscaled,
+    r32_sfloat,
+
+    r8g8_uscaled,
+    r8g8_sscaled,
+    r16g16_sscaled,
+    r32g32_sfloat,
+
+    r8g8b8_uscaled,
+    r8g8b8_sscaled,
+    r16g16b16_sscaled,
+    r32g32b32_sfloat,
+
+    r8g8b8a8_uscaled,
+    r8g8b8a8_sscaled,
+    r16g16b16a16_sscaled,
+    r32g32b32a32_sfloat,
+
+    pub fn scale(format: Format, size: usize) usize {
+        return switch (format) {
+            .r5g6b5_unorm_pack16,
+            .r5g5b5a1_unorm_pack16,
+            .r4g4b4a4_unorm_pack16,
+            .g8r8_unorm,
+            .d16_unorm,
+            .i8a8_unorm,
+            => size << 1,
+
+            .b8g8r8_unorm,
+            .d24_unorm,
+            => size * 3,
+
+            .a8b8g8r8_unorm,
+            .d24_unorm_s8_uint,
+            .d24_unorm_i8_unorm,
+            => size << 2,
+
+            .i4a4_unorm,
+            .i8_unorm,
+            .a8_unorm,
+            .etc1a4_unorm,
+            => size,
+
+            .i4_unorm,
+            .a4_unorm,
+            .etc1_unorm,
+            => size >> 1,
+
+            .undefined,
+            .r8_uscaled,
+            .r8_sscaled,
+            .r16_sscaled,
+            .r32_sfloat,
+            .r8g8_uscaled,
+            .r8g8_sscaled,
+            .r16g16_sscaled,
+            .r32g32_sfloat,
+            .r8g8b8_uscaled,
+            .r8g8b8_sscaled,
+            .r16g16b16_sscaled,
+            .r32g32b32_sfloat,
+            .r8g8b8a8_uscaled,
+            .r8g8b8a8_sscaled,
+            .r16g16b16a16_sscaled,
+            .r32g32b32a32_sfloat,
+            => unreachable,
+        };
+    }
 
     pub fn nativeColorFormat(fmt: Format) pica.ColorFormat {
         return switch (fmt) {
@@ -212,6 +315,10 @@ pub const Format = enum(u8) {
             .etc1a4_unorm => .etc1a4,
             else => unreachable,
         };
+    }
+
+    comptime {
+        std.debug.assert(@intFromEnum(Format.undefined) == 0);
     }
 };
 
@@ -637,7 +744,7 @@ pub const SwapchainCreateInfo = extern struct {
     present_mode: PresentMode,
     image_usage: ImageCreateInfo.Usage,
     image_format: Format,
-    image_array_layers: u8,
+    image_array_layers: ImageArrayLayers,
     image_count: u8,
     image_memory_info: [*]const ImageMemoryInfo,
 };
@@ -714,8 +821,8 @@ pub const ImageCreateInfo = extern struct {
     usage: Usage,
     extent: Extent2D,
     format: Format,
-    mip_levels: u8,
-    array_layers: u8,
+    mip_levels: ImageMipLevels,
+    array_layers: ImageArrayLayers,
 };
 
 pub const ImageViewCreateInfo = extern struct {
@@ -727,7 +834,7 @@ pub const ImageViewCreateInfo = extern struct {
     type: Type,
     format: Format,
     image: Image,
-    // TODO: subresource range with the mip levels and array layers (for cubemaps)
+    subresource_range: ImageSubresourceRange,
 };
 
 pub const AddressMode = enum(u8) {
@@ -1067,22 +1174,6 @@ pub const VertexInputAttributeDescription = extern struct {
     offset: u8,
 };
 
-pub const BufferCopy = extern struct {
-    src_offset: DeviceSize,
-    dst_offset: DeviceSize,
-    size: DeviceSize,
-};
-
-pub const BufferImageCopy = extern struct {
-    pub const Flags = packed struct(u8) {
-        /// Directly copies the data without performing linear to optimal tiling.
-        memcpy: bool = false,
-        _: u7 = 0,
-    };
-
-    src_offset: DeviceSize,
-    flags: Flags,
-};
 
 pub const MultiDrawInfo = extern struct {
     first_vertex: u32,
@@ -1166,11 +1257,22 @@ pub const TextureCombiner = extern struct {
     }
 };
 
+pub const CopyBufferInfo = extern struct {
+    wait_semaphore: ?*const SemaphoreOperation = null,
+    src_buffer: Buffer,
+    src_offset: DeviceSize,
+    dst_buffer: Buffer,
+    dst_offset: DeviceSize,
+    size: DeviceSize,
+    signal_semaphore: ?*const SemaphoreOperation = null,
+};
+
 pub const CopyBufferToImageInfo = extern struct {
     wait_semaphore: ?*const SemaphoreOperation = null,
     src_buffer: Buffer,
-    dst_image: Image,
     src_offset: DeviceSize,
+    dst_image: Image,
+    dst_subresource: ImageSubresourceLayers,
     signal_semaphore: ?*const SemaphoreOperation = null,
 };
 
@@ -1178,13 +1280,24 @@ pub const BlitImageInfo = extern struct {
     wait_semaphore: ?*const SemaphoreOperation = null,
     src_image: Image,
     dst_image: Image,
+    src_subresource: ImageSubresourceLayers,
+    dst_subresource: ImageSubresourceLayers,
     signal_semaphore: ?*const SemaphoreOperation = null,
 };
 
 pub const ClearColorInfo = extern struct {
     wait_semaphore: ?*const SemaphoreOperation = null,
+    subresource_range: ImageSubresourceRange,
     image: Image,
     color: [4]u8,
+    signal_semaphore: ?*const SemaphoreOperation = null,
+};
+
+pub const ClearDepthStencilInfo = extern struct {
+    wait_semaphore: ?*const SemaphoreOperation = null,
+    image: Image,
+    depth: f32,
+    stencil: u8,
     signal_semaphore: ?*const SemaphoreOperation = null,
 };
 
@@ -1192,6 +1305,32 @@ pub const SubmitInfo = extern struct {
     wait_semaphore: ?*const SemaphoreOperation = null,
     command_buffer: CommandBuffer,
     signal_semaphore: ?*const SemaphoreOperation = null,
+};
+
+pub const ImageSubresourceRange = extern struct {
+    pub const full: ImageSubresourceRange = .{
+        .base_mip_level = .@"0",
+        .level_count = .remaining,
+        .base_array_layer = .@"0",
+        .layer_count = .remaining,
+    };
+
+    base_mip_level: ImageMipLevel,
+    level_count: ImageMipLevels,
+    base_array_layer: ImageArrayLayer,
+    layer_count: ImageArrayLayers,
+};
+
+pub const ImageSubresourceLayers = extern struct {
+    pub const full: ImageSubresourceLayers = .{
+        .mip_level = .@"0",
+        .base_array_layer = .@"0",
+        .layer_count = .remaining,
+    };
+
+    mip_level: ImageMipLevel,
+    base_array_layer: ImageArrayLayer,
+    layer_count: ImageArrayLayers,
 };
 
 pub const PresentInfo = extern struct {
@@ -1220,6 +1359,8 @@ pub const SemaphoreOperation = extern struct {
 };
 
 pub const Device = backend.Device;
+// FIXME: Rename this to Device when we finish the entrypoint.
+pub const DeviceHandle = Device.Handle;
 pub const Queue = backend.Queue.Handle;
 pub const DeviceMemory = backend.DeviceMemory.Handle;
 pub const Semaphore = backend.Semaphore.Handle;

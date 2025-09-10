@@ -148,7 +148,7 @@ pub fn setPrimitiveTopology(state: *GraphicsState, primitive_topology: mango.Pri
     state.dirty.primitive_topology = true;
 }
 
-pub fn setViewport(state: *GraphicsState, viewport: *const mango.Viewport) void {
+pub fn setViewport(state: *GraphicsState, viewport: mango.Viewport) void {
     const viewport_x: u10 = @intCast(viewport.rect.offset.x);
     const viewport_y: u10 = @intCast(viewport.rect.offset.y);
     const viewport_width_minus_one: u10 = @intCast(viewport.rect.extent.width - 1);
@@ -165,7 +165,7 @@ pub fn setViewport(state: *GraphicsState, viewport: *const mango.Viewport) void 
     state.dirty.depth_map_parameters = true;
 }
 
-pub fn setScissor(state: *GraphicsState, scissor: *const mango.Scissor) void {
+pub fn setScissor(state: *GraphicsState, scissor: mango.Scissor) void {
     const new_scissor: GraphicsState.Scissor = .{
         .x = @intCast(scissor.rect.offset.x),
         .y = @intCast(scissor.rect.offset.y),
@@ -213,7 +213,7 @@ pub fn setTextureCombiners(state: *GraphicsState, texture_combiners_len: usize, 
     state.dirty.texture_combiners = true;
 }
 
-pub fn setBlendEquation(state: *GraphicsState, blend_equation: *const mango.ColorBlendEquation) void {
+pub fn setBlendEquation(state: *GraphicsState, blend_equation: mango.ColorBlendEquation) void {
     const native_blend_config = blend_equation.native();
 
     state.blend_config = native_blend_config;
@@ -275,7 +275,7 @@ pub fn setAlphaTestCompareOp(state: *GraphicsState, compare_op: mango.CompareOpe
 }
 
 pub fn setAlphaTestReference(state: *GraphicsState, reference: u8) void {
-    state.alpha_test_reference = reference;
+    state.misc.alpha_test_reference = reference;
     state.dirty.alpha_test = true;
 }
 

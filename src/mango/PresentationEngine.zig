@@ -2,7 +2,8 @@
 //!
 //! Like `Device`, this depends on the platform to truly present images!
 
-queue: PresentationQueue,
+
+queue: Queue.Presentation,
 chain_created: std.enums.EnumArray(pica.Screen, std.atomic.Value(bool)),
 chain_presents: std.enums.EnumArray(pica.Screen, std.atomic.Value(u8)),
 chains: std.enums.EnumArray(pica.Screen, Swapchain),
@@ -16,7 +17,6 @@ pub fn init(device: *backend.Device) PresentationEngine {
     };
 }
 
-// TODO: Properly make this thread safe with Futexes or rmw's.
 pub fn initSwapchain(pe: *PresentationEngine, create_info: mango.SwapchainCreateInfo, allocator: std.mem.Allocator) !mango.Swapchain {
     _ = allocator;
 
@@ -29,16 +29,17 @@ pub fn initSwapchain(pe: *PresentationEngine, create_info: mango.SwapchainCreate
 
     // TODO: Should this return an error instead?
     std.debug.assert(!pe.chain_created.getPtr(screen).load(.monotonic));
-    std.debug.assert(create_info.image_array_layers == 1 or (create_info.image_array_layers == 2 and screen == .top));
+    std.debug.assert(create_info.image_array_layers == .@"1" or (create_info.image_array_layers == .@"2" and screen == .top));
 
     const chain = pe.chains.getPtr(screen);
     chain.* = .{
         .misc = .{
-            .is_stereo = create_info.image_array_layers == 2,
+            .is_stereo = create_info.image_array_layers == .@"2",
             .present_mode = .pack(create_info.present_mode),
             .fmt = create_info.image_format.nativeColorFormat(),
-            .width_minus_one = @intCast(dimensions[1] - 1),
+            .width_minus_one = @intCast(dimensions[0] - 1),
             .height_minus_one = @intCast(dimensions[1] - 1),
+            .id = 0,
         },
         .presentation = .{
             .new = switch (create_info.present_mode) {
@@ -59,14 +60,16 @@ pub fn initSwapchain(pe: *PresentationEngine, create_info: mango.SwapchainCreate
 
         chain.images[i] = .{
             .memory_info = .init(b_memory, @intFromEnum(memory_info.memory_offset)),
-            .format = create_info.image_format,
             .info = .{
                 .width_minus_one = @intCast(dimensions[0] - 1),
                 .height_minus_one = @intCast(dimensions[1] - 1),
-                .usage = create_info.image_usage,
+                .format = create_info.image_format,
                 .optimally_tiled = false,
                 .mutable_format = false,
                 .cube_compatible = false,
+                .layers_minus_one = @intCast(@intFromEnum(create_info.image_array_layers) - 1),
+                .layer_size = dimensions[0] * @as(u22, dimensions[1]),
+                .levels_minus_one = 0,
             },
         };
 
@@ -124,7 +127,7 @@ pub fn present(pe: *PresentationEngine, info: mango.PresentInfo) !void {
 }
 
 /// Returns if the presentation engine is fully idle (No more presentation requests to handle).
-pub fn queueWork(pe: *PresentationEngine, item: PresentationQueueItem) void {
+pub fn queueWork(pe: *PresentationEngine, item: Queue.PresentationItem) void {
     const screen = item.misc.screen;
 
     std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
@@ -166,44 +169,35 @@ pub fn refresh(pe: *PresentationEngine, fb_info: *[2]GspGpu.FramebufferInfo, scr
     const stride = (240 * chain.misc.fmt.bytesPerPixel());
     std.debug.assert(b_image.info.width() == 240);
 
+    const presented_stereo = chain.misc.is_stereo and !swapchain_new_presented.flags.ignore_stereo;
+
     const left: [*]const u8 = b_image.memory_info.boundVirtualAddress();
-    const right: [*]const u8 = if (!chain.misc.is_stereo or swapchain_new_presented.flags.ignore_stereo)
+    const right: [*]const u8 = if (!presented_stereo)
         left
     else
         (left + (stride * chain.misc.height()));
 
     const was_updating = fb_info[@intFromEnum(screen)].update(.{
-        .active = .first,
+        .active = @enumFromInt(chain.misc.id),
         .left_vaddr = left,
         .right_vaddr = right,
         .stride = stride,
         .format = .{
             .color_format = chain.misc.fmt,
-            .dma_size = .@"128",
+            .dma_size = .@"64",
+            .interlacing_mode = if(presented_stereo) .enable else .none,
 
-            .interlacing_mode = .none,
-            .alternative_pixel_output = screen == .top,
+            // HACK: Hardcoded
+            .alternative_pixel_output = screen == .top and !presented_stereo and chain.misc.height() != 800,
         },
-        .select = 0,
+        .select = chain.misc.id,
         .attribute = 0,
     });
 
+    chain.misc.id +%= 1;
     // Should NOT happen, we're literally updating the fb on vblank!
     std.debug.assert(!was_updating);
 }
-
-pub const PresentationQueueItem = struct {
-    pub const Misc = packed struct(u8) {
-        screen: pica.Screen,
-        ignore_stereo: bool,
-        _: u6 = 0,
-    };
-
-    misc: Misc,
-    index: u8,
-};
-
-pub const PresentationQueue = backend.Queue.State(.present, PresentationQueueItem, 6);
 
 const Swapchain = struct {
     pub const Misc = packed struct(u32) {
@@ -222,9 +216,10 @@ const Swapchain = struct {
         is_stereo: bool,
         present_mode: PresentMode,
         fmt: pica.ColorFormat,
-        width_minus_one: u10 = 0,
-        height_minus_one: u10 = 0,
-        _: u7 = 0,
+        width_minus_one: u10,
+        height_minus_one: u10,
+        id: u1 = 0,
+        _: u6 = 0,
 
         pub fn width(misc: Misc) usize {
             return @as(usize, misc.width_minus_one) + 1;
@@ -280,7 +275,10 @@ const Swapchain = struct {
 
         const new = switch (chain.misc.present_mode) {
             .fifo => presentation.new.fifo.popBack(),
-            .mailbox => presentation.new.single,
+            .mailbox => blk: {
+                defer presentation.new.single = null;
+                break :blk presentation.new.single;
+            },
         } orelse return null;
 
         defer {
@@ -324,6 +322,7 @@ const testing = std.testing;
 test {}
 
 const PresentationEngine = @This();
+const Queue = backend.Queue;
 
 const backend = @import("backend.zig");
 

@@ -11,26 +11,75 @@ pub const Handle = enum(u64) {
 
 pub const Data = packed struct(u64) {
     image: mango.Image,
-    format: mango.Format,
+    packed_format: u5,
     is_cube: bool,
-    _: u23 = 0,
+    base_array_layer: u3,
+    base_mip_level: u3,
+    levels_minus_one: u3,
+    _: u17 = 0,
 
-    pub fn init(create_info: mango.ImageViewCreateInfo) Data {
-        const b_image: *backend.Image = .fromHandleMutable(create_info.image);
+    pub fn init(info: mango.ImageViewCreateInfo) Data {
+        const b_image: *backend.Image = .fromHandleMutable(info.image);
 
         if (!b_image.info.mutable_format) {
-            std.debug.assert(b_image.format == create_info.format);
+            std.debug.assert(b_image.info.format == info.format);
         }
 
+        switch (info.type) {
+            .@"2d" => std.debug.assert(b_image.info.layersByAmount(info.subresource_range.layer_count, info.subresource_range.base_array_layer) == 1),
+            .cube => std.debug.assert(b_image.info.layersByAmount(info.subresource_range.layer_count, info.subresource_range.base_array_layer) == 6),
+        }
+
+        const mip_levels = b_image.info.levelsByAmount(info.subresource_range.level_count, info.subresource_range.base_mip_level);
+
         return .{
-            .image = create_info.image,
-            .format = create_info.format,
-            .is_cube = false, // TODO: Cubemaps
+            .image = info.image,
+            .packed_format = @intCast(@intFromEnum(info.format) - 1),
+            .is_cube = info.type == .cube,
+            .base_array_layer = @intCast(@intFromEnum(info.subresource_range.base_array_layer)),
+            .base_mip_level = @intCast(@intFromEnum(info.subresource_range.base_mip_level)),
+            .levels_minus_one = @intCast(mip_levels - 1),
         };
+    }
+
+    pub fn format(data: Data) mango.Format {
+        return @enumFromInt(@as(u8, data.packed_format) + 1);
+    }
+
+    pub fn levels(data: Data) usize {
+        return @as(usize, data.levels_minus_one) + 1;
     }
 };
 
+pub const RenderingInfo = struct {
+    width: u16,
+    height: u16,
+    address: zitrus.PhysicalAddress,
+};
+
 data: Data,
+
+pub fn getRenderingInfo(view: ImageView) RenderingInfo {
+    std.debug.assert(view.data.levels() == 1);
+
+    const image: backend.Image = .fromHandle(view.data.image);
+    const native_pixel_fmt = view.data.format().nativeColorFormat();
+
+    const img_width = image.info.width();
+    const img_height = image.info.height();
+
+    const view_width = backend.imageLevelSize(img_width, view.data.base_mip_level);
+    const view_height = backend.imageLevelSize(img_height, view.data.base_mip_level);
+
+    const unscaled_img_offset = (@as(usize, image.info.layer_size) * view.data.base_array_layer) + backend.imageLevelOffset(img_width * img_height, view_width * view_height);
+    const img_offset = native_pixel_fmt.bytesPerPixel() * unscaled_img_offset;
+
+    return .{
+        .width = @intCast(view_width),
+        .height = @intCast(view_height),
+        .address = .fromAddress(@intFromEnum(image.memory_info.boundPhysicalAddress()) + img_offset),
+    };
+}
 
 pub fn toHandle(view: ImageView) Handle {
     return @enumFromInt(@as(u64, @bitCast(view.data)));

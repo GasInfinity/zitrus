@@ -3,7 +3,15 @@ pub const global_attribute_buffer_base: zitrus.PhysicalAddress = .fromAddress(zi
 
 /// At most, this amount of commands can be buffered simultaneously by the driver.
 /// OutOfMemory will be returned if the driver can not queue more.
-pub const max_buffered_queue_commands = 32;
+pub const max_buffered_queue_items = 32;
+
+/// It is asserted that at most, this amount of swapchain image layers are supported.
+pub const max_swapchain_image_layers = 2;
+
+/// It is asserted that at most, this amount of swapchain images are supported.
+pub const max_swapchain_images = 3;
+
+pub const max_present_queue_items = max_swapchain_images * max_swapchain_image_layers;
 
 pub const PresentationEngine = @import("PresentationEngine.zig");
 
@@ -24,6 +32,21 @@ pub const Swapchain = @import("Swapchain.zig");
 pub const GraphicsState = @import("GraphicsState.zig");
 pub const RenderingState = @import("RenderingState.zig");
 pub const VertexInputLayout = @import("VertexInputLayout.zig");
+
+/// Calculates the size of a specific mip level.
+pub inline fn imageLevelSize(size: usize, base_mip_level: usize) usize {
+    return size >> @intCast(base_mip_level);
+}
+
+/// Calculates the offset of a specific mip level.
+pub inline fn imageLevelOffset(size: usize, level_size: usize) usize {
+    return @divExact((size - level_size) << 2, 3);
+}
+
+/// Calculates the image size including all mip levels of the chain.
+pub fn imageLayerSize(size: usize, mip_levels: usize) usize {
+    return @divExact(((size << 2) - imageLevelSize(size, (mip_levels - 1))), 3);
+}
 
 pub fn SingleProducerSingleConsumerBoundedQueue(comptime T: type, comptime capacity: u16) type {
     return struct {

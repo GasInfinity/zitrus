@@ -58,7 +58,8 @@ pub const TextureUnitState = struct {
         width: u11,
         height: u11,
         format: pica.TextureUnitFormat,
-        _: u6 = 0,
+        base_mip_level: u3,
+        levels_minus_one: u3,
     };
 
     info: [3]ImageInfo,
@@ -89,6 +90,44 @@ dimensions: pica.U16x2 = undefined,
 uniform_state: UniformState,
 texture_unit_state: TextureUnitState,
 dirty: Dirty,
+
+pub fn beginRendering(rnd: *RenderingState, rendering_info: mango.RenderingInfo) void {
+    const color_width: u16, const color_height: u16, const color_physical_address: zitrus.PhysicalAddress = if (rendering_info.color_attachment != .null) info: {
+        @branchHint(.likely);
+        const color_attachment: backend.ImageView = .fromHandle(rendering_info.color_attachment);
+        const color_rendering_info = color_attachment.getRenderingInfo();
+
+        break :info .{ color_rendering_info.width, color_rendering_info.height, color_rendering_info.address };
+    } else .{ 0, 0, .fromAddress(0) };
+
+    const depth_stencil_width: u16, const depth_stencil_height: u16, const depth_stencil_physical_address: zitrus.PhysicalAddress = if (rendering_info.depth_stencil_attachment != .null) info: {
+        const depth_stencil_attachment: backend.ImageView = .fromHandle(rendering_info.depth_stencil_attachment);
+        const depth_stencil_rendering_info = depth_stencil_attachment.getRenderingInfo();
+
+        break :info .{ depth_stencil_rendering_info.width, depth_stencil_rendering_info.height, depth_stencil_rendering_info.address };
+    } else .{ 0, 0, .fromAddress(0) };
+
+    if (color_physical_address != .zero and depth_stencil_physical_address != .zero) {
+        std.debug.assert(color_width == depth_stencil_width and color_height == depth_stencil_height);
+    }
+
+    rnd.color_attachment = color_physical_address;
+    rnd.depth_stencil_attachment = depth_stencil_physical_address;
+    rnd.dimensions = if (color_physical_address != .zero)
+        .{ .x = color_width, .y = color_height }
+    else
+        .{ .x = depth_stencil_width, .y = depth_stencil_height };
+
+    rnd.dirty.rendering_data = true;
+}
+
+/// returns if any draw call has been issued between `beginRendering` and this call.
+pub fn endRendering(rnd: *RenderingState) bool {
+    defer rnd.dirty.rendering_data = false;
+
+    // If this is not dirty then at least one draw call has been issued.
+    return !rnd.dirty.rendering_data;
+}
 
 pub fn bindVertexBuffers(rnd: *RenderingState, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
     if (binding_count == 0) {
@@ -168,7 +207,9 @@ pub fn bindCombinedImageSamplers(rnd: *RenderingState, first_combined: u32, comb
         rnd.texture_unit_state.info[i] = .{
             .width = @intCast(b_image.info.width()),
             .height = @intCast(b_image.info.height()),
-            .format = b_image_view.data.format.nativeTextureUnitFormat(),
+            .format = b_image_view.data.format().nativeTextureUnitFormat(),
+            .base_mip_level = b_image_view.data.base_mip_level,
+            .levels_minus_one = b_image_view.data.levels_minus_one,
         };
         rnd.dirty.setTextureUnitDirty(@intCast(i));
     }
@@ -236,8 +277,8 @@ pub fn emitDirty(rnd: *RenderingState, queue: *cmd3d.Queue) void {
                     },
                     .{
                         .bias = unit_sampler.data.lod_bias,
-                        .max_level_of_detail = unit_sampler.data.max_lod,
-                        .min_level_of_detail = unit_sampler.data.min_lod,
+                        .max_level_of_detail = @min(unit_info.levels_minus_one, unit_sampler.data.max_lod),
+                        .min_level_of_detail = @max(unit_info.base_mip_level, unit_sampler.data.min_lod),
                     },
                     .fromPhysical(unit_address),
                 });
@@ -277,8 +318,8 @@ pub fn emitDirty(rnd: *RenderingState, queue: *cmd3d.Queue) void {
                     },
                     .{
                         .bias = unit_sampler.data.lod_bias,
-                        .max_level_of_detail = unit_sampler.data.max_lod,
-                        .min_level_of_detail = unit_sampler.data.min_lod,
+                        .max_level_of_detail = @min(unit_info.levels_minus_one, unit_sampler.data.max_lod),
+                        .min_level_of_detail = @max(unit_info.base_mip_level, unit_sampler.data.min_lod),
                     },
                     .fromPhysical(unit_address),
                     .init(unit_info.format),

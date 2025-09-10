@@ -309,14 +309,14 @@ pub const Buffer = extern struct {
     }
 
     pub fn packRequest(buffer: *Buffer, comptime DefinedCommand: type, request: DefinedCommand.Request, static_buffers: [DefinedCommand.input_static_buffers][]u8) void {
-        return buffer.pack(DefinedCommand, .request, request, static_buffers);
+        return buffer.packCommand(DefinedCommand, .request, request, static_buffers);
     }
 
     pub fn unpackResponse(buffer: *Buffer, comptime DefinedCommand: type) Result(Response(DefinedCommand.Response, DefinedCommand.output_static_buffers)) {
-        return buffer.unpack(DefinedCommand, .response);
+        return buffer.unpackCommand(DefinedCommand, .response);
     }
 
-    fn pack(buffer: *Buffer, comptime DefinedCommand: type, comptime target: Target, value: target.Type(DefinedCommand), static_buffers: [DefinedCommand.input_static_buffers][]u8) void {
+    fn packCommand(buffer: *Buffer, comptime DefinedCommand: type, comptime target: Target, value: target.Type(DefinedCommand), static_buffers: [DefinedCommand.input_static_buffers][]u8) void {
         std.debug.assert(@typeInfo(DefinedCommand) == .@"struct");
 
         const T: type, const params: PackedCommand.Header.Parameters = switch (target) {
@@ -329,19 +329,7 @@ pub const Buffer = extern struct {
             .command_id = @intFromEnum(DefinedCommand.id),
         };
 
-        var current_parameter: u6 = 0;
-
-        const t_info = @typeInfo(T).@"struct";
-
-        if (t_info.layout == .auto) {
-            const fields = @typeInfo(T).@"struct".fields;
-
-            inline for (fields) |f| {
-                packType(buffer, &current_parameter, f.type, @field(value, f.name));
-            }
-        } else {
-            packType(buffer, &current_parameter, T, value);
-        }
+        buffer.packType(T, value);
 
         inline for (0..DefinedCommand.input_static_buffers) |i| {
             buffer.static_buffers[i * 2] = @bitCast(TranslationDescriptor.StaticBuffer{
@@ -352,7 +340,23 @@ pub const Buffer = extern struct {
         }
     }
 
-    fn packType(buffer: *Buffer, current_parameter: *u6, comptime T: type, value: T) void {
+    fn packType(buffer: *Buffer, comptime T: type, value: T) void {
+        const t_info = @typeInfo(T).@"struct";
+
+        var current_parameter: u6 = 0;
+
+        if (t_info.layout == .auto) {
+            const fields = @typeInfo(T).@"struct".fields;
+
+            inline for (fields) |f| {
+                packMember(buffer, &current_parameter, f.type, @field(value, f.name));
+            }
+        } else {
+            packMember(buffer, &current_parameter, T, value);
+        }
+    }
+
+    fn packMember(buffer: *Buffer, current_parameter: *u6, comptime T: type, value: T) void {
         const parameters: []u32 = &buffer.packed_command.parameters;
 
         // NOTE: We don't need to do any checking as calculateParameters has already done some
@@ -379,7 +383,7 @@ pub const Buffer = extern struct {
                     return;
                 }
 
-                return packType(buffer, current_parameter, e.tag_type, @intFromEnum(value));
+                return packMember(buffer, current_parameter, e.tag_type, @intFromEnum(value));
             },
             .array => |a| switch (a.child) {
                 else => |at| switch (@typeInfo(at)) {
@@ -399,10 +403,10 @@ pub const Buffer = extern struct {
                                 }
                             }
 
-                            return packType(buffer, current_parameter, [a.len]s.fields[0].type, @bitCast(value));
+                            return packMember(buffer, current_parameter, [a.len]s.fields[0].type, @bitCast(value));
                         }
 
-                        return packType(buffer, current_parameter, [a.len]std.meta.Int(.unsigned, @bitSizeOf(T)), @bitCast(value));
+                        return packMember(buffer, current_parameter, [a.len]std.meta.Int(.unsigned, @bitSizeOf(T)), @bitCast(value));
                     },
                     .@"union", .bool, .int, .float => {
                         const total_byte_size = a.len * @sizeOf(at);
@@ -428,12 +432,12 @@ pub const Buffer = extern struct {
                             return;
                         }
 
-                        return packType(buffer, current_parameter, [a.len]e.tag_type, @bitCast(value));
+                        return packMember(buffer, current_parameter, [a.len]e.tag_type, @bitCast(value));
                     },
                     else => unreachable,
                 },
             },
-            .@"union" => packType(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T)), @bitCast(value)),
+            .@"union" => packMember(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T)), @bitCast(value)),
             .@"struct" => |s| {
                 if (s.layout == .@"packed" or s.layout == .@"extern") {
                     if (@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32) and T == MoveHandle(@field(T, "Handle"))) {
@@ -446,10 +450,10 @@ pub const Buffer = extern struct {
                     }
 
                     if (s.fields.len == 1) {
-                        return packType(buffer, current_parameter, s.fields[0].type, @field(value, s.fields[0].name));
+                        return packMember(buffer, current_parameter, s.fields[0].type, @field(value, s.fields[0].name));
                     }
 
-                    return packType(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T)), @bitCast(value));
+                    return packMember(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T)), @bitCast(value));
                 }
 
                 const slice = value.slice;
@@ -471,38 +475,29 @@ pub const Buffer = extern struct {
         };
     }
 
-    fn unpack(buffer: *Buffer, comptime DefinedCommand: type, comptime target: Target) (if (target == .request) DefinedCommand.Request else Result(Response(target.Type(DefinedCommand), DefinedCommand.output_static_buffers))) {
+    fn unpackCommand(buffer: *Buffer, comptime DefinedCommand: type, comptime target: Target) (if (target == .request) DefinedCommand.Request else Result(Response(target.Type(DefinedCommand), DefinedCommand.output_static_buffers))) {
         const T: type, const params: PackedCommand.Header.Parameters = switch (target) {
             .request => .{ DefinedCommand.Request, DefinedCommand.request },
             .response => .{ DefinedCommand.Response, DefinedCommand.response },
         };
 
-        const result: ResultCode = if (target == .request) .success else @bitCast(buffer.packed_command.parameters[0]);
+        const out: T, const result: ResultCode = switch (target) {
+            .request => .{ buffer.unpackType(0, T), .success },
+            .response => out: {
+                const result: ResultCode = @bitCast(buffer.packed_command.parameters[0]);
 
-        if (!result.isSuccess()) {
-            return .{ .failure = result };
-        }
+                if (!result.isSuccess()) {
+                    break :out .{ undefined, result };
+                }
 
-        std.debug.assert(buffer.packed_command.header == PackedCommand.Header{
-            .parameters = params,
-            .command_id = @intFromEnum(DefinedCommand.id),
-        });
+                std.debug.assert(buffer.packed_command.header == PackedCommand.Header{
+                    .parameters = params,
+                    .command_id = @intFromEnum(DefinedCommand.id),
+                });
 
-        var current_parameter: u6 = 1;
-
-        const t_info = @typeInfo(T).@"struct";
-
-        const out: T = if (t_info.layout == .auto) auto: {
-            const fields = @typeInfo(T).@"struct".fields;
-
-            var out: T = undefined;
-
-            inline for (fields) |f| {
-                @field(out, f.name) = unpackType(buffer, &current_parameter, f.type);
-            }
-
-            break :auto out;
-        } else unpackType(buffer, &current_parameter, T);
+                break :out .{ buffer.unpackType(1, T), result };
+            },
+        };
 
         var static_buffers: [DefinedCommand.output_static_buffers][]const u8 = undefined;
         inline for (0..DefinedCommand.output_static_buffers) |i| {
@@ -520,7 +515,25 @@ pub const Buffer = extern struct {
         };
     }
 
-    fn unpackType(buffer: *Buffer, current_parameter: *u6, comptime T: type) T {
+    fn unpackType(buffer: *Buffer, start: u6, comptime T: type) T {
+        const t_info = @typeInfo(T).@"struct";
+
+        var current_parameter: u6 = start;
+
+        return if (t_info.layout == .auto) auto: {
+            const fields = @typeInfo(T).@"struct".fields;
+
+            var out: T = undefined;
+
+            inline for (fields) |f| {
+                @field(out, f.name) = unpackMember(buffer, &current_parameter, f.type);
+            }
+
+            break :auto out;
+        } else unpackMember(buffer, &current_parameter, T);
+    }
+
+    fn unpackMember(buffer: *Buffer, current_parameter: *u6, comptime T: type) T {
         const parameters: []u32 = &buffer.packed_command.parameters;
 
         return switch (@typeInfo(T)) {
@@ -543,7 +556,7 @@ pub const Buffer = extern struct {
                     break :en @enumFromInt(parameters[current_parameter.* + 1]);
                 }
 
-                break :en @enumFromInt(unpackType(buffer, current_parameter, e.tag_type));
+                break :en @enumFromInt(unpackMember(buffer, current_parameter, e.tag_type));
             },
             .array => |a| switch (a.child) {
                 else => |at| switch (@typeInfo(at)) {
@@ -559,14 +572,14 @@ pub const Buffer = extern struct {
                             // std.debug.assert(handle_translation_descriptor.close_handles == true);
 
                             defer current_parameter.* += a.len;
-                            break :st @bitCast(unpackType(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T))));
+                            break :st @bitCast(unpackMember(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T))));
                         }
 
                         if (s.fields.len == 1) {
-                            break :st @bitCast(unpackType(buffer, current_parameter, [a.len]s.fields[0].type));
+                            break :st @bitCast(unpackMember(buffer, current_parameter, [a.len]s.fields[0].type));
                         }
 
-                        break :st @bitCast(unpackType(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T))));
+                        break :st @bitCast(unpackMember(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T))));
                     },
                     .@"union", .bool, .int, .float => g: {
                         const total_byte_size = a.len * @sizeOf(at);
@@ -589,12 +602,12 @@ pub const Buffer = extern struct {
                             break :e @bitCast(parameters[current_parameter.*..][0..a.len].*);
                         }
 
-                        break :e @bitCast(unpackType(buffer, current_parameter, [a.len]e.tag_type));
+                        break :e @bitCast(unpackMember(buffer, current_parameter, [a.len]e.tag_type));
                     },
                     else => unreachable,
                 },
             },
-            .@"union" => @bitCast(unpackType(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T)))),
+            .@"union" => @bitCast(unpackMember(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T)))),
             .@"struct" => |s| s: {
                 if (@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32) and T == MoveHandle(@field(T, "Handle"))) {
                     const handle_translation_descriptor: TranslationDescriptor.Handle = @bitCast(parameters[current_parameter.*]);
@@ -612,12 +625,12 @@ pub const Buffer = extern struct {
 
                 if (s.layout == .@"packed" or s.layout == .@"extern") {
                     if (s.fields.len == 1) {
-                        const out = unpackType(buffer, current_parameter, s.fields[0].type);
+                        const out = unpackMember(buffer, current_parameter, s.fields[0].type);
 
                         break :s @bitCast(if (@typeInfo(s.fields[0].type) == .@"enum") @intFromEnum(out) else out);
                     }
 
-                    break :s @bitCast(unpackType(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T))));
+                    break :s @bitCast(unpackMember(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T))));
                 }
 
                 const translation_descriptor: TranslationDescriptor = @bitCast(parameters[current_parameter.*]);
@@ -690,12 +703,41 @@ test "packType and unpackType are idempotent for extern or packed structs" {
     };
 
     var buf: Buffer = undefined;
-    var current_parameter: u6 = 0;
 
-    buf.packType(&current_parameter, TestStruct, test_value);
+    buf.packType(TestStruct, test_value);
+    const unpacked_value = buf.unpackType(0, TestStruct);
 
-    current_parameter = 0;
-    const unpacked_value = buf.unpackType(&current_parameter, TestStruct);
+    try testing.expectEqual(test_value, unpacked_value);
+}
+
+test "packType and unpackType are idempotent for auto structs" {
+    const TestStruct = struct {
+        a: bool,
+        b: u32,
+        c: bool,
+        d: u64,
+        x: extern struct { r: u16, s: u16 },
+        y: u16,
+        z: [4]u8,
+        w: [2]u16,
+    };
+
+    // bogus data, doesn't mean anything
+    const test_value: TestStruct = .{
+        .a = false,
+        .b = 0xCAFEBABE,
+        .c = true,
+        .d = 0xFFAADDBBEE,
+        .x = .{ .r = 42, .s = 69 },
+        .y = 0xEEBB,
+        .z = .{ 4, 3, 2, 1 },
+        .w = .{ 64, 32 },
+    };
+
+    var buf: Buffer = undefined;
+
+    buf.packType(TestStruct, test_value);
+    const unpacked_value = buf.unpackType(0, TestStruct);
 
     try testing.expectEqual(test_value, unpacked_value);
 }

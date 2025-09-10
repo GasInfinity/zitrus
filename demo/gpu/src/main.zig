@@ -69,6 +69,7 @@ pub fn main() !void {
     const transfer_queue = device.getQueue(.transfer);
     const fill_queue = device.getQueue(.fill);
     const submit_queue = device.getQueue(.submit);
+    const present_queue = device.getQueue(.present);
 
     const global_semaphore = try device.createSemaphore(.{
         .initial_value = 0,
@@ -76,24 +77,33 @@ pub fn main() !void {
     defer device.destroySemaphore(global_semaphore, gpa);
     var global_sync_counter: u64 = 0;
 
-    const bottom_presentable_image_memory = try device.allocateMemory(&.{
-        .memory_type = 1,
+    const bottom_presentable_image_memory = try device.allocateMemory(.{
+        .memory_type = .vram_a,
         .allocation_size = .size(320 * 240 * 3 * 2),
     }, gpa);
     defer device.freeMemory(bottom_presentable_image_memory, gpa);
 
-    const top_presentable_image_memory = try device.allocateMemory(&.{
-        .memory_type = 1,
-        .allocation_size = .size(400 * 240 * 3 * 2),
+    const top_presentable_image_memory = try device.allocateMemory(.{
+        .memory_type = .vram_a,
+        .allocation_size = .size(400 * 240 * 3 * 2 * 2),
     }, gpa);
     defer device.freeMemory(top_presentable_image_memory, gpa);
 
-    const top_swapchain = try device.createSwapchain(.{ .surface = .top_240x400, .present_mode = .fifo, .image_format = .b8g8r8_unorm, .image_array_layers = 1, .image_count = 2, .image_usage = .{
-        .transfer_dst = true,
-    }, .image_memory_info = &.{
-        .{ .memory = top_presentable_image_memory, .memory_offset = .size(0) },
-        .{ .memory = top_presentable_image_memory, .memory_offset = .size(400 * 240 * 3) },
-    } }, gpa);
+    const top_swapchain = try device.createSwapchain(.{
+        .surface = .top_240x400,
+        .present_mode = .fifo,
+        .image_format = .b8g8r8_unorm,
+        .image_array_layers = .@"2",
+        .image_count = 2,
+        .image_usage = .{
+            .transfer_dst = true,
+        },
+        .image_memory_info = &.{
+            .{ .memory = top_presentable_image_memory, .memory_offset = .size(0) },
+            .{ .memory = top_presentable_image_memory, .memory_offset = .size(400 * 240 * 3 * 2) },
+            // .{ .memory = top_presentable_image_memory, .memory_offset = .size(400 * 240 * 3 * 2) },
+        },
+    }, gpa);
     defer device.destroySwapchain(top_swapchain, gpa);
 
     const top_images: [2]mango.Image = blk: {
@@ -102,12 +112,21 @@ pub fn main() !void {
         break :blk img;
     };
 
-    const bottom_swapchain = try device.createSwapchain(.{ .surface = .bottom_240x320, .present_mode = .fifo, .image_format = .b8g8r8_unorm, .image_array_layers = 1, .image_count = 2, .image_usage = .{
-        .transfer_dst = true,
-    }, .image_memory_info = &.{
-        .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(0) },
-        .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(320 * 240 * 3) },
-    } }, gpa);
+    const bottom_swapchain = try device.createSwapchain(.{
+        .surface = .bottom_240x320,
+        .present_mode = .fifo,
+        .image_format = .b8g8r8_unorm,
+        .image_array_layers = .@"1",
+        .image_count = 2,
+        .image_usage = .{
+            .transfer_dst = true,
+        },
+        .image_memory_info = &.{
+            .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(0) },
+            .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(320 * 240 * 3) },
+            // .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(320 * 240 * 3 * 2) },
+        },
+    }, gpa);
     defer device.destroySwapchain(bottom_swapchain, gpa);
 
     const bottom_images: [2]mango.Image = blk: {
@@ -116,25 +135,23 @@ pub fn main() !void {
         break :blk img;
     };
 
-    const vtx_buffer_memory = try device.allocateMemory(&.{
-        .memory_type = 0,
+    const vtx_buffer_memory = try device.allocateMemory(.{
+        .memory_type = .fcram_cached,
         .allocation_size = .size(@sizeOf(Vertex) * 4),
     }, gpa);
     defer device.freeMemory(vtx_buffer_memory, gpa);
 
-    const index_buffer_memory = try device.allocateMemory(&.{
-        .memory_type = 0,
+    const index_buffer_memory = try device.allocateMemory(.{
+        .memory_type = .fcram_cached,
         .allocation_size = .size(4),
     }, gpa);
     defer device.freeMemory(index_buffer_memory, gpa);
 
     {
-        // TODO: DeviceSize and whole_size in it
-        const mapped_vtx = try device.mapMemory(vtx_buffer_memory, 0, .whole_size);
+        const mapped_vtx = try device.mapMemory(vtx_buffer_memory, 0, .whole);
         defer device.unmapMemory(vtx_buffer_memory);
 
-        // TODO: return slices for better safety
-        const mapped_idx = try device.mapMemory(index_buffer_memory, 0, .whole_size);
+        const mapped_idx = try device.mapMemory(index_buffer_memory, 0, .whole);
         defer device.unmapMemory(index_buffer_memory);
 
         const vtx_data: *[4]Vertex = std.mem.bytesAsValue([4]Vertex, mapped_vtx);
@@ -177,9 +194,9 @@ pub fn main() !void {
     defer device.destroyBuffer(vtx_buffer, gpa);
     try device.bindBufferMemory(vtx_buffer, vtx_buffer_memory, .size(0));
 
-    const color_attachment_image_memory = try device.allocateMemory(&.{
-        .memory_type = 1,
-        .allocation_size = .size(320 * 240 * 4 + 400 * 240 * 4),
+    const color_attachment_image_memory = try device.allocateMemory(.{
+        .memory_type = .vram_a,
+        .allocation_size = .size(320 * 240 * 4 + 400 * 240 * 4 * 2),
     }, gpa);
     defer device.freeMemory(color_attachment_image_memory, gpa);
 
@@ -196,9 +213,8 @@ pub fn main() !void {
             .height = 400,
         },
         .format = .a8b8g8r8_unorm,
-        // FIXME: These values are currently ignored
-        .mip_levels = 1,
-        .array_layers = 1,
+        .mip_levels = .@"1",
+        .array_layers = .@"2",
     }, gpa);
     defer device.destroyImage(top_color_attachment_image, gpa);
     try device.bindImageMemory(top_color_attachment_image, color_attachment_image_memory, .size(320 * 240 * 4));
@@ -216,15 +232,14 @@ pub fn main() !void {
             .height = 320,
         },
         .format = .a8b8g8r8_unorm,
-        // FIXME: These values are currently ignored
-        .mip_levels = 1,
-        .array_layers = 1,
+        .mip_levels = .@"1",
+        .array_layers = .@"1",
     }, gpa);
     defer device.destroyImage(bottom_color_attachment_image, gpa);
     try device.bindImageMemory(bottom_color_attachment_image, color_attachment_image_memory, .size(0));
 
-    const staging_buffer_memory = try device.allocateMemory(&.{
-        .memory_type = 0,
+    const staging_buffer_memory = try device.allocateMemory(.{
+        .memory_type = .fcram_cached,
         .allocation_size = .size(64 * 64 * 3),
     }, gpa);
     defer device.freeMemory(staging_buffer_memory, gpa);
@@ -239,7 +254,7 @@ pub fn main() !void {
     try device.bindBufferMemory(staging_buffer, staging_buffer_memory, .size(0));
 
     {
-        const mapped_staging = try device.mapMemory(staging_buffer_memory, 0, .whole_size);
+        const mapped_staging = try device.mapMemory(staging_buffer_memory, 0, .whole);
         defer device.unmapMemory(staging_buffer_memory);
 
         @memcpy(mapped_staging[0..(64 * 64 * 3)], test_bgr);
@@ -251,8 +266,8 @@ pub fn main() !void {
         }});
     }
 
-    const test_sampled_image_memory = try device.allocateMemory(&.{
-        .memory_type = 1,
+    const test_sampled_image_memory = try device.allocateMemory(.{
+        .memory_type = .vram_a,
         .allocation_size = .size(64 * 64 * 3),
     }, gpa);
     defer device.freeMemory(test_sampled_image_memory, gpa);
@@ -270,25 +285,19 @@ pub fn main() !void {
             .height = 64,
         },
         .format = .b8g8r8_unorm,
-        // FIXME: These values are currently ignored
-        .mip_levels = 1,
-        .array_layers = 1,
+        .mip_levels = .@"1",
+        .array_layers = .@"1",
     }, gpa);
     defer device.destroyImage(test_sampled_image, gpa);
     try device.bindImageMemory(test_sampled_image, test_sampled_image_memory, .size(0));
 
     try transfer_queue.copyBufferToImage(.{
         .src_buffer = staging_buffer,
-        .dst_image = test_sampled_image,
         .src_offset = .size(0),
+        .dst_image = test_sampled_image,
+        .dst_subresource = .full,
         .signal_semaphore = &.init(global_semaphore, global_sync_counter + 1),
     });
-
-    // try fill_queue.clearColorImage(.{
-    //     .image = test_sampled_image,
-    //     .color = @splat(0xFF),
-    //     .signal_semaphore = &.init(global_semaphore, global_sync_counter + 1),
-    // });
 
     global_sync_counter += 1;
 
@@ -296,6 +305,12 @@ pub fn main() !void {
         .type = .@"2d",
         .format = .b8g8r8_unorm,
         .image = test_sampled_image,
+        .subresource_range = .{
+            .base_mip_level = .@"0",
+            .level_count = .@"1",
+            .base_array_layer = .@"0",
+            .layer_count = .@"1",
+        },
     }, gpa);
     defer device.destroyImageView(test_sampled_image_view, gpa);
 
@@ -307,7 +322,7 @@ pub fn main() !void {
         .address_mode_v = .clamp_to_edge,
         .lod_bias = 0.0,
         .min_lod = 0,
-        .max_lod = 0,
+        .max_lod = 7,
         .border_color = @splat(0),
     }, gpa);
     defer device.destroySampler(simple_sampler, gpa);
@@ -316,15 +331,41 @@ pub fn main() !void {
         .type = .@"2d",
         .format = .a8b8g8r8_unorm,
         .image = bottom_color_attachment_image,
+        .subresource_range = .{
+            .base_mip_level = .@"0",
+            .level_count = .@"1",
+            .base_array_layer = .@"0",
+            .layer_count = .@"1",
+        },
     }, gpa);
     defer device.destroyImageView(bottom_color_attachment_image_view, gpa);
 
-    const top_color_attachment_image_view = try device.createImageView(.{
+    const top_left_color_attachment_image_view = try device.createImageView(.{
         .type = .@"2d",
         .format = .a8b8g8r8_unorm,
         .image = top_color_attachment_image,
+        .subresource_range = .{
+            .base_mip_level = .@"0",
+            .level_count = .remaining,
+            .base_array_layer = .@"0",
+            .layer_count = .@"1",
+        },
     }, gpa);
-    defer device.destroyImageView(top_color_attachment_image_view, gpa);
+    defer device.destroyImageView(top_left_color_attachment_image_view, gpa);
+
+    const top_right_color_attachment_image_view = try device.createImageView(.{
+        .type = .@"2d",
+        .format = .a8b8g8r8_unorm,
+        .image = top_color_attachment_image,
+        .subresource_range = .{
+            .base_mip_level = .@"0",
+            .level_count = .remaining,
+            .base_array_layer = .@"1",
+            .layer_count = .@"1",
+        },
+    }, gpa);
+
+    defer device.destroyImageView(top_right_color_attachment_image_view, gpa);
 
     const simple_pipeline = try device.createGraphicsPipeline(.{
         .rendering_info = &.{
@@ -433,7 +474,7 @@ pub fn main() !void {
     defer device.freeCommandBuffers(command_pool, @ptrCast(&cmd));
 
     try gsp.sendSetLcdForceBlack(false);
-    defer gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right
+    defer if(!app.flags.must_close) gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
 
     // XXX: Bad, but we know this is not near graphicaly intensive and we'll always be near 60 FPS.
     const default_delta_time = 1.0 / 60.0;
@@ -441,6 +482,8 @@ pub fn main() !void {
     // var current_scale: f32 = 1.0;
     main_loop: while (true) {
         defer current_time += default_delta_time;
+        
+        const iod = horizon.memory.shared_config.slider_state_3d / 3.0;
 
         while (try srv.pollNotification()) |notif| switch (notif) {
             .must_terminate => break :main_loop,
@@ -493,7 +536,7 @@ pub fn main() !void {
         }});
 
         // Render to the bottom screen
-        cmd.setViewport(&.{
+        cmd.setViewport(.{
             .rect = .{
                 .offset = .{ .x = 0, .y = 0 },
                 .extent = .{ .width = 240, .height = 320 },
@@ -501,7 +544,7 @@ pub fn main() !void {
             .min_depth = 0.0,
             .max_depth = 1.0,
         });
-        cmd.setScissor(&.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 320 } }));
+        cmd.setScissor(.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 320 } }));
 
         {
             cmd.beginRendering(.{
@@ -520,7 +563,7 @@ pub fn main() !void {
         }
 
         // Render to the top screen
-        cmd.setViewport(&.{
+        cmd.setViewport(.{
             .rect = .{
                 .offset = .{ .x = 0, .y = 0 },
                 .extent = .{ .width = 240, .height = 400 },
@@ -528,11 +571,11 @@ pub fn main() !void {
             .min_depth = 0.0,
             .max_depth = 1.0,
         });
-        cmd.setScissor(&.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 400 } }));
+        cmd.setScissor(.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 400 } }));
 
         {
             cmd.beginRendering(.{
-                .color_attachment = top_color_attachment_image_view,
+                .color_attachment = top_left_color_attachment_image_view,
                 .depth_stencil_attachment = .null,
             });
             defer cmd.endRendering();
@@ -541,16 +584,34 @@ pub fn main() !void {
 
             cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(std.math.degreesToRadians(90.0), 240.0 / 400.0, 1, 1000));
 
-            const current_scale = @sin(-current_time);
-            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scale(current_scale, @abs(current_scale), 1));
+            const current_scale = 1;//@sin(-current_time);
+            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scaleTranslate(current_scale, @abs(current_scale), 1, 0.25 * iod, 0, 0));
             cmd.drawIndexed(4, 0, 0);
         }
+
+        if(iod > 0) {
+            cmd.beginRendering(.{
+                .color_attachment = top_right_color_attachment_image_view,
+                .depth_stencil_attachment = .null,
+            });
+            defer cmd.endRendering();
+
+            const zmath = zitrus.math;
+
+            cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(std.math.degreesToRadians(90.0), 240.0 / 400.0, 1, 1000));
+
+            const current_scale = 1;//@sin(-current_time);
+            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scaleTranslate(current_scale, @abs(current_scale), 1, -0.25 * iod, 0, 0));
+            cmd.drawIndexed(4, 0, 0);
+        }
+
         try cmd.end();
 
         try fill_queue.clearColorImage(.{
             .wait_semaphore = &.init(global_semaphore, global_sync_counter),
             .image = bottom_color_attachment_image,
             .color = @splat(0x33),
+            .subresource_range = .full,
             .signal_semaphore = &.init(global_semaphore, global_sync_counter + 1),
         });
 
@@ -558,6 +619,7 @@ pub fn main() !void {
             .wait_semaphore = &.init(global_semaphore, global_sync_counter + 1),
             .image = top_color_attachment_image,
             .color = @splat(0x22),
+            .subresource_range = .full,
             .signal_semaphore = &.init(global_semaphore, global_sync_counter + 2),
         });
 
@@ -571,6 +633,8 @@ pub fn main() !void {
             .wait_semaphore = &.init(global_semaphore, global_sync_counter + 3),
             .src_image = bottom_color_attachment_image,
             .dst_image = bottom_images[bottom_first_image_idx],
+            .src_subresource = .full,
+            .dst_subresource = .full,
             .signal_semaphore = &.init(global_semaphore, global_sync_counter + 4),
         });
 
@@ -578,21 +642,25 @@ pub fn main() !void {
             .wait_semaphore = &.init(global_semaphore, global_sync_counter + 4),
             .src_image = top_color_attachment_image,
             .dst_image = top_images[top_first_image_idx],
+            .src_subresource = .full,
+            .dst_subresource = .full,
             .signal_semaphore = &.init(global_semaphore, global_sync_counter + 5),
         });
 
-        try device.present(.{
+        try present_queue.present(.{
             .wait_semaphore = &.init(global_semaphore, global_sync_counter + 4),
             .swapchain = bottom_swapchain,
             .image_index = bottom_first_image_idx,
             .flags = .{},
         });
 
-        try device.present(.{
+        try present_queue.present(.{
             .wait_semaphore = &.init(global_semaphore, global_sync_counter + 5),
             .swapchain = top_swapchain,
             .image_index = top_first_image_idx,
-            .flags = .{},
+            .flags = .{
+                .ignore_stereoscopic = iod == 0,
+            },
         });
 
         // We're currently using one color attachment so even though we're double-buffered on the swapchain,
@@ -612,7 +680,6 @@ const ServiceManager = horizon.ServiceManager;
 const Applet = horizon.services.Applet;
 const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
-const Framebuffer = zitrus.pica.Framebuffer;
 
 const mango = zitrus.mango;
 
@@ -626,4 +693,5 @@ const std = @import("std");
 
 comptime {
     _ = zitrus;
+    _ = zitrus.c;
 }

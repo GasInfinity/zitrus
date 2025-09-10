@@ -160,12 +160,13 @@ pub const FramebufferFormat = packed struct(u32) {
     };
 
     color_format: ColorFormat,
+    _unknown0: u1 = 0,
     interlacing_mode: FramebufferInterlacingMode,
     alternative_pixel_output: bool,
-    unknown0: u1 = 0,
+    _unknown1: u1 = 0,
     dma_size: DmaSize,
-    unknown1: u7 = 0,
-    unknown2: u16 = 0,
+    _unknown2: u6 = 0,
+    _unknown3: u16 = 0,
 
     pub inline fn mode(format: FramebufferFormat) Mode {
         return switch (format.interlacing_mode) {

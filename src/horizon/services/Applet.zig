@@ -141,7 +141,7 @@ pub const CaptureBuffer = extern struct {
         return CaptureBuffer{
             // So, the GSP trips when this value is exactly what it should? XXX: Why do I need to multiply bottom_size by 2 for library applets?
             .size = (top_size + bottom_size * 2),
-            .enabled_3d = capture.top.format.mode() == .@"3d",
+            .enabled_3d = (capture.top.format.interlacing_mode == .enable),
             .top = Info{
                 .left_offset = 0,
                 .right_offset = top_framebuffer_size * (top_framebuffers - 1),

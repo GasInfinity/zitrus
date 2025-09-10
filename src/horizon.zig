@@ -1,4 +1,6 @@
 pub fn Result(T: type) type {
+    // TODO: Last rewrite of result. This must be a struct!
+    // However we can't switch on structs so we should just add a helper fn for ergonomics.
     return union(enum) {
         const Res = @This();
 
