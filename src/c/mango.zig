@@ -186,18 +186,18 @@ export fn mgDestroySampler(device: mango.DeviceHandle, sampler: mango.Sampler, a
     return device.destroySampler(sampler, allocator.allocator());
 }
 
-pub fn mgCreateSwapchain(device: mango.DeviceHandle, create_info: mango.SwapchainCreateInfo, allocator: std.mem.Allocator, swapchain: mango.Swapchain) MgResult {
+export fn mgCreateSwapchain(device: mango.DeviceHandle, create_info: mango.SwapchainCreateInfo, allocator: std.mem.Allocator, swapchain: mango.Swapchain) MgResult {
     swapchain.* = device.createSwapchain(create_info, allocator) catch |err| switch (err) {
     };
 
     return .success;
 }
 
-pub fn mgDestroySwapchain(device: mango.DeviceHandle, swapchain: mango.Swapchain, allocator: std.mem.Allocator) void {
+export fn mgDestroySwapchain(device: mango.DeviceHandle, swapchain: mango.Swapchain, allocator: std.mem.Allocator) void {
     return device.destroySwapchain(swapchain, allocator);
 }
 
-pub fn mgGetSwapchainImages(device: mango.DeviceHandle, swapchain: mango.Swapchain, image_count: *usize, images: ?[*]mango.Image) MgResult {
+export fn mgGetSwapchainImages(device: mango.DeviceHandle, swapchain: mango.Swapchain, image_count: *usize, images: ?[*]mango.Image) MgResult {
     if(images) |non_null_images| {
         _ = device.getSwapchainImages(swapchain, non_null_images[0..image_count.*]) catch |err| switch (err) {
         };
@@ -212,7 +212,7 @@ pub fn mgGetSwapchainImages(device: mango.DeviceHandle, swapchain: mango.Swapcha
     return .success;
 }
 
-pub fn mgAcquireNextImage(device: mango.DeviceHandle, swapchain: mango.Swapchain, timeout: i64, next_image: u8) MgResult {
+export fn mgAcquireNextImage(device: mango.DeviceHandle, swapchain: mango.Swapchain, timeout: i64, next_image: u8) MgResult {
     next_image.* = device.acquireNextImage(swapchain, timeout) catch |err| switch (err) {
     };
 
@@ -220,14 +220,14 @@ pub fn mgAcquireNextImage(device: mango.DeviceHandle, swapchain: mango.Swapchain
 }
 
 
-pub fn mgSignalSemaphore(device: mango.DeviceHandle, signal_info: *const mango.SemaphoreOperation) MgResult {
+export fn mgSignalSemaphore(device: mango.DeviceHandle, signal_info: *const mango.SemaphoreOperation) MgResult {
     device.signalSemaphore(signal_info.*) catch |err| switch (err) {
     };
     
     return .success;
 }
 
-pub fn mgWaitSemaphore(device: mango.DeviceHandle, wait_info: *const mango.SemaphoreOperation, timeout: i64) MgResult {
+export fn mgWaitSemaphore(device: mango.DeviceHandle, wait_info: *const mango.SemaphoreOperation, timeout: i64) MgResult {
     device.waitSemaphore(wait_info.*, timeout) catch |err| switch (err) {
     };
     return .success;
