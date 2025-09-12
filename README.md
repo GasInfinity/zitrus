@@ -106,7 +106,7 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 # HOS Coverage
 Zitrus is currently very work in progress, it's able to run basic homebrew but lots of things are missing (services, io, etc...)
 
-- 🔴 Tests
+- 🟡 Tests
 - 🔴 C API
 - 🔴 Docs
 
@@ -114,7 +114,7 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 - 🟢 crt0/startup code
 - 🟡⛔🔋 panic and error reporting and tracing
 - 🔴⛔🔋 Io interface support (zig 0.16).
-- 🔴🔋 Test runner.
+- 🟡⛔🔋 *Application* Test runner.
 
 ## Gpu Support
 
