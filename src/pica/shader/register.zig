@@ -126,14 +126,14 @@ pub const Source = enum(u7) {
     }
 
     test parse {
-        try testing.expectEqual(Source.v0, try parse("v0"));
-        try testing.expectEqual(Source.v15, try parse("v15"));
-        try testing.expectEqual(Source.r0, try parse("r0"));
-        try testing.expectEqual(Source.r15, try parse("r15"));
-        try testing.expectEqual(Source.f95, try parse("f95"));
-        try testing.expectError(error.InvalidRegister, parse("o5"));
-        try testing.expectError(error.InvalidIndex, parse("v16"));
-        try testing.expectError(error.InvalidIndex, parse("f105"));
+        try testing.expect(Source.v0 == try parse("v0"));
+        try testing.expect(Source.v15 == try parse("v15"));
+        try testing.expect(Source.r0 == try parse("r0"));
+        try testing.expect(Source.r15 == try parse("r15"));
+        try testing.expect(Source.f95 == try parse("f95"));
+        try testing.expect(error.InvalidRegister == parse("o5"));
+        try testing.expect(error.InvalidIndex == parse("v16"));
+        try testing.expect(error.InvalidIndex == parse("f105"));
     }
 };
 
@@ -199,13 +199,13 @@ pub const Destination = enum(u5) {
     }
 
     test parse {
-        try testing.expectEqual(Destination.o0, try parse("o0"));
-        try testing.expectEqual(Destination.o15, try parse("o15"));
-        try testing.expectEqual(Destination.r0, try parse("r0"));
-        try testing.expectEqual(Destination.r15, try parse("r15"));
-        try testing.expectError(error.InvalidRegister, parse("i5"));
-        try testing.expectError(error.InvalidIndex, parse("o16"));
-        try testing.expectError(error.InvalidIndex, parse("r105"));
+        try testing.expect(Destination.o0 == try parse("o0"));
+        try testing.expect(Destination.o15 == try parse("o15"));
+        try testing.expect(Destination.r0 == try parse("r0"));
+        try testing.expect(Destination.r15 == try parse("r15"));
+        try testing.expect(error.InvalidRegister == parse("i5"));
+        try testing.expect(error.InvalidIndex == parse("o16"));
+        try testing.expect(error.InvalidIndex == parse("r105"));
     }
 };
 

@@ -8,10 +8,18 @@
 
 // TODO: Regress portability for simplicity, abstract the implementation when diving into bare metal as some things are almost a must (Threading, for example).
 // as this is the ONLY file that depends on horizon it shouldn't be that hard to port it for bare-metal compatibility.
+//
+// NOTE: For wide compatibility we should use a vtable with restricted function pointers.
+// All implementations of the device must be done with zig (so it is able to optimize them!)
 
 pub const Handle = enum(u32) {
     null = 0,
     _,
+
+    pub fn destroy(device: Handle, allocator: std.mem.Allocator) void {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        b_device.deinit(allocator);
+    }
 
     pub fn getQueue(device: Handle, family: mango.QueueFamily) mango.Queue {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
@@ -133,6 +141,16 @@ pub const Handle = enum(u32) {
         return b_device.destroySampler(sampler, allocator);
     }
 
+    pub fn createGraphicsPipeline(device: Handle, create_info: mango.GraphicsPipelineCreateInfo, allocator: std.mem.Allocator) !mango.Pipeline {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return b_device.createGraphicsPipeline(create_info, allocator);
+    }
+
+    pub fn destroyPipeline(device: Handle, pipeline: mango.Pipeline, allocator: std.mem.Allocator) void {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return b_device.destroyPipeline(pipeline, allocator);
+    }
+
     pub fn createSwapchain(device: Handle, create_info: mango.SwapchainCreateInfo, allocator: std.mem.Allocator) !mango.Swapchain {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return b_device.createSwapchain(create_info, allocator);
@@ -169,11 +187,6 @@ pub const Handle = enum(u32) {
     }
 };
 
-pub const Native = struct {
-    driver_thread: horizon.Thread,
-    driver_stack: [16 * 1024]u8 align(8),
-};
-
 pub const QueueStatus = enum(i32) {
     working = -1,
     waiting = 0,
@@ -203,7 +216,10 @@ presentation_engine: PresentationEngine,
 /// Waiting for a semaphore is NOT considered idle as we'll eventually wake.
 queue_statuses: std.EnumArray(Queue.Type, std.atomic.Value(QueueStatus)),
 
-pub fn initTodo(gsp: GspGpu, arbiter: horizon.AddressArbiter, allocator: std.mem.Allocator) !*Device {
+pub fn initHorizonBacked(create_info: mango.HorizonBackedDeviceCreateInfo, allocator: std.mem.Allocator) !*Device {
+    const gsp = create_info.gsp;
+    const arbiter = create_info.arbiter;
+
     const device = try allocator.create(Device);
     errdefer allocator.destroy(device);
 
@@ -224,7 +240,7 @@ pub fn initTodo(gsp: GspGpu, arbiter: horizon.AddressArbiter, allocator: std.mem
     errdefer horizon.heap.non_thread_safe_shared_memory_address_allocator.free(shared_memory);
 
     try queue_result.response.gsp_memory.map(@alignCast(shared_memory.ptr), .rw, .dont_care);
-    errdefer device.gsp_shm_memory_block.unmap(shared_memory.ptr);
+    errdefer queue_result.response.gsp_memory.unmap(shared_memory.ptr);
 
     device.* = .{
         .running = .init(true),
@@ -247,7 +263,7 @@ pub fn initTodo(gsp: GspGpu, arbiter: horizon.AddressArbiter, allocator: std.mem
         .submit_queue = .init(device),
     };
 
-    device.driver_thread = try .create(driverMain, device, (&device.driver_stack).ptr + (device.driver_stack.len - 1), 0x1A, -2);
+    device.driver_thread = try .create(driverMain, device, (&device.driver_stack).ptr + device.driver_stack.len, create_info.driver_priority, create_info.driver_processor);
     return device;
 }
 
@@ -595,8 +611,8 @@ pub fn driverWake(device: *Device, reason: Queue.Type) void {
 
 // XXX: Should this should be in the syscore? we must handle vblanks and the app may be badly programmed (no yields)...
 // FIXME: Currently if some error happens in the driver, the entire app crashes! Should we report an error condition?
-fn driverMain(ctx: *anyopaque) callconv(.c) void {
-    const device: *Device = @ptrCast(@alignCast(ctx));
+fn driverMain(ctx: ?*anyopaque) callconv(.c) noreturn {
+    const device: *Device = @ptrCast(@alignCast(ctx.?));
     const presentation_engine = &device.presentation_engine;
     const gsp = device.gsp;
     const gsp_int = &device.gsp_shm.interrupt_queue[device.gsp_thread_index];
@@ -698,6 +714,14 @@ fn driverMain(ctx: *anyopaque) callconv(.c) void {
     }
 
     horizon.exitThread();
+}
+
+pub fn toHandle(image: *Device) Handle {
+    return @enumFromInt(@intFromPtr(image));
+}
+
+pub fn fromHandleMutable(handle: Handle) *Device {
+    return @as(*Device, @ptrFromInt(@intFromEnum(handle)));
 }
 
 comptime {

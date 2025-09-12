@@ -1302,18 +1302,23 @@ fn nextToken(a: *Assembler) u32 {
 }
 
 test "assemble" {
-    var assembled: Assembled = try .assemble(std.testing.allocator,
+    var fba: [4096]u8 = undefined;
+    var fba_instance: std.heap.FixedBufferAllocator = .init(&fba);
+    const alloc = fba_instance.allocator();
+
+    var assembled: Assembled = try .assemble(alloc,
         \\ main:
         \\   mov o0, v1
         \\   mov r0, v2
         \\   end
     );
-    defer assembled.deinit(std.testing.allocator);
+    defer assembled.deinit(alloc);
 
     for (assembled.errors) |err| {
-        if (err.tag == .expected_token) {
-            std.debug.print("Error: {s} (token value: '{s}', expected: {s})\n{s}", .{ @tagName(err.tag), assembled.tokenSlice(err.tok_i), @tagName(err.expected_tok), assembled.source[assembled.tokenStart(err.tok_i)..] });
-        } else std.debug.print("Error: {s} (token value: {s})\n{s}", .{ @tagName(err.tag), assembled.tokenSlice(err.tok_i), assembled.source[assembled.tokenStart(err.tok_i)..] });
+        _ = err;
+        // if (err.tag == .expected_token) {
+        //     std.debug.print("Error: {s} (token value: '{s}', expected: {s})\n{s}", .{ @tagName(err.tag), assembled.tokenSlice(err.tok_i), @tagName(err.expected_tok), assembled.source[assembled.tokenStart(err.tok_i)..] });
+        // } else std.debug.print("Error: {s} (token value: {s})\n{s}", .{ @tagName(err.tag), assembled.tokenSlice(err.tok_i), assembled.source[assembled.tokenStart(err.tok_i)..] });
     }
 
     if (assembled.errors.len > 0) {

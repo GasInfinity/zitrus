@@ -13,15 +13,16 @@ pub const Shared = extern struct {
     command_queue: [4]GxCommand.Queue,
 
     comptime {
-        // FIXME: This should only be checked when we're compiling for arm!
-        // std.debug.assert(@offsetOf(Shared, "interrupt_queue") == 0x000);
-        // std.debug.assert(@sizeOf(Interrupt.Queue) == 0x40);
-        //
-        // std.debug.assert(@offsetOf(Shared, "framebuffers") == 0x200);
-        // std.debug.assert(@sizeOf([2]FramebufferInfo) == 0x80);
-        //
-        // std.debug.assert(@offsetOf(Shared, "command_queue") == 0x800);
-        // std.debug.assert(@sizeOf(GxCommand.Queue) == 0x200);
+        if(builtin.cpu.arch.isArm()) {
+            std.debug.assert(@offsetOf(Shared, "interrupt_queue") == 0x000);
+            std.debug.assert(@sizeOf(Interrupt.Queue) == 0x40);
+
+            std.debug.assert(@offsetOf(Shared, "framebuffers") == 0x200);
+            std.debug.assert(@sizeOf([2]FramebufferInfo) == 0x80);
+
+            std.debug.assert(@offsetOf(Shared, "command_queue") == 0x800);
+            std.debug.assert(@sizeOf(GxCommand.Queue) == 0x200);
+        }
     }
 };
 
@@ -135,8 +136,9 @@ pub const FramebufferInfo = extern struct {
     }
 
     comptime {
-        // XXX: See above, we should only check this when building for arm
-        // std.debug.assert(@sizeOf(FramebufferInfo) == 0x40);
+        if(builtin.cpu.arch.isArm()) {
+            std.debug.assert(@sizeOf(FramebufferInfo) == 0x40);
+        }
     }
 };
 
@@ -837,6 +839,8 @@ pub const command = struct {
 };
 
 const GspGpu = @This();
+
+const builtin = @import("builtin");
 const std = @import("std");
 const zitrus = @import("zitrus");
 const gpu = zitrus.pica;

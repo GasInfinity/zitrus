@@ -331,6 +331,10 @@ pub fn mad(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_m
 }
 
 test Encoder {
+    var fixed: [256]u8 = undefined;
+    var fba: std.heap.FixedBufferAllocator = .init(&fixed);
+    const alloc = fba.allocator();
+
     const expected_output: []const u32 = &.{
         0b000000_10000_00_0000000_00001_0000000,
         0b001011_10001_00_0010000_00000_0000000,
@@ -338,17 +342,21 @@ test Encoder {
     };
 
     var encoder: Encoder = .init;
-    defer encoder.deinit(testing.allocator);
+    defer encoder.deinit(alloc);
 
-    try encoder.add(testing.allocator, .r0, .x, .@"+", .v0, .xyzw, .@"+", .v1, .xyzw, .none);
+    try encoder.add(alloc, .r0, .x, .@"+", .v0, .xyzw, .@"+", .v1, .xyzw, .none);
 
     // Must have same descriptor as the previous instruction
-    try encoder.flr(testing.allocator, .r1, .x, .@"+", .r0, .xyzw, .none);
+    try encoder.flr(alloc, .r1, .x, .@"+", .r0, .xyzw, .none);
 
     // Should create a new descriptor
-    try encoder.mul(testing.allocator, .r1, .x, .@"+", .v3, .wyxz, .@"+", .v8, .xxxx, .none);
+    try encoder.mul(alloc, .r1, .x, .@"+", .v3, .wyxz, .@"+", .v8, .xxxx, .none);
 
-    try testing.expectEqualSlices(u32, expected_output, std.mem.bytesAsSlice(u32, std.mem.sliceAsBytes(encoder.instructions.items)));
+    // FIXME: Regression, cannot use this on the 3DS test runner.
+    // try testing.expectEqualSlices(u32, expected_output, std.mem.bytesAsSlice(u32, std.mem.sliceAsBytes(encoder.instructions.items)));
+    for (expected_output, std.mem.bytesAsSlice(u32, std.mem.sliceAsBytes(encoder.instructions.items))) |output, expected| {
+        try testing.expect(expected == output);
+    }
 }
 
 const Encoder = @This();

@@ -146,9 +146,18 @@ pub const StartupInfo = extern struct {
     envp: [*]i16,
 };
 
+// TODO: Even though we have tests, do not ignore possible errors, use unreachable instead! (wait until switching on packed structs is available maybe)
 pub const Object = enum(u32) {
     null = 0,
     _,
+
+    pub fn dupe(obj: Object) !Object {
+        return switch (duplicateHandle(obj)) {
+            .success => |r| r.value,
+            // FIXME: This CAN fail
+            .failure => unreachable,
+        };
+    }
 };
 
 pub const ResouceLimit = packed struct(u32) {
@@ -262,8 +271,9 @@ pub const Semaphore = packed struct(u32) {
         return Synchronization.checkResult(Semaphore, createSemaphore(initial_count, max_count));
     }
 
-    pub fn release(semaphore: Semaphore, count: usize) void {
-        _ = releaseSemaphore(semaphore, count);
+    // TODO: Same as with above, properly handle errors with unreachable
+    pub fn release(semaphore: Semaphore, count: isize) usize {
+        return releaseSemaphore(semaphore, count).success.value;
     }
 
     pub fn wait(semaphore: Semaphore, timeout_ns: i64) WaitError!void {
@@ -297,6 +307,10 @@ pub const Event = packed struct(u32) {
         _ = signalEvent(ev);
     }
 
+    pub fn dupe(ev: Event) !Event {
+        return @bitCast(@intFromEnum(try ev.int.sync.obj.dupe()));
+    }
+
     pub fn wait(ev: Event, timeout_ns: i64) WaitError!void {
         return ev.int.sync.wait(timeout_ns);
     }
@@ -316,7 +330,7 @@ pub const Timer = packed struct(u32) {
 
     sync: Synchronization,
 
-    pub fn create(reset_type: ResetType) CreationError!Event {
+    pub fn create(reset_type: ResetType) CreationError!Timer {
         return Synchronization.checkResult(Timer, createTimer(reset_type));
     }
 
@@ -330,6 +344,10 @@ pub const Timer = packed struct(u32) {
 
     pub fn cancel(timer: Timer) void {
         _ = cancelTimer(timer);
+    }
+
+    pub fn dupe(ev: Timer) !Timer {
+        return @bitCast(@intFromEnum(try ev.sync.obj.dupe()));
     }
 
     pub fn wait(timer: Timer, timeout_ns: i64) WaitError!void {
@@ -483,13 +501,38 @@ pub const Port = struct {
 };
 
 pub const Thread = packed struct(u32) {
+    pub const Priority = enum(u6) {
+        pub const highest: Priority = .priority(0x00);
+        pub const highest_user: Priority = .priority(0x18);
+        pub const lowest: Priority = .priority(0x3F);
+
+        _,
+
+        pub fn priority(value: u6) Priority {
+            return @enumFromInt(value);
+        }
+    };
+
+    pub const Processor = enum(i3) {
+        pub const app: Processor = .@"0";
+        pub const sys: Processor = .@"1";
+
+        default = -2,
+        any = -1,
+
+        @"0" = 0,
+        @"1",
+        @"2",
+        @"3",
+    };
+
     pub const current: Thread = @bitCast(@as(u32, 0xFFFF8000));
 
     pub const WaitError = Synchronization.WaitError;
 
     sync: Synchronization,
 
-    pub fn create(entry: *const fn (ctx: *anyopaque) callconv(.c) void, ctx: *anyopaque, stack_top: [*]u8, priority: u6, processor_id: i32) UnexpectedError!Thread {
+    pub fn create(entry: *const fn (ctx: ?*anyopaque) callconv(.c) noreturn, ctx: ?*anyopaque, stack_top: [*]u8, priority: Priority, processor_id: Processor) UnexpectedError!Thread {
         return switch (createThread(entry, ctx, stack_top, priority, processor_id)) {
             .success => |s| s.value,
             .failure => |code| unexpectedResult(code),
@@ -514,6 +557,32 @@ pub const Process = packed struct(u32) {
 
     sync: Synchronization,
 };
+
+pub fn outputDebugWriter(buffer: []u8) std.Io.Writer {
+    return .{
+        .vtable = &.{
+            .drain = outputDebugDrain,
+        },
+        .buffer = buffer,
+    };
+}
+
+fn outputDebugDrain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
+    outputDebugString(w.buffered()); 
+    w.end = 0;
+
+    var n: usize = 0;
+    for (data[0..data.len - 1]) |slice| {
+        outputDebugString(slice);
+        n += slice.len;
+    }
+
+    for (0..splat) |_| {
+        outputDebugString(data[data.len - 1]);
+    }
+
+    return n + splat * data[data.len - 1].len;
+}
 
 pub fn controlMemory(operation: MemoryOperation, addr0: ?*anyopaque, addr1: ?*anyopaque, size: usize, permissions: MemoryPermission) Result([*]align(heap.page_size) u8) {
     var mapped_addr: [*]align(heap.page_size) u8 = undefined;
@@ -598,18 +667,17 @@ pub fn setProcessIdealProcessor(process: Process, ideal_processor: i32) result.C
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-// TODO: processor_id type?
-pub fn createThread(entry: *const fn (ctx: *anyopaque) callconv(.c) void, ctx: *anyopaque, stack_top: [*]u8, priority: u6, processor_id: i32) Result(Thread) {
+pub fn createThread(entry: *const fn (ctx: ?*anyopaque) callconv(.c) noreturn, ctx: ?*anyopaque, stack_top: [*]u8, priority: Thread.Priority, processor_id: Thread.Processor) Result(Thread) {
     var handle: Thread = undefined;
 
     const code = asm volatile ("svc 0x08"
         : [code] "={r0}" (-> result.Code),
           [handle] "={r1}" (handle),
-        : [priority] "{r0}" (priority),
+        : [priority] "{r0}" (@as(u32, @intFromEnum(priority))),
           [entry] "{r1}" (entry),
           [ctx] "{r2}" (ctx),
           [stack_top] "{r3}" (stack_top),
-          [processor_id] "{r4}" (processor_id),
+          [processor_id] "{r4}" (@as(i32, @intFromEnum(processor_id))),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, handle);
@@ -713,7 +781,7 @@ pub fn createMutex(initial_locked: bool) Result(Mutex) {
     const code = asm volatile ("svc 0x13"
         : [code] "={r0}" (-> result.Code),
           [mutex] "={r1}" (mutex),
-        : [initial_locked] "{r1}" (initial_locked),
+        : [initial_locked] "{r1}" (@as(u32, @intFromBool(initial_locked))),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, mutex);
@@ -739,7 +807,7 @@ pub fn createSemaphore(initial_count: usize, max_count: usize) Result(Semaphore)
     return .of(code, semaphore);
 }
 
-pub fn releaseSemaphore(semaphore: Semaphore, release_count: usize) Result(usize) {
+pub fn releaseSemaphore(semaphore: Semaphore, release_count: isize) Result(usize) {
     var count: usize = undefined;
 
     const code = asm volatile ("svc 0x16"
@@ -1289,6 +1357,8 @@ pub const config = @import("horizon/config.zig");
 pub const ipc = @import("horizon/ipc.zig");
 pub const tls = @import("horizon/tls.zig");
 pub const fmt = @import("horizon/fmt.zig");
+
+pub const testing = @import("horizon/testing.zig");
 
 pub const ServiceManager = @import("horizon/ServiceManager.zig");
 pub const ErrorDisplayManager = @import("horizon/ErrorDisplayManager.zig");

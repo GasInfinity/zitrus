@@ -3,7 +3,7 @@ pub const global_attribute_buffer_base: zitrus.PhysicalAddress = .fromAddress(zi
 
 /// At most, this amount of commands can be buffered simultaneously by the driver.
 /// OutOfMemory will be returned if the driver can not queue more.
-pub const max_buffered_queue_items = 32;
+pub const max_buffered_queue_items = 12;
 
 /// It is asserted that at most, this amount of swapchain image layers are supported.
 pub const max_swapchain_image_layers = 2;
@@ -135,14 +135,14 @@ test "SingleProducerSingleConsumerBoundedQueue pushFront -> popBack correct stat
     var bq: TestingSpScBoundedQueue = .initEmpty;
 
     bq.pushFrontAssumeCapacity(7);
-    try testing.expectEqual(0, bq.header.raw.index);
-    try testing.expectEqual(1, bq.header.raw.len);
+    try testing.expect(0 == bq.header.raw.index);
+    try testing.expect(1 == bq.header.raw.len);
 
     const should_be_7 = bq.popBack();
-    try testing.expectEqual(7, should_be_7);
+    try testing.expect(7 == should_be_7);
 
-    try testing.expectEqual(1, bq.header.raw.index);
-    try testing.expectEqual(0, bq.header.raw.len);
+    try testing.expect(1 == bq.header.raw.index);
+    try testing.expect(0 == bq.header.raw.len);
 }
 
 test "SingleProducerSingleConsumerBoundedQueue is a FIFO" {
@@ -153,23 +153,23 @@ test "SingleProducerSingleConsumerBoundedQueue is a FIFO" {
     bq.pushFrontAssumeCapacity(2);
     bq.pushFrontAssumeCapacity(1);
 
-    try testing.expectEqual(0, bq.header.raw.index);
-    try testing.expectEqual(4, bq.header.raw.len);
+    try testing.expect(0 == bq.header.raw.index);
+    try testing.expect(4 == bq.header.raw.len);
 
     const should_be_7 = bq.popBack();
-    try testing.expectEqual(7, should_be_7);
+    try testing.expect(7 == should_be_7);
 
     const should_be_8 = bq.popBack();
-    try testing.expectEqual(8, should_be_8);
+    try testing.expect(8 == should_be_8);
 
     const should_be_2 = bq.popBack();
-    try testing.expectEqual(2, should_be_2);
+    try testing.expect(2 == should_be_2);
 
     const should_be_1 = bq.popBack();
-    try testing.expectEqual(1, should_be_1);
+    try testing.expect(1 == should_be_1);
 
-    try testing.expectEqual(0, bq.header.raw.index);
-    try testing.expectEqual(0, bq.header.raw.len);
+    try testing.expect(0 == bq.header.raw.index);
+    try testing.expect(0 == bq.header.raw.len);
 }
 
 comptime {

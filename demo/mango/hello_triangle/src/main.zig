@@ -51,11 +51,14 @@ pub fn main() !void {
     // XXX: The entrypoint WILL change, not finished!
 
     // Create the Device.
-    // It OWNS the entire rendering workflow. Important implementation detail: Spawns a thread with high priority for the driver.
+    // It OWNS the entire rendering workflow.
     //
     // Similar workflow as in Vulkan.
-    var device: *mango.Device = try .initTodo(gsp, arbiter, gpa);
-    defer device.deinit(gpa);
+    const device: mango.Device = try mango.createHorizonBackedDevice(.{
+        .gsp = gsp,
+        .arbiter = arbiter,
+    }, gpa);
+    defer device.destroy(gpa);
 
     // Get the (TODO: allocated, all queues are allocated right now) queues at creation time. We allocate all queues at device creation time.
     const transfer_queue = device.getQueue(.transfer);

@@ -656,26 +656,26 @@ test calculateParameters {
     const Params = Buffer.PackedCommand.Header.Parameters;
 
     // NOTE: When a struct is not extern, each parameter will (at minimum) span 4-bytes as each field is independent.
-    try testing.expectEqual(Params{ .normal = 1, .translate = 0 }, calculateParameters(struct { x: u8 }));
-    try testing.expectEqual(Params{ .normal = 1, .translate = 0 }, calculateParameters(struct { x: u16 }));
-    try testing.expectEqual(Params{ .normal = 1, .translate = 0 }, calculateParameters(struct { x: u32 }));
+    try testing.expect(Params{ .normal = 1, .translate = 0 } == calculateParameters(struct { x: u8 }));
+    try testing.expect(Params{ .normal = 1, .translate = 0 } == calculateParameters(struct { x: u16 }));
+    try testing.expect(Params{ .normal = 1, .translate = 0 } == calculateParameters(struct { x: u32 }));
 
-    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u32, y: u8 }));
-    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u32, y: u16 }));
-    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u32, y: u32 }));
+    try testing.expect(Params{ .normal = 2, .translate = 0 } == calculateParameters(struct { x: u32, y: u8 }));
+    try testing.expect(Params{ .normal = 2, .translate = 0 } == calculateParameters(struct { x: u32, y: u16 }));
+    try testing.expect(Params{ .normal = 2, .translate = 0 } == calculateParameters(struct { x: u32, y: u32 }));
 
-    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u8, y: u32 }));
-    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u16, y: u32 }));
+    try testing.expect(Params{ .normal = 2, .translate = 0 } == calculateParameters(struct { x: u8, y: u32 }));
+    try testing.expect(Params{ .normal = 2, .translate = 0 } == calculateParameters(struct { x: u16, y: u32 }));
 
-    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u8, y: u8 }));
-    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(struct { x: u16, y: u16 }));
+    try testing.expect(Params{ .normal = 2, .translate = 0 } == calculateParameters(struct { x: u8, y: u8 }));
+    try testing.expect(Params{ .normal = 2, .translate = 0 } == calculateParameters(struct { x: u16, y: u16 }));
 
     // NOTE: Otherwise, it is basically written as-is.
-    try testing.expectEqual(Params{ .normal = 1, .translate = 0 }, calculateParameters(extern struct { x: u8, y: u8 }));
-    try testing.expectEqual(Params{ .normal = 1, .translate = 0 }, calculateParameters(extern struct { x: u16, y: u16 }));
-    try testing.expectEqual(Params{ .normal = 1, .translate = 0 }, calculateParameters(extern struct { x: u8, y: u8, z: u8, w: u8 }));
-    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(extern struct { x: u16, y: u16, z: u16 }));
-    try testing.expectEqual(Params{ .normal = 2, .translate = 0 }, calculateParameters(extern struct { x: u16, y: u16, z: u16, w: u16 }));
+    try testing.expect(Params{ .normal = 1, .translate = 0 } == calculateParameters(extern struct { x: u8, y: u8 }));
+    try testing.expect(Params{ .normal = 1, .translate = 0 } == calculateParameters(extern struct { x: u16, y: u16 }));
+    try testing.expect(Params{ .normal = 1, .translate = 0 } == calculateParameters(extern struct { x: u8, y: u8, z: u8, w: u8 }));
+    try testing.expect(Params{ .normal = 2, .translate = 0 } == calculateParameters(extern struct { x: u16, y: u16, z: u16 }));
+    try testing.expect(Params{ .normal = 2, .translate = 0 } == calculateParameters(extern struct { x: u16, y: u16, z: u16, w: u16 }));
 }
 
 test "packType and unpackType are idempotent for extern or packed structs" {
@@ -707,7 +707,7 @@ test "packType and unpackType are idempotent for extern or packed structs" {
     buf.packType(TestStruct, test_value);
     const unpacked_value = buf.unpackType(0, TestStruct);
 
-    try testing.expectEqual(test_value, unpacked_value);
+    try testing.expect(std.meta.eql(test_value, unpacked_value));
 }
 
 test "packType and unpackType are idempotent for auto structs" {
@@ -739,7 +739,7 @@ test "packType and unpackType are idempotent for auto structs" {
     buf.packType(TestStruct, test_value);
     const unpacked_value = buf.unpackType(0, TestStruct);
 
-    try testing.expectEqual(test_value, unpacked_value);
+    try testing.expect(std.meta.eql(test_value, unpacked_value));
 }
 
 const std = @import("std");

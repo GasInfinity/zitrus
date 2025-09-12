@@ -130,8 +130,12 @@ pub const Module = enum(u8) {
     _,
 };
 
+// TODO: fill this table by testing each error condition.
 pub const Description = enum(u10) {
     success,
+
+    out_of_mutex = 13,
+    mutex_not_owned = 31,
 
     // common
     invalid_selection = 1000,

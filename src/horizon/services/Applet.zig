@@ -173,6 +173,7 @@ pub const ChainloadTarget = union(enum) {
 lock: Mutex,
 available_service_name: []const u8,
 
+// TODO: allow opening a specific applet service instead of testing all.
 pub fn open(srv: ServiceManager) !Applet {
     var last_error: anyerror = undefined;
     const available_service_name, var available_service: Session = used: for (service_names) |service_name| {
@@ -474,7 +475,7 @@ pub fn lockSendCommand(apt: Applet, srv: ServiceManager, comptime DefinedCommand
     try apt.lock.wait(-1);
     defer apt.lock.release();
 
-    var fresh_session = try srv.sendGetServiceHandle(apt.available_service_name, .wait);
+    const fresh_session = try srv.sendGetServiceHandle(apt.available_service_name, .wait);
     defer fresh_session.close();
 
     const data = tls.getThreadLocalStorage();

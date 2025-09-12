@@ -1112,46 +1112,12 @@ pub const Scissor = extern struct {
     pub fn inside(rect: Rect2D) Scissor {
         return .{ .rect = rect, .mode = .inside };
     }
-
-    pub fn write(scissor: Scissor, queue: *cmd3d.Queue) void {
-        queue.addIncremental(internal_regs, .{
-            &internal_regs.rasterizer.scissor_config,
-            &internal_regs.rasterizer.scissor_start,
-            &internal_regs.rasterizer.scissor_end,
-        }, .{
-            .init(scissor.mode.native()),
-            @bitCast(scissor.rect.offset),
-            .{ .x = scissor.rect.offset.x + scissor.rect.extent.width - 1, .y = scissor.rect.offset.y + scissor.rect.extent.height - 1 },
-        });
-    }
 };
 
 pub const Viewport = extern struct {
     rect: Rect2D,
     min_depth: f32,
     max_depth: f32,
-
-    pub fn writeViewportParameters(viewport: Viewport, queue: *cmd3d.Queue) void {
-        const flt_width: f32 = @floatFromInt(viewport.rect.extent.width);
-        const flt_height: f32 = @floatFromInt(viewport.rect.extent.height);
-
-        queue.addIncremental(internal_regs, .{
-            &internal_regs.rasterizer.viewport_h_scale,
-            &internal_regs.rasterizer.viewport_h_step,
-            &internal_regs.rasterizer.viewport_v_scale,
-            &internal_regs.rasterizer.viewport_v_step,
-        }, .{
-            .init(.of(flt_width / 2.0)),
-            .init(.of(2.0 / flt_width)),
-            .init(.of(flt_height / 2.0)),
-            .init(.of(2.0 / flt_height)),
-        });
-
-        queue.add(internal_regs, &internal_regs.rasterizer.viewport_xy, .{
-            .x = viewport.rect.offset.x,
-            .y = viewport.rect.offset.y,
-        });
-    }
 };
 
 pub const VertexAttributeBinding = enum(u8) { @"0", @"1", @"2", @"3", @"4", @"5", @"6", @"7", @"8", @"9", @"10", @"11" };
@@ -1358,9 +1324,32 @@ pub const SemaphoreOperation = extern struct {
     }
 };
 
-pub const Device = backend.Device;
+pub const HorizonBackedDeviceCreateInfo = struct {
+    /// The GSP session the device will use to communicate with the
+    /// process.
+    gsp: horizon.services.GspGpu,
+
+    /// The address arbiter the device will use when it needs to wait
+    /// and signal threads.
+    arbiter: horizon.AddressArbiter,
+
+    /// The driver's thread priority, by default is `0x1A` (Very high)
+    driver_priority: horizon.Thread.Priority = .priority(0x1A),
+
+    /// The driver's thread processor, by default is `-2`
+    driver_processor: horizon.Thread.Processor = .default,
+};
+
+/// Zig entrypoint for creating a device backed by the Horizon GSP.
+///
+/// Device owns GSP process state after this point. However the app is still able
+/// to interact with it and use requests such as `SetLcdForceBlack`.
+pub fn createHorizonBackedDevice(create_info: HorizonBackedDeviceCreateInfo, allocator: std.mem.Allocator) !Device {
+    return (try backend.Device.initHorizonBacked(create_info, allocator)).toHandle();
+}
+
 // FIXME: Rename this to Device when we finish the entrypoint.
-pub const DeviceHandle = Device.Handle;
+pub const Device = backend.Device.Handle;
 pub const Queue = backend.Queue.Handle;
 pub const DeviceMemory = backend.DeviceMemory.Handle;
 pub const Semaphore = backend.Semaphore.Handle;
@@ -1386,4 +1375,7 @@ const zitrus = @import("zitrus");
 const pica = zitrus.pica;
 
 const cmd3d = pica.cmd3d;
-const internal_regs = &zitrus.memory.arm11.gpu.internal;
+
+/// WARNING: Nothing, I mean NOTHING in mango should depend on this.
+/// This is only for creating Horizon backed devices!
+const horizon = zitrus.horizon;

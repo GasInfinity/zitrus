@@ -61,14 +61,14 @@ pub const Component = enum(u2) {
         }
 
         test parse {
-            try testing.expectEqual(Mask.xyzw, try parse("xyzw"));
-            try testing.expectEqual(Mask.w, try parse("w"));
-            try testing.expectEqual(Mask.yw, try parse("yw"));
-            try testing.expectEqual(Mask.yzw, try parse("yzw"));
-            try testing.expectError(error.InvalidMask, parse("zyx"));
-            try testing.expectError(error.InvalidMask, parse("wy"));
-            try testing.expectError(error.InvalidMask, parse("xxxx"));
-            try testing.expectError(error.InvalidMask, parse("wyxz"));
+            try testing.expect(Mask.xyzw == try parse("xyzw"));
+            try testing.expect(Mask.w == try parse("w"));
+            try testing.expect(Mask.yw == try parse("yw"));
+            try testing.expect(Mask.yzw == try parse("yzw"));
+            try testing.expect(error.InvalidMask == parse("zyx"));
+            try testing.expect(error.InvalidMask == parse("wy"));
+            try testing.expect(error.InvalidMask == parse("xxxx"));
+            try testing.expect(error.InvalidMask == parse("wyxz"));
         }
     };
 
@@ -472,19 +472,19 @@ pub const Component = enum(u2) {
         }
 
         test parse {
-            try testing.expectEqual(Selector.wwww, Selector.xyzw.swizzle(.wwww));
-            try testing.expectEqual(Selector.yzww, Selector.xyzw.swizzle(.wzyx).swizzle(.zyxx));
-            try testing.expectEqual(Selector.xyxy, Selector.xyzw.swizzle(.xxyy).swizzle(.xzyw));
-            try testing.expectEqual(Selector.wzyy, Selector.xyzw.swizzle(.wzyx).swizzle(.xyzz));
+            try testing.expect(Selector.wwww == Selector.xyzw.swizzle(.wwww));
+            try testing.expect(Selector.yzww == Selector.xyzw.swizzle(.wzyx).swizzle(.zyxx));
+            try testing.expect(Selector.xyxy == Selector.xyzw.swizzle(.xxyy).swizzle(.xzyw));
+            try testing.expect(Selector.wzyy == Selector.xyzw.swizzle(.wzyx).swizzle(.xyzz));
 
-            try testing.expectEqual(Selector.wxyz, try parse("wxyz"));
-            try testing.expectEqual(Selector.wwww, try parse("wwww"));
-            try testing.expectEqual(Selector.wxwx, try parse("wxwx"));
-            try testing.expectEqual(Selector.xyzw, try parse("xyzw"));
-            try testing.expectEqual(Selector.w, try parse("w"));
-            try testing.expectEqual(Selector.yw, try parse("yw"));
-            try testing.expectEqual(Selector.yzw, try parse("yzw"));
-            try testing.expectError(error.InvalidComponent, parse("tzp"));
+            try testing.expect(Selector.wxyz == try parse("wxyz"));
+            try testing.expect(Selector.wwww == try parse("wwww"));
+            try testing.expect(Selector.wxwx == try parse("wxwx"));
+            try testing.expect(Selector.xyzw == try parse("xyzw"));
+            try testing.expect(Selector.w == try parse("w"));
+            try testing.expect(Selector.yw == try parse("yw"));
+            try testing.expect(Selector.yzw == try parse("yzw"));
+            try testing.expect(error.InvalidComponent == parse("tzp"));
         }
     };
 };

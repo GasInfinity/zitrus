@@ -63,8 +63,11 @@ pub fn main() !void {
     const arbiter: horizon.AddressArbiter = try .create();
     defer arbiter.close();
 
-    var device: *mango.Device = try .initTodo(gsp, arbiter, gpa);
-    defer device.deinit(gpa);
+    const device: mango.Device = try mango.createHorizonBackedDevice(.{
+        .gsp = gsp,
+        .arbiter = arbiter,
+    }, gpa);
+    defer device.destroy(gpa);
 
     const transfer_queue = device.getQueue(.transfer);
     const fill_queue = device.getQueue(.fill);

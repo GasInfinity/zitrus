@@ -400,13 +400,13 @@ fn testTokenize(source: [:0]const u8, expected_token_tags: []const Token.Tag) !v
     for (expected_token_tags) |expected_tag| {
         const tk = tokenizer.next();
 
-        try testing.expectEqual(expected_tag, tk.tag);
+        try testing.expect(expected_tag == tk.tag);
     }
 
     const last = tokenizer.next();
-    try testing.expectEqual(Token.Tag.eof, last.tag);
-    try testing.expectEqual(source.len, last.loc.start);
-    try testing.expectEqual(source.len, last.loc.end);
+    try testing.expect(Token.Tag.eof == last.tag);
+    try testing.expect(source.len == last.loc.start);
+    try testing.expect(source.len == last.loc.end);
 }
 
 const std = @import("std");

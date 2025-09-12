@@ -1,4 +1,4 @@
-// XXX: Deprecate/Delete this? It's still useful for simple software rendering but mango exists...
+// TODO: This should be one for each screen and should not handle the two at the same time!
 
 pub const Error = error{};
 

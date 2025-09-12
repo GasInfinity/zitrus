@@ -80,6 +80,7 @@ pub fn build(b: *std.Build) void {
     run_tests_step.dependOn(&run_tests.step);
 
     buildTools(b, optimize, tools_target, zitrus);
+    buildTests(b, zitrus);
 }
 
 fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: std.Build.ResolvedTarget, zitrus_mod: *std.Build.Module) void {
@@ -125,6 +126,53 @@ fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: s
     run_step.dependOn(&run_tool.step);
 }
 
+const StandaloneTest = struct {
+    name: []const u8,
+    path: []const u8,
+};
+
+const standalone_tests: []const StandaloneTest = &.{
+    .{ .name = "hos", .path = "test/hos.zig" },
+    .{ .name = "mango", .path = "test/mango.zig" },
+};
+
+fn buildTests(b: *std.Build, zitrus_mod: *std.Build.Module) void {
+    const build_tests_step = b.step("build-tests", "Builds tests for the running on the 3ds");
+
+    // HACK: Yes, this is truly a big hack
+    var self_dep: std.Build.Dependency = .{
+        .builder = b,
+    };
+
+    inline for (standalone_tests) |standalone_test| {
+        const tests_exe = addTestDependency(b, &self_dep, .{
+            .name = standalone_test.name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(standalone_test.path),
+                .target = b.resolveTargetQuery(target.horizon_arm11),
+                .optimize = .ReleaseSafe,
+                .imports = &.{
+                    .{ .name = "zitrus", .module = zitrus_mod },
+                }
+            })
+        });
+
+        const tests_3dsx = addMake3dsxDependency(b, &self_dep, .{
+            .name = standalone_test.name,
+            .exe = tests_exe,
+        });
+
+        const build_test_step = b.step("build-test-" ++ standalone_test.name, "Builds the '" ++ standalone_test.name ++ "' test for running on the 3ds");
+
+        const install_lib_test = b.addInstallArtifact(tests_exe, .{ .dest_sub_path = "tests/" ++ standalone_test.name ++ ".elf" });
+        const install_lib_3dsx_test = b.addInstallBinFile(tests_3dsx, "tests/" ++ standalone_test.name ++ ".3dsx");
+
+        build_test_step.dependOn(&install_lib_test.step);
+        build_test_step.dependOn(&install_lib_3dsx_test.step);
+        build_tests_step.dependOn(build_test_step);
+    }
+}
+
 pub const ExecutableOptions = struct {
     name: []const u8,
     root_module: *std.Build.Module,
@@ -136,7 +184,7 @@ pub const ExecutableOptions = struct {
 };
 
 pub fn addExecutable(b: *std.Build, options: ExecutableOptions) *std.Build.Step.Compile {
-    const zitrus = b.dependencyFromBuildZig(@This(), .{});
+    const zitrus = zitrusDependency(b);
 
     const exe = b.addExecutable(.{
         .name = options.name,
@@ -155,6 +203,44 @@ pub fn addExecutable(b: *std.Build, options: ExecutableOptions) *std.Build.Step.
     return exe;
 }
 
+pub const TestOptions = struct {
+    name: []const u8 = "test",
+    root_module: *std.Build.Module,
+    max_rss: usize = 0,
+    filters: []const []const u8 = &.{},
+    use_llvm: ?bool = null,
+    use_lld: ?bool = null,
+    zig_lib_dir: ?std.Build.LazyPath = null,
+
+    emit_object: bool = false,
+};
+
+pub fn addTest(b: *std.Build, options: Make3dsxOptions) std.Build.LazyPath {
+    return addTest(b, zitrusDependency(b), options);
+}
+
+fn addTestDependency(b: *std.Build, zitrus: *std.Build.Dependency, options: TestOptions) *std.Build.Step.Compile {
+    const exe = b.addTest(.{
+        .name = options.name,
+        .root_module = options.root_module,
+        .max_rss = options.max_rss,
+        .filters = options.filters,
+        .test_runner = .{
+            .mode = .simple,
+            .path = zitrus.path("src/horizon/testing/application_test_runner.zig")
+        },
+        .use_llvm = options.use_llvm,
+        .use_lld = options.use_lld,
+        .zig_lib_dir = options.zig_lib_dir,
+
+        .emit_object = options.emit_object,
+    });
+
+    exe.link_emit_relocs = true;
+    exe.setLinkerScript(zitrus.path("3dsx.ld"));
+    return exe;
+}
+
 // TODO: Add RomFS option
 pub const Make3dsxOptions = struct {
     name: []const u8,
@@ -163,7 +249,10 @@ pub const Make3dsxOptions = struct {
 };
 
 pub fn addMake3dsx(b: *std.Build, options: Make3dsxOptions) std.Build.LazyPath {
-    const zitrus = b.dependencyFromBuildZig(@This(), .{});
+    return addMake3dsxDependency(b, zitrusDependency(b), options);
+}
+
+fn addMake3dsxDependency(b: *std.Build, zitrus: *std.Build.Dependency, options: Make3dsxOptions) std.Build.LazyPath {
     const run_make = b.addRunArtifact(zitrus.artifact("zitrus-tools"));
     run_make.addArgs(&.{ "3dsx", "make" });
 
@@ -185,7 +274,7 @@ pub const MakeSmdhOptions = struct {
 };
 
 pub fn addMakeSmdh(b: *std.Build, options: MakeSmdhOptions) std.Build.LazyPath {
-    const zitrus = b.dependencyFromBuildZig(@This(), .{});
+    const zitrus = zitrusDependency(b);
     const run_make = b.addRunArtifact(zitrus.artifact("zitrus-tools"));
     run_make.addArgs(&.{ "smdh", "make" });
 
@@ -215,12 +304,16 @@ pub const AssembleZpsmOptions = struct {
 };
 
 pub fn addAssembleZpsm(b: *std.Build, options: AssembleZpsmOptions) std.Build.LazyPath {
-    const zitrus = b.dependencyFromBuildZig(@This(), .{});
+    const zitrus = zitrusDependency(b);
     const run_assemble_zpsm = b.addRunArtifact(zitrus.artifact("zitrus-tools"));
     run_assemble_zpsm.addArgs(&.{ "pica", "asm" });
     run_assemble_zpsm.addFileArg(options.root_source_file);
     run_assemble_zpsm.addArg("-o");
     return run_assemble_zpsm.addOutputFileArg(options.name);
+}
+
+fn zitrusDependency(b: *std.Build) *std.Build.Dependency {
+    return b.dependencyFromBuildZig(@This(), .{});
 }
 
 const std = @import("std");
