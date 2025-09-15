@@ -561,7 +561,7 @@ pub const TextureUnitTexture3Coordinates = enum(u2) {
 };
 
 // TODO: Properly finish this
-pub const Registers = struct {
+pub const Registers = extern struct {
     pub const VRamPower = packed struct(u32) {
         _unknown0: u8,
         power_off_a_low: bool,
@@ -1678,6 +1678,16 @@ pub const Registers = struct {
     dma: MemoryCopy,
     _unknown8: [0xF5]u32 = @splat(0),
     internal: Internal,
+
+    comptime {
+        if (builtin.cpu.arch.isArm()) {
+            if (@offsetOf(Registers, "timing_control") != 0x50) @compileError(std.fmt.comptimePrint("found 0x{X}", .{@offsetOf(Registers, "timing_control")}));
+            if (@offsetOf(Registers, "traffic") != 0x70) @compileError(std.fmt.comptimePrint("found 0x{X}", .{@offsetOf(Registers, "traffic")}));
+            if (@offsetOf(Registers, "pdc") != 0x400) @compileError(std.fmt.comptimePrint("found 0x{X}", .{@offsetOf(Registers, "pdc")}));
+            if (@offsetOf(Registers, "dma") != 0xC00) @compileError(std.fmt.comptimePrint("found 0x{X}", .{@offsetOf(Registers, "dma")}));
+            if (@offsetOf(Registers, "internal") != 0x1000) @compileError(std.fmt.comptimePrint("found 0x{X}", .{@offsetOf(Registers, "internal")}));
+        }
+    }
 };
 
 comptime {
@@ -1692,6 +1702,8 @@ comptime {
 
     _ = shader;
 }
+
+const builtin = @import("builtin");
 
 const std = @import("std");
 const zsflt = @import("zsflt");

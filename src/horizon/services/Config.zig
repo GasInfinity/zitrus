@@ -400,7 +400,7 @@ pub fn getConfigUser(cfg: Config, comptime block: Block) Error!block.Data() {
 }
 
 pub fn sendGetConfigUser(cfg: Config, block: Block, output: []u8) Error!void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(cfg.session, command.GetConfigUser, .{ .size = output.len, .blk = block, .output = .init(output) }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -408,7 +408,7 @@ pub fn sendGetConfigUser(cfg: Config, block: Block, output: []u8) Error!void {
 }
 
 pub fn sendGetRegion(cfg: Config) Error!Region {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(cfg.session, command.GetRegion, .{}, .{})) {
         .success => |s| s.value.response.region,
         .failure => |code| horizon.unexpectedResult(code),
@@ -416,7 +416,7 @@ pub fn sendGetRegion(cfg: Config) Error!Region {
 }
 
 pub fn sendIsCoppacsSupported(cfg: Config) Error!bool {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(cfg.session, command.IsCoppacsSupported, .{}, .{})) {
         .success => |s| s.value.response.supported,
         .failure => |code| horizon.unexpectedResult(code),
@@ -424,7 +424,7 @@ pub fn sendIsCoppacsSupported(cfg: Config) Error!bool {
 }
 
 pub fn sendGetSystemModel(cfg: Config) Error!SystemModel {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(cfg.session, command.GetSystemModel, .{}, .{})) {
         .success => |s| s.value.response.model,
         .failure => |code| horizon.unexpectedResult(code),
@@ -432,7 +432,7 @@ pub fn sendGetSystemModel(cfg: Config) Error!SystemModel {
 }
 
 pub fn sendIsModelNintendo2ds(cfg: Config) Error!bool {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(cfg.session, command.IsModelNintendo2ds, .{}, .{})) {
         .success => |s| s.value.response.value,
         .failure => |code| horizon.unexpectedResult(code),
@@ -440,7 +440,7 @@ pub fn sendIsModelNintendo2ds(cfg: Config) Error!bool {
 }
 
 pub fn sendGetCountryCodeString(cfg: Config, id: Country) Error![2]u8 {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(cfg.session, command.GetCountryCodeString, .{ .id = id }, .{})) {
         .success => |s| s.value.response.str,
         .failure => |code| horizon.unexpectedResult(code),
@@ -448,7 +448,7 @@ pub fn sendGetCountryCodeString(cfg: Config, id: Country) Error![2]u8 {
 }
 
 pub fn sendGetCountryCodeId(cfg: Config, string: [2]u8) Error!Country {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(cfg.session, command.GetCountryCodeId, .{ .str = string }, .{})) {
         .success => |s| s.value.response.id,
         .failure => |code| horizon.unexpectedResult(code),

@@ -1,5 +1,5 @@
 test "created and executed successfully" {
-    const Data = struct { 
+    const Data = struct {
         a: u32,
         b: u32,
         result: ?u32,

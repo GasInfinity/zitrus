@@ -411,7 +411,7 @@ pub fn main() !void {
     //
     // Screen contents are undefined until we present the first frame, for simplicity we'll ignore that.
     try gsp.sendSetLcdForceBlack(false);
-    defer if(!app.flags.must_close) gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
+    defer if (!app.flags.must_close) gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
 
     main_loop: while (true) {
         while (try srv.pollNotification()) |notif| switch (notif) {
@@ -529,6 +529,8 @@ pub fn main() !void {
             .value = sync_counter,
         }, -1);
     }
+
+    try device.waitIdle();
 }
 
 const mango = zitrus.mango;

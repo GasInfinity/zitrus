@@ -24,12 +24,12 @@ pub const Handle = enum(u32) {
         const dst_virt = b_dst_buffer.memory_info.boundVirtualAddress();
 
         const src_size = b_src_buffer.sizeByAmount(info.size, info.src_offset);
-        const dst_size = b_dst_buffer.sizeByAmount(info.size, info.src_offset);
+        const dst_size = b_dst_buffer.sizeByAmount(info.size, info.dst_offset);
         std.debug.assert(src_size == dst_size);
 
         const src = src_virt[@intFromEnum(info.src_offset)..][0..src_size];
         const dst = dst_virt[@intFromEnum(info.dst_offset)..][0..dst_size];
-        
+
         return transfer.wakePushFront(.{
             .flags = .{
                 .kind = .copy,
@@ -419,7 +419,6 @@ pub const FillItem = struct {
     data: []align(8) u8,
     value: GspGpu.GxCommand.MemoryFill.Unit.Value,
 };
-
 
 pub const TransferItem = struct {
     pub const Flags = packed struct(u32) {

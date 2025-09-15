@@ -30,7 +30,7 @@
         "assets",
         "src",
         "tools",
-        "3dsx.ld",
+        "arm-3ds.ld",
         "build.zig",
         "build.zig.zon",
         "LICENSE",

@@ -71,8 +71,7 @@ pub export fn mgFreeMemory(device: mango.Device, memory: mango.DeviceMemory, all
 }
 
 pub export fn mgMapMemory(device: mango.Device, memory: mango.DeviceMemory, offset: u32, size: mango.DeviceSize, data: *[*]u8) MgResult {
-    data.* = (device.mapMemory(memory, offset, size) catch |err| switch (err) {
-    }).ptr;
+    data.* = (device.mapMemory(memory, offset, size) catch |err| switch (err) {}).ptr;
 
     return .success;
 }
@@ -82,8 +81,7 @@ pub export fn mgUnmapMemory(device: mango.Device, memory: mango.DeviceMemory) vo
 }
 
 pub export fn mgFlushMappedMemoryRanges(device: mango.Device, range_count: usize, ranges: [*]const mango.MappedMemoryRange) MgResult {
-    device.flushMappedMemoryRanges(ranges[0..range_count]) catch |err| switch (err) {
-    };
+    device.flushMappedMemoryRanges(ranges[0..range_count]) catch |err| switch (err) {};
 
     return .success;
 }
@@ -206,8 +204,7 @@ pub export fn mgDestroyPipeline(device: mango.Device, pipeline: mango.Pipeline, 
 }
 
 pub export fn mgCreateSwapchain(device: mango.Device, create_info: mango.SwapchainCreateInfo, allocator: *const Allocator, swapchain: *mango.Swapchain) MgResult {
-    swapchain.* = device.createSwapchain(create_info, allocator.allocator()) catch |err| switch (err) {
-    };
+    swapchain.* = device.createSwapchain(create_info, allocator.allocator()) catch |err| switch (err) {};
 
     return .success;
 }
@@ -217,7 +214,7 @@ pub export fn mgDestroySwapchain(device: mango.Device, swapchain: mango.Swapchai
 }
 
 pub export fn mgGetSwapchainImages(device: mango.Device, swapchain: mango.Swapchain, image_count: *usize, images: ?[*]mango.Image) MgResult {
-    if(images) |non_null_images| {
+    if (images) |non_null_images| {
         _ = device.getSwapchainImages(swapchain, non_null_images[0..image_count.*]);
         return .success;
     }
@@ -234,11 +231,9 @@ pub export fn mgAcquireNextImage(device: mango.Device, swapchain: mango.Swapchai
     return .success;
 }
 
-
 pub export fn mgSignalSemaphore(device: mango.Device, signal_info: *const mango.SemaphoreOperation) MgResult {
-    device.signalSemaphore(signal_info.*) catch |err| switch (err) {
-    };
-    
+    device.signalSemaphore(signal_info.*) catch |err| switch (err) {};
+
     return .success;
 }
 
@@ -250,14 +245,13 @@ pub export fn mgWaitSemaphore(device: mango.Device, wait_info: *const mango.Sema
 }
 
 pub export fn mgDeviceWaitIdle(device: mango.Device) MgResult {
-    device.waitIdle() catch |err| switch(err) {
-    }; 
+    device.waitIdle() catch |err| switch (err) {};
 
     return .success;
 }
 
 pub export fn mgBeginCommandBuffer(cmd: mango.CommandBuffer) MgResult {
-    cmd.begin() catch |err| switch(err) {
+    cmd.begin() catch |err| switch (err) {
         error.OutOfMemory => return .out_of_memory,
     };
 
@@ -265,7 +259,7 @@ pub export fn mgBeginCommandBuffer(cmd: mango.CommandBuffer) MgResult {
 }
 
 pub export fn mgEndCommandBuffer(cmd: mango.CommandBuffer) MgResult {
-    cmd.end() catch |err| switch(err) {
+    cmd.end() catch |err| switch (err) {
         error.OutOfMemory => return .out_of_memory,
         else => return .unknown,
     };

@@ -38,7 +38,7 @@ pub fn close(errdisp: ErrDispManager) void {
 }
 
 pub fn sendSetUserString(errdisp: ErrDispManager, str: []const u8) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(errdisp.session, command.SetUserString, .{ .str_size = str.len, .str = .init(str) }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -46,7 +46,7 @@ pub fn sendSetUserString(errdisp: ErrDispManager, str: []const u8) !void {
 }
 
 pub fn sendThrow(errdisp: ErrDispManager, fatal: FatalErrorInfo) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(errdisp.session, command.Throw, fatal, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),

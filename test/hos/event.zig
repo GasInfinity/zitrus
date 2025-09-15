@@ -1,5 +1,5 @@
 fn expectUnsignaled(ev: Event) !void {
-    ev.wait(0) catch |err| switch(err) {
+    ev.wait(0) catch |err| switch (err) {
         error.Timeout => return,
         else => return err,
     };
@@ -10,7 +10,7 @@ fn expectUnsignaled(ev: Event) !void {
 test "created non signaled" {
     const ev: Event = try .create(.oneshot);
     defer ev.close();
-    
+
     try expectUnsignaled(ev);
 }
 
@@ -47,7 +47,7 @@ test "duplicated shares state" {
     defer dup_ev.close();
 
     ev.signal();
-    try dup_ev.wait(0); 
+    try dup_ev.wait(0);
 
     dup_ev.signal();
     try ev.wait(0);

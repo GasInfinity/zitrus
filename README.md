@@ -112,7 +112,8 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 
 ## Runtime support
 - 🟢 crt0/startup code
-- 🟡⛔🔋 panic and error reporting and tracing
+- 🔴⛔ Thread local variables.
+- 🟡⛔🔋 panic and error reporting and tracing.
 - 🔴⛔🔋 Io interface support (zig 0.16).
 - 🟡⛔🔋 *Application* Test runner.
 
@@ -161,7 +162,7 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 - 🟡 CommandBuffer's
 - 🟡 Images / ImageViews
     - 🟡 Up to 8 `Image` layers
-    - 🟡 Up to 7 mipmap levels (1024x1024 -> 8x8)
+    - 🟡 Up to 8 mipmap levels (1024x1024 -> 8x8)
 - 🟡 Image Sampling
 - 🟢 Synchronization primitives / driver thread.
 - 🟡 Presentation engine.

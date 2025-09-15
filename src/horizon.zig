@@ -568,11 +568,11 @@ pub fn outputDebugWriter(buffer: []u8) std.Io.Writer {
 }
 
 fn outputDebugDrain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
-    outputDebugString(w.buffered()); 
+    outputDebugString(w.buffered());
     w.end = 0;
 
     var n: usize = 0;
-    for (data[0..data.len - 1]) |slice| {
+    for (data[0 .. data.len - 1]) |slice| {
         outputDebugString(slice);
         n += slice.len;
     }

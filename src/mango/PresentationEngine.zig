@@ -2,7 +2,6 @@
 //!
 //! Like `Device`, this depends on the platform to truly present images!
 
-
 queue: Queue.Presentation,
 chain_created: std.enums.EnumArray(pica.Screen, std.atomic.Value(bool)),
 chain_presents: std.enums.EnumArray(pica.Screen, std.atomic.Value(u8)),
@@ -185,7 +184,7 @@ pub fn refresh(pe: *PresentationEngine, fb_info: *[2]GspGpu.FramebufferInfo, scr
         .format = .{
             .color_format = chain.misc.fmt,
             .dma_size = .@"64",
-            .interlacing_mode = if(presented_stereo) .enable else .none,
+            .interlacing_mode = if (presented_stereo) .enable else .none,
 
             // HACK: Hardcoded
             .alternative_pixel_output = screen == .top and !presented_stereo and chain.misc.height() != 800,

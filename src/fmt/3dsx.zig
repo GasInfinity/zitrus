@@ -49,6 +49,9 @@ const R_ARM = enum(u32) {
     CALL = 28,
     /// ARM ((S + A) | T) – P
     JUMP24 = 29,
+
+    TLS_LE32 = 108,
+    TLS_LE12 = 110,
     _,
 };
 
@@ -336,8 +339,11 @@ fn readModifyRelocations(elf_buffer: []u8, segment_data: SegmentData, sections: 
                     const vaddr = std.mem.littleToNative(u32, relocation.r_offset);
 
                     switch (r_type) {
-                        R_ARM.CALL, R_ARM.JUMP24 => {},
-                        R_ARM.ABS32 => {
+                        // These are already PC-relative
+                        .CALL, .JUMP24 => {},
+                        // Same, but `$tp` relative
+                        .TLS_LE32, .TLS_LE12 => {},
+                        .ABS32 => {
                             if (!std.mem.isAligned(vaddr, @alignOf(u32))) {
                                 return error.UnalignedAbsoluteRelocation;
                             }
@@ -351,7 +357,8 @@ fn readModifyRelocations(elf_buffer: []u8, segment_data: SegmentData, sections: 
                             const value = section_value.*;
 
                             if (value < base_addr) {
-                                log.info("relocation in '0x{X}' contains invalid value 0x{X} (< 0x{X})", .{ vaddr, value, base_addr });
+                                // XXX: Maybe we could ignore these?
+                                log.err("relocation in '0x{X}' contains invalid value 0x{X} (< 0x{X})", .{ vaddr, value, base_addr });
                                 return error.InvalidAbsoluteRelocation;
                             }
 
@@ -359,7 +366,7 @@ fn readModifyRelocations(elf_buffer: []u8, segment_data: SegmentData, sections: 
                             section_value.* = std.mem.nativeToLittle(u32, (value - base_addr));
                         },
                         else => {
-                            log.info("unhandled relocation type: {}", .{r_type});
+                            log.err("unhandled relocation type: {}", .{r_type});
                             return error.UnknownRelocation;
                         },
                     }

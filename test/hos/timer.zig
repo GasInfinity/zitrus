@@ -1,5 +1,5 @@
 fn expectUnsignaled(tim: Timer) !void {
-    tim.wait(0) catch |err| switch(err) {
+    tim.wait(0) catch |err| switch (err) {
         error.Timeout => return,
         else => return err,
     };
@@ -10,7 +10,7 @@ fn expectUnsignaled(tim: Timer) !void {
 test "created non signaled" {
     const tim: Timer = try .create(.oneshot);
     defer tim.close();
-    
+
     try expectUnsignaled(tim);
 }
 
@@ -22,7 +22,7 @@ test "duplicated shares state" {
     defer dup_tim.close();
 
     tim.set(0, 0);
-    try dup_tim.wait(0); 
+    try dup_tim.wait(0);
 
     dup_tim.set(0, 0);
     try tim.wait(0);

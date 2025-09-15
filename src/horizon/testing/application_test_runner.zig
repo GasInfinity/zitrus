@@ -1,5 +1,5 @@
 comptime {
-    if(!builtin.cpu.arch.isArm() or builtin.os.tag != .other) {
+    if (!builtin.cpu.arch.isArm() or builtin.os.tag != .other) {
         @compileError("this test runner is only intended for tests on the Nintendo 3DS OS");
     }
 
@@ -16,7 +16,7 @@ var debug_writer: std.Io.Writer = horizon.outputDebugWriter(&debug_buffer);
 var log_err_count: usize = 0;
 
 pub fn main() void {
-    @disableInstrumentation(); 
+    @disableInstrumentation();
 
     var srv = horizon.ServiceManager.init() catch unreachable;
     defer srv.deinit();
@@ -45,11 +45,11 @@ pub fn main() void {
 
     for (test_fn_list, 0..) |test_fn, i| {
         // FIXME: Upstream blocker, cannot use DebugAllocator
-        // testing.allocator_instance        
-        
+        // testing.allocator_instance
+
         testing.log_level = .warn;
 
-        if(test_fn.func()) |_| {
+        if (test_fn.func()) |_| {
             ok_count += 1;
             debug_writer.print("{d}/{d} {s}... OK\n", .{ i + 1, test_fn_list.len, test_fn.name }) catch {};
         } else |err| switch (err) {
@@ -61,28 +61,28 @@ pub fn main() void {
                 fail_count += 1;
                 debug_writer.print("{d}/{d} {s}... FAIL\n", .{ i + 1, test_fn_list.len, test_fn.name }) catch {};
 
-                if(@errorReturnTrace()) |_| {
+                if (@errorReturnTrace()) |_| {
                     // FIXME: Upstream blocker, dump trace / debug info
                 }
-            }
+            },
         }
 
         debug_writer.flush() catch {};
     }
 
-    if(ok_count == test_fn_list.len) {
+    if (ok_count == test_fn_list.len) {
         debug_writer.print("All {d} tests passed.\n", .{ok_count}) catch {};
     } else {
-        debug_writer.print("{d} passed; {d} skipped; {d} failed.\n", .{ok_count, skip_count, fail_count}) catch {};
+        debug_writer.print("{d} passed; {d} skipped; {d} failed.\n", .{ ok_count, skip_count, fail_count }) catch {};
     }
 
-    if(log_err_count != 0) {
+    if (log_err_count != 0) {
         debug_writer.print("{d} errors were logged.\n", .{log_err_count}) catch {};
     }
 
     debug_writer.flush() catch {};
 
-    if(log_err_count != 0 or fail_count != 0) {
+    if (log_err_count != 0 or fail_count != 0) {
         const hid = horizon.services.Hid.open(srv) catch unreachable;
         defer hid.close();
 
@@ -94,7 +94,7 @@ pub fn main() void {
             const polled_pad = input.pollPad();
             const current = polled_pad.current;
 
-            if(current.a or current.start) {
+            if (current.a or current.start) {
                 break;
             }
         }
@@ -108,15 +108,15 @@ pub fn log(
     args: anytype,
 ) void {
     @disableInstrumentation();
-    
-    if(@intFromEnum(message_level) <= @intFromEnum(std.log.Level.err)) {
+
+    if (@intFromEnum(message_level) <= @intFromEnum(std.log.Level.err)) {
         log_err_count +|= 1;
     }
 
-    if(@intFromEnum(message_level) <= @intFromEnum(testing.log_level)) {
+    if (@intFromEnum(message_level) <= @intFromEnum(testing.log_level)) {
         debug_writer.print(
-        "[" ++ @tagName(scope) ++ "] (" ++ @tagName(message_level) ++ "): " ++ format ++ "\n",
-        args,
+            "[" ++ @tagName(scope) ++ "] (" ++ @tagName(message_level) ++ "): " ++ format ++ "\n",
+            args,
         ) catch {};
 
         debug_writer.flush() catch {};

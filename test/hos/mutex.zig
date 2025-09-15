@@ -21,7 +21,7 @@ fn expectLocked(mut: Mutex) !void {
 
     try thrd.wait(-1);
 
-    expect_locked_data.result catch |err| switch(err) {
+    expect_locked_data.result catch |err| switch (err) {
         error.Timeout => return,
         else => return err,
     };

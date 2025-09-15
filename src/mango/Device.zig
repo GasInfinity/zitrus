@@ -25,7 +25,7 @@ pub const Handle = enum(u32) {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return b_device.getQueue(family);
     }
-    
+
     pub fn allocateMemory(device: Handle, allocate_info: mango.MemoryAllocateInfo, allocator: std.mem.Allocator) !mango.DeviceMemory {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return b_device.allocateMemory(allocate_info, allocator);
@@ -667,10 +667,10 @@ fn driverMain(ctx: ?*anyopaque) callconv(.c) noreturn {
                         } else .idle,
                     };
 
-                    _ = queue_status.store(empty_status, .monotonic);
+                    const last_status = queue_status.swap(empty_status, .monotonic);
 
                     // Is anyone waiting for us? Wake them!
-                    if (empty_status == .idle) {
+                    if (last_status != .idle and empty_status == .idle) {
                         device.arbiter.arbitrate(@ptrCast(&queue_status.raw), .{ .signal = -1 }) catch unreachable;
                     }
                 },

@@ -23,25 +23,19 @@ pub fn main() !void {
     var gfx = try GspGpu.Graphics.init(gsp);
     defer gfx.deinit(gsp);
 
-    var framebuffer = try Framebuffer.init(.{
-        .double_buffer = .init(.{
-            .top = false,
-            .bottom = false,
-        }),
-        .color_format = .init(.{
-            .top = .bgr888,
-            .bottom = .bgr888,
-        }),
-        .phys_linear_allocator = horizon.heap.linear_page_allocator,
-    });
-    defer framebuffer.deinit();
+    var top_framebuffer = try Framebuffer.init(.{ .screen = .top, .double_buffer = false }, horizon.heap.linear_page_allocator);
+    defer top_framebuffer.deinit(horizon.heap.linear_page_allocator);
 
-    const top_fb = framebuffer.currentFramebuffer(.top);
-    const bottom_fb = framebuffer.currentFramebuffer(.bottom);
+    var bottom_framebuffer = try Framebuffer.init(.{ .screen = .bottom, .double_buffer = false }, horizon.heap.linear_page_allocator);
+    defer bottom_framebuffer.deinit(horizon.heap.linear_page_allocator);
+
+    const top_fb = top_framebuffer.currentFramebuffer(.left);
+    const bottom_fb = bottom_framebuffer.currentFramebuffer(.left);
     @memcpy(top_fb, top_screen_bitmap);
     @memcpy(bottom_fb, bottom_screen_bitmap);
 
-    try framebuffer.flushBuffers(gsp);
+    try top_framebuffer.flushBuffer(gsp);
+    try bottom_framebuffer.flushBuffer(gsp);
 
     // You must do this if you use the raw Graphics abstraction!
     while (true) {
@@ -52,7 +46,8 @@ pub fn main() !void {
         }
     }
 
-    try framebuffer.present(&gfx);
+    try top_framebuffer.present(&gfx, .none);
+    try bottom_framebuffer.present(&gfx, .none);
 
     try gsp.sendSetLcdForceBlack(false);
     defer gsp.sendSetLcdForceBlack(true) catch {};

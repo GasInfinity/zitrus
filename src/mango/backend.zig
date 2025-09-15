@@ -45,7 +45,7 @@ pub inline fn imageLevelOffset(size: usize, level_size: usize) usize {
 
 /// Calculates the image size including all mip levels of the chain.
 pub fn imageLayerSize(size: usize, mip_levels: usize) usize {
-    return @divExact(((size << 2) - imageLevelSize(size, (mip_levels - 1))), 3);
+    return @divExact(((size << 2) - imageLevelSize(size, (mip_levels - 1) << 1)), 3);
 }
 
 pub fn SingleProducerSingleConsumerBoundedQueue(comptime T: type, comptime capacity: u16) type {
@@ -170,6 +170,26 @@ test "SingleProducerSingleConsumerBoundedQueue is a FIFO" {
 
     try testing.expect(0 == bq.header.raw.index);
     try testing.expect(0 == bq.header.raw.len);
+}
+
+test imageLevelSize {
+    try testing.expect(imageLevelSize(256, 2) == 64);
+}
+
+test imageLevelOffset {
+    try testing.expect(imageLevelOffset(1024 * 1024, 512 * 512) == 1024 * 1024);
+    try testing.expect(imageLevelOffset(1024 * 1024, 128 * 128) == 1024 * 1024 + 512 * 512 + 256 * 256);
+}
+
+test imageLayerSize {
+    try testing.expect(imageLayerSize(1024 * 1024, 1) == 1024 * 1024);
+    try testing.expect(imageLayerSize(1024 * 1024, 2) == 1024 * 1024 + 512 * 512);
+    try testing.expect(imageLayerSize(1024 * 1024, 3) == 1024 * 1024 + 512 * 512 + 256 * 256);
+    try testing.expect(imageLayerSize(1024 * 1024, 4) == 1024 * 1024 + 512 * 512 + 256 * 256 + 128 * 128);
+    try testing.expect(imageLayerSize(1024 * 1024, 5) == 1024 * 1024 + 512 * 512 + 256 * 256 + 128 * 128 + 64 * 64);
+    try testing.expect(imageLayerSize(1024 * 1024, 6) == 1024 * 1024 + 512 * 512 + 256 * 256 + 128 * 128 + 64 * 64 + 32 * 32);
+    try testing.expect(imageLayerSize(1024 * 1024, 7) == 1024 * 1024 + 512 * 512 + 256 * 256 + 128 * 128 + 64 * 64 + 32 * 32 + 16 * 16);
+    try testing.expect(imageLayerSize(1024 * 1024, 8) == 1024 * 1024 + 512 * 512 + 256 * 256 + 128 * 128 + 64 * 64 + 32 * 32 + 16 * 16 + 8 * 8);
 }
 
 comptime {

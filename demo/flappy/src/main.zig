@@ -272,26 +272,23 @@ pub fn main() !void {
     var gfx = try GspGpu.Graphics.init(gsp);
     defer gfx.deinit(gsp);
 
-    var framebuffer = try Framebuffer.init(.{
-        .double_buffer = .init(.{
-            .top = true,
-            .bottom = false,
-        }),
-        .dma_size = .@"128",
-        .phys_linear_allocator = horizon.heap.linear_page_allocator,
-    });
-    defer framebuffer.deinit();
+    var bottom_framebuffer = try Framebuffer.init(.{ .screen = .bottom, .double_buffer = false }, horizon.heap.linear_page_allocator);
+    defer bottom_framebuffer.deinit(horizon.heap.linear_page_allocator);
 
-    @memset(framebuffer.currentFramebuffer(.top), 0x00);
+    var top_framebuffer = try Framebuffer.init(.{ .screen = .top, .double_buffer = true }, horizon.heap.linear_page_allocator);
+    defer top_framebuffer.deinit(horizon.heap.linear_page_allocator);
+
+    @memset(top_framebuffer.currentFramebuffer(.left), 0x00);
     {
-        const bottom_fb = std.mem.bytesAsSlice(Bgr888, framebuffer.currentFramebuffer(.bottom));
+        const bottom_fb = std.mem.bytesAsSlice(Bgr888, bottom_framebuffer.currentFramebuffer(.left));
         @memset(bottom_fb, ground_color);
 
         const bottom = ScreenCtx.init(bottom_fb, Screen.bottom.width());
         bottom.drawSprite(.transparent_bitmap, 2 * (Screen.bottom.width() / 3), (Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ .transparent = transparent_color }, .{});
     }
 
-    try framebuffer.flushBuffers(gsp);
+    try top_framebuffer.flushBuffer(gsp);
+    try bottom_framebuffer.flushBuffer(gsp);
     while (true) {
         const interrupts = try gfx.waitInterrupts();
 
@@ -299,7 +296,8 @@ pub fn main() !void {
             break;
         }
     }
-    try framebuffer.swapBuffers(&gfx);
+    try bottom_framebuffer.present(&gfx, .none);
+    try top_framebuffer.swapBuffer(&gfx, .none);
 
     try gsp.sendSetLcdForceBlack(false);
     defer gsp.sendSetLcdForceBlack(true) catch unreachable;
@@ -350,12 +348,12 @@ pub fn main() !void {
         const touch_pressed = touch.pressed and touch_changed;
 
         last_pressed = touch.pressed;
-        const top = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.top), Screen.top.width());
+        const top = ScreenCtx.initBuffer(top_framebuffer.currentFramebuffer(.left), Screen.top.width());
 
         app_state.update(pressed, touch_pressed, random);
         app_state.draw(top);
 
-        try framebuffer.flushBuffers(gsp);
+        try top_framebuffer.flushBuffer(gsp);
         while (true) {
             const interrupts = try gfx.waitInterrupts();
 
@@ -363,7 +361,7 @@ pub fn main() !void {
                 break;
             }
         }
-        try framebuffer.swapBuffers(&gfx);
+        try top_framebuffer.swapBuffer(&gfx, .none);
     }
 }
 

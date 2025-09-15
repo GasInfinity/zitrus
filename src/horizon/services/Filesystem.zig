@@ -88,7 +88,7 @@ pub const File = packed struct(u32) {
     session: ClientSession,
 
     pub fn sendOpenSubFile(file: File, offset: u64, size: u64) !File {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(file.session, File.command.OpenSubFile, .{ .offset = offset, .size = size }, .{})) {
             .success => |s| s.value.response.file,
             .failure => |code| horizon.unexpectedResult(code),
@@ -96,7 +96,7 @@ pub const File = packed struct(u32) {
     }
 
     pub fn sendRead(file: File, offset: u64, buffer: []u8) !usize {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(file.session, File.command.Read, .{ .offset = offset, .size = buffer.len, .buffer = .init(buffer) }, .{})) {
             .success => |s| s.value.response.actual_read,
             .failure => |code| horizon.unexpectedResult(code),
@@ -104,7 +104,7 @@ pub const File = packed struct(u32) {
     }
 
     pub fn sendWrite(file: File, offset: u64, buffer: []const u8, options: WriteOptions) !usize {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(file.session, File.command.Write, .{ .offset = offset, .size = buffer.len, .options = options, .buffer = .init(buffer) }, .{})) {
             .success => |s| s.value.response.actual_written,
             .failure => |code| horizon.unexpectedResult(code),
@@ -112,7 +112,7 @@ pub const File = packed struct(u32) {
     }
 
     pub fn sendGetSize(file: File) !u64 {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(file.session, File.command.GetSize, .{}, .{})) {
             .success => |s| s.value.response.size,
             .failure => |code| horizon.unexpectedResult(code),
@@ -120,7 +120,7 @@ pub const File = packed struct(u32) {
     }
 
     pub fn sendSetSize(file: File, size: u64) !void {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(file.session, File.command.SetSize, .{ .size = size }, .{})) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
@@ -128,7 +128,7 @@ pub const File = packed struct(u32) {
     }
 
     pub fn sendGetAttributes(file: File) !Attributes {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(file.session, File.command.GetAttributes, .{}, .{})) {
             .success => |s| s.value.response.attributes,
             .failure => |code| horizon.unexpectedResult(code),
@@ -136,7 +136,7 @@ pub const File = packed struct(u32) {
     }
 
     pub fn sendSetAttributes(file: File, attributes: Attributes) !void {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(file.session, File.command.SetAttributes, .{ .attributes = attributes }, .{})) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
@@ -144,7 +144,7 @@ pub const File = packed struct(u32) {
     }
 
     pub fn close(file: *File) void {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         switch (data.ipc.sendRequest(file.session, File.command.Close, .{}, .{}) catch unreachable) {
             .success => {},
             .failure => unreachable,
@@ -154,7 +154,7 @@ pub const File = packed struct(u32) {
     }
 
     pub fn sendFlush(file: File) !void {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(file.session, File.command.Flush, .{}, .{})) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
@@ -162,7 +162,7 @@ pub const File = packed struct(u32) {
     }
 
     pub fn sendGetPriority(file: File) !u32 {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(file.session, File.command.GetPriority, .{}, .{})) {
             .success => |s| s.value.response.priority,
             .failure => |code| horizon.unexpectedResult(code),
@@ -170,7 +170,7 @@ pub const File = packed struct(u32) {
     }
 
     pub fn sendSetPriority(file: File, priority: u32) !void {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(file.session, File.command.SetPriority, .{ .priority = priority }, .{})) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
@@ -178,7 +178,7 @@ pub const File = packed struct(u32) {
     }
 
     pub fn sendOpenLinkFile(file: File) !File {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(file.session, File.command.OpenLinkFile, .{}, .{})) {
             .success => |s| s.value.response.clone,
             .failure => |code| horizon.unexpectedResult(code),
@@ -186,7 +186,7 @@ pub const File = packed struct(u32) {
     }
 
     pub fn sendGetAvailable(file: File, offset: u64, size: u64) !u64 {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(file.session, File.command.GetAvailable, .{ .offset = offset, .size = size }, .{})) {
             .success => |s| s.value.response.available,
             .failure => |code| horizon.unexpectedResult(code),
@@ -242,7 +242,7 @@ pub const Directory = packed struct(u32) {
     session: ClientSession,
 
     pub fn sendRead(dir: Directory, entries: []Entry) !usize {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(dir.session, Directory.command.Read, .{ .count = entries.len, .buffer = .init(std.mem.asBytes(entries)) }, .{})) {
             .success => |s| s.value.response.actual_entries,
             .failure => |code| horizon.unexpectedResult(code),
@@ -250,7 +250,7 @@ pub const Directory = packed struct(u32) {
     }
 
     pub fn close(dir: *Directory) void {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         switch (data.ipc.sendRequest(dir.session, Directory.command.Close, .{}, .{}) catch unreachable) {
             .success => {},
             .failure => unreachable,
@@ -260,7 +260,7 @@ pub const Directory = packed struct(u32) {
     }
 
     pub fn sendGetPriority(dir: Directory) !u32 {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(dir.session, Directory.command.GetPriority, .{}, .{})) {
             .success => |s| s.value.response.priority,
             .failure => |code| horizon.unexpectedResult(code),
@@ -268,7 +268,7 @@ pub const Directory = packed struct(u32) {
     }
 
     pub fn sendSetPriority(dir: Directory, priority: u32) !void {
-        const data = tls.getThreadLocalStorage();
+        const data = tls.get();
         return switch (try data.ipc.sendRequest(dir.session, Directory.command.SetPriority, .{ .priority = priority }, .{})) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
@@ -313,7 +313,7 @@ pub fn close(fs: Filesystem) void {
 }
 
 pub fn sendInitialize(fs: Filesystem) void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.Initialize, .{ .process_id = .{} }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -321,7 +321,7 @@ pub fn sendInitialize(fs: Filesystem) void {
 }
 
 pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, flags: OpenFlags, attributes: Attributes) !File {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.OpenFile, .{
         .transaction = transaction,
         .archive = archive,
@@ -337,7 +337,7 @@ pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_t
 }
 
 pub fn sendOpenFileDirectly(fs: Filesystem, transaction: usize, archive_id: ArchiveId, archive_path_type: PathType, archive_path: []const u8, file_path_type: PathType, file_path: []const u8, flags: OpenFlags, attributes: Attributes) !File {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.OpenFileDirectly, .{
         .transaction = transaction,
         .archive_id = archive_id,
@@ -356,7 +356,7 @@ pub fn sendOpenFileDirectly(fs: Filesystem, transaction: usize, archive_id: Arch
 }
 
 pub fn sendDeleteFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.DeleteFile, .{
         .transaction = transaction,
         .archive = archive,
@@ -370,7 +370,7 @@ pub fn sendDeleteFile(fs: Filesystem, transaction: usize, archive: Archive, path
 }
 
 pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.RenameFile, .{
         .transaction = transaction,
         .source_archive = src_archive,
@@ -388,7 +388,7 @@ pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, 
 }
 
 pub fn sendDeleteDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.DeleteDirectory, .{
         .transaction = transaction,
         .archive = archive,
@@ -402,7 +402,7 @@ pub fn sendDeleteDirectory(fs: Filesystem, transaction: usize, archive: Archive,
 }
 
 pub fn sendDeleteDirectoryRecursively(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.DeleteDirectoryRecursively, .{
         .transaction = transaction,
         .archive = archive,
@@ -416,7 +416,7 @@ pub fn sendDeleteDirectoryRecursively(fs: Filesystem, transaction: usize, archiv
 }
 
 pub fn sendCreateFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, attributes: Attributes, size: u64) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.CreateFile, .{
         .transaction = transaction,
         .archive = archive,
@@ -432,7 +432,7 @@ pub fn sendCreateFile(fs: Filesystem, transaction: usize, archive: Archive, path
 }
 
 pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, attributes: Attributes) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.CreateDirectory, .{
         .transaction = transaction,
         .archive = archive,
@@ -447,7 +447,7 @@ pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive,
 }
 
 pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.RenameDirectory, .{
         .transaction = transaction,
         .source_archive = src_archive,
@@ -465,7 +465,7 @@ pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Arch
 }
 
 pub fn sendOpenDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !Directory {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.OpenDirectory, .{
         .transaction = transaction,
         .archive = archive,
@@ -479,7 +479,7 @@ pub fn sendOpenDirectory(fs: Filesystem, transaction: usize, archive: Archive, p
 }
 
 pub fn sendOpenArchive(fs: Filesystem, transaction: usize, archive_id: ArchiveId, path_type: PathType, path: []const u8) !Archive {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.OpenArchive, .{
         .transaction = transaction,
         .archive_id = archive_id,
@@ -493,7 +493,7 @@ pub fn sendOpenArchive(fs: Filesystem, transaction: usize, archive_id: ArchiveId
 }
 
 pub fn sendControlArchive(fs: Filesystem, transaction: usize, archive: Archive, action: ControlArchiveAction, input: []const u8, output: []u8) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.ControlArchive, .{
         .transaction = transaction,
         .archive = archive,
@@ -509,7 +509,7 @@ pub fn sendControlArchive(fs: Filesystem, transaction: usize, archive: Archive, 
 }
 
 pub fn sendCloseArchive(fs: Filesystem, transaction: usize, archive: Archive) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(fs.session, command.CloseArchive, .{
         .transaction = transaction,
         .archive = archive,

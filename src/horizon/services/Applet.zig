@@ -185,7 +185,7 @@ pub fn open(srv: ServiceManager) !Applet {
         break :used .{ service_name, service_handle };
     } else return last_error;
 
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
 
     const lock: Mutex = lock: {
         defer available_service.close();
@@ -478,7 +478,7 @@ pub fn lockSendCommand(apt: Applet, srv: ServiceManager, comptime DefinedCommand
     const fresh_session = try srv.sendGetServiceHandle(apt.available_service_name, .wait);
     defer fresh_session.close();
 
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
 
     return data.ipc.sendRequest(fresh_session, DefinedCommand, request, static_buffers);
 }

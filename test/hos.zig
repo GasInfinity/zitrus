@@ -1,7 +1,7 @@
 const builtin = @import("builtin");
 
 comptime {
-    if(!builtin.cpu.arch.isArm() or builtin.os.tag != .other) {
+    if (!builtin.cpu.arch.isArm() or builtin.os.tag != .other) {
         @compileError("hos tests must be run on Horizon!");
     }
 

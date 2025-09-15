@@ -18,6 +18,7 @@ pub const target = struct {
         .cpu_model = .{ .explicit = &std.Target.arm.cpu.mpcore },
         .abi = .eabihf,
         .os_tag = .other,
+        // .cpu_features_add = std.Target.arm.featureSet(&.{.read_tp_tpidrurw}),
     };
 };
 
@@ -153,8 +154,8 @@ fn buildTests(b: *std.Build, zitrus_mod: *std.Build.Module) void {
                 .optimize = .ReleaseSafe,
                 .imports = &.{
                     .{ .name = "zitrus", .module = zitrus_mod },
-                }
-            })
+                },
+            }),
         });
 
         const tests_3dsx = addMake3dsxDependency(b, &self_dep, .{
@@ -199,7 +200,7 @@ pub fn addExecutable(b: *std.Build, options: ExecutableOptions) *std.Build.Step.
 
     exe.link_emit_relocs = true;
     exe.root_module.strip = false;
-    exe.setLinkerScript(zitrus.path("3dsx.ld"));
+    exe.setLinkerScript(zitrus.path("arm-3ds.ld"));
     return exe;
 }
 
@@ -225,10 +226,7 @@ fn addTestDependency(b: *std.Build, zitrus: *std.Build.Dependency, options: Test
         .root_module = options.root_module,
         .max_rss = options.max_rss,
         .filters = options.filters,
-        .test_runner = .{
-            .mode = .simple,
-            .path = zitrus.path("src/horizon/testing/application_test_runner.zig")
-        },
+        .test_runner = .{ .mode = .simple, .path = zitrus.path("src/horizon/testing/application_test_runner.zig") },
         .use_llvm = options.use_llvm,
         .use_lld = options.use_lld,
         .zig_lib_dir = options.zig_lib_dir,
@@ -237,7 +235,7 @@ fn addTestDependency(b: *std.Build, zitrus: *std.Build.Dependency, options: Test
     });
 
     exe.link_emit_relocs = true;
-    exe.setLinkerScript(zitrus.path("3dsx.ld"));
+    exe.setLinkerScript(zitrus.path("arm-3ds.ld"));
     return exe;
 }
 

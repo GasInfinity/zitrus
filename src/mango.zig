@@ -1140,7 +1140,6 @@ pub const VertexInputAttributeDescription = extern struct {
     offset: u8,
 };
 
-
 pub const MultiDrawInfo = extern struct {
     first_vertex: u32,
     vertex_count: u32,

@@ -32,23 +32,17 @@ pub fn main() !void {
     var gfx = try GspGpu.Graphics.init(gsp);
     defer gfx.deinit(gsp);
 
-    var framebuffer = try Framebuffer.init(.{
-        .double_buffer = .init(.{
-            .top = false,
-            .bottom = false,
-        }),
-        .color_format = .init(.{
-            .top = .bgr888,
-            .bottom = .bgr888,
-        }),
-        .phys_linear_allocator = horizon.heap.linear_page_allocator,
-    });
-    defer framebuffer.deinit();
+    var top_framebuffer = try Framebuffer.init(.{ .screen = .top }, horizon.heap.linear_page_allocator);
+    defer top_framebuffer.deinit(horizon.heap.linear_page_allocator);
 
-    @memset(framebuffer.currentFramebuffer(.top), 0xFF);
-    @memset(framebuffer.currentFramebuffer(.bottom), 0xFF);
+    var bottom_framebuffer = try Framebuffer.init(.{ .screen = .bottom }, horizon.heap.linear_page_allocator);
+    defer bottom_framebuffer.deinit(horizon.heap.linear_page_allocator);
 
-    try framebuffer.flushBuffers(gsp);
+    @memset(top_framebuffer.currentFramebuffer(.left), 0xFF);
+    @memset(bottom_framebuffer.currentFramebuffer(.left), 0xFF);
+
+    try top_framebuffer.flushBuffer(gsp);
+    try bottom_framebuffer.flushBuffer(gsp);
 
     while (true) {
         const interrupts = try gfx.waitInterrupts();
@@ -58,7 +52,8 @@ pub fn main() !void {
         }
     }
 
-    try framebuffer.present(&gfx);
+    try top_framebuffer.present(&gfx, .none);
+    try bottom_framebuffer.present(&gfx, .none);
 
     try gsp.sendSetLcdForceBlack(false);
     defer gsp.sendSetLcdForceBlack(true) catch {};

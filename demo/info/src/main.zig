@@ -23,24 +23,17 @@ pub fn main() !void {
     var gfx = try GspGpu.Graphics.init(gsp);
     defer gfx.deinit(gsp);
 
-    var framebuffer = try Framebuffer.init(.{
-        .double_buffer = .init(.{
-            .top = true,
-            .bottom = false,
-        }),
-        .color_format = .init(.{
-            .top = .bgr888,
-            .bottom = .bgr888,
-        }),
-        .phys_linear_allocator = horizon.heap.linear_page_allocator,
-    });
-    defer framebuffer.deinit();
+    var top_framebuffer = try Framebuffer.init(.{ .screen = .top, .double_buffer = true }, horizon.heap.linear_page_allocator);
+    defer top_framebuffer.deinit(horizon.heap.linear_page_allocator);
+
+    var bottom_framebuffer = try Framebuffer.init(.{ .screen = .bottom }, horizon.heap.linear_page_allocator);
+    defer bottom_framebuffer.deinit(horizon.heap.linear_page_allocator);
 
     {
-        const top = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.top), Screen.top.width());
+        const top = ScreenCtx.initBuffer(top_framebuffer.currentFramebuffer(.left), Screen.top.width());
         @memset(top.framebuffer, std.mem.zeroes(Bgr888));
 
-        const bottom = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.bottom), Screen.bottom.width());
+        const bottom = ScreenCtx.initBuffer(bottom_framebuffer.currentFramebuffer(.left), Screen.bottom.width());
         @memset(bottom.framebuffer, std.mem.zeroes(Bgr888));
     }
 
@@ -53,7 +46,8 @@ pub fn main() !void {
     const birthday = try cfg.getConfigUser(.birthday);
     const country_info = try cfg.getConfigUser(.country_info);
 
-    try framebuffer.flushBuffers(gsp);
+    try top_framebuffer.flushBuffer(gsp);
+    try bottom_framebuffer.flushBuffer(gsp);
 
     // TODO: This is currently not that great...
     while (true) {
@@ -64,7 +58,8 @@ pub fn main() !void {
         }
     }
 
-    try framebuffer.swapBuffers(&gfx);
+    try top_framebuffer.swapBuffer(&gfx, .none);
+    try bottom_framebuffer.present(&gfx, .none);
 
     try gsp.sendSetLcdForceBlack(false);
     defer gsp.sendSetLcdForceBlack(true) catch {};
@@ -101,7 +96,7 @@ pub fn main() !void {
             break :main_loop;
         }
 
-        const top = ScreenCtx.initBuffer(framebuffer.currentFramebuffer(.top), Screen.top.width());
+        const top = ScreenCtx.initBuffer(top_framebuffer.currentFramebuffer(.left), Screen.top.width());
         @memset(top.framebuffer, std.mem.zeroes(Bgr888));
 
         var fmt_buffer: [512]u8 = undefined;
@@ -114,7 +109,8 @@ pub fn main() !void {
         drawString(top, 5 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Country: {}/{}", .{ country_info.province_code, country_info.country_code }), .{});
         drawString(top, 6 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Last elapsed: {}", .{last_elapsed}), .{});
 
-        try framebuffer.flushBuffers(gsp);
+        try top_framebuffer.flushBuffer(gsp);
+        try bottom_framebuffer.flushBuffer(gsp);
 
         while (true) {
             const interrupts = try gfx.waitInterrupts();
@@ -123,7 +119,8 @@ pub fn main() !void {
                 break;
             }
         }
-        try framebuffer.swapBuffers(&gfx);
+        try top_framebuffer.swapBuffer(&gfx, .none);
+        try bottom_framebuffer.present(&gfx, .none);
 
         const elapsed_ticks: f32 = @floatFromInt(horizon.getSystemTick() - start);
         last_elapsed = (elapsed_ticks / 268111856.0);

@@ -96,7 +96,7 @@ pub fn getService(srv: SrvManager, name: []const u8, flags: command.GetServiceHa
 }
 
 pub fn sendRegisterClient(srv: SrvManager) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.RegisterClient, .{}, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -104,7 +104,7 @@ pub fn sendRegisterClient(srv: SrvManager) !void {
 }
 
 pub fn sendEnableNotification(srv: SrvManager) !Semaphore {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.EnableNotification, .{}, .{})) {
         .success => |s| s.value.response.notification_received,
         .failure => |code| horizon.unexpectedResult(code),
@@ -121,7 +121,7 @@ pub fn sendRegisterService(srv: SrvManager, name: []const u8, max_sessions: i16)
     };
     @memcpy(req.name[0..name.len], name);
 
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.RegisterService, req, .{})) {
         .success => |s| s.value.response.server,
         .failure => |code| horizon.unexpectedResult(code),
@@ -137,7 +137,7 @@ pub fn sendUnregisterService(srv: SrvManager, name: []const u8) !void {
     };
     @memcpy(req.name[0..name.len], name);
 
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.UnregisterService, req, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -157,7 +157,7 @@ pub fn sendGetServiceHandle(srv: SrvManager, name: []const u8, flags: command.Ge
     };
     @memcpy(req.name[0..name.len], name);
 
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.GetServiceHandle, req, .{})) {
         .success => |s| s.value.response.service.handle,
         .failure => |code| horizon.unexpectedResult(code),
@@ -174,7 +174,7 @@ pub fn sendRegisterPort(srv: SrvManager, name: []const u8, port: ClientPort) !Se
     };
     @memcpy(req.name[0..name.len], name);
 
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.RegisterPort, req, .{})) {
         .success => |s| s.value.response.server,
         .failure => |code| horizon.unexpectedResult(code),
@@ -190,7 +190,7 @@ pub fn sendUnregisterPort(srv: SrvManager, name: []const u8) !void {
     };
     @memcpy(req.name[0..name.len], name);
 
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.UnregisterPort, req, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -207,7 +207,7 @@ pub fn sendGetPort(srv: SrvManager, name: []const u8, wait_until_found: bool) !C
     };
     @memcpy(req.name[0..name.len], name);
 
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.GetPort, req, .{})) {
         .success => |s| s.value.response.service,
         .failure => |code| horizon.unexpectedResult(code),
@@ -215,7 +215,7 @@ pub fn sendGetPort(srv: SrvManager, name: []const u8, wait_until_found: bool) !C
 }
 
 pub fn sendSubscribe(srv: SrvManager, notification: Notification) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.Subscribe, .{ .notification = notification }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -223,7 +223,7 @@ pub fn sendSubscribe(srv: SrvManager, notification: Notification) !void {
 }
 
 pub fn sendUnsubscribe(srv: SrvManager, notification: Notification) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.Unsubscribe, .{ .notification = notification }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -231,7 +231,7 @@ pub fn sendUnsubscribe(srv: SrvManager, notification: Notification) !void {
 }
 
 pub fn sendReceiveNotification(srv: SrvManager) !Notification {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.ReceiveNotification, .{}, .{})) {
         .success => |s| s.value.response.notification,
         .failure => |code| horizon.unexpectedResult(code),
@@ -239,7 +239,7 @@ pub fn sendReceiveNotification(srv: SrvManager) !Notification {
 }
 
 pub fn sendPublishToSubscriber(srv: SrvManager, notification: Notification, flags: command.PublishToSubscriber.Request.Flags) !void {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.PublishToSubscriber, .{ .notification = notification, .flags = flags }, .{})) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -247,7 +247,7 @@ pub fn sendPublishToSubscriber(srv: SrvManager, notification: Notification, flag
 }
 
 pub fn sendPublishAndGetSubscriber(srv: SrvManager, notification: Notification) !command.PublishAndGetSubscriber.Response {
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.PublishAndGetSubscriber, .{ .notification = notification }, .{})) {
         .success => |s| s.value.response,
         .failure => |code| horizon.unexpectedResult(code),
@@ -264,7 +264,7 @@ pub fn sendIsServiceRegistered(srv: SrvManager, name: []const u8) !bool {
 
     @memcpy(req.name[0..name.len], name);
 
-    const data = tls.getThreadLocalStorage();
+    const data = tls.get();
     return switch (try data.ipc.sendRequest(srv.session, command.IsServiceRegistered, req, .{})) {
         .success => |s| s.value.response.registered,
         .failure => |code| horizon.unexpectedResult(code),

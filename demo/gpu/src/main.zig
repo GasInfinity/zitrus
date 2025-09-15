@@ -477,7 +477,7 @@ pub fn main() !void {
     defer device.freeCommandBuffers(command_pool, @ptrCast(&cmd));
 
     try gsp.sendSetLcdForceBlack(false);
-    defer if(!app.flags.must_close) gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
+    defer if (!app.flags.must_close) gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
 
     // XXX: Bad, but we know this is not near graphicaly intensive and we'll always be near 60 FPS.
     const default_delta_time = 1.0 / 60.0;
@@ -485,7 +485,7 @@ pub fn main() !void {
     // var current_scale: f32 = 1.0;
     main_loop: while (true) {
         defer current_time += default_delta_time;
-        
+
         const iod = horizon.memory.shared_config.slider_state_3d / 3.0;
 
         while (try srv.pollNotification()) |notif| switch (notif) {
@@ -587,12 +587,12 @@ pub fn main() !void {
 
             cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(std.math.degreesToRadians(90.0), 240.0 / 400.0, 1, 1000));
 
-            const current_scale = 1;//@sin(-current_time);
+            const current_scale = 1; //@sin(-current_time);
             cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scaleTranslate(current_scale, @abs(current_scale), 1, 0.25 * iod, 0, 0));
             cmd.drawIndexed(4, 0, 0);
         }
 
-        if(iod > 0) {
+        if (iod > 0) {
             cmd.beginRendering(.{
                 .color_attachment = top_right_color_attachment_image_view,
                 .depth_stencil_attachment = .null,
@@ -603,7 +603,7 @@ pub fn main() !void {
 
             cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(std.math.degreesToRadians(90.0), 240.0 / 400.0, 1, 1000));
 
-            const current_scale = 1;//@sin(-current_time);
+            const current_scale = 1; //@sin(-current_time);
             cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scaleTranslate(current_scale, @abs(current_scale), 1, -0.25 * iod, 0, 0));
             cmd.drawIndexed(4, 0, 0);
         }
@@ -685,10 +685,6 @@ const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
 
 const mango = zitrus.mango;
-
-const pica = zitrus.pica;
-const F7_16x4 = pica.F7_16x4;
-const cmd3d = pica.cmd3d;
 
 pub const panic = zitrus.panic;
 const zitrus = @import("zitrus");
