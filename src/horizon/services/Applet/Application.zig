@@ -1,4 +1,7 @@
-//! Applet abstraction to manage and handle Application state
+//! Mid-level Applet abstraction to manage and handle Application state.
+//!
+//! It is overloaded to accept the `Applet` service it is working with.
+
 // NOTE: Lots of assumptions are made as there's not a lot of documentation.
 // TODO: Do Applications get request's like lib/sys-applets? Wouldn't make sense but still needs research.
 
@@ -44,20 +47,20 @@ parameters_event: Event,
 chainload: Applet.ChainloadTarget,
 flags: State,
 
-pub fn init(apt: Applet, srv: ServiceManager) !Application {
+pub fn init(apt: Applet, service: Applet.Service, srv: ServiceManager) !Application {
     const attr: Applet.Attributes = .{ .pos = .app, .acquire_gpu = false, .acquire_dsp = false };
-    const notification, const parameters = try apt.sendInitialize(srv, environment.program_meta.app_id, attr);
+    const notification, const parameters = try apt.sendInitialize(service, srv, environment.program_meta.app_id, attr);
 
-    try apt.sendEnable(srv, attr);
+    try apt.sendEnable(service, srv, attr);
 
     // We must wait for the wakeup command we get after initializing and enabling ourselves
     {
         try parameters.wait(-1);
-        var parameter = try apt.sendReceiveParameter(srv, environment.program_meta.app_id, &.{});
+        var parameter = try apt.sendReceiveParameter(service, srv, environment.program_meta.app_id, &.{});
         defer parameter.deinit();
 
         std.debug.assert(parameter.cmd == .wakeup);
-        resumeApplication(apt, srv);
+        resumeApplication(apt, service, srv);
     }
 
     return .{
@@ -68,11 +71,11 @@ pub fn init(apt: Applet, srv: ServiceManager) !Application {
     };
 }
 
-pub fn deinit(app: *Application, apt: Applet, srv: ServiceManager) void {
+pub fn deinit(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager) void {
     const perform_apt_exit = if (app.flags.must_close)
         true
     else if (environment.program_meta.runtime_flags.apt_reinit) ri: {
-        apt.sendFinalize(srv, environment.program_meta.app_id) catch unreachable;
+        apt.sendFinalize(service, srv, environment.program_meta.app_id) catch unreachable;
         break :ri false;
     } else switch (app.chainload) {
         .none => true,
@@ -83,13 +86,13 @@ pub fn deinit(app: *Application, apt: Applet, srv: ServiceManager) void {
                 else => @panic("TODO: chainload"),
             };
 
-            const man_info = apt.sendGetAppletManInfo(srv, .none) catch unreachable;
+            const man_info = apt.sendGetAppletManInfo(service, srv, .none) catch unreachable;
 
-            if ((apt.sendIsRegistered(srv, man_info.home_menu) catch false)) {
-                apt.sendPrepareToDoApplicationJump(srv, flags, program_id, media_type) catch unreachable;
-                apt.sendDoApplicationJump(srv, parameters, hmac) catch unreachable;
+            if ((apt.sendIsRegistered(service, srv, man_info.home_menu) catch false)) {
+                apt.sendPrepareToDoApplicationJump(service, srv, flags, program_id, media_type) catch unreachable;
+                apt.sendDoApplicationJump(service, srv, parameters, hmac) catch unreachable;
             } else {
-                apt.sendFinalize(srv, man_info.home_menu) catch unreachable;
+                apt.sendFinalize(service, srv, man_info.home_menu) catch unreachable;
                 @panic("TODO: 'Dirty' Luma3DS chainloading");
             }
 
@@ -98,8 +101,8 @@ pub fn deinit(app: *Application, apt: Applet, srv: ServiceManager) void {
     };
 
     if (perform_apt_exit) {
-        apt.sendPrepareToCloseApplication(srv, true) catch {};
-        apt.sendCloseApplication(srv, &.{}, .null) catch {};
+        apt.sendPrepareToCloseApplication(service, srv, true) catch {};
+        apt.sendCloseApplication(service, srv, &.{}, .null) catch {};
     }
 
     app.notification_event.close();
@@ -107,48 +110,48 @@ pub fn deinit(app: *Application, apt: Applet, srv: ServiceManager) void {
     app.* = undefined;
 }
 
-pub fn setSleepAllowed(app: *Application, apt: Applet, srv: ServiceManager, allow: bool) void {
+pub fn setSleepAllowed(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, allow: bool) void {
     const was_allowed = app.flags.allow_sleep;
     app.flags.allow_sleep = allow;
 
     if (!was_allowed and allow) {
-        apt.sendSleepIfShellClosed(srv) catch unreachable;
+        apt.sendSleepIfShellClosed(service, srv) catch unreachable;
     } else if (was_allowed and !allow) {
-        apt.sendReplySleepQuery(srv, environment.program_meta.app_id, .reject) catch unreachable;
+        apt.sendReplySleepQuery(service, srv, environment.program_meta.app_id, .reject) catch unreachable;
     }
 }
 
-pub fn waitNotification(app: *Application, apt: Applet, srv: ServiceManager) !NotificationResult {
-    return (try app.waitNotificationTimeout(apt, srv, -1)).?;
+pub fn waitNotification(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager) !NotificationResult {
+    return (try app.waitNotificationTimeout(apt, service, srv, -1)).?;
 }
 
-pub fn pollNotification(app: *Application, apt: Applet, srv: ServiceManager) !?NotificationResult {
-    return app.waitNotificationTimeout(apt, srv, 0);
+pub fn pollNotification(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager) !?NotificationResult {
+    return app.waitNotificationTimeout(apt, service, srv, 0);
 }
 
-pub fn waitNotificationTimeout(app: *Application, apt: Applet, srv: ServiceManager, timeout_ns: i64) !?NotificationResult {
+pub fn waitNotificationTimeout(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, timeout_ns: i64) !?NotificationResult {
     app.notification_event.wait(timeout_ns) catch |err| switch (err) {
         error.Timeout => return null,
         else => return err,
     };
 
-    notif_handling: switch (try apt.sendInquireNotification(srv, environment.program_meta.app_id)) {
+    notif_handling: switch (try apt.sendInquireNotification(service, srv, environment.program_meta.app_id)) {
         .none => {},
         .home_button_1, .home_button_2 => {
             if (!app.flags.allow_home) {
-                clearJumpToHome(apt, srv);
+                clearJumpToHome(apt, service, srv);
                 return .jump_home_rejected;
             } else {
                 return .jump_home;
             }
         },
-        .sleep_query => try apt.sendReplySleepQuery(srv, environment.program_meta.app_id, if (app.flags.allow_sleep)
+        .sleep_query => try apt.sendReplySleepQuery(service, srv, environment.program_meta.app_id, if (app.flags.allow_sleep)
             .accept
         else
             .reject),
         .sleep_accepted => {
             // sleep dsp if needed
-            try apt.sendReplySleepNotificationComplete(srv, environment.program_meta.app_id);
+            try apt.sendReplySleepNotificationComplete(service, srv, environment.program_meta.app_id);
             return .sleeping;
         },
         .sleep_canceled_by_open => continue :notif_handling .sleep_wakeup,
@@ -173,32 +176,32 @@ pub fn waitNotificationTimeout(app: *Application, apt: Applet, srv: ServiceManag
     return .no_operation;
 }
 
-fn waitParameterConsumingNotifications(app: *Application, apt: Applet, srv: ServiceManager, parameter: []u8) !Applet.ParameterResult {
+fn waitParameterConsumingNotifications(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, parameter: []u8) !Applet.ParameterResult {
     while (true) {
         const is_parameter = try Event.waitMultiple(&.{ app.notification_event, app.parameters_event }, false, -1) == 1;
 
         if (!is_parameter) {
-            switch (try apt.sendInquireNotification(srv, environment.program_meta.app_id)) {
+            switch (try apt.sendInquireNotification(service, srv, environment.program_meta.app_id)) {
                 else => {},
             }
 
             continue;
         }
 
-        return try apt.sendReceiveParameter(srv, environment.program_meta.app_id, parameter);
+        return try apt.sendReceiveParameter(service, srv, environment.program_meta.app_id, parameter);
     }
 }
 
-pub fn waitAppletResult(app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu, parameter: []u8) !AppletResult {
-    const parameters = try app.waitParameterConsumingNotifications(apt, srv, parameter);
+pub fn waitAppletResult(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu, parameter: []u8) !AppletResult {
+    const parameters = try app.waitParameterConsumingNotifications(apt, service, srv, parameter);
     switch (parameters.cmd) {
         .wakeup, .request, .response => unreachable, // NOTE: Should only be sent at Application start? + do we get requests? + we're not waiting for a response!
         .wakeup_by_exit, .wakeup_by_cancel, .wakeup_by_cancelall, .wakeup_by_pause, .wakeup_to_jump_home, .wakeup_by_power_button_click => |cmd| {
             defer switch (cmd) {
-                .wakeup_to_jump_home, .wakeup_by_power_button_click => apt.sendLockTransition(srv, .jump_home, true) catch unreachable,
+                .wakeup_to_jump_home, .wakeup_by_power_button_click => apt.sendLockTransition(service, srv, .jump_home, true) catch unreachable,
                 else => {
-                    resumeApplication(apt, srv);
-                    clearJumpToHome(apt, srv);
+                    resumeApplication(apt, service, srv);
+                    clearJumpToHome(apt, service, srv);
                 },
             };
 
@@ -223,24 +226,24 @@ pub fn waitAppletResult(app: *Application, apt: Applet, srv: ServiceManager, gsp
 }
 
 // NOTE: we also need to wakeup the dsp if needed when implemented
-pub fn jumpToHome(app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu, params: Applet.JumpToHomeParameters) !ExecutionResult {
+pub fn jumpToHome(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu, params: Applet.JumpToHomeParameters) !ExecutionResult {
     const last_allow_sleep = app.flags.allow_sleep;
 
-    app.setSleepAllowed(apt, srv, false);
-    defer app.setSleepAllowed(apt, srv, last_allow_sleep);
+    app.setSleepAllowed(apt, service, srv, false);
+    defer app.setSleepAllowed(apt, service, srv, last_allow_sleep);
 
-    try apt.sendPrepareToJumpToHomeMenu(srv);
+    try apt.sendPrepareToJumpToHomeMenu(service, srv);
     try gsp.sendSaveVRAMSysArea();
 
-    const home_app_id = (try apt.sendGetAppletManInfo(srv, .none)).home_menu;
-    try app.screenTransfer(apt, srv, gsp, home_app_id, false);
+    const home_app_id = (try apt.sendGetAppletManInfo(service, srv, .none)).home_menu;
+    try app.screenTransfer(apt, service, srv, gsp, home_app_id, false);
 
     // Sleep dsp
     try gsp.sendReleaseRight();
-    try apt.sendJumpToHomeMenu(srv, params);
+    try apt.sendJumpToHomeMenu(service, srv, params);
 
     // XXX: Does the home menu return any kind of parameters?
-    return switch (try app.waitAppletResult(apt, srv, gsp, &.{})) {
+    return switch (try app.waitAppletResult(apt, service, srv, gsp, &.{})) {
         .execution => |e| switch (e) {
             .jump_home => unreachable, // NOTE: Doesn't make sense, you jump home and wake me up to return to you again? Only makes sense for applets.
             else => e,
@@ -249,35 +252,35 @@ pub fn jumpToHome(app: *Application, apt: Applet, srv: ServiceManager, gsp: GspG
     };
 }
 
-pub fn startLibraryApplet(app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu, app_id: Applet.AppId, param_handle: Object, param: []const u8) !void {
+pub fn startLibraryApplet(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu, app_id: Applet.AppId, param_handle: Object, param: []const u8) !void {
     const last_allow_sleep = app.flags.allow_sleep;
 
-    app.setSleepAllowed(apt, srv, false);
-    defer app.setSleepAllowed(apt, srv, last_allow_sleep);
+    app.setSleepAllowed(apt, service, srv, false);
+    defer app.setSleepAllowed(apt, service, srv, last_allow_sleep);
 
-    try apt.sendPrepareToStartLibraryApplet(srv, app_id);
+    try apt.sendPrepareToStartLibraryApplet(service, srv, app_id);
     try gsp.sendSaveVRAMSysArea();
-    try app.screenTransfer(apt, srv, gsp, app_id, true);
+    try app.screenTransfer(apt, service, srv, gsp, app_id, true);
 
     // Sleep dsp
     try gsp.sendReleaseRight();
-    try apt.sendStartLibraryApplet(srv, app_id, param_handle, param);
+    try apt.sendStartLibraryApplet(service, srv, app_id, param_handle, param);
 }
 
 // NOTE: This will stay with the same interface as jump to home as I don't know of a system applet which returns data.
-pub fn launchSystemApplet(app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu, app_id: Applet.AppId, param_handle: Object, param: []const u8) !ExecutionResult {
+pub fn launchSystemApplet(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu, app_id: Applet.AppId, param_handle: Object, param: []const u8) !ExecutionResult {
     const last_allow_sleep = app.flags.allow_sleep;
 
-    app.setSleepAllowed(apt, srv, false);
-    defer app.setSleepAllowed(apt, srv, last_allow_sleep);
+    app.setSleepAllowed(apt, service, srv, false);
+    defer app.setSleepAllowed(apt, service, srv, last_allow_sleep);
 
-    try apt.sendPrepareToStartSystemApplet(srv, app_id);
+    try apt.sendPrepareToStartSystemApplet(srv, service, app_id);
     try gsp.sendSaveVRAMSysArea();
 
     // Sleep dsp
     try gsp.sendReleaseRight();
     try apt.sendStartSystemApplet(srv, app_id, param_handle, param);
-    try app.screenTransfer(apt, srv, gsp, app_id, false);
+    try app.screenTransfer(apt, srv, service, gsp, app_id, false);
 
     return switch (try app.waitAppletResult(apt, srv, gsp, &.{})) {
         .execution => |e| e,
@@ -286,19 +289,19 @@ pub fn launchSystemApplet(app: *Application, apt: Applet, srv: ServiceManager, g
 }
 
 // NOTE: This is just straight up taken from libctru. I didn't know why jumping to home was not working, now I know :p
-pub fn screenTransfer(app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu, target_app_id: Applet.AppId, is_library_applet: bool) !void {
+pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu, target_app_id: Applet.AppId, is_library_applet: bool) !void {
     const gsp_capture_info = try gsp.sendImportDisplayCaptureInfo();
     const apt_capture_info = Applet.CaptureBuffer.init(gsp_capture_info);
 
-    while (!(try apt.sendIsRegistered(srv, target_app_id))) {
+    while (!(try apt.sendIsRegistered(service, srv, target_app_id))) {
         // XXX: Maybe this could be adjusted? Currently it follows the same behaviour as libctru
         horizon.sleepThread(1000000);
     }
 
-    try apt.sendSendParameter(srv, environment.program_meta.app_id, target_app_id, if (is_library_applet) .request else .request_for_sys_applet, .null, std.mem.asBytes(&apt_capture_info));
+    try apt.sendSendParameter(service, srv, environment.program_meta.app_id, target_app_id, if (is_library_applet) .request else .request_for_sys_applet, .null, std.mem.asBytes(&apt_capture_info));
 
     try app.parameters_event.wait(-1);
-    var parameters = try apt.sendReceiveParameter(srv, environment.program_meta.app_id, &.{});
+    var parameters = try apt.sendReceiveParameter(service, srv, environment.program_meta.app_id, &.{});
     defer parameters.deinit();
 
     std.debug.assert(parameters.cmd == .response);
@@ -308,17 +311,17 @@ pub fn screenTransfer(app: *Application, apt: Applet, srv: ServiceManager, gsp: 
         // XXX: Do nothing right now (Garbage data will be shown instead)
     }
 
-    try apt.sendSendCaptureBufferInfo(srv, &apt_capture_info);
+    try apt.sendSendCaptureBufferInfo(service, srv, &apt_capture_info);
 }
 
-fn clearJumpToHome(apt: Applet, srv: ServiceManager) void {
-    apt.sendUnlockTransition(srv, .jump_home) catch unreachable;
-    apt.sendSleepIfShellClosed(srv) catch unreachable;
+fn clearJumpToHome(apt: Applet, service: Applet.Service, srv: ServiceManager) void {
+    apt.sendUnlockTransition(service, srv, .jump_home) catch unreachable;
+    apt.sendSleepIfShellClosed(service, srv) catch unreachable;
 }
 
-fn resumeApplication(apt: Applet, srv: ServiceManager) void {
-    apt.sendUnlockTransition(srv, .unlock_resume) catch unreachable;
-    apt.sendSleepIfShellClosed(srv) catch unreachable;
+fn resumeApplication(apt: Applet, service: Applet.Service, srv: ServiceManager) void {
+    apt.sendUnlockTransition(service, srv, .unlock_resume) catch unreachable;
+    apt.sendSleepIfShellClosed(service, srv) catch unreachable;
 }
 
 const Application = @This();

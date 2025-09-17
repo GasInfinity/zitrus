@@ -1,8 +1,9 @@
-# 🍊 zitrus
+![Zitrus Logo](https://github.com/GasInfinity/zitrus/blob/main/assets/zitrus-logo.png?raw=true)
 
+---
+![Zig support](https://img.shields.io/badge/Zig-0.15.x-color?logo=zig&color=%23f3ab20)
+  
 3DS homebrew sdk written entirely in zig.
-
-![2DS running the flappy demo](https://github.com/GasInfinity/zitrus/blob/main/docs/images/2ds-flappy.jpg?raw=true)
 
 ## Installation
 
@@ -107,7 +108,7 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 Zitrus is currently very work in progress, it's able to run basic homebrew but lots of things are missing (services, io, etc...)
 
 - 🟡 Tests
-- 🔴 C API
+- 🟡 C API
 - 🔴 Docs
 
 ## Runtime support

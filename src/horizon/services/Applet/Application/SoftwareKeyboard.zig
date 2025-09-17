@@ -472,11 +472,11 @@ pub fn writtenText(swkbd: *SoftwareKeyboard) [:0]const u16 {
     return std.mem.bytesAsSlice(u16, swkbd.text)[swkbd.state.text_offset..swkbd.state.text_length :0];
 }
 
-pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu, context: anytype) !Result {
+pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu, context: anytype) !Result {
     std.debug.assert(if (swkbd.state.filter.callback) @TypeOf(context) != void else true);
-    try app.startLibraryApplet(apt, srv, gsp, .application_software_keyboard, swkbd.text_block.obj, std.mem.asBytes(&swkbd.state));
+    try app.startLibraryApplet(apt, service, srv, gsp, .application_software_keyboard, swkbd.text_block.obj, std.mem.asBytes(&swkbd.state));
 
-    return swkbd_loop: switch (try app.waitAppletResult(apt, srv, gsp, std.mem.asBytes(&swkbd.state))) {
+    return swkbd_loop: switch (try app.waitAppletResult(apt, service, srv, gsp, std.mem.asBytes(&swkbd.state))) {
         .execution => |e| switch (e) {
             .resumed => switch (swkbd.state.reply) {
                 _, .invalid_input => unreachable,
@@ -512,14 +512,14 @@ pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, sr
                 .close, .@"continue" => |message| message.bufEncodeZ(&swkbd.state.callback_message),
             }
 
-            try apt.sendSendParameter(srv, horizon.environment.program_meta.app_id, .application_software_keyboard, .message, swkbd.text_block.obj, std.mem.asBytes(&swkbd.state));
-            continue :swkbd_loop try app.waitAppletResult(apt, srv, gsp, std.mem.asBytes(&swkbd.state));
+            try apt.sendSendParameter(service, srv, horizon.environment.program_meta.app_id, .application_software_keyboard, .message, swkbd.text_block.obj, std.mem.asBytes(&swkbd.state));
+            continue :swkbd_loop try app.waitAppletResult(apt, service, srv, gsp, std.mem.asBytes(&swkbd.state));
         } else unreachable,
     };
 }
 
-pub fn start(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu) !Result {
-    return swkbd.startContext(app, apt, srv, gsp, {});
+pub fn start(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu) !Result {
+    return swkbd.startContext(app, apt, service, srv, gsp, {});
 }
 
 const SoftwareKeyboard = @This();

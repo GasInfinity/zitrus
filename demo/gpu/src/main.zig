@@ -37,37 +37,10 @@ pub fn main() !void {
 
     const gpa = horizon.heap.page_allocator; // gpa_state.allocator();
 
-    var srv = try ServiceManager.init();
-    defer srv.deinit();
+    var app: horizon.application.Accelerated = try .init(gpa);
+    defer app.deinit(gpa);
 
-    const apt = try Applet.open(srv);
-    defer apt.close();
-
-    var app = try Applet.Application.init(apt, srv);
-    defer app.deinit(apt, srv);
-
-    const hid = try Hid.open(srv);
-    defer hid.close();
-
-    var input = try Hid.Input.init(hid);
-    defer input.deinit();
-
-    const gsp = try GspGpu.open(srv);
-    defer gsp.close();
-
-    const Vertex = extern struct {
-        pos: [4]i8,
-        uv: [2]u8,
-    };
-
-    const arbiter: horizon.AddressArbiter = try .create();
-    defer arbiter.close();
-
-    const device: mango.Device = try mango.createHorizonBackedDevice(.{
-        .gsp = gsp,
-        .arbiter = arbiter,
-    }, gpa);
-    defer device.destroy(gpa);
+    const device: mango.Device = app.device;
 
     const transfer_queue = device.getQueue(.transfer);
     const fill_queue = device.getQueue(.fill);
@@ -136,6 +109,11 @@ pub fn main() !void {
         var img: [2]mango.Image = undefined;
         _ = device.getSwapchainImages(bottom_swapchain, &img);
         break :blk img;
+    };
+
+    const Vertex = extern struct {
+        pos: [4]i8,
+        uv: [2]u8,
     };
 
     const vtx_buffer_memory = try device.allocateMemory(.{
@@ -476,8 +454,9 @@ pub fn main() !void {
     };
     defer device.freeCommandBuffers(command_pool, @ptrCast(&cmd));
 
-    try gsp.sendSetLcdForceBlack(false);
-    defer if (!app.flags.must_close) gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
+    // TODO: unfill lcds when swapchains have at least 1 present instead of here.
+    try app.gsp.sendSetLcdForceBlack(false);
+    defer if (!app.apt_app.flags.must_close) app.gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
 
     // XXX: Bad, but we know this is not near graphicaly intensive and we'll always be near 60 FPS.
     const default_delta_time = 1.0 / 60.0;
@@ -486,33 +465,13 @@ pub fn main() !void {
     main_loop: while (true) {
         defer current_time += default_delta_time;
 
-        const iod = horizon.memory.shared_config.slider_state_3d / 3.0;
-
-        while (try srv.pollNotification()) |notif| switch (notif) {
-            .must_terminate => break :main_loop,
-            else => {},
-        };
-
-        while (try app.pollNotification(apt, srv)) |n| switch (n) {
-            .jump_home, .jump_home_by_power => {
-                try device.waitIdle();
-
-                switch (try app.jumpToHome(apt, srv, gsp, .none)) {
-                    .resumed => {},
-                    .must_close => break :main_loop,
-                    .jump_home => unreachable,
-                }
-            },
-            .sleeping => {
-                while (try app.waitNotification(apt, srv) != .sleep_wakeup) {}
-                try gsp.sendSetLcdForceBlack(false);
-            },
-            .must_close, .must_close_by_shutdown => break :main_loop,
+        while (try app.pollEvent()) |ev| switch (ev) {
             .jump_home_rejected => {},
-            else => {},
+            .quit => break :main_loop,
         };
 
-        const pad = input.pollPad();
+        const iod = horizon.memory.shared_config.slider_state_3d / 3.0;
+        const pad = app.input.pollPad();
 
         if (pad.current.start) {
             break :main_loop;
@@ -686,7 +645,7 @@ const Hid = horizon.services.Hid;
 
 const mango = zitrus.mango;
 
-pub const panic = zitrus.panic;
+pub const panic = zitrus.horizon.panic;
 const zitrus = @import("zitrus");
 const std = @import("std");
 

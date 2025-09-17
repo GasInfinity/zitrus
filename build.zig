@@ -290,7 +290,7 @@ pub fn addMakeSmdh(b: *std.Build, options: MakeSmdhOptions) std.Build.LazyPath {
             run_make.step.dependOn(&b.addFail("cannot set smdh small icon when no large icon was provided").step);
         }
 
-        run_make.addFileArg(zitrus.path("assets/smdh-icon.png"));
+        run_make.addFileArg(zitrus.path("assets/zitrus-logo-smdh.png"));
     }
 
     return smdh;

@@ -3,7 +3,7 @@ const port_name = "err:f";
 pub const Error = Session.RequestError;
 
 pub const FatalErrorInfo = extern struct {
-    pub const Type = enum(u8) {
+    pub const ErrorType = enum(u8) {
         generic,
         corrupted,
         card_removed,
@@ -12,7 +12,7 @@ pub const FatalErrorInfo = extern struct {
         logged,
     };
 
-    type: Type,
+    type: ErrorType,
     revision_high: u8,
     revision_low: u16,
     result_code: ResultCode,
@@ -23,7 +23,29 @@ pub const FatalErrorInfo = extern struct {
     data: extern union { failure: Failure, exception: Exception },
 
     pub const Failure = extern struct { message: [0x60]u8 };
-    pub const Exception = extern struct { _todo: [0x60]u8 = @splat(0) };
+    pub const Exception = extern struct {
+        pub const Type = enum(u8) {
+            prefetch_abort,
+            data_abort,
+            undefined,
+            vfp,
+        };
+
+        pub const Info = extern struct {
+            type: Type,
+            _pad0: [3]u8 = @splat(0),
+            ifsr_dfsr: u32,
+            r15_dfar: u32,
+            fpexc: u32,
+            fpinst: u32,
+            fpinst2: u32,
+        };
+
+        info: Info,
+
+        /// r0-r12, sp, lr, pc, cpsr
+        registers: [17]u32,
+    };
 };
 
 session: Session,
@@ -39,7 +61,7 @@ pub fn close(errdisp: ErrDispManager) void {
 
 pub fn sendSetUserString(errdisp: ErrDispManager, str: []const u8) !void {
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(errdisp.session, command.SetUserString, .{ .str_size = str.len, .str = .init(str) }, .{})) {
+    return switch ((try data.ipc.sendRequest(errdisp.session, command.SetUserString, .{ .str_size = str.len, .str = .init(str) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -47,7 +69,7 @@ pub fn sendSetUserString(errdisp: ErrDispManager, str: []const u8) !void {
 
 pub fn sendThrow(errdisp: ErrDispManager, fatal: FatalErrorInfo) !void {
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(errdisp.session, command.Throw, fatal, .{})) {
+    return switch ((try data.ipc.sendRequest(errdisp.session, command.Throw, fatal, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };

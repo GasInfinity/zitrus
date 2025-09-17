@@ -1,7 +1,16 @@
-// XXX: We should try to connect first to SPRV, shouldn't we?
-const service_names = [_][]const u8{ "hid:USER", "hid:SPRV" };
-
 pub const Input = @import("Hid/Input.zig");
+
+pub const Service = enum(u2) {
+    user,
+    supervisor,
+
+    pub fn name(service: Service) [:0]const u8 {
+        return switch (service) {
+            .user => "hid:USER",
+            .supervisor => "hid:SPRV",
+        };
+    }
+};
 
 pub const Pad = extern struct {
     pub const State = packed struct(u32) {
@@ -117,18 +126,8 @@ pub const ControllerState = struct {
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !Hid {
-    var last_error: anyerror = undefined;
-    const hid_session = used: for (service_names) |service_name| {
-        const hid_session = srv.getService(service_name, .wait) catch |err| {
-            last_error = err;
-            continue;
-        };
-
-        break :used hid_session;
-    } else return last_error;
-
-    return .{ .session = hid_session };
+pub fn open(service: Service, srv: ServiceManager) !Hid {
+    return .{ .session = try srv.getService(service.name(), .wait) };
 }
 
 pub fn close(hid: Hid) void {
@@ -155,7 +154,7 @@ pub const Handles = struct {
 
 pub fn sendGetIPCHandles(hid: Hid) !Handles {
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(hid.session, command.GetIPCHandles, .{}, .{})) {
+    return switch ((try data.ipc.sendRequest(hid.session, command.GetIPCHandles, .{}, .{})).cases()) {
         .success => |s| .{
             .shm = @bitCast(@intFromEnum(s.value.response.handles[0])),
             .pad_0 = @bitCast(@intFromEnum(s.value.response.handles[1])),

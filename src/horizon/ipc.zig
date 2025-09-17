@@ -511,7 +511,7 @@ pub const Buffer = extern struct {
 
         return switch (target) {
             .request => out,
-            .response => .{ .success = .{ .code = result, .value = .{ .response = out, .static_buffers = static_buffers } } },
+            .response => .of(result, .{ .response = out, .static_buffers = static_buffers }),
         };
     }
 

@@ -125,8 +125,7 @@ pub fn present(pe: *PresentationEngine, info: mango.PresentInfo) !void {
     }, .initSemaphoreOperation(info.wait_semaphore), null);
 }
 
-/// Returns if the presentation engine is fully idle (No more presentation requests to handle).
-pub fn queueWork(pe: *PresentationEngine, item: Queue.PresentationItem) void {
+pub fn queueWork(pe: *PresentationEngine, gsp_framebuffers: *[2]GspGpu.FramebufferInfo, item: Queue.PresentationItem) void {
     const screen = item.misc.screen;
 
     std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
@@ -135,16 +134,23 @@ pub fn queueWork(pe: *PresentationEngine, item: Queue.PresentationItem) void {
 
     // NOTE: The swapchain present queue already handles memory order.
     _ = presents.fetchAdd(1, .monotonic);
-
-    chain.present(.{
+    
+    const slot: Swapchain.PresentSlot = .{
         .flags = .{
             .ignore_stereo = item.misc.ignore_stereo,
         },
         .index = item.index,
-    }, pe.queue.device.arbiter);
+    };
+
+    const is_next_present = chain.present(slot, pe.queue.device.arbiter);
+
+    if(is_next_present) {
+        // NOTE: The GSP DOES process presents at vblank but we MUST present BEFORE vblank!
+        updateNextPresent(&gsp_framebuffers[@intFromEnum(screen)], screen, chain, slot);
+    }
 }
 
-pub fn refresh(pe: *PresentationEngine, fb_info: *[2]GspGpu.FramebufferInfo, screen: pica.Screen) void {
+pub fn refresh(pe: *PresentationEngine, gsp_framebuffers: *[2]GspGpu.FramebufferInfo, screen: pica.Screen) void {
     const presents = pe.chain_presents.getPtr(screen);
 
     if (presents.load(.monotonic) == 0) {
@@ -159,16 +165,24 @@ pub fn refresh(pe: *PresentationEngine, fb_info: *[2]GspGpu.FramebufferInfo, scr
     const chain = pe.chains.getPtr(screen);
 
     // NOTE: We MUST have a present as we had a request!
-    const swapchain_new_presented = chain.acquireNextPresent(pe.queue.device.arbiter) orelse unreachable;
+    _ = chain.consumeNextPresent(pe.queue.device.arbiter) orelse unreachable;
+    
+    // This must be done as if, e.g: we're using a fifo with 3 images (triple buffering),
+    // we must present the next queued present if available.
+    if(chain.peekNextPresent()) |next_queued| {
+        updateNextPresent(&gsp_framebuffers[@intFromEnum(screen)], screen, chain, next_queued);
+    }
+}
 
-    const b_image: *backend.Image = &chain.images[swapchain_new_presented.index];
+fn updateNextPresent(gsp_framebuffer: *GspGpu.FramebufferInfo, screen: pica.Screen, chain: *Swapchain, slot: Swapchain.PresentSlot) void {
+    const b_image: *backend.Image = &chain.images[slot.index];
     std.debug.assert(!b_image.memory_info.isUnbound());
 
     // NOTE: Currently width is always 240 for any mode/screen.
     const stride = (240 * chain.misc.fmt.bytesPerPixel());
     std.debug.assert(b_image.info.width() == 240);
 
-    const presented_stereo = chain.misc.is_stereo and !swapchain_new_presented.flags.ignore_stereo;
+    const presented_stereo = chain.misc.is_stereo and !slot.flags.ignore_stereo;
 
     const left: [*]const u8 = b_image.memory_info.boundVirtualAddress();
     const right: [*]const u8 = if (!presented_stereo)
@@ -176,7 +190,7 @@ pub fn refresh(pe: *PresentationEngine, fb_info: *[2]GspGpu.FramebufferInfo, scr
     else
         (left + (stride * chain.misc.height()));
 
-    const was_updating = fb_info[@intFromEnum(screen)].update(.{
+    const was_updating = gsp_framebuffer.update(.{
         .active = @enumFromInt(chain.misc.id),
         .left_vaddr = left,
         .right_vaddr = right,
@@ -194,7 +208,7 @@ pub fn refresh(pe: *PresentationEngine, fb_info: *[2]GspGpu.FramebufferInfo, scr
     });
 
     chain.misc.id +%= 1;
-    // Should NOT happen, we're literally updating the fb on vblank!
+    // Should NOT happen, we're literally updating the FB when we should!
     std.debug.assert(!was_updating);
 }
 
@@ -241,6 +255,7 @@ const Swapchain = struct {
 
     pub const Presentation = struct {
         pub const State = union {
+            // XXX: This doesn't need to be thread-safe, its only accessed by the driver thread!
             fifo: backend.SingleProducerSingleConsumerBoundedQueue(PresentSlot, 3),
             single: ?PresentSlot,
         };
@@ -256,20 +271,42 @@ const Swapchain = struct {
     available: backend.SingleProducerSingleConsumerBoundedQueue(u8, 3),
     available_wake: std.atomic.Value(i32),
 
-    pub fn present(chain: *Swapchain, slot: PresentSlot, arbiter: horizon.AddressArbiter) void {
-        switch (chain.misc.present_mode) {
-            .fifo => chain.presentation.new.fifo.pushFrontAssumeCapacity(slot),
-            .mailbox => {
-                defer chain.presentation.new.single = slot;
+    /// Returns whether the presented slot is the next to be displayed after vblank.
+    pub fn present(chain: *Swapchain, slot: PresentSlot, arbiter: horizon.AddressArbiter) bool {
+        const presentation = &chain.presentation;
+
+        return switch (chain.misc.present_mode) {
+            .fifo => blk: {
+                const fifo_queue = &presentation.new.fifo;
+                fifo_queue.pushFrontAssumeCapacity(slot);
+
+                break :blk fifo_queue.header.raw.len == 1;
+            },
+            .mailbox => blk: {
+                const single = &presentation.new.single;
+                defer single.* = slot;
 
                 if (chain.presentation.new.single) |last| {
                     chain.wakePushAvailable(last.index, arbiter);
                 }
+
+                break :blk true;
             },
-        }
+        };
     }
 
-    pub fn acquireNextPresent(chain: *Swapchain, arbiter: horizon.AddressArbiter) ?PresentSlot {
+    /// Gets the next present in the queue if available.
+    pub fn peekNextPresent(chain: *Swapchain) ?PresentSlot {
+        const presentation = &chain.presentation;
+
+        return switch (chain.misc.present_mode) {
+            .fifo => presentation.new.fifo.peekBack(),
+            .mailbox => presentation.new.single,
+        };
+    }
+
+    /// Consumes the next present in the queue, updating the currently displayed index if consumed.
+    pub fn consumeNextPresent(chain: *Swapchain, arbiter: horizon.AddressArbiter) ?PresentSlot {
         const presentation = &chain.presentation;
 
         const new = switch (chain.misc.present_mode) {

@@ -153,7 +153,7 @@ pub const DmaSize = enum(u2) {
 };
 
 pub const FramebufferFormat = packed struct(u32) {
-    pub const Mode = enum {
+    pub const Mode = enum(u2) {
         @"2d",
         @"3d",
         full_resolution,

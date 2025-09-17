@@ -9,7 +9,7 @@ pub const MgResult = enum(i32) {
     timeout = 1,
 };
 
-pub export fn mgDestroyDevice(device: mango.Device, allocator: *const Allocator) void {
+pub export fn mgDestroyDevice(device: mango.Device, allocator: c.ZigAllocator) void {
     return device.destroy(allocator.allocator());
 }
 
@@ -58,7 +58,7 @@ pub export fn mgQueuePresent(queue: mango.Queue, info: *const mango.PresentInfo)
     return .success;
 }
 
-pub export fn mgAllocateMemory(device: mango.Device, allocate_info: *const mango.MemoryAllocateInfo, allocator: *const Allocator, memory: *mango.DeviceMemory) MgResult {
+pub export fn mgAllocateMemory(device: mango.Device, allocate_info: *const mango.MemoryAllocateInfo, allocator: c.ZigAllocator, memory: *mango.DeviceMemory) MgResult {
     memory.* = device.allocateMemory(allocate_info.*, allocator.allocator()) catch |err| switch (err) {
         error.OutOfMemory => return .out_of_memory,
     };
@@ -66,7 +66,7 @@ pub export fn mgAllocateMemory(device: mango.Device, allocate_info: *const mango
     return .success;
 }
 
-pub export fn mgFreeMemory(device: mango.Device, memory: mango.DeviceMemory, allocator: *const Allocator) void {
+pub export fn mgFreeMemory(device: mango.Device, memory: mango.DeviceMemory, allocator: c.ZigAllocator) void {
     return device.freeMemory(memory, allocator.allocator());
 }
 
@@ -86,7 +86,7 @@ pub export fn mgFlushMappedMemoryRanges(device: mango.Device, range_count: usize
     return .success;
 }
 
-pub export fn mgCreateSemaphore(device: mango.Device, create_info: *const mango.SemaphoreCreateInfo, allocator: *const Allocator, semaphore: *mango.Semaphore) MgResult {
+pub export fn mgCreateSemaphore(device: mango.Device, create_info: *const mango.SemaphoreCreateInfo, allocator: c.ZigAllocator, semaphore: *mango.Semaphore) MgResult {
     semaphore.* = device.createSemaphore(create_info.*, allocator.allocator()) catch |err| switch (err) {
         error.OutOfMemory => return .out_of_memory,
     };
@@ -94,11 +94,11 @@ pub export fn mgCreateSemaphore(device: mango.Device, create_info: *const mango.
     return .success;
 }
 
-pub export fn mgDestroySemaphore(device: mango.Device, semaphore: mango.Semaphore, allocator: *const Allocator) void {
+pub export fn mgDestroySemaphore(device: mango.Device, semaphore: mango.Semaphore, allocator: c.ZigAllocator) void {
     return device.destroySemaphore(semaphore, allocator.allocator());
 }
 
-pub export fn mgCreateCommandPool(device: mango.Device, create_info: *const mango.CommandPoolCreateInfo, allocator: *const Allocator, command_pool: *mango.CommandPool) MgResult {
+pub export fn mgCreateCommandPool(device: mango.Device, create_info: *const mango.CommandPoolCreateInfo, allocator: c.ZigAllocator, command_pool: *mango.CommandPool) MgResult {
     command_pool.* = device.createCommandPool(create_info.*, allocator.allocator()) catch |err| switch (err) {
         error.OutOfMemory => return .out_of_memory,
     };
@@ -106,7 +106,7 @@ pub export fn mgCreateCommandPool(device: mango.Device, create_info: *const mang
     return .success;
 }
 
-pub export fn mgDestroyCommandPool(device: mango.Device, command_pool: mango.CommandPool, allocator: *const Allocator) void {
+pub export fn mgDestroyCommandPool(device: mango.Device, command_pool: mango.CommandPool, allocator: c.ZigAllocator) void {
     return device.destroyCommandPool(command_pool, allocator.allocator());
 }
 
@@ -130,7 +130,7 @@ pub export fn mgFreeCommandBuffers(device: mango.Device, command_pool: mango.Com
     return device.freeCommandBuffers(command_pool, buffers[0..buffers_len]);
 }
 
-pub export fn mgCreateBuffer(device: mango.Device, create_info: *const mango.BufferCreateInfo, allocator: *const Allocator, buffer: *mango.Buffer) MgResult {
+pub export fn mgCreateBuffer(device: mango.Device, create_info: *const mango.BufferCreateInfo, allocator: c.ZigAllocator, buffer: *mango.Buffer) MgResult {
     buffer.* = device.createBuffer(create_info.*, allocator.allocator()) catch |err| switch (err) {
         error.OutOfMemory => return .out_of_memory,
     };
@@ -138,7 +138,7 @@ pub export fn mgCreateBuffer(device: mango.Device, create_info: *const mango.Buf
     return .success;
 }
 
-pub export fn mgDestroyBuffer(device: mango.Device, buffer: mango.Buffer, allocator: *const Allocator) void {
+pub export fn mgDestroyBuffer(device: mango.Device, buffer: mango.Buffer, allocator: c.ZigAllocator) void {
     return device.destroyBuffer(buffer, allocator.allocator());
 }
 
@@ -148,7 +148,7 @@ pub export fn mgBindBufferMemory(device: mango.Device, buffer: mango.Buffer, mem
     return .success;
 }
 
-pub export fn mgCreateImage(device: mango.Device, create_info: *const mango.ImageCreateInfo, allocator: *const Allocator, image: *mango.Image) MgResult {
+pub export fn mgCreateImage(device: mango.Device, create_info: *const mango.ImageCreateInfo, allocator: c.ZigAllocator, image: *mango.Image) MgResult {
     image.* = device.createImage(create_info.*, allocator.allocator()) catch |err| switch (err) {
         error.OutOfMemory => return .out_of_memory,
     };
@@ -156,7 +156,7 @@ pub export fn mgCreateImage(device: mango.Device, create_info: *const mango.Imag
     return .success;
 }
 
-pub export fn mgDestroyImage(device: mango.Device, image: mango.Image, allocator: *const Allocator) void {
+pub export fn mgDestroyImage(device: mango.Device, image: mango.Image, allocator: c.ZigAllocator) void {
     return device.destroyImage(image, allocator.allocator());
 }
 
@@ -166,7 +166,7 @@ pub export fn mgBindImageMemory(device: mango.Device, image: mango.Image, memory
     return .success;
 }
 
-pub export fn mgCreateImageView(device: mango.Device, create_info: *const mango.ImageViewCreateInfo, allocator: *const Allocator, image_view: *mango.ImageView) MgResult {
+pub export fn mgCreateImageView(device: mango.Device, create_info: *const mango.ImageViewCreateInfo, allocator: c.ZigAllocator, image_view: *mango.ImageView) MgResult {
     image_view.* = device.createImageView(create_info.*, allocator.allocator()) catch |err| switch (err) {
         error.OutOfMemory => return .out_of_memory,
     };
@@ -174,11 +174,11 @@ pub export fn mgCreateImageView(device: mango.Device, create_info: *const mango.
     return .success;
 }
 
-pub export fn mgDestroyImageView(device: mango.Device, image_view: mango.ImageView, allocator: *const Allocator) void {
+pub export fn mgDestroyImageView(device: mango.Device, image_view: mango.ImageView, allocator: c.ZigAllocator) void {
     return device.destroyImageView(image_view, allocator.allocator());
 }
 
-pub export fn mgCreateSampler(device: mango.Device, create_info: *const mango.SamplerCreateInfo, allocator: *const Allocator, sampler: *mango.Sampler) MgResult {
+pub export fn mgCreateSampler(device: mango.Device, create_info: *const mango.SamplerCreateInfo, allocator: c.ZigAllocator, sampler: *mango.Sampler) MgResult {
     sampler.* = device.createSampler(create_info.*, allocator.allocator()) catch |err| switch (err) {
         error.OutOfMemory => return .out_of_memory,
     };
@@ -186,11 +186,11 @@ pub export fn mgCreateSampler(device: mango.Device, create_info: *const mango.Sa
     return .success;
 }
 
-pub export fn mgDestroySampler(device: mango.Device, sampler: mango.Sampler, allocator: *const Allocator) void {
+pub export fn mgDestroySampler(device: mango.Device, sampler: mango.Sampler, allocator: c.ZigAllocator) void {
     return device.destroySampler(sampler, allocator.allocator());
 }
 
-pub export fn mgCreateGraphicsPipeline(device: mango.Device, create_info: mango.GraphicsPipelineCreateInfo, allocator: *const Allocator, pipeline: *mango.Pipeline) MgResult {
+pub export fn mgCreateGraphicsPipeline(device: mango.Device, create_info: mango.GraphicsPipelineCreateInfo, allocator: c.ZigAllocator, pipeline: *mango.Pipeline) MgResult {
     pipeline.* = device.createGraphicsPipeline(create_info, allocator.allocator()) catch |err| switch (err) {
         error.OutOfMemory => return .out_of_memory,
         error.ValidationFailed => return .validation_failed,
@@ -199,17 +199,17 @@ pub export fn mgCreateGraphicsPipeline(device: mango.Device, create_info: mango.
     return .success;
 }
 
-pub export fn mgDestroyPipeline(device: mango.Device, pipeline: mango.Pipeline, allocator: *const Allocator) void {
+pub export fn mgDestroyPipeline(device: mango.Device, pipeline: mango.Pipeline, allocator: c.ZigAllocator) void {
     return device.destroyPipeline(pipeline, allocator.allocator());
 }
 
-pub export fn mgCreateSwapchain(device: mango.Device, create_info: mango.SwapchainCreateInfo, allocator: *const Allocator, swapchain: *mango.Swapchain) MgResult {
+pub export fn mgCreateSwapchain(device: mango.Device, create_info: mango.SwapchainCreateInfo, allocator: c.ZigAllocator, swapchain: *mango.Swapchain) MgResult {
     swapchain.* = device.createSwapchain(create_info, allocator.allocator()) catch |err| switch (err) {};
 
     return .success;
 }
 
-pub export fn mgDestroySwapchain(device: mango.Device, swapchain: mango.Swapchain, allocator: *const Allocator) void {
+pub export fn mgDestroySwapchain(device: mango.Device, swapchain: mango.Swapchain, allocator: c.ZigAllocator) void {
     return device.destroySwapchain(swapchain, allocator.allocator());
 }
 
@@ -411,86 +411,9 @@ pub export fn mgCmdSetTextureCoordinates(cmd: mango.CommandBuffer, texture_2_coo
     return cmd.setTextureCoordinates(texture_2_coordinates, texture_3_coordinates);
 }
 
-pub const Allocator = extern struct {
-    pub const vtable: *const std.mem.Allocator.VTable = &.{
-        .alloc = wrapAlloc,
-        .resize = wrapResize,
-        .remap = wrapRemap,
-        .free = wrapFree,
-    };
-
-    /// Return a pointer to `len` bytes with specified `alignment`, or return
-    /// `null` indicating the allocation failed.
-    ///
-    /// `ret_addr` is optionally provided as the first return address of the
-    /// allocation call stack. If the value is `0` it means no return address
-    /// has been provided.
-    alloc: *const fn (*anyopaque, len: usize, alignment: usize, ret_addr: usize) callconv(.c) ?[*]u8,
-
-    /// Attempt to expand or shrink memory in place.
-    ///
-    /// `memory.len` must equal the length requested from the most recent
-    /// successful call to `alloc`, `resize`, or `remap`. `alignment` must
-    /// equal the same value that was passed as the `alignment` parameter to
-    /// the original `alloc` call.
-    ///
-    /// A result of `true` indicates the resize was successful and the
-    /// allocation now has the same address but a size of `new_len`. `false`
-    /// indicates the resize could not be completed without moving the
-    /// allocation to a different address.
-    ///
-    /// `new_len` must be greater than zero.
-    ///
-    /// `ret_addr` is optionally provided as the first return address of the
-    /// allocation call stack. If the value is `0` it means no return address
-    /// has been provided.
-    resize: *const fn (*anyopaque, memory_ptr: [*]u8, memory_len: usize, alignment: usize, new_len: usize, ret_addr: usize) callconv(.c) bool,
-
-    /// Free and invalidate a region of memory.
-    ///
-    /// `memory.len` must equal the length requested from the most recent
-    /// successful call to `alloc`, `resize`, or `remap`. `alignment` must
-    /// equal the same value that was passed as the `alignment` parameter to
-    /// the original `alloc` call.
-    ///
-    /// `ret_addr` is optionally provided as the first return address of the
-    /// allocation call stack. If the value is `0` it means no return address
-    /// has been provided.
-    free: *const fn (*anyopaque, memory_ptr: [*]u8, memory_len: usize, alignment: usize, ret_addr: usize) callconv(.c) void,
-
-    pub fn allocator(ally: *const Allocator) std.mem.Allocator {
-        return .{
-            .ptr = @constCast(ally),
-            .vtable = vtable,
-        };
-    }
-
-    fn wrapAlloc(ptr: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
-        const ally: *const Allocator = @ptrCast(@alignCast(ptr));
-        return ally.alloc(ptr, len, @intFromEnum(alignment), ret_addr);
-    }
-
-    fn wrapResize(ptr: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
-        const ally: *const Allocator = @ptrCast(@alignCast(ptr));
-        return ally.resize(ptr, memory.ptr, memory.len, @intFromEnum(alignment), new_len, ret_addr);
-    }
-
-    fn wrapRemap(ptr: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
-        const ally: *const Allocator = @ptrCast(@alignCast(ptr));
-
-        return if (ally.resize(ptr, memory.ptr, memory.len, @intFromEnum(alignment), new_len, ret_addr))
-            memory.ptr
-        else
-            null;
-    }
-
-    fn wrapFree(ptr: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
-        const ally: *const Allocator = @ptrCast(@alignCast(ptr));
-        return ally.free(ptr, memory.ptr, memory.len, @intFromEnum(alignment), ret_addr);
-    }
-};
-
 const zitrus = @import("zitrus");
+const c = zitrus.c;
+
 const mango = zitrus.mango;
 
 const std = @import("std");

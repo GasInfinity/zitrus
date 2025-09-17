@@ -1,7 +1,19 @@
 // https://www.3dbrew.org/wiki/NS_and_APT_Services
 pub const Application = @import("Applet/Application.zig");
 
-const service_names = [_][]const u8{ "APT:S", "APT:A", "APT:U" };
+pub const Service = enum(u2) {
+    system,
+    app,
+    user,
+
+    pub fn name(service: Service) [:0]const u8 {
+        return switch (service) {
+            .system => "APT:S",
+            .app => "APT:A",
+            .user => "APT:U",
+        };
+    }
+};
 
 pub const AppId = enum(u32) {
     none = 0x00,
@@ -171,85 +183,76 @@ pub const ChainloadTarget = union(enum) {
 };
 
 lock: Mutex,
-available_service_name: []const u8,
 
-// TODO: allow opening a specific applet service instead of testing all.
-pub fn open(srv: ServiceManager) !Applet {
-    var last_error: anyerror = undefined;
-    const available_service_name, var available_service: Session = used: for (service_names) |service_name| {
-        const service_handle = srv.sendGetServiceHandle(service_name, .wait) catch |err| {
-            last_error = err;
-            continue;
-        };
-
-        break :used .{ service_name, service_handle };
-    } else return last_error;
+/// Open a specific Applet service and get its lock.
+///
+/// All subsequent requests to the returned `Applet` must be done to the same service it was created with.
+pub fn open(service: Service, srv: ServiceManager) !Applet {
+    const apt_session = try srv.getService(service.name(), .wait);
+    defer apt_session.close();
 
     const data = tls.get();
 
     const lock: Mutex = lock: {
-        defer available_service.close();
+        defer apt_session.close();
 
-        break :lock switch (try data.ipc.sendRequest(available_service, command.GetLockHandle, .{ .flags = 0x0 }, .{})) {
+        break :lock switch ((try data.ipc.sendRequest(apt_session, command.GetLockHandle, .{ .flags = 0x0 }, .{})).cases()) {
             .success => |s| s.value.response.lock,
             .failure => |_| unreachable,
         };
     };
 
-    return Applet{
-        .lock = lock,
-        .available_service_name = available_service_name,
-    };
+    return .{ .lock = lock };
 }
 
 pub fn close(apt: Applet) void {
     apt.lock.close();
 }
 
-pub fn sendInitialize(apt: Applet, srv: ServiceManager, id: AppId, attr: Attributes) ![2]Event {
-    return switch (try apt.lockSendCommand(srv, command.Initialize, .{ .id = id, .attributes = attr }, .{})) {
+pub fn sendInitialize(apt: Applet, service: Service, srv: ServiceManager, id: AppId, attr: Attributes) ![2]Event {
+    return switch ((try apt.lockSendCommand(service, srv, command.Initialize, .{ .id = id, .attributes = attr }, .{})).cases()) {
         .success => |s| s.value.response.notification_resume,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendEnable(apt: Applet, srv: ServiceManager, attr: Attributes) !void {
-    return switch (try apt.lockSendCommand(srv, command.Enable, .{ .attributes = attr }, .{})) {
+pub fn sendEnable(apt: Applet, service: Service, srv: ServiceManager, attr: Attributes) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.Enable, .{ .attributes = attr }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendFinalize(apt: Applet, srv: ServiceManager, id: AppId) !void {
-    return switch (try apt.lockSendCommand(srv, command.Finalize, .{ .id = id }, .{})) {
+pub fn sendFinalize(apt: Applet, service: Service, srv: ServiceManager, id: AppId) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.Finalize, .{ .id = id }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendGetAppletManInfo(apt: Applet, srv: ServiceManager, position: Position) !command.GetAppletManInfo.Response {
-    return switch (try apt.lockSendCommand(srv, command.GetAppletManInfo, .{ .position = position }, .{})) {
+pub fn sendGetAppletManInfo(apt: Applet, service: Service, srv: ServiceManager, position: Position) !command.GetAppletManInfo.Response {
+    return switch ((try apt.lockSendCommand(service, srv, command.GetAppletManInfo, .{ .position = position }, .{})).cases()) {
         .success => |s| s.value.response,
         .failure => |_| unreachable,
     };
 }
 
-pub fn sendIsRegistered(apt: Applet, srv: ServiceManager, id: AppId) !bool {
-    return switch (try apt.lockSendCommand(srv, command.IsRegistered, .{ .id = id }, .{})) {
+pub fn sendIsRegistered(apt: Applet, service: Service, srv: ServiceManager, id: AppId) !bool {
+    return switch ((try apt.lockSendCommand(service, srv, command.IsRegistered, .{ .id = id }, .{})).cases()) {
         .success => |s| s.value.response.registered,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendInquireNotification(apt: Applet, srv: ServiceManager, id: AppId) !Notification {
-    return switch (try apt.lockSendCommand(srv, command.InquireNotification, .{ .id = id }, .{})) {
+pub fn sendInquireNotification(apt: Applet, service: Service, srv: ServiceManager, id: AppId) !Notification {
+    return switch ((try apt.lockSendCommand(service, srv, command.InquireNotification, .{ .id = id }, .{})).cases()) {
         .success => |s| s.value.response.notification,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSendParameter(apt: Applet, srv: ServiceManager, src: AppId, dst: AppId, cmd: Command, handle: Object, parameter: []const u8) !void {
-    return switch (try apt.lockSendCommand(srv, command.SendParameter, .{ .src_id = src, .dst_id = dst, .cmd = cmd, .parameter_size = parameter.len, .parameter_handle = handle, .parameter = .init(parameter) }, .{})) {
+pub fn sendSendParameter(apt: Applet, service: Service, srv: ServiceManager, src: AppId, dst: AppId, cmd: Command, handle: Object, parameter: []const u8) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.SendParameter, .{ .src_id = src, .dst_id = dst, .cmd = cmd, .parameter_size = parameter.len, .parameter_handle = handle, .parameter = .init(parameter) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -286,72 +289,72 @@ pub const ParameterResult = struct {
     }
 };
 
-pub fn sendReceiveParameter(apt: Applet, srv: ServiceManager, id: AppId, parameter: []u8) !ParameterResult {
-    return switch (try apt.lockSendCommand(srv, command.ReceiveParameter, .{ .id = id, .parameter_size = parameter.len }, .{parameter})) {
+pub fn sendReceiveParameter(apt: Applet, service: Service, srv: ServiceManager, id: AppId, parameter: []u8) !ParameterResult {
+    return switch ((try apt.lockSendCommand(service, srv, command.ReceiveParameter, .{ .id = id, .parameter_size = parameter.len }, .{parameter})).cases()) {
         .success => |s| .initReceive(s.value.response),
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendGlanceParameter(apt: Applet, srv: ServiceManager, id: AppId, parameter: []u8) !ParameterResult {
-    return switch (try apt.lockSendCommand(srv, command.GlanceParameter, .{ .id = id, .parameter_size = parameter.len }, .{parameter})) {
+pub fn sendGlanceParameter(apt: Applet, service: Service, srv: ServiceManager, id: AppId, parameter: []u8) !ParameterResult {
+    return switch ((try apt.lockSendCommand(service, srv, command.GlanceParameter, .{ .id = id, .parameter_size = parameter.len }, .{parameter})).cases()) {
         .success => |s| .initGlance(s.value.response),
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendCancelParameter(apt: Applet, srv: ServiceManager, src: AppId, dst: AppId) !bool {
-    return switch (try apt.lockSendCommand(srv, command.CancelParameter, .{ .check_sender = src != .none, .sender = src, .check_receiver = dst != .none, .receiver = dst }, .{})) {
+pub fn sendCancelParameter(apt: Applet, service: Service, srv: ServiceManager, src: AppId, dst: AppId) !bool {
+    return switch (try apt.lockSendCommand(service, srv, command.CancelParameter, .{ .check_sender = src != .none, .sender = src, .check_receiver = dst != .none, .receiver = dst }, .{})) {
         .success => |s| s.value.response.success,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendPrepareToStartLibraryApplet(apt: Applet, srv: ServiceManager, app: AppId) !void {
-    return switch (try apt.lockSendCommand(srv, command.PrepareToStartLibraryApplet, .{ .app = app }, .{})) {
+pub fn sendPrepareToStartLibraryApplet(apt: Applet, service: Service, srv: ServiceManager, app: AppId) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.PrepareToStartLibraryApplet, .{ .app = app }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendPrepareToStartSystemApplet(apt: Applet, srv: ServiceManager, app: AppId) !void {
-    return switch (try apt.lockSendCommand(srv, command.PrepareToStartSystemApplet, .{ .app = app }, .{})) {
+pub fn sendPrepareToStartSystemApplet(apt: Applet, service: Service, srv: ServiceManager, app: AppId) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.PrepareToStartSystemApplet, .{ .app = app }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendPrepareToCloseApplication(apt: Applet, srv: ServiceManager, cancel_preload: bool) !void {
-    return switch (try apt.lockSendCommand(srv, command.PrepareToCloseApplication, .{ .cancel_preload = cancel_preload }, .{})) {
+pub fn sendPrepareToCloseApplication(apt: Applet, service: Service, srv: ServiceManager, cancel_preload: bool) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.PrepareToCloseApplication, .{ .cancel_preload = cancel_preload }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendStartLibraryApplet(apt: Applet, srv: ServiceManager, app: AppId, param_handle: Object, param: []const u8) !void {
-    return switch (try apt.lockSendCommand(srv, command.StartLibraryApplet, .{ .app = app, .parameters_size = param.len, .parameter_handle = param_handle, .parameters = .init(param) }, .{})) {
+pub fn sendStartLibraryApplet(apt: Applet, service: Service, srv: ServiceManager, app: AppId, param_handle: Object, param: []const u8) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.StartLibraryApplet, .{ .app = app, .parameters_size = param.len, .parameter_handle = param_handle, .parameters = .init(param) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendStartSystemApplet(apt: Applet, srv: ServiceManager, app: AppId, param_handle: Object, param: []const u8) !void {
-    return switch (try apt.lockSendCommand(srv, command.StartSystemApplet, .{ .app = app, .parameters_size = param.len, .parameter_handle = param_handle, .parameters = .init(param) }, .{})) {
+pub fn sendStartSystemApplet(apt: Applet, service: Service, srv: ServiceManager, app: AppId, param_handle: Object, param: []const u8) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.StartSystemApplet, .{ .app = app, .parameters_size = param.len, .parameter_handle = param_handle, .parameters = .init(param) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 // Errors: 0xc8a0cff0
-pub fn sendCloseApplication(apt: Applet, srv: ServiceManager, parameters: []const u8, handle: Object) !void {
-    return switch (try apt.lockSendCommand(srv, command.CloseApplication, .{ .parameters_size = parameters.len, .parameter_handle = handle, .parameters = .init(parameters) }, .{})) {
+pub fn sendCloseApplication(apt: Applet, service: Service, srv: ServiceManager, parameters: []const u8, handle: Object) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.CloseApplication, .{ .parameters_size = parameters.len, .parameter_handle = handle, .parameters = .init(parameters) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendPrepareToJumpToHomeMenu(apt: Applet, srv: ServiceManager) !void {
-    return switch (try apt.lockSendCommand(srv, command.PrepareToJumpToHomeMenu, .{}, .{})) {
+pub fn sendPrepareToJumpToHomeMenu(apt: Applet, service: Service, srv: ServiceManager) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.PrepareToJumpToHomeMenu, .{}, .{})).cases()) {
         .success => {},
         .failure => |_| unreachable,
     };
@@ -371,111 +374,110 @@ pub const JumpToHomeParameters = union(JumpToHomeCommand) {
     open_badge_picker,
 };
 
-pub fn sendJumpToHomeMenu(apt: Applet, srv: ServiceManager, params: JumpToHomeParameters) !void {
+pub fn sendJumpToHomeMenu(apt: Applet, service: Service, srv: ServiceManager, params: JumpToHomeParameters) !void {
     const parameters: []const u8 = &(switch (params) {
         .download_theme => |theme| .{ 'A', 'S', 'H', 'P', @intFromEnum(JumpToHomeCommand.download_theme), 0x00, 0x00, 0x00 } ++ std.mem.asBytes(&theme).*,
         else => .{ 'A', 'S', 'H', 'P', @intFromEnum(params) },
     });
 
-    return switch (try apt.lockSendCommand(srv, command.JumpToHomeMenu, .{ .parameters_size = parameters.len, .parameter_handle = .null, .parameters = .init(parameters) }, .{})) {
+    return switch ((try apt.lockSendCommand(service, srv, command.JumpToHomeMenu, .{ .parameters_size = parameters.len, .parameter_handle = .null, .parameters = .init(parameters) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendPrepareToDoApplicationJump(apt: Applet, srv: ServiceManager, flags: command.PrepareToDoApplicationJump.Request.Flags, title_id: u64, media_type: Filesystem.MediaType) !void {
-    return switch (try apt.lockSendCommand(srv, command.PrepareToDoApplicationJump, .{ .flags = flags, .title_id = title_id, .media_type = media_type }, .{})) {
+pub fn sendPrepareToDoApplicationJump(apt: Applet, service: Service, srv: ServiceManager, flags: command.PrepareToDoApplicationJump.Request.Flags, title_id: u64, media_type: Filesystem.MediaType) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.PrepareToDoApplicationJump, .{ .flags = flags, .title_id = title_id, .media_type = media_type }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendDoApplicationJump(apt: Applet, srv: ServiceManager, parameters: []const u8, hmac: *const [0x20]u8) !void {
-    return switch (try apt.lockSendCommand(srv, command.DoApplicationJump, .{ .parameter_size = parameters.len, .hmac_size = hmac.len, .parameter = .init(parameters), .hmac = .init(hmac[0..20]) }, .{})) {
+pub fn sendDoApplicationJump(apt: Applet, service: Service, srv: ServiceManager, parameters: []const u8, hmac: *const [0x20]u8) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.DoApplicationJump, .{ .parameter_size = parameters.len, .hmac_size = hmac.len, .parameter = .init(parameters), .hmac = .init(hmac[0..20]) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSendDspSleep(apt: Applet, srv: ServiceManager, source: AppId, handle: Object) !void {
-    return switch (try apt.lockSendCommand(srv, command.SendDspSleep, .{ .source = source, .handle = handle }, .{})) {
+pub fn sendSendDspSleep(apt: Applet, service: Service, srv: ServiceManager, source: AppId, handle: Object) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.SendDspSleep, .{ .source = source, .handle = handle }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSendDspWakeup(apt: Applet, srv: ServiceManager, source: AppId, handle: Object) !void {
-    return switch (try apt.lockSendCommand(srv, command.SendDspWakeup, .{ .source = source, .handle = handle }, .{})) {
-        .success => {},
-        .failure => |code| horizon.unexpectedResult(code),
-    };
-}
-
-// Possible errors: 0xc880cffa
-pub fn sendReplySleepQuery(apt: Applet, srv: ServiceManager, id: AppId, reply: QueryReply) !void {
-    return switch (try apt.lockSendCommand(srv, command.ReplySleepQuery, .{ .id = id, .reply = reply }, .{})) {
+pub fn sendSendDspWakeup(apt: Applet, service: Service, srv: ServiceManager, source: AppId, handle: Object) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.SendDspWakeup, .{ .source = source, .handle = handle }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 // Possible errors: 0xc880cffa
-pub fn sendReplySleepNotificationComplete(apt: Applet, srv: ServiceManager, id: AppId) !void {
-    return switch (try apt.lockSendCommand(srv, command.ReplySleepNotificationComplete, .{ .id = id }, .{})) {
+pub fn sendReplySleepQuery(apt: Applet, service: Service, srv: ServiceManager, id: AppId, reply: QueryReply) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.ReplySleepQuery, .{ .id = id, .reply = reply }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSendCaptureBufferInfo(apt: Applet, srv: ServiceManager, info: *const CaptureBuffer) !void {
-    return switch (try apt.lockSendCommand(srv, command.SendCaptureBufferInfo, .{ .capture_size = @sizeOf(CaptureBuffer), .capture = .init(std.mem.asBytes(info)) }, .{})) {
+// Possible errors: 0xc880cffa
+pub fn sendReplySleepNotificationComplete(apt: Applet, service: Service, srv: ServiceManager, id: AppId) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.ReplySleepNotificationComplete, .{ .id = id }, .{})).cases()) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendSendCaptureBufferInfo(apt: Applet, service: Service, srv: ServiceManager, info: *const CaptureBuffer) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.SendCaptureBufferInfo, .{ .capture_size = @sizeOf(CaptureBuffer), .capture = .init(std.mem.asBytes(info)) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 // No errors, stub
-pub fn sendNotifyToWait(apt: Applet, srv: ServiceManager, id: AppId) !void {
-    return switch (try apt.lockSendCommand(srv, command.NotifyToWait, .{ .id = id }, .{})) {
+pub fn sendNotifyToWait(apt: Applet, service: Service, srv: ServiceManager, id: AppId) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.NotifyToWait, .{ .id = id }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 // No errors
-pub fn sendAppletUtility(apt: Applet, srv: ServiceManager, utility: Utility, input: []const u8, output: []u8) !void {
+pub fn sendAppletUtility(apt: Applet, service: Service, srv: ServiceManager, utility: Utility, input: []const u8, output: []u8) !void {
     // TODO: return the ResultCode from applet_result in the Response, waiting for ziglang# #24231
-    return switch (try apt.lockSendCommand(srv, command.AppletUtility, .{ .utility = utility, .input_size = input.len, .output_size = output.len, .input = .init(input) }, .{output})) {
+    return switch ((try apt.lockSendCommand(service, srv, command.AppletUtility, .{ .utility = utility, .input_size = input.len, .output_size = output.len, .input = .init(input) }, .{output})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSleepIfShellClosed(apt: Applet, srv: ServiceManager) !void {
-    return apt.sendAppletUtility(srv, .sleep_if_shell_closed, &.{}, &.{});
+pub fn sendSleepIfShellClosed(apt: Applet, service: Service, srv: ServiceManager) !void {
+    return apt.sendAppletUtility(service, srv, .sleep_if_shell_closed, &.{}, &.{});
 }
 
-pub fn sendLockTransition(apt: Applet, srv: ServiceManager, transition: Transition, flag: bool) !void {
+pub fn sendLockTransition(apt: Applet, service: Service, srv: ServiceManager, transition: Transition, flag: bool) !void {
     const transition_data: extern struct { transition: Transition, flag: bool, pad: [3]u8 = @splat(0) } = .{ .transition = transition, .flag = flag };
-    return apt.sendAppletUtility(srv, .lock_transition, std.mem.asBytes(&transition_data), &.{});
+    return apt.sendAppletUtility(service, srv, .lock_transition, std.mem.asBytes(&transition_data), &.{});
 }
 
-pub fn sendTryLockTransition(apt: Applet, srv: ServiceManager, transition: Transition) !bool {
+pub fn sendTryLockTransition(apt: Applet, service: Service, srv: ServiceManager, transition: Transition) !bool {
     var success: bool = undefined;
-    try apt.sendAppletUtility(srv, .try_lock_transition, std.mem.asBytes(&transition), std.mem.asBytes(&success));
+    try apt.sendAppletUtility(service, srv, .try_lock_transition, std.mem.asBytes(&transition), std.mem.asBytes(&success));
     return success;
 }
 
-// FIXME: returns wrong_arg error?
-pub fn sendUnlockTransition(apt: Applet, srv: ServiceManager, transition: Transition) !void {
-    return apt.sendAppletUtility(srv, .unlock_transition, std.mem.asBytes(&transition), &.{});
+pub fn sendUnlockTransition(apt: Applet, service: Service, srv: ServiceManager, transition: Transition) !void {
+    return apt.sendAppletUtility(service, srv, .unlock_transition, std.mem.asBytes(&transition), &.{});
 }
 
-pub fn lockSendCommand(apt: Applet, srv: ServiceManager, comptime DefinedCommand: type, request: DefinedCommand.Request, static_buffers: [DefinedCommand.input_static_buffers][]u8) !Result(ipc.Response(DefinedCommand.Response, DefinedCommand.output_static_buffers)) {
+pub fn lockSendCommand(apt: Applet, service: Service, srv: ServiceManager, comptime DefinedCommand: type, request: DefinedCommand.Request, static_buffers: [DefinedCommand.input_static_buffers][]u8) !Result(ipc.Response(DefinedCommand.Response, DefinedCommand.output_static_buffers)) {
     try apt.lock.wait(-1);
     defer apt.lock.release();
 
-    const fresh_session = try srv.sendGetServiceHandle(apt.available_service_name, .wait);
+    const fresh_session = try srv.sendGetServiceHandle(service.name(), .wait);
     defer fresh_session.close();
 
     const data = tls.get();

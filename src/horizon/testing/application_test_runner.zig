@@ -4,7 +4,7 @@ comptime {
     }
 
     // For `_start`
-    _ = zitrus.start;
+    _ = zitrus.horizon.start;
 }
 
 pub const std_options: std.Options = .{
@@ -18,10 +18,15 @@ var log_err_count: usize = 0;
 pub fn main() void {
     @disableInstrumentation();
 
-    var srv = horizon.ServiceManager.init() catch unreachable;
-    defer srv.deinit();
+    const srv = horizon.ServiceManager.open() catch unreachable;
+    defer srv.close();
 
-    const apt = horizon.services.Applet.open(srv) catch unreachable;
+    srv.sendRegisterClient() catch unreachable;
+
+    var notif_man = horizon.ServiceManager.Notification.Manager.init(srv) catch unreachable;
+    defer notif_man.deinit();
+
+    const apt = horizon.services.Applet.open(.app, srv) catch unreachable;
     defer apt.close();
 
     horizon.testing.apt = apt;
@@ -33,8 +38,8 @@ pub fn main() void {
     horizon.testing.gsp = gsp;
     defer horizon.testing.gsp = undefined;
 
-    var app = horizon.services.Applet.Application.init(apt, srv) catch unreachable;
-    defer app.deinit(apt, srv);
+    var app = horizon.services.Applet.Application.init(apt, .app, srv) catch unreachable;
+    defer app.deinit(apt, .app, srv);
 
     // NOTE: We want std.debug.print behaviour, we don't want to lose our logged info if the app crashes!
     const test_fn_list = builtin.test_functions;
@@ -83,7 +88,7 @@ pub fn main() void {
     debug_writer.flush() catch {};
 
     if (log_err_count != 0 or fail_count != 0) {
-        const hid = horizon.services.Hid.open(srv) catch unreachable;
+        const hid = horizon.services.Hid.open(.user, srv) catch unreachable;
         defer hid.close();
 
         var input = horizon.services.Hid.Input.init(hid) catch unreachable;

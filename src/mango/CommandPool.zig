@@ -90,7 +90,7 @@ pub fn allocateNative(pool: *CommandPool, size: u32) ![]align(8) u32 {
         .fundamental_operation = .commit,
         .area = .all,
         .linear = true,
-    }, null, null, size * @sizeOf(u32), .rw)) {
+    }, null, null, size * @sizeOf(u32), .rw).cases()) {
         .success => |s| std.mem.bytesAsSlice(u32, s.value[0..(size * @sizeOf(u32))]),
         .failure => return error.OutOfMemory,
     };

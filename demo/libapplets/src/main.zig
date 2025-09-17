@@ -17,51 +17,21 @@ pub fn log(comptime message_level: std.log.Level, comptime scope: @TypeOf(.enum_
 }
 
 pub fn main() !void {
-    var srv = try ServiceManager.init();
-    defer srv.deinit();
+    var app: horizon.application.Software = try .init(horizon.heap.linear_page_allocator);
+    defer app.deinit(horizon.heap.linear_page_allocator);
 
-    const apt = try Applet.open(srv);
-    defer apt.close();
-
-    const gsp = try GspGpu.open(srv);
-    defer gsp.close();
-
-    var app = try Applet.Application.init(apt, srv);
-    defer app.deinit(apt, srv);
-
-    var gfx = try GspGpu.Graphics.init(gsp);
-    defer gfx.deinit(gsp);
-
-    var top_framebuffer = try Framebuffer.init(.{ .screen = .top }, horizon.heap.linear_page_allocator);
-    defer top_framebuffer.deinit(horizon.heap.linear_page_allocator);
-
-    var bottom_framebuffer = try Framebuffer.init(.{ .screen = .bottom }, horizon.heap.linear_page_allocator);
-    defer bottom_framebuffer.deinit(horizon.heap.linear_page_allocator);
-
-    @memset(top_framebuffer.currentFramebuffer(.left), 0xFF);
-    @memset(bottom_framebuffer.currentFramebuffer(.left), 0xFF);
-
-    try top_framebuffer.flushBuffer(gsp);
-    try bottom_framebuffer.flushBuffer(gsp);
-
-    while (true) {
-        const interrupts = try gfx.waitInterrupts();
-
-        if (interrupts.contains(.vblank_top)) {
-            break;
-        }
-    }
-
-    try top_framebuffer.present(&gfx, .none);
-    try bottom_framebuffer.present(&gfx, .none);
-
-    try gsp.sendSetLcdForceBlack(false);
-    defer gsp.sendSetLcdForceBlack(true) catch {};
+    var soft: GspGpu.Graphics.Software = try .init(.{
+        .top_mode = .@"2d",
+        .double_buffer = .initFill(true),
+        .color_format = .initFill(.bgr888),
+        .initial_contents = .initFill(null),
+    }, app.gsp, horizon.heap.linear_page_allocator);
+    defer soft.deinit(app.gsp, horizon.heap.linear_page_allocator, app.apt_app.flags.must_close);
 
     {
         var initial: Applet.Application.Error = .textUtf8(.success, "All your codebase are belong to us?", .none);
 
-        switch (try initial.start(&app, apt, srv, gsp)) {
+        switch (try initial.start(&app.apt_app, app.apt, .app, app.srv, app.gsp)) {
             .none,
             .action_performed,
             => {},
@@ -96,7 +66,7 @@ pub fn main() !void {
         }
     };
 
-    switch (try swkbd.startContext(&app, apt, srv, gsp, CallbackContext{})) {
+    switch (try swkbd.startContext(&app.apt_app, app.apt, .app, app.srv, app.gsp, CallbackContext{})) {
         else => |e| switch (e) {
             .left, .right => {},
             else => unreachable,
@@ -106,7 +76,7 @@ pub fn main() !void {
     {
         var initial: Applet.Application.Error = .textUtf8(.success, "Correct! Have a great day :D", .none);
 
-        switch (try initial.start(&app, apt, srv, gsp)) {
+        switch (try initial.start(&app.apt_app, app.apt, .app, app.srv, app.gsp)) {
             .none,
             .action_performed,
             => {},
@@ -127,7 +97,7 @@ const Hid = horizon.services.Hid;
 const Config = horizon.services.Config;
 const Framebuffer = GspGpu.Graphics.Framebuffer;
 
-pub const panic = zitrus.panic;
+pub const panic = zitrus.horizon.panic;
 const zitrus = @import("zitrus");
 const std = @import("std");
 

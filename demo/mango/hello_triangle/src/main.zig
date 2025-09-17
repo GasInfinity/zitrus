@@ -13,52 +13,20 @@ pub fn main() !void {
     // Instead of using the linear heap, use the normal heap.
     const gpa = horizon.heap.page_allocator;
 
-    // Create the address arbiter used for synchronization purposes.
+    // Initialize average Application state.
     //
-    // It allows the creation of FUTEXes
-    const arbiter: horizon.AddressArbiter = try .create();
-    defer arbiter.close();
+    // Includes (not exhaustive): connecting to the service manager, registering
+    // the application, ..., creating a `mango.Device` (what we'll use)
+    var app: horizon.application.Accelerated = try .init(gpa);
+    defer app.deinit(gpa);
 
-    // Init/Open the service manager.
-    // TODO: Will change to open/close as with services!
-    var srv = try ServiceManager.init();
-    defer srv.deinit();
-
-    // Open needed services. These are thin wrappers which manage no state
+    // Get the application device, it is destroyed automatically
+    // when the application is deinitialized as it owns it.
     //
-    // APT -> Interacts with the whole OS. E.g: It's what manages jumping to home or opening applets
-    // HID -> For input, TODO: N3DS input.
-    // GSP -> For interacting with the thin GPU driver (Thin as it only manages who has right over the GPU, framebuffers and signals interrupts)
-    const apt = try Applet.open(srv);
-    defer apt.close();
-
-    const hid = try Hid.open(srv);
-    defer hid.close();
-
-    const gsp = try GspGpu.open(srv);
-    defer gsp.close();
-
-    // Abstractions provided by zitrus.
-    //
-    // Application -> Manages the lifecycle of an application via APT and GSP (Does what an application should do when interacting with the OS).
-    // Input -> Thin wrapper over Hid for polling input.
-    var app = try Applet.Application.init(apt, srv);
-    defer app.deinit(apt, srv);
-
-    var input = try Hid.Input.init(hid);
-    defer input.deinit();
-
-    // XXX: The entrypoint WILL change, not finished!
-
-    // Create the Device.
-    // It OWNS the entire rendering workflow.
+    // See `mango.createHorizonBackedDevice`
     //
     // Similar workflow as in Vulkan.
-    const device: mango.Device = try mango.createHorizonBackedDevice(.{
-        .gsp = gsp,
-        .arbiter = arbiter,
-    }, gpa);
-    defer device.destroy(gpa);
+    const device: mango.Device = app.device;
 
     // Get the (TODO: allocated, all queues are allocated right now) queues at creation time. We allocate all queues at device creation time.
     const transfer_queue = device.getQueue(.transfer);
@@ -410,33 +378,16 @@ pub fn main() !void {
     // Stop filling the LCD with a solid color.
     //
     // Screen contents are undefined until we present the first frame, for simplicity we'll ignore that.
-    try gsp.sendSetLcdForceBlack(false);
-    defer if (!app.flags.must_close) gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
+    try app.gsp.sendSetLcdForceBlack(false);
+    defer if (!app.apt_app.flags.must_close) app.gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
 
     main_loop: while (true) {
-        while (try srv.pollNotification()) |notif| switch (notif) {
-            .must_terminate => break :main_loop,
-            else => {},
-        };
-
-        while (try app.pollNotification(apt, srv)) |n| switch (n) {
-            .jump_home, .jump_home_by_power => {
-                switch (try app.jumpToHome(apt, srv, gsp, .none)) {
-                    .resumed => {},
-                    .must_close => break :main_loop,
-                    .jump_home => unreachable,
-                }
-            },
-            .sleeping => {
-                while (try app.waitNotification(apt, srv) != .sleep_wakeup) {}
-                try gsp.sendSetLcdForceBlack(false);
-            },
-            .must_close, .must_close_by_shutdown => break :main_loop,
+        while (try app.pollEvent()) |ev| switch (ev) {
             .jump_home_rejected => {},
-            else => {},
+            .quit => break :main_loop,
         };
 
-        const pad = input.pollPad();
+        const pad = app.input.pollPad();
 
         if (pad.current.start) {
             break :main_loop;
@@ -541,7 +492,7 @@ const Applet = horizon.services.Applet;
 const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
 
-pub const panic = zitrus.panic;
+pub const panic = zitrus.horizon.panic;
 const zitrus = @import("zitrus");
 const std = @import("std");
 

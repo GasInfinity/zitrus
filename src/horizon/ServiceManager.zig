@@ -1,8 +1,5 @@
 const port_name = "srv:";
 
-pub const Error = ClientSession.RequestError;
-// TODO: Separate abstraction from the port/service!
-
 pub const Notification = enum(u32) {
     must_terminate = 0x100,
     sleep_mode_entry,
@@ -43,51 +40,50 @@ pub const Notification = enum(u32) {
     wifi_turning_off,
     wifi_turned_off,
     _,
+
+    pub const Manager = struct {
+        notification: Semaphore,
+
+        pub fn init(srv: ServiceManager) !Manager {
+            return .{ .notification = try srv.sendEnableNotification() };
+        }
+
+        pub fn deinit(man: *Manager) void {
+            man.notification.close();
+            man.* = undefined;
+        }
+
+        pub fn waitNotification(man: Manager, srv: ServiceManager) !Notification {
+            return try man.waitNotificationTimeout(srv, -1).?;
+        }
+
+        pub fn pollNotification(man: Manager, srv: ServiceManager) !?Notification {
+            return try man.waitNotificationTimeout(srv, 0);
+        }
+
+        pub fn waitNotificationTimeout(man: Manager, srv: ServiceManager, timeout_ns: i64) !?Notification {
+            man.notification.wait(timeout_ns) catch |err| switch (err) {
+                error.Timeout => return null,
+                else => |e| return e,
+            };
+            _ = man.notification.release(1);
+
+            return try srv.sendReceiveNotification();
+        }
+    };
 };
 
 session: ClientSession,
-notification: ?Semaphore = null,
 
-pub fn init() !SrvManager {
-    const srv_session = try ClientSession.connect(port_name);
-    var srv = SrvManager{
-        .session = srv_session,
-    };
-    errdefer srv.deinit();
-
-    try srv.sendRegisterClient();
-    srv.notification = try srv.sendEnableNotification();
-    return srv;
+pub fn open() !ServiceManager {
+    return .{ .session = try ClientSession.connect(port_name) };
 }
 
-pub fn deinit(srv: *SrvManager) void {
-    if (srv.notification) |*notif| {
-        notif.close();
-    }
-
+pub fn close(srv: ServiceManager) void {
     srv.session.close();
-    srv.* = undefined;
 }
 
-pub fn waitNotification(srv: SrvManager) Error!Notification {
-    return try srv.waitNotificationTimeout(-1).?;
-}
-
-pub fn pollNotification(srv: SrvManager) Error!?Notification {
-    return try srv.waitNotificationTimeout(0);
-}
-
-pub fn waitNotificationTimeout(srv: SrvManager, timeout_ns: i64) Error!?Notification {
-    const notification = srv.notification.?;
-    notification.wait(timeout_ns) catch |err| switch (err) {
-        error.Timeout => return null,
-        else => |e| return e,
-    };
-
-    return try srv.sendReceiveNotification();
-}
-
-pub fn getService(srv: SrvManager, name: []const u8, flags: command.GetServiceHandle.Request.Flags) !ClientSession {
+pub fn getService(srv: ServiceManager, name: []const u8, flags: command.GetServiceHandle.Request.Flags) !ClientSession {
     if (environment.findService(name)) |service| {
         return service;
     }
@@ -95,23 +91,23 @@ pub fn getService(srv: SrvManager, name: []const u8, flags: command.GetServiceHa
     return srv.sendGetServiceHandle(name, flags);
 }
 
-pub fn sendRegisterClient(srv: SrvManager) !void {
+pub fn sendRegisterClient(srv: ServiceManager) !void {
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.RegisterClient, .{}, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.RegisterClient, .{}, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendEnableNotification(srv: SrvManager) !Semaphore {
+pub fn sendEnableNotification(srv: ServiceManager) !Semaphore {
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.EnableNotification, .{}, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.EnableNotification, .{}, .{})).cases()) {
         .success => |s| s.value.response.notification_received,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendRegisterService(srv: SrvManager, name: []const u8, max_sessions: i16) !ServerPort {
+pub fn sendRegisterService(srv: ServiceManager, name: []const u8, max_sessions: i16) !ServerPort {
     std.debug.assert(name.len <= 8);
 
     var req: command.RegisterService.Request = .{
@@ -122,13 +118,13 @@ pub fn sendRegisterService(srv: SrvManager, name: []const u8, max_sessions: i16)
     @memcpy(req.name[0..name.len], name);
 
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.RegisterService, req, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.RegisterService, req, .{})).cases()) {
         .success => |s| s.value.response.server,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendUnregisterService(srv: SrvManager, name: []const u8) !void {
+pub fn sendUnregisterService(srv: ServiceManager, name: []const u8) !void {
     std.debug.assert(name.len <= 8);
 
     var req: command.UnregisterService.Request = .{
@@ -138,7 +134,7 @@ pub fn sendUnregisterService(srv: SrvManager, name: []const u8) !void {
     @memcpy(req.name[0..name.len], name);
 
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.UnregisterService, req, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.UnregisterService, req, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -147,7 +143,7 @@ pub fn sendUnregisterService(srv: SrvManager, name: []const u8) !void {
 pub const GetServiceHandleError = error{ AccessDenied, PortFull };
 
 // FIXME: Handle errors properly!
-pub fn sendGetServiceHandle(srv: SrvManager, name: []const u8, flags: command.GetServiceHandle.Request.Flags) !ClientSession {
+pub fn sendGetServiceHandle(srv: ServiceManager, name: []const u8, flags: command.GetServiceHandle.Request.Flags) !ClientSession {
     std.debug.assert(name.len <= 8);
 
     var req: command.GetServiceHandle.Request = .{
@@ -158,13 +154,13 @@ pub fn sendGetServiceHandle(srv: SrvManager, name: []const u8, flags: command.Ge
     @memcpy(req.name[0..name.len], name);
 
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.GetServiceHandle, req, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.GetServiceHandle, req, .{})).cases()) {
         .success => |s| s.value.response.service.handle,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendRegisterPort(srv: SrvManager, name: []const u8, port: ClientPort) !ServerPort {
+pub fn sendRegisterPort(srv: ServiceManager, name: []const u8, port: ClientPort) !ServerPort {
     std.debug.assert(name.len <= 8);
 
     var req: command.RegisterPort.Request = .{
@@ -175,13 +171,13 @@ pub fn sendRegisterPort(srv: SrvManager, name: []const u8, port: ClientPort) !Se
     @memcpy(req.name[0..name.len], name);
 
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.RegisterPort, req, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.RegisterPort, req, .{})).cases()) {
         .success => |s| s.value.response.server,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendUnregisterPort(srv: SrvManager, name: []const u8) !void {
+pub fn sendUnregisterPort(srv: ServiceManager, name: []const u8) !void {
     std.debug.assert(name.len <= 8);
 
     var req: command.UnregisterPort.Request = .{
@@ -191,13 +187,13 @@ pub fn sendUnregisterPort(srv: SrvManager, name: []const u8) !void {
     @memcpy(req.name[0..name.len], name);
 
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.UnregisterPort, req, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.UnregisterPort, req, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendGetPort(srv: SrvManager, name: []const u8, wait_until_found: bool) !ClientPort {
+pub fn sendGetPort(srv: ServiceManager, name: []const u8, wait_until_found: bool) !ClientPort {
     std.debug.assert(name.len <= 8);
 
     var req: command.GetPort.Request = .{
@@ -208,53 +204,53 @@ pub fn sendGetPort(srv: SrvManager, name: []const u8, wait_until_found: bool) !C
     @memcpy(req.name[0..name.len], name);
 
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.GetPort, req, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.GetPort, req, .{})).cases()) {
         .success => |s| s.value.response.service,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSubscribe(srv: SrvManager, notification: Notification) !void {
+pub fn sendSubscribe(srv: ServiceManager, notification: Notification) !void {
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.Subscribe, .{ .notification = notification }, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.Subscribe, .{ .notification = notification }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendUnsubscribe(srv: SrvManager, notification: Notification) !void {
+pub fn sendUnsubscribe(srv: ServiceManager, notification: Notification) !void {
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.Unsubscribe, .{ .notification = notification }, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.Unsubscribe, .{ .notification = notification }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendReceiveNotification(srv: SrvManager) !Notification {
+pub fn sendReceiveNotification(srv: ServiceManager) !Notification {
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.ReceiveNotification, .{}, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.ReceiveNotification, .{}, .{})).cases()) {
         .success => |s| s.value.response.notification,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendPublishToSubscriber(srv: SrvManager, notification: Notification, flags: command.PublishToSubscriber.Request.Flags) !void {
+pub fn sendPublishToSubscriber(srv: ServiceManager, notification: Notification, flags: command.PublishToSubscriber.Request.Flags) !void {
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.PublishToSubscriber, .{ .notification = notification, .flags = flags }, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.PublishToSubscriber, .{ .notification = notification, .flags = flags }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendPublishAndGetSubscriber(srv: SrvManager, notification: Notification) !command.PublishAndGetSubscriber.Response {
+pub fn sendPublishAndGetSubscriber(srv: ServiceManager, notification: Notification) !command.PublishAndGetSubscriber.Response {
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.PublishAndGetSubscriber, .{ .notification = notification }, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.PublishAndGetSubscriber, .{ .notification = notification }, .{})).cases()) {
         .success => |s| s.value.response,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendIsServiceRegistered(srv: SrvManager, name: []const u8) !bool {
+pub fn sendIsServiceRegistered(srv: ServiceManager, name: []const u8) !bool {
     std.debug.assert(name.len <= 8);
 
     var req: command.IsServiceRegistered.Request = .{
@@ -265,7 +261,7 @@ pub fn sendIsServiceRegistered(srv: SrvManager, name: []const u8) !bool {
     @memcpy(req.name[0..name.len], name);
 
     const data = tls.get();
-    return switch (try data.ipc.sendRequest(srv.session, command.IsServiceRegistered, req, .{})) {
+    return switch ((try data.ipc.sendRequest(srv.session, command.IsServiceRegistered, req, .{})).cases()) {
         .success => |s| s.value.response.registered,
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -358,7 +354,7 @@ pub const command = struct {
     };
 };
 
-const SrvManager = @This();
+const ServiceManager = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;

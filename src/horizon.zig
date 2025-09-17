@@ -1,16 +1,22 @@
 pub fn Result(T: type) type {
-    // TODO: Last rewrite of result. This must be a struct!
-    // However we can't switch on structs so we should just add a helper fn for ergonomics.
-    return union(enum) {
+    return struct {
         const Res = @This();
+        
+        pub const Cases = union(enum(u1)) {
+            success: Res,
+            failure: result.Code,
+        };
 
-        pub const Success = struct { code: result.Code, value: T };
-
-        success: Success,
-        failure: result.Code,
+        code: result.Code,
+        value: T,
 
         pub inline fn of(code: result.Code, value: T) Res {
-            return if (code.isSuccess()) .{ .success = .{ .code = code, .value = value } } else .{ .failure = code };
+            return .{ .code = code, .value = value };
+        }
+
+        /// Returns the result as a tagged union to be used in a switch.
+        pub inline fn cases(res: Res) Cases {
+            return if(res.code.isSuccess()) .{ .success = res } else .{ .failure = res.code };
         }
     };
 }
@@ -152,7 +158,7 @@ pub const Object = enum(u32) {
     _,
 
     pub fn dupe(obj: Object) !Object {
-        return switch (duplicateHandle(obj)) {
+        return switch (duplicateHandle(obj).cases()) {
             .success => |r| r.value,
             // FIXME: This CAN fail
             .failure => unreachable,
@@ -168,7 +174,7 @@ pub const AddressArbiter = packed struct(u32) {
     obj: Object,
 
     pub fn create() UnexpectedError!AddressArbiter {
-        return switch (createAddressArbiter()) {
+        return switch (createAddressArbiter().cases()) {
             .success => |s| s.value,
             .failure => |code| unexpectedResult(code),
         };
@@ -204,7 +210,7 @@ pub const Synchronization = packed struct(u32) {
     obj: Object,
 
     pub fn checkResult(comptime T: type, res: Result(T)) CreationError!T {
-        return switch (res) {
+        return switch (res.cases()) {
             .success => |s| s.value,
             .failure => |code| if (code == result.Code.out_of_sync_objects) error.OutOfSynchronizationObjects else unexpectedResult(code),
         };
@@ -223,7 +229,7 @@ pub const Synchronization = packed struct(u32) {
     }
 
     pub fn waitMultiple(syncs: []const Synchronization, wait_all: bool, timeout_ns: i64) WaitError!usize {
-        return switch (waitSynchronizationMultiple(@ptrCast(syncs), wait_all, timeout_ns)) {
+        return switch (waitSynchronizationMultiple(@ptrCast(syncs), wait_all, timeout_ns).cases()) {
             .success => |s| if (s.code == result.Code.timeout) error.Timeout else s.value,
             .failure => |code| unexpectedResult(code),
         };
@@ -273,7 +279,7 @@ pub const Semaphore = packed struct(u32) {
 
     // TODO: Same as with above, properly handle errors with unreachable
     pub fn release(semaphore: Semaphore, count: isize) usize {
-        return releaseSemaphore(semaphore, count).success.value;
+        return releaseSemaphore(semaphore, count).value;
     }
 
     pub fn wait(semaphore: Semaphore, timeout_ns: i64) WaitError!void {
@@ -370,7 +376,7 @@ pub const MemoryBlock = packed struct(u32) {
     obj: Object,
 
     pub fn create(address: [*]align(heap.page_size) u8, size: u32, this: MemoryPermission, other: MemoryPermission) CreationError!MemoryBlock {
-        return switch (createMemoryBlock(address, size, this, other)) {
+        return switch (createMemoryBlock(address, size, this, other).cases()) {
             .success => |s| s.value,
             .failure => |code| if (code == result.Code.out_of_memory_blocks) error.OutOfMemoryBlocks else unexpectedResult(code),
         };
@@ -413,7 +419,7 @@ pub const ClientSession = packed struct(u32) {
     sync: Synchronization,
 
     pub fn connect(port: [:0]const u8) ConnectionError!ClientSession {
-        return switch (connectToPort(port)) {
+        return switch (connectToPort(port).cases()) {
             .success => |s| s.value,
             .failure => |code| if (code == result.Code.port_not_found) error.NotFound else unexpectedResult(code),
         };
@@ -533,7 +539,7 @@ pub const Thread = packed struct(u32) {
     sync: Synchronization,
 
     pub fn create(entry: *const fn (ctx: ?*anyopaque) callconv(.c) noreturn, ctx: ?*anyopaque, stack_top: [*]u8, priority: Priority, processor_id: Processor) UnexpectedError!Thread {
-        return switch (createThread(entry, ctx, stack_top, priority, processor_id)) {
+        return switch (createThread(entry, ctx, stack_top, priority, processor_id).cases()) {
             .success => |s| s.value,
             .failure => |code| unexpectedResult(code),
         };
@@ -1330,7 +1336,7 @@ pub fn sbrk(n: usize) usize {
         .area = .all,
         .fundamental_operation = .commit,
         .linear = false,
-    }, @ptrFromInt(current_heap_top), null, aligned_n, .rw)) {
+    }, @ptrFromInt(current_heap_top), null, aligned_n, .rw).cases()) {
         .failure => 0,
         .success => current_heap_top,
     };
@@ -1349,6 +1355,9 @@ comptime {
     _ = fmt;
 }
 
+/// Higher-level Application abstraction.
+pub const application = @import("horizon/application.zig");
+
 pub const heap = @import("horizon/heap.zig");
 pub const result = @import("horizon/result.zig");
 pub const environment = @import("horizon/environment.zig");
@@ -1358,6 +1367,8 @@ pub const ipc = @import("horizon/ipc.zig");
 pub const tls = @import("horizon/tls.zig");
 pub const fmt = @import("horizon/fmt.zig");
 
+pub const start = @import("horizon/start.zig");
+pub const panic = @import("horizon/panic.zig");
 pub const testing = @import("horizon/testing.zig");
 
 pub const ServiceManager = @import("horizon/ServiceManager.zig");

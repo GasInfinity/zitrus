@@ -87,7 +87,7 @@ inline fn callMainWithArgs(argc: usize, argv: [*][*:0]u8) u8 {
         else => {
             if (@typeInfo(ReturnType) != .error_union) @compileError(bad_main_ret);
 
-            const result = root.main() catch |err| zitrus.panic.throw(@errorName(err), @errorReturnTrace());
+            const result = root.main() catch |err| horizon.panic.throw(@errorName(err), @errorReturnTrace());
 
             return switch (@TypeOf(result)) {
                 void => 0,

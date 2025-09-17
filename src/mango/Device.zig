@@ -302,7 +302,7 @@ pub fn allocateMemory(device: *Device, allocate_info: mango.MemoryAllocateInfo, 
                 .fundamental_operation = .commit,
                 .area = .all,
                 .linear = true,
-            }, null, null, aligned_allocation_size, .rw)) {
+            }, null, null, aligned_allocation_size, .rw).cases()) {
                 .success => |s| s.value,
                 .failure => return error.OutOfMemory,
             };
@@ -700,7 +700,7 @@ fn driverMain(ctx: ?*anyopaque) callconv(.c) noreturn {
 
                             gsp_gx.pushFrontAssumeCapacity(.initProcessCommandList(b_cmd.queue.buffer[0..b_cmd.queue.current_index], .none, .flush, .none));
                         },
-                        .present => presentation_engine.queueWork(itm),
+                        .present => presentation_engine.queueWork(gsp_framebuffers, itm),
                     }
 
                     enqueued_commands += 1;

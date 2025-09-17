@@ -4,8 +4,8 @@ pub fn initUrl(url: [:0]const u8) InternetBrowser {
     return .{ .url = url };
 }
 
-pub fn start(internet: *InternetBrowser, app: *Application, apt: Applet, srv: ServiceManager, gsp: GspGpu) !Application.ExecutionResult {
-    return app.launchSystemApplet(apt, srv, gsp, .internet_browser, .null, internet.url);
+pub fn start(internet: *InternetBrowser, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu) !Application.ExecutionResult {
+    return app.launchSystemApplet(apt, srv, service, gsp, .internet_browser, .null, internet.url);
 }
 
 const InternetBrowser = @This();

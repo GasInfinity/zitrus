@@ -251,56 +251,31 @@ const AppState = struct {
 };
 
 pub fn main() !void {
-    var srv = try ServiceManager.init();
-    defer srv.deinit();
+    var app: horizon.application.Software = try .init(horizon.heap.linear_page_allocator);
+    defer app.deinit(horizon.heap.linear_page_allocator);
 
-    const apt = try Applet.open(srv);
-    defer apt.close();
+    var soft: GspGpu.Graphics.Software = try .init(.{
+        .top_mode = .@"2d",
+        .double_buffer = .init(.{
+            .top = true,
+            .bottom = false,
+        }),
+        .color_format = .initFill(.bgr888),
+        .initial_contents = .initFill(null),
+    }, app.gsp, horizon.heap.linear_page_allocator);
+    defer soft.deinit(app.gsp, horizon.heap.linear_page_allocator, app.apt_app.flags.must_close);
 
-    const hid = try Hid.open(srv);
-    defer hid.close();
-
-    const gsp = try GspGpu.open(srv);
-    defer gsp.close();
-
-    var app = try Applet.Application.init(apt, srv);
-    defer app.deinit(apt, srv);
-
-    var input = try Hid.Input.init(hid);
-    defer input.deinit();
-
-    var gfx = try GspGpu.Graphics.init(gsp);
-    defer gfx.deinit(gsp);
-
-    var bottom_framebuffer = try Framebuffer.init(.{ .screen = .bottom, .double_buffer = false }, horizon.heap.linear_page_allocator);
-    defer bottom_framebuffer.deinit(horizon.heap.linear_page_allocator);
-
-    var top_framebuffer = try Framebuffer.init(.{ .screen = .top, .double_buffer = true }, horizon.heap.linear_page_allocator);
-    defer top_framebuffer.deinit(horizon.heap.linear_page_allocator);
-
-    @memset(top_framebuffer.currentFramebuffer(.left), 0x00);
     {
-        const bottom_fb = std.mem.bytesAsSlice(Bgr888, bottom_framebuffer.currentFramebuffer(.left));
+        const bottom_fb = std.mem.bytesAsSlice(Bgr888, soft.currentFramebuffer(.bottom, .left));
         @memset(bottom_fb, ground_color);
 
         const bottom = ScreenCtx.init(bottom_fb, Screen.bottom.width());
         bottom.drawSprite(.transparent_bitmap, 2 * (Screen.bottom.width() / 3), (Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ .transparent = transparent_color }, .{});
     }
 
-    try top_framebuffer.flushBuffer(gsp);
-    try bottom_framebuffer.flushBuffer(gsp);
-    while (true) {
-        const interrupts = try gfx.waitInterrupts();
-
-        if (interrupts.contains(.vblank_top)) {
-            break;
-        }
-    }
-    try bottom_framebuffer.present(&gfx, .none);
-    try top_framebuffer.swapBuffer(&gfx, .none);
-
-    try gsp.sendSetLcdForceBlack(false);
-    defer gsp.sendSetLcdForceBlack(true) catch unreachable;
+    soft.flushBuffers();
+    soft.swapBuffers(.none);
+    try soft.waitVBlank();
 
     var app_state: AppState = .{};
 
@@ -311,29 +286,12 @@ pub fn main() !void {
     var last_pressed: bool = false;
 
     main_loop: while (true) {
-        while (try srv.pollNotification()) |notif| switch (notif) {
-            .must_terminate => break :main_loop,
-            else => {},
-        };
-
-        while (try app.pollNotification(apt, srv)) |n| switch (n) {
-            .jump_home, .jump_home_by_power => {
-                j_h: switch (try app.jumpToHome(apt, srv, gsp, .none)) {
-                    .resumed => {},
-                    .jump_home => continue :j_h (try app.jumpToHome(apt, srv, gsp, .none)),
-                    .must_close => break :main_loop,
-                }
-            },
-            .sleeping => {
-                while (try app.waitNotification(apt, srv) != .sleep_wakeup) {}
-                try gsp.sendSetLcdForceBlack(false);
-            },
-            .must_close, .must_close_by_shutdown => break :main_loop,
+        while (try app.pollEvent()) |ev| switch (ev) {
             .jump_home_rejected => {},
-            else => {},
+            .quit => break :main_loop,
         };
 
-        const pad = input.pollPad();
+        const pad = app.input.pollPad();
         const changed = pad.current.changed(last_current);
         last_current = pad.current;
 
@@ -343,25 +301,19 @@ pub fn main() !void {
             break :main_loop;
         }
 
-        const touch = input.pollTouch();
+        const touch = app.input.pollTouch();
         const touch_changed = touch.pressed ^ last_pressed;
         const touch_pressed = touch.pressed and touch_changed;
 
         last_pressed = touch.pressed;
-        const top = ScreenCtx.initBuffer(top_framebuffer.currentFramebuffer(.left), Screen.top.width());
+        const top = ScreenCtx.initBuffer(soft.currentFramebuffer(.top, .left), Screen.top.width());
 
         app_state.update(pressed, touch_pressed, random);
         app_state.draw(top);
 
-        try top_framebuffer.flushBuffer(gsp);
-        while (true) {
-            const interrupts = try gfx.waitInterrupts();
-
-            if (interrupts.contains(.vblank_top)) {
-                break;
-            }
-        }
-        try top_framebuffer.swapBuffer(&gfx, .none);
+        soft.flushBuffers();
+        soft.swapBuffers(.none);
+        try soft.waitVBlank();
     }
 }
 
@@ -383,7 +335,7 @@ const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
 const Framebuffer = GspGpu.Graphics.Framebuffer;
 
-pub const panic = zitrus.panic;
+pub const panic = zitrus.horizon.panic;
 const zitrus = @import("zitrus");
 const std = @import("std");
 

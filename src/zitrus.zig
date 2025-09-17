@@ -81,7 +81,7 @@ pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, com
 }
 
 comptime {
-    _ = start;
+    _ = horizon.start;
 
     _ = fmt;
     _ = horizon;
@@ -93,9 +93,7 @@ comptime {
 pub const c = @import("c.zig");
 
 pub const fmt = @import("fmt.zig");
-pub const panic = @import("panic.zig");
 pub const memory = @import("memory.zig");
-pub const start = @import("start.zig");
 pub const horizon = @import("horizon.zig");
 pub const pica = @import("pica.zig");
 pub const math = @import("math.zig");

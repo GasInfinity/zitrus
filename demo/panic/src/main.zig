@@ -9,7 +9,7 @@ pub fn main() !void {
     @panic("Oops, something went wrong... At least we can report it ;D");
 }
 
-pub const panic = zitrus.panic;
+pub const panic = zitrus.horizon.panic;
 const zitrus = @import("zitrus");
 const std = @import("std");
 

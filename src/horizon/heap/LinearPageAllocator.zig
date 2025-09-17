@@ -20,7 +20,7 @@ pub fn alloc(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize)
         .fundamental_operation = .commit,
         .area = .all,
         .linear = true,
-    }, null, null, aligned_len, .rw)) {
+    }, null, null, aligned_len, .rw).cases()) {
         .success => |s| s.value,
         .failure => null,
     };
