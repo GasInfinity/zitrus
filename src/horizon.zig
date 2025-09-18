@@ -1,7 +1,7 @@
 pub fn Result(T: type) type {
     return struct {
         const Res = @This();
-        
+
         pub const Cases = union(enum(u1)) {
             success: Res,
             failure: result.Code,
@@ -16,7 +16,7 @@ pub fn Result(T: type) type {
 
         /// Returns the result as a tagged union to be used in a switch.
         pub inline fn cases(res: Res) Cases {
-            return if(res.code.isSuccess()) .{ .success = res } else .{ .failure = res.code };
+            return if (res.code.isSuccess()) .{ .success = res } else .{ .failure = res.code };
         }
     };
 }

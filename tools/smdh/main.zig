@@ -2,21 +2,21 @@
 const Self = @This();
 const Subcommand = enum { make, dump };
 
-pub const description = "make / dump smdh files with its settings and icon files.";
+pub const description = "Make / Dump SMDH files with its settings and icon files.";
 
 pub const Arguments = struct {
     pub const description = Self.description;
 
     command: union(Subcommand) {
-        pub const descriptions = .{ .make = "make a smdh file from its settings and icons", .dump = "dump a smdh file to its settings and icons" };
+        pub const descriptions = .{ .make = "Make a SMDH file from its settings and icons", .dump = "Dump a SMDH file to its settings and icons" };
 
         make: struct {
             positional: struct {
                 pub const descriptions = .{
-                    .@"out.smdh" = "output smdh",
-                    .@"settings.ziggy" = "application settings",
-                    .@"48x48" = "large icon (image decode support depends on zigimg)",
-                    .@"24x24" = "small icon (optional)",
+                    .@"out.smdh" = "Output SMDH",
+                    .@"settings.ziggy" = "Application settings",
+                    .@"48x48" = "Large icon (image decode support depends on zigimg)",
+                    .@"24x24" = "Small icon (optional)",
                 };
 
                 @"out.smdh": []const u8,
@@ -27,9 +27,9 @@ pub const Arguments = struct {
         },
         dump: struct {
             pub const descriptions = .{
-                .settings = "application settings output filename",
-                .@"48x48" = "large icon file output filename",
-                .@"24x24" = "small icon file output filename",
+                .settings = "Application settings output filename",
+                .@"48x48" = "Large icon file output filename",
+                .@"24x24" = "Small icon file output filename",
             };
 
             pub const switches = .{
@@ -44,7 +44,7 @@ pub const Arguments = struct {
 
             positional: struct {
                 pub const descriptions = .{
-                    .@"in.smdh" = "input smdh",
+                    .@"in.smdh" = "Input SMDH",
                 };
 
                 @"in.smdh": []const u8,

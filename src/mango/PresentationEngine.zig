@@ -134,7 +134,7 @@ pub fn queueWork(pe: *PresentationEngine, gsp_framebuffers: *[2]GspGpu.Framebuff
 
     // NOTE: The swapchain present queue already handles memory order.
     _ = presents.fetchAdd(1, .monotonic);
-    
+
     const slot: Swapchain.PresentSlot = .{
         .flags = .{
             .ignore_stereo = item.misc.ignore_stereo,
@@ -144,7 +144,7 @@ pub fn queueWork(pe: *PresentationEngine, gsp_framebuffers: *[2]GspGpu.Framebuff
 
     const is_next_present = chain.present(slot, pe.queue.device.arbiter);
 
-    if(is_next_present) {
+    if (is_next_present) {
         // NOTE: The GSP DOES process presents at vblank but we MUST present BEFORE vblank!
         updateNextPresent(&gsp_framebuffers[@intFromEnum(screen)], screen, chain, slot);
     }
@@ -166,10 +166,10 @@ pub fn refresh(pe: *PresentationEngine, gsp_framebuffers: *[2]GspGpu.Framebuffer
 
     // NOTE: We MUST have a present as we had a request!
     _ = chain.consumeNextPresent(pe.queue.device.arbiter) orelse unreachable;
-    
+
     // This must be done as if, e.g: we're using a fifo with 3 images (triple buffering),
     // we must present the next queued present if available.
-    if(chain.peekNextPresent()) |next_queued| {
+    if (chain.peekNextPresent()) |next_queued| {
         updateNextPresent(&gsp_framebuffers[@intFromEnum(screen)], screen, chain, next_queued);
     }
 }

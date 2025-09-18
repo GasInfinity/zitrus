@@ -98,3 +98,8 @@ pub const ExtendedHeader = extern struct {
         remaster_version: u16,
     };
 };
+
+comptime {
+    _ = exefs;
+    _ = romfs;
+}

@@ -15,6 +15,21 @@ pub const PreviousFirmwareType = enum(u8) {
     reset_agb,
 };
 
+pub const MemoryType = enum(u8) {
+    pub const default_old: MemoryType = .o64mb;
+    pub const default_new: MemoryType = .n124mb_prod;
+
+    o64mb,
+    o96mb = 2,
+    o80mb,
+    o72mb,
+    o32mb,
+
+    n124mb_prod = 6,
+    n178mb,
+    n124mb_dev,
+};
+
 pub const KernelConfig = extern struct {
     version: packed struct(u32) { unknown: u8, revision: u8, minor: u8, major: u8 },
     update_flag: u32,
@@ -25,7 +40,8 @@ pub const KernelConfig = extern struct {
     previous_firm: PreviousFirmwareType,
     ctr_sdk_version: u32,
     firm_launch_flags: u32,
-    app_memory_type: u32,
+    app_memory_type: MemoryType,
+    _padding0: [3]u8,
     app_memory_alloc: u32,
     sys_memory_alloc: u32,
     base_memory_alloc: u32,
@@ -39,10 +55,7 @@ pub const HardwareType = enum(u8) { product, devboard, debugger, capture, unknow
 pub const DateTime = extern struct {
     unix: u64,
     last_update_tick: u32,
-    _reserved0: u32,
-    _reserved1: u32,
-    _reserved2: u32,
-    _reserved3: u32,
+    _reserved0: [4]u32,
 };
 
 pub const WifiLevel = enum(u8) {

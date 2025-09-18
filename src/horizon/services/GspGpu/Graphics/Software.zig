@@ -41,11 +41,11 @@ pub fn init(config: Config, gsp: GspGpu, physical_linear_allocator: std.mem.Allo
     }, physical_linear_allocator);
     errdefer bottom.deinit(physical_linear_allocator);
 
-    if(config.initial_contents.get(.top)) |initial| {
+    if (config.initial_contents.get(.top)) |initial| {
         @memcpy(top.currentFramebuffer(.left), initial);
     } else @memset(top.currentFramebuffer(.left), 0x00);
 
-    if(config.initial_contents.get(.bottom)) |initial| {
+    if (config.initial_contents.get(.bottom)) |initial| {
         @memcpy(bottom.currentFramebuffer(.left), initial);
     } else @memset(bottom.currentFramebuffer(.left), 0x00);
 

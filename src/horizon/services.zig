@@ -1,3 +1,6 @@
+pub const ProcessManagerApplication = @import("services/ProcessManagerApp.zig");
+pub const NUserShell = @import("services/NUserShell.zig");
+pub const NUserShellPower = @import("services/NUserShellPower.zig");
 pub const Applet = @import("services/Applet.zig");
 pub const GspGpu = @import("services/GspGpu.zig");
 pub const GspLcd = @import("services/GspLcd.zig");

@@ -1,20 +1,20 @@
 const Subcommand = enum { result };
 const Self = @This();
 
-pub const description = "explain an horizon result code";
+pub const description = "Explain an horizon result code";
 
 pub const Arguments = struct {
     pub const description = Self.description;
 
     command: union(Subcommand) {
         pub const descriptions = .{
-            .result = "decompose a result into its components (level, module, summary and description)",
+            .result = "Decompose a result into its components (level, module, summary and description)",
         };
 
         result: struct {
             positional: struct {
                 pub const descriptions = .{
-                    .result = "the result code to explain",
+                    .result = "The result code to explain",
                 };
 
                 result: []const u8,

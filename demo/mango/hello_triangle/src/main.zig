@@ -17,7 +17,7 @@ pub fn main() !void {
     //
     // Includes (not exhaustive): connecting to the service manager, registering
     // the application, ..., creating a `mango.Device` (what we'll use)
-    var app: horizon.application.Accelerated = try .init(gpa);
+    var app: horizon.application.Accelerated = try .init(.default, gpa);
     defer app.deinit(gpa);
 
     // Get the application device, it is destroyed automatically

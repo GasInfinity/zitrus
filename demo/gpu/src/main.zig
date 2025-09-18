@@ -37,7 +37,7 @@ pub fn main() !void {
 
     const gpa = horizon.heap.page_allocator; // gpa_state.allocator();
 
-    var app: horizon.application.Accelerated = try .init(gpa);
+    var app: horizon.application.Accelerated = try .init(.default, gpa);
     defer app.deinit(gpa);
 
     const device: mango.Device = app.device;

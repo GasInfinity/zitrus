@@ -9,7 +9,7 @@ pub export fn ztrHorAppSoftInit(gpa: c.ZigAllocator) ?*application.Software {
         return null;
     };
     errdefer ally.destroy(soft);
-    
+
     soft.* = application.Software.init(ally) catch return null;
     return soft;
 }

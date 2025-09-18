@@ -251,7 +251,7 @@ const AppState = struct {
 };
 
 pub fn main() !void {
-    var app: horizon.application.Software = try .init(horizon.heap.linear_page_allocator);
+    var app: horizon.application.Software = try .init(.default, horizon.heap.linear_page_allocator);
     defer app.deinit(horizon.heap.linear_page_allocator);
 
     var soft: GspGpu.Graphics.Software = try .init(.{

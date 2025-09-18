@@ -1,18 +1,18 @@
 const Self = @This();
 const Subcommand = enum { make };
 
-pub const description = "make / dump 3dsx files with its executable, smdh and romfs";
+pub const description = "Make / Dump 3DSX files with its executable, SMDH and RomFS";
 
 pub const Arguments = struct {
     pub const description = Self.description;
 
     command: union(Subcommand) {
         pub const descriptions = .{
-            .make = "convert an executable, smdh and romfs -> 3dsx",
+            .make = "Convert an executable, SMDH and RomFS -> 3DSX",
         };
 
         make: struct {
-            pub const descriptions = .{ .smdh = "smdh metadata to embed", .romfs = "rom filesystem to embed" };
+            pub const descriptions = .{ .smdh = "SMDH metadata to embed", .romfs = "Rom filesystem to embed" };
 
             pub const switches = .{
                 .smdh = 's',
@@ -21,8 +21,8 @@ pub const Arguments = struct {
 
             positional: struct {
                 pub const descriptions = .{
-                    .@"in.elf" = "executable to convert",
-                    .@"out.3dsx" = "output 3dsx filename",
+                    .@"in.elf" = "Executable to convert",
+                    .@"out.3dsx" = "Output 3DSX filename",
                 };
 
                 @"in.elf": []const u8,

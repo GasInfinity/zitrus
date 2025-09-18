@@ -3,6 +3,20 @@ const service_names = [_][]const u8{ "cfg:i", "cfg:s", "cfg:u" };
 
 pub const Error = ClientSession.RequestError;
 
+pub const Service = enum(u2) {
+    user,
+    system,
+    internal,
+
+    pub fn name(srv: Service) [:0]const u8 {
+        return switch (srv) {
+            .user => "cfg:u",
+            .system => "cfg:s",
+            .internal => "cfg:i",
+        };
+    }
+};
+
 pub const SystemModel = enum(u8) {
     ctr,
     spr,
@@ -375,18 +389,8 @@ pub const Block = enum(u32) {
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) Error!Config {
-    var last_error: Error = undefined;
-    const config_session = used: for (service_names) |service_name| {
-        const config_session = srv.getService(service_name, .wait) catch |err| {
-            last_error = err;
-            continue;
-        };
-
-        break :used config_session;
-    } else return last_error;
-
-    return Config{ .session = config_session };
+pub fn open(service: Service, srv: ServiceManager) Error!Config {
+    return .{ .session = try srv.getService(service.name(), .wait) };
 }
 
 pub fn close(config: Config) void {
@@ -532,9 +536,5 @@ const horizon = zitrus.horizon;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
 
-const ResultCode = horizon.result.Code;
 const ClientSession = horizon.ClientSession;
-const Event = horizon.Event;
-const MemoryBlock = horizon.MemoryBlock;
-
-const ServiceManager = zitrus.horizon.ServiceManager;
+const ServiceManager = horizon.ServiceManager;

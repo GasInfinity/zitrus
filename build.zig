@@ -2,7 +2,7 @@ pub const target = struct {
     pub const arm9: std.Target.Query = .{
         .cpu_arch = .arm,
         .cpu_model = .{ .explicit = &std.Target.arm.cpu.arm946e_s },
-        .abi = .eabihf,
+        .abi = .eabi,
         .os_tag = .freestanding,
     };
 
@@ -13,6 +13,7 @@ pub const target = struct {
         .os_tag = .freestanding,
     };
 
+    /// Deprecated: will be removed in favor of the 'arm-3ds' target.
     pub const horizon_arm11: std.Target.Query = .{
         .cpu_arch = .arm,
         .cpu_model = .{ .explicit = &std.Target.arm.cpu.mpcore },

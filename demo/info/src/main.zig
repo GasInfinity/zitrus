@@ -1,5 +1,5 @@
 pub fn main() !void {
-    var app: horizon.application.Software = try .init(horizon.heap.linear_page_allocator);
+    var app: horizon.application.Software = try .init(.default, horizon.heap.linear_page_allocator);
     defer app.deinit(horizon.heap.linear_page_allocator);
 
     var soft: GspGpu.Graphics.Software = try .init(.{
@@ -13,7 +13,7 @@ pub fn main() !void {
     }, app.gsp, horizon.heap.linear_page_allocator);
     defer soft.deinit(app.gsp, horizon.heap.linear_page_allocator, app.apt_app.flags.must_close);
 
-    const cfg = try Config.open(app.srv);
+    const cfg = try Config.open(.user, app.srv);
     defer cfg.close();
 
     const model = try cfg.sendGetSystemModel();

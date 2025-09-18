@@ -6,7 +6,7 @@ const OutputFormat = enum {
 };
 
 pub const description =
-    \\assemble / dissassemble zitrus PICA200 shader assembly.
+    \\Assemble / Dissassemble zitrus PICA200 shader assembly.
 ;
 
 pub const Arguments = struct {
@@ -14,13 +14,13 @@ pub const Arguments = struct {
 
     command: union(Subcommand) {
         pub const descriptions = .{
-            .@"asm" = "assemble a zpsm file",
-            .disasm = "TODO: disassemble PICA200 shader assembly",
+            .@"asm" = "Assemble a ZPSM file",
+            .disasm = "TODO: Disassemble PICA200 shader assembly",
         };
 
         @"asm": struct {
             pub const descriptions = .{
-                .ofmt = "output binary format",
+                .ofmt = "Output binary format",
             };
 
             pub const switches = .{
@@ -32,7 +32,7 @@ pub const Arguments = struct {
 
             positional: struct {
                 pub const descriptions = .{
-                    .file = "file to assemble",
+                    .file = "File to assemble",
                 };
 
                 file: []const u8,

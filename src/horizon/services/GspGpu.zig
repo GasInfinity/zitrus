@@ -872,4 +872,4 @@ const Object = horizon.Object;
 const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;
 const ClientSession = horizon.ClientSession;
-const ServiceManager = zitrus.horizon.ServiceManager;
+const ServiceManager = horizon.ServiceManager;

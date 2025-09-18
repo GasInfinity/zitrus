@@ -14,7 +14,6 @@
 > the first stable (minor) release, a.k.a `0.1.0`. No ETA is given.
 
 ```bash
-# supporting zig 0.15.1
 zig fetch --save git+https://github.com/GasInfinity/zitrus
 ```
 
@@ -135,6 +134,8 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 - 🟡 `cfg:u/s/i`
 - 🟢 `gsp::Gpu`
 - 🟡🪫 `gsp::Lcd`
+- 🟡 `ns:s`
+- 🟢 `ns:p`
 - 🔴 All other [services](https://www.3dbrew.org/wiki/Services_API) not listed here
 
 ## Applet Support

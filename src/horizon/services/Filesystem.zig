@@ -814,5 +814,4 @@ const ipc = horizon.ipc;
 
 const ResultCode = horizon.result.Code;
 const ClientSession = horizon.ClientSession;
-
-const ServiceManager = zitrus.horizon.ServiceManager;
+const ServiceManager = horizon.ServiceManager;

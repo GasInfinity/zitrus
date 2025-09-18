@@ -25,6 +25,10 @@ pub const Event = enum(u1) {
     quit,
 };
 
+pub const Config = struct {
+    pub const default: Config = .{};
+};
+
 fn Manager(comptime accelerated: bool) type {
     return struct {
         pub const apt_service: Applet.Service = .app;
@@ -41,7 +45,8 @@ fn Manager(comptime accelerated: bool) type {
         input: Hid.Input,
         device: (if (accelerated) mango.Device else void),
 
-        pub fn init(allocator: std.mem.Allocator) !Application {
+        pub fn init(config: Config, allocator: std.mem.Allocator) !Application {
+            _ = config;
             const arbiter: horizon.AddressArbiter = try .create();
             errdefer arbiter.close();
 
@@ -117,7 +122,7 @@ fn Manager(comptime accelerated: bool) type {
         }
 
         /// Waits for an event until one is encountered or a timeout happens.
-        /// 
+        ///
         /// Automatically jumps to the home menu and sleeps if requested and allowed.
         pub fn waitEventTimeout(app: *Application, timeout: i64) !?Event {
             while (try app.notification_manager.pollNotification(app.srv)) |notif| switch (notif) {

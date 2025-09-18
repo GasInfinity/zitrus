@@ -1,20 +1,26 @@
-const Subcommand = enum { info };
+const Subcommand = enum {
+    exefs,
+    info,
+};
+
 const Self = @This();
 
-pub const description = "extract / make / show ncch (cxi/cfa) files";
+pub const description = "Extract / Make / Show NCCH (CXI/CFA) files";
 
 pub const Arguments = struct {
     pub const description = Self.description;
 
     command: union(Subcommand) {
         pub const descriptions = .{
-            .info = "show info about a ncch",
+            .exefs = exefs_main.Arguments.description,
+            .info = "Show info about an NCCH",
         };
 
+        exefs: exefs_main.Arguments,
         info: struct {
             positional: struct {
                 pub const descriptions = .{
-                    .ncch = "the ncch file",
+                    .ncch = "The NCCH file",
                 };
 
                 ncch: []const u8,
@@ -25,8 +31,9 @@ pub const Arguments = struct {
 
 pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
     const cwd = std.fs.cwd();
-    _ = arena;
+
     return switch (arguments.command) {
+        .exefs => |args| exefs_main.main(arena, args),
         .info => |i| m: {
             const ncch_path = i.positional.ncch;
             const ncch_file = cwd.openFile(ncch_path, .{ .mode = .read_only }) catch |err| {
@@ -96,3 +103,5 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
 const std = @import("std");
 const zitrus = @import("zitrus");
 const ncch = zitrus.horizon.fmt.ncch;
+
+const exefs_main = @import("exefs-main.zig");
