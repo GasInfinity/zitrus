@@ -96,8 +96,8 @@ fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: s
 
     tools.addImport("zitrus", zitrus_mod);
 
-    const flags = b.dependency("flags", .{});
-    tools.addImport("flags", flags.module("flags"));
+    const zdap = b.dependency("zdap", .{});
+    tools.addImport("zdap", zdap.module("zdap"));
 
     const ziggy = b.dependency("ziggy", .{});
     tools.addImport("ziggy", ziggy.module("ziggy"));

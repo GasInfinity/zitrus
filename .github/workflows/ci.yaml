@@ -25,3 +25,7 @@ jobs:
 
       - name: Build tools
         run: zig build
+
+      # We don't test them yet in CI as we need a way to do it (what emulator? does any support headless?) but at least they must build.
+      - name: Build all standalone 3DS tests
+        run: zig build build-tests

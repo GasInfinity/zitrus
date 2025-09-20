@@ -1,33 +1,28 @@
+pub const description = "Explain Horizon things";
+
 const Subcommand = enum { result };
-const Self = @This();
 
-pub const description = "Explain an horizon result code";
+pub const Result = struct {
+    pub const description = "Decompose a result into its components (level, module, summary and description)";
 
-pub const Arguments = struct {
-    pub const description = Self.description;
-
-    command: union(Subcommand) {
+    @"--": struct {
         pub const descriptions = .{
-            .result = "Decompose a result into its components (level, module, summary and description)",
+            .result = "The result code to explain",
         };
 
-        result: struct {
-            positional: struct {
-                pub const descriptions = .{
-                    .result = "The result code to explain",
-                };
-
-                result: []const u8,
-            },
-        },
+        result: []const u8,
     },
 };
 
-pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
+@"-": union(Subcommand) {
+    result: Result,
+},
+
+pub fn main(args: Explain, arena: std.mem.Allocator) !u8 {
     _ = arena;
-    return switch (arguments.command) {
+    return switch (args.@"-") {
         .result => |r| {
-            const result_str = r.positional.result;
+            const result_str = r.@"--".result;
             const result_int = std.fmt.parseUnsigned(u32, result_str, 0) catch |err| switch (err) {
                 error.Overflow => {
                     std.debug.print("integer '{s}' does not fit into an u32\n", .{result_str});
@@ -68,6 +63,8 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
         },
     };
 }
+
+const Explain = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");

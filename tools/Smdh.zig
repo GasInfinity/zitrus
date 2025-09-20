@@ -1,63 +1,63 @@
-// TODO: better file error handling (too much duplicated code)
-const Self = @This();
-const Subcommand = enum { make, dump };
-
 pub const description = "Make / Dump SMDH files with its settings and icon files.";
 
-pub const Arguments = struct {
-    pub const description = Self.description;
+const Subcommand = enum { make, dump };
 
-    command: union(Subcommand) {
-        pub const descriptions = .{ .make = "Make a SMDH file from its settings and icons", .dump = "Dump a SMDH file to its settings and icons" };
+pub const Make = struct {
+    pub const description = "Make a SMDH file from its settings and icons";
 
-        make: struct {
-            positional: struct {
-                pub const descriptions = .{
-                    .@"out.smdh" = "Output SMDH",
-                    .@"settings.ziggy" = "Application settings",
-                    .@"48x48" = "Large icon (image decode support depends on zigimg)",
-                    .@"24x24" = "Small icon (optional)",
-                };
+    @"--": struct {
+        pub const descriptions = .{
+            .@"out.smdh" = "Output SMDH",
+            .@"settings.ziggy" = "Application settings",
+            .@"48x48" = "Large icon (image decode support depends on zigimg)",
+            .@"24x24" = "Small icon (optional)",
+        };
 
-                @"out.smdh": []const u8,
-                @"settings.ziggy": []const u8,
-                @"48x48": []const u8,
-                @"24x24": ?[]const u8,
-            },
-        },
-        dump: struct {
-            pub const descriptions = .{
-                .settings = "Application settings output filename",
-                .@"48x48" = "Large icon file output filename",
-                .@"24x24" = "Small icon file output filename",
-            };
-
-            pub const switches = .{
-                .settings = 'a',
-                .@"48x48" = 'l',
-                .@"24x24" = 's',
-            };
-
-            settings: ?[]const u8,
-            @"48x48": ?[]const u8,
-            @"24x24": ?[]const u8,
-
-            positional: struct {
-                pub const descriptions = .{
-                    .@"in.smdh" = "Input SMDH",
-                };
-
-                @"in.smdh": []const u8,
-            },
-        },
+        @"out.smdh": []const u8,
+        @"settings.ziggy": []const u8,
+        @"48x48": []const u8,
+        @"24x24": ?[]const u8,
     },
 };
 
-pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
+pub const Dump = struct {
+    pub const description = "Dump a SMDH file to its settings and icons";
+
+    pub const descriptions = .{
+        .settings = "Application settings output filename",
+        .@"48x48" = "Large icon file output filename",
+        .@"24x24" = "Small icon file output filename",
+    };
+
+    pub const switches = .{
+        .settings = 'a',
+        .@"48x48" = 'l',
+        .@"24x24" = 's',
+    };
+
+    settings: ?[]const u8,
+    @"48x48": ?[]const u8,
+    @"24x24": ?[]const u8,
+
+    @"--": struct {
+        pub const descriptions = .{
+            .@"in.smdh" = "Input SMDH",
+        };
+
+        @"in.smdh": []const u8,
+    },
+};
+
+@"-": union(Subcommand) {
+    make: Make,
+    dump: Dump,
+},
+
+pub fn main(args: Smdh, arena: std.mem.Allocator) !u8 {
     const cwd = std.fs.cwd();
-    return switch (arguments.command) {
+    return switch (args.@"-") {
         .make => |make| m: {
-            const settings_path = make.positional.@"settings.ziggy";
+            const settings_path = make.@"--".@"settings.ziggy";
             const settings_code = code: {
                 const file = cwd.openFile(settings_path, .{ .mode = .read_only }) catch |err| {
                     std.debug.print("could not open settings file '{s}': {s}\n", .{ settings_path, @errorName(err) });
@@ -96,8 +96,8 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                 else => break :m err,
             };
 
-            // const large_icon_path = make.positional.@"48x48";
-            // const possibly_small_icon_path = make.positional.@"24x24";
+            // const large_icon_path = make.@"--".@"48x48";
+            // const possibly_small_icon_path = make.@"--".@"24x24";
 
             std.debug.print("smdh image encoding/decoding regressed, please wait until zigimg gets updated to 0.15, sorry!\n", .{});
             // const icons = loadIcons(arena, large_icon_path, possibly_small_icon_path) catch |err| {
@@ -110,7 +110,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                 break :m err;
             };
 
-            const out_path = make.positional.@"out.smdh";
+            const out_path = make.@"--".@"out.smdh";
             const out = cwd.createFile(out_path, .{}) catch |err| {
                 std.debug.print("could not create output file '{s}': {s}\n", .{ out_path, @errorName(err) });
                 break :m 1;
@@ -129,7 +129,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
                 break :d 0;
             }
 
-            const smdh_path = dump.positional.@"in.smdh";
+            const smdh_path = dump.@"--".@"in.smdh";
             const input_smdh = input: {
                 const smdh_file = cwd.openFile(smdh_path, .{ .mode = .read_only }) catch |err| {
                     std.debug.print("could not open smdh file '{s}': {s}\n", .{ smdh_path, @errorName(err) });
@@ -301,7 +301,9 @@ comptime {
     _ = ApplicationSettings;
 }
 
-const ApplicationSettings = @import("ApplicationSettings.zig");
+const Smdh = @This();
+
+const ApplicationSettings = @import("Smdh/ApplicationSettings.zig");
 
 const std = @import("std");
 const ziggy = @import("ziggy");

@@ -1,70 +1,28 @@
-const AppletSubCommand = t: {
-    const applets_decls = @typeInfo(applets).@"struct".decls;
-    var applet_fields: [applets_decls.len]std.builtin.Type.EnumField = undefined;
-
-    var i = 0;
-    for (applets_decls) |applet| {
-        applet_fields[i] = .{
-            .name = applet.name,
-            .value = i,
-        };
-
-        i += 1;
-    }
-
-    break :t @Type(std.builtin.Type{ .@"enum" = std.builtin.Type.Enum{
-        .tag_type = u32,
-        .fields = &applet_fields,
-        .decls = &.{},
-        .is_exhaustive = true,
-    } });
-};
-
-// NOTE: I initially did it at comptime, however zig does not support adding decls at comptime and I cannot set the descriptions struct :(
-// At least we get comptime checking when adding a new applet...
-const AppletSubcommandArguments = union(AppletSubCommand) {
-    pub const descriptions = (d: {
-        const defined_applets = std.enums.values(AppletSubCommand);
-        var applet_descriptions: [defined_applets.len]std.builtin.Type.StructField = undefined;
-
-        for (defined_applets, 0..) |applet, i| {
-            const applet_name = @tagName(applet);
-            const applet_namespace = @field(applets, applet_name);
-
-            if (!@hasDecl(applet_namespace, "description")) {
-                @compileError("applet " ++ applet_name ++ " does not have a description!");
-            }
-
-            applet_descriptions[i] = .{
-                .name = applet_name,
-                .type = []const u8,
-                .default_value_ptr = @ptrCast(&@as([]const u8, @field(applet_namespace, "description"))),
-                .is_comptime = false,
-                .alignment = @alignOf([]const u8),
-            };
-        }
-
-        break :d @Type(std.builtin.Type{ .@"struct" = .{
-            .layout = .auto,
-            .fields = &applet_descriptions,
-            .decls = &.{},
-            .is_tuple = false,
-        } });
-    }){};
-
-    @"3dsx": applets.@"3dsx".Arguments,
-    smdh: applets.smdh.Arguments,
-    pica: applets.pica.Arguments,
-    explain: applets.explain.Arguments,
-    ncch: applets.ncch.Arguments,
+const Applets = union(enum) {
+    explain: @import("Explain.zig"),
+    smdh: @import("Smdh.zig"),
+    exefs: @import("ExeFs.zig"),
+    romfs: @import("RomFs.zig"),
+    ncch: @import("Ncch.zig"),
+    @"3dsx": @import("3dsx.zig"),
+    pica: @import("Pica.zig"),
 };
 
 const Arguments = struct {
     pub const description =
-        \\tools to dump / make different 3ds related files.
+        \\Tools for working with different 3DS-related things.
     ;
 
-    command: AppletSubcommandArguments,
+    pub const descriptions = .{
+        .version = "Print version number and exit",
+    };
+
+    pub const switches = .{
+        .version = 'v',
+    };
+
+    version: bool,
+    @"-": ?Applets,
 };
 
 pub fn main() !u8 {
@@ -79,19 +37,26 @@ pub fn main() !u8 {
     const args = try std.process.argsAlloc(arena);
     defer std.process.argsFree(arena, args);
 
-    const arguments = flags.parse(args, "zitrus-tools", Arguments, .{});
-    const applet = std.meta.activeTag(arguments.command);
+    const arguments = zdap.parse(args, "zitrus-tools", Arguments, .{});
 
-    return switch (applet) {
-        inline else => |a| @call(.auto, @field(applets, @tagName(a)).main, .{ arena, @field(arguments.command, @tagName(a)) }),
+    if (arguments.version) {
+        std.debug.print("0.0.0-pre\n", .{}); // Don't even try to change this until the first release.
+        return 0;
+    }
+
+    if (arguments.@"-" == null) {
+        std.debug.print("access the help menu with 'zitrus-tools -h'\n", .{});
+        return 0;
+    }
+
+    return switch (arguments.@"-".?) {
+        inline else => |a| a.main(arena),
     };
 }
 
 test {
-    std.testing.refAllDeclsRecursive(applets);
+    _ = Applets;
 }
 
-const applets = @import("applets.zig");
-
 const std = @import("std");
-const flags = @import("flags");
+const zdap = @import("zdap");

@@ -12,9 +12,9 @@
             .url = "git+https://github.com/GasInfinity/zsflt.git#d5868fe99fd7c659071f83e92fe2ba7846022f16",
             .hash = "zsflt-0.0.0-_pCibecdAAD3Ul0lr4MlKdEWCUsxQSP5gh8AxEfbvMkw",
         },
-        .flags = .{
-            .url = "git+https://github.com/GasInfinity-Forks/flags.git?ref=update-0.15#608b448a68699b95bbe5badb963da321a7f121a0",
-            .hash = "flags-0.10.0-a_9h3thvAAAwImEdfcdhY0xmV7UkB1NUgpst7BfQaULU",
+        .zdap = .{
+            .url = "git+https://github.com/GasInfinity/zdap#1b1fc477d2506d979ec38356f41a976693de3f2e",
+            .hash = "zdap-0.1.0-wEMl7vF7AADjRQP9W--Y4UTCr7mCuYmbCypTGO0HxPue",
         },
         .ziggy = .{
             .url = "git+https://github.com/kristoff-it/ziggy#4353b20ef2ac750e35c6d68e4eb2a07c2d7cf901",

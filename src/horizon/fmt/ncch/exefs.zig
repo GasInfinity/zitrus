@@ -1,4 +1,13 @@
-/// Header of an ExeFS files as defined in https://www.3dbrew.org/wiki/ExeFS
+//! ExeFS reader and writer.
+//!
+//! The structure is pretty simple:
+//!     - Header -> There's a maximum of 10 files (at least in the header),
+//!       file offsets are relative to the end of the header and the corresponding
+//!       hash of file `i` is stored at `9 - i`.
+//!     - File data
+//!
+//! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/ExeFS
+
 pub const Header = extern struct {
     pub const max_files = 10;
 
@@ -15,11 +24,21 @@ pub const Header = extern struct {
     /// SHA256 hashes over the entire files, stored in reverse order.
     file_hashes: [max_files][0x20]u8,
 
-    pub fn iterator(hdr: Header) Iterator {
+    pub fn iterator(hdr: *const Header) Iterator {
         return .{
             .header = hdr,
             .current = 0,
         };
+    }
+
+    pub fn find(hdr: *const Header, name: []const u8) ?Iterator.File {
+        var it = hdr.iterator();
+
+        return f: while (it.next()) |file| {
+            if (std.mem.eql(u8, file.name, name)) {
+                break :f file;
+            }
+        } else null;
     }
 
     pub const Iterator = struct {
@@ -31,9 +50,18 @@ pub const Header = extern struct {
             offset: u32,
             /// Size in bytes.
             size: u32,
+
+            /// Checks if the stored hash matches a newly computed hash of the data.
+            pub fn check(file: Iterator.File, data: []const u8) bool {
+                std.debug.assert(file.size == data.len);
+
+                var data_hash: [32]u8 = undefined;
+                std.crypto.hash.sha2.Sha256.hash(data, &data_hash, .{});
+                return std.mem.eql(u8, file.hash, &data_hash);
+            }
         };
 
-        header: Header,
+        header: *const Header,
         current: u8,
 
         pub fn next(it: *Iterator) ?Iterator.File {
@@ -77,6 +105,11 @@ pub const File = struct {
     }
 };
 
+/// Writes an ExeFS to the specified writer.
+///
+/// Asserts that the amount of files is less than `Header.max_files`,
+/// its file size fits in an `u32` and the accumulated size of all files
+/// is less or equal than `std.math.maxInt(u32)`.
 pub fn write(writer: *std.Io.Writer, files: []const File) void {
     std.debug.assert(files.len <= Header.max_files);
 

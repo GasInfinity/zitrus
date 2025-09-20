@@ -1,41 +1,32 @@
+pub const description = "Extract / Make / Show NCCH (CXI/CFA) files";
+
 const Subcommand = enum {
-    exefs,
     info,
 };
 
-const Self = @This();
+pub const Info = struct {
+    pub const description = "Show info about an NCCH";
 
-pub const description = "Extract / Make / Show NCCH (CXI/CFA) files";
-
-pub const Arguments = struct {
-    pub const description = Self.description;
-
-    command: union(Subcommand) {
+    @"--": struct {
         pub const descriptions = .{
-            .exefs = exefs_main.Arguments.description,
-            .info = "Show info about an NCCH",
+            .ncch = "The NCCH file",
         };
 
-        exefs: exefs_main.Arguments,
-        info: struct {
-            positional: struct {
-                pub const descriptions = .{
-                    .ncch = "The NCCH file",
-                };
-
-                ncch: []const u8,
-            },
-        },
+        ncch: []const u8,
     },
 };
 
-pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
+@"-": union(Subcommand) {
+    info: Info,
+},
+
+pub fn main(args: Ncch, arena: std.mem.Allocator) !u8 {
     const cwd = std.fs.cwd();
 
-    return switch (arguments.command) {
-        .exefs => |args| exefs_main.main(arena, args),
+    _ = arena;
+    return switch (args.@"-") {
         .info => |i| m: {
-            const ncch_path = i.positional.ncch;
+            const ncch_path = i.@"--".ncch;
             const ncch_file = cwd.openFile(ncch_path, .{ .mode = .read_only }) catch |err| {
                 std.debug.print("could not open ncch '{s}': {s}\n", .{ ncch_path, @errorName(err) });
                 break :m 1;
@@ -100,8 +91,11 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
     };
 }
 
+const Ncch = @This();
+
 const std = @import("std");
 const zitrus = @import("zitrus");
 const ncch = zitrus.horizon.fmt.ncch;
 
-const exefs_main = @import("exefs-main.zig");
+const ExeFs = @import("ExeFs.zig");
+const RomFs = @import("RomFs.zig");

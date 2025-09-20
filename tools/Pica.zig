@@ -1,47 +1,44 @@
-const Self = @This();
+pub const description =
+    \\Assemble / Dissassemble zitrus PICA200 shader assembly.
+;
 
 const Subcommand = enum { @"asm", disasm };
 const OutputFormat = enum {
     zpsh,
 };
 
-pub const description =
-    \\Assemble / Dissassemble zitrus PICA200 shader assembly.
-;
+pub const Asm = struct {
+    pub const description = "Assemble a ZPSM file";
 
-pub const Arguments = struct {
-    pub const description = Self.description;
+    pub const descriptions = .{
+        .ofmt = "Output binary format",
+    };
 
-    command: union(Subcommand) {
+    pub const switches = .{
+        .output = 'o',
+    };
+
+    ofmt: OutputFormat = .zpsh,
+    output: []const u8,
+
+    @"--": struct {
         pub const descriptions = .{
-            .@"asm" = "Assemble a ZPSM file",
-            .disasm = "TODO: Disassemble PICA200 shader assembly",
+            .file = "File to assemble",
         };
 
-        @"asm": struct {
-            pub const descriptions = .{
-                .ofmt = "Output binary format",
-            };
-
-            pub const switches = .{
-                .output = 'o',
-            };
-
-            ofmt: OutputFormat = .zpsh,
-            output: []const u8,
-
-            positional: struct {
-                pub const descriptions = .{
-                    .file = "File to assemble",
-                };
-
-                file: []const u8,
-                // trailing: []const []const u8,
-            },
-        },
-        disasm: struct {},
+        file: []const u8,
+        // trailing: []const []const u8,
     },
 };
+
+pub const Disasm = struct {
+    pub const description = "TODO: Disassemble PICA200 shader assembly";
+};
+
+@"-": union(Subcommand) {
+    @"asm": Asm,
+    disasm: Disasm,
+},
 
 const Diagnostic = struct {
     pub const Location = struct {
@@ -203,7 +200,7 @@ const Diagnostic = struct {
     }
 };
 
-pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
+pub fn main(args: Pica, arena: std.mem.Allocator) !u8 {
     const cwd = std.fs.cwd();
 
     var stderr_buf: [4096]u8 = undefined;
@@ -211,9 +208,9 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
     const stderr = &stderr_raw.interface;
     const tty_cfg: std.Io.tty.Config = .detect(std.fs.File.stderr());
 
-    switch (arguments.command) {
+    switch (args.@"-") {
         .@"asm" => |asm_options| {
-            const file_path = asm_options.positional.file;
+            const file_path = asm_options.@"--".file;
             const file_source = src: {
                 const file = cwd.openFile(file_path, .{ .mode = .read_only }) catch |err| {
                     std.debug.print("could not open input file '{s}': {s}\n", .{ file_path, @errorName(err) });
@@ -351,8 +348,9 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
     }
 }
 
-const std = @import("std");
+const Pica = @This();
 
+const std = @import("std");
 const zitrus = @import("zitrus");
 
 const zpsh = zitrus.fmt.zpsh;

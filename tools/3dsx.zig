@@ -1,51 +1,45 @@
-const Self = @This();
+pub const description = "Make / Dump 3DSX files with an executable, SMDH and RomFS";
+
 const Subcommand = enum { make };
 
-pub const description = "Make / Dump 3DSX files with its executable, SMDH and RomFS";
+pub const Make = struct {
+    pub const description = "Convert an executable, SMDH and RomFS -> 3DSX";
+    pub const descriptions = .{ .smdh = "SMDH metadata to embed", .romfs = "Rom filesystem to embed" };
 
-pub const Arguments = struct {
-    pub const description = Self.description;
+    pub const switches = .{
+        .smdh = 's',
+        .romfs = 'r',
+    };
 
-    command: union(Subcommand) {
+    smdh: ?[]const u8,
+    romfs: ?[]const u8,
+
+    @"--": struct {
         pub const descriptions = .{
-            .make = "Convert an executable, SMDH and RomFS -> 3DSX",
+            .@"in.elf" = "Executable to convert",
+            .@"out.3dsx" = "Output 3DSX filename",
         };
 
-        make: struct {
-            pub const descriptions = .{ .smdh = "SMDH metadata to embed", .romfs = "Rom filesystem to embed" };
-
-            pub const switches = .{
-                .smdh = 's',
-                .romfs = 'r',
-            };
-
-            positional: struct {
-                pub const descriptions = .{
-                    .@"in.elf" = "Executable to convert",
-                    .@"out.3dsx" = "Output 3DSX filename",
-                };
-
-                @"in.elf": []const u8,
-                @"out.3dsx": []const u8,
-            },
-
-            smdh: ?[]const u8,
-            romfs: ?[]const u8,
-        },
+        @"in.elf": []const u8,
+        @"out.3dsx": []const u8,
     },
 };
 
-pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
+@"-": union(Subcommand) {
+    make: Make,
+},
+
+pub fn main(args: @"3dsx", arena: std.mem.Allocator) !u8 {
     const cwd = std.fs.cwd();
 
-    return switch (arguments.command) {
+    return switch (args.@"-") {
         .make => |make| m: {
             if (make.romfs) |_| {
                 @panic("TODO: romfs in 3dsx");
             }
 
-            const in_path = make.positional.@"in.elf";
-            const out_path = make.positional.@"out.3dsx";
+            const in_path = make.@"--".@"in.elf";
+            const out_path = make.@"--".@"out.3dsx";
 
             const input_file = cwd.openFile(in_path, .{ .mode = .read_only }) catch |err| {
                 std.debug.print("could not open input executable '{s}': {s}\n", .{ in_path, @errorName(err) });
@@ -84,7 +78,7 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
             var output_writer = output_file.writer(&output_buffer);
 
             zitrus.fmt.@"3dsx".make(input_file, &output_writer.interface, .{
-                .allocator = arena,
+                .gpa = arena,
                 .smdh = smdh_data,
             }) catch |err| switch (err) {
                 error.InvalidMachine => {
@@ -142,6 +136,8 @@ pub fn main(arena: std.mem.Allocator, arguments: Arguments) !u8 {
         },
     };
 }
+
+const @"3dsx" = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");

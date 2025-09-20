@@ -1,5 +1,6 @@
 // Extra metadata stored in ExeFS and CIA files. Contains the icon, region info, ratings, etc...
 // For more info: https://www.3dbrew.org/wiki/SMDH
+
 pub const magic_value = "SMDH";
 
 pub const Title = extern struct {

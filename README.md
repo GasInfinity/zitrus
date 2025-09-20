@@ -90,17 +90,23 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 - 🟢 elf -> 3dsx conversion (tools/3dsx)
 - 🟢 PICA200 shader assembler/disassembler:
     - 🟢 Instruction encoding/decoding
-    - 🟢 Assembler/disassembler
+    - 🟢 Assembler
+    - 🔴🪫 Disassembler
     - 🟢 Diagnostics
     - 🟢 Output ZPSH files.
     - 🔴🪫 Output SHBIN/RAW files
-- NCCH:
+- 🟡 NCCH:
     - 🟢 ExeFS
-    - 🔴 RomFS
+    - 🟢 RomFS
     - 🔴 elf -> ExeFS .code
 - 🔴 Everything not listed here
+  
 - 🟡🪫 Dumping, a.k.a: 3dsx/exefs --> bin/elf, smdh -> config + icons, etc...
     - 🟢⚠️ smdh -> config + icons
+    - 🟡 NCCH:
+        - 🟢 LZrev decompressor.
+        - 🟢 ExeFS
+        - 🔴 RomFS
     - 🔴 Everything not listed here
 
 # HOS Coverage

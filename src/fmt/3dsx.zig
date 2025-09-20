@@ -1,5 +1,7 @@
-// The defacto format for Nintendo 3DS Homebrew executables.
-// For more info: https://3dbrew.org/wiki/3DSX_Format
+//! The defacto format for Nintendo 3DS Homebrew executables.
+//!
+//!
+//! Based on the documentation found in 3dbrew: https://3dbrew.org/wiki/3DSX_Format
 
 pub const magic = "3DSX";
 
@@ -99,21 +101,22 @@ const ProcessedRelocations = struct {
 };
 
 pub const MakeOptions = struct {
-    allocator: std.mem.Allocator,
+    gpa: std.mem.Allocator,
     smdh: ?smdh.Smdh = null,
+    romfs: ?*std.Io.Reader = null,
 };
 
-// TODO: Add support for embedding SMDH and RomFS data !!!
+/// Makes a `3DSX` from an elf file and optionally `SMDH` and `RomFS` data.
 pub fn make(in_elf: std.fs.File, out_3dsx: *std.Io.Writer, options: MakeOptions) !void {
     const elf_buff = buff: {
         var elf_reader_buf: [4096]u8 = undefined;
         var in_elf_reader = in_elf.reader(&elf_reader_buf);
         const elf_size = try in_elf_reader.getSize();
-        const elf_buff = try options.allocator.alloc(u8, elf_size);
+        const elf_buff = try options.gpa.alloc(u8, elf_size);
         try in_elf_reader.interface.readSliceAll(elf_buff);
         break :buff elf_buff;
     };
-    defer options.allocator.free(elf_buff);
+    defer options.gpa.free(elf_buff);
 
     const elf_header: elf.Elf32_Ehdr = std.mem.bytesToValue(elf.Elf32_Ehdr, elf_buff[0..@sizeOf(elf.Elf32_Ehdr)]);
 
@@ -131,16 +134,16 @@ pub fn make(in_elf: std.fs.File, out_3dsx: *std.Io.Writer, options: MakeOptions)
     const sections: []const elf.Elf32_Shdr = @alignCast(std.mem.bytesAsSlice(elf.Elf32_Shdr, elf_buff[std.mem.littleToNative(u32, elf_header.e_shoff)..][0..(std.mem.littleToNative(u32, elf_header.e_shnum) * @sizeOf(elf.Elf32_Shdr))]));
 
     var processed_relocations: ?ProcessedRelocations = relocs: {
-        var relocations: RelocationInfo = try readModifyRelocations(elf_buff, segment_data, sections, options.allocator) orelse break :relocs null;
-        defer relocations.deinit(options.allocator);
+        var relocations: RelocationInfo = try readModifyRelocations(elf_buff, segment_data, sections, options.gpa) orelse break :relocs null;
+        defer relocations.deinit(options.gpa);
 
-        break :relocs try processRelocations(segment_data, relocations, options.allocator);
+        break :relocs try processRelocations(segment_data, relocations, options.gpa);
     };
     defer if (processed_relocations) |*relocations| {
-        relocations.deinit(options.allocator);
+        relocations.deinit(options.gpa);
     };
 
-    const header_size: u16 = if (options.smdh != null) @sizeOf(Header) + @sizeOf(ExtendedHeader) else @sizeOf(Header);
+    const header_size: u16 = if (options.smdh != null or options.romfs != null) @sizeOf(Header) + @sizeOf(ExtendedHeader) else @sizeOf(Header);
 
     try out_3dsx.writeStruct(Header{
         .header_size = header_size,
@@ -211,6 +214,10 @@ pub fn make(in_elf: std.fs.File, out_3dsx: *std.Io.Writer, options: MakeOptions)
 
     if (options.smdh) |smdh_data| {
         try out_3dsx.writeStruct(smdh_data, .little);
+    }
+
+    if (options.romfs) |romfs| {
+        _ = try romfs.streamRemaining(out_3dsx);
     }
 }
 
