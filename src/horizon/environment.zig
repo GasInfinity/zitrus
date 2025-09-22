@@ -18,12 +18,36 @@ pub const ProgramMeta = extern struct {
     // Default: O3DS Heap size
     heap_size: u32 = 24 * 1024 * 1024,
     linear_heap_size: u32 = 32 * 1024 * 1024,
-    argument_list: ?[*]u32 = null,
+    argument_list: ?[*]const u32 = null,
     runtime_flags: RuntimeFlags = RuntimeFlags{},
 
-    pub fn isHomebrew(prm: ProgramMeta) bool {
+    pub fn is3dsx(prm: ProgramMeta) bool {
         return prm.provided_services != null;
     }
+
+    pub fn argumentListIterator(prm: ProgramMeta) ArgumentListIterator {
+        return if (prm.argument_list) |list| .{
+            .remaining = list[0],
+            .current = @ptrCast(&list[1]),
+        } else .{
+            .remaining = 0,
+            .current = &.{},
+        };
+    }
+
+    pub const ArgumentListIterator = struct {
+        remaining: usize,
+        current: [*:0]const u8,
+
+        pub fn next(it: *ArgumentListIterator) ?[:0]const u8 {
+            if (it.remaining == 0) return null;
+
+            const arg = std.mem.span(it.current);
+            it.remaining -= 1;
+            it.current += (arg.len + 1);
+            return arg;
+        }
+    };
 };
 
 pub var program_meta: ProgramMeta linksection(".prm") = .{};

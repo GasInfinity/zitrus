@@ -33,9 +33,9 @@ pub const GraphicsState = @import("GraphicsState.zig");
 pub const RenderingState = @import("RenderingState.zig");
 pub const VertexInputLayout = @import("VertexInputLayout.zig");
 
-/// Calculates the size of a specific mip level.
-pub inline fn imageLevelSize(size: usize, base_mip_level: usize) usize {
-    return size >> @intCast(base_mip_level);
+/// Calculates the dimension of a specific mip level.
+pub inline fn imageLevelDimension(size: usize, base_mip_level: usize) usize {
+    return @max(size >> @intCast(base_mip_level), 8);
 }
 
 /// Calculates the offset of a specific mip level.
@@ -45,7 +45,7 @@ pub inline fn imageLevelOffset(size: usize, level_size: usize) usize {
 
 /// Calculates the image size including all mip levels of the chain.
 pub fn imageLayerSize(size: usize, mip_levels: usize) usize {
-    return @divExact(((size << 2) - imageLevelSize(size, (mip_levels - 1) << 1)), 3);
+    return @divExact(((size << 2) - imageLevelDimension(size, (mip_levels - 1) << 1)), 3);
 }
 
 pub fn SingleProducerSingleConsumerBoundedQueue(comptime T: type, comptime capacity: u16) type {
@@ -172,8 +172,8 @@ test "SingleProducerSingleConsumerBoundedQueue is a FIFO" {
     try testing.expect(0 == bq.header.raw.len);
 }
 
-test imageLevelSize {
-    try testing.expect(imageLevelSize(256, 2) == 64);
+test imageLevelDimension {
+    try testing.expect(imageLevelDimension(256, 2) == 64);
 }
 
 test imageLevelOffset {

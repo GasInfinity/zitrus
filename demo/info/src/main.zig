@@ -16,6 +16,44 @@ pub fn main() !void {
     const cfg = try Config.open(.user, app.srv);
     defer cfg.close();
 
+    const fs = try Filesystem.open(.user, app.srv);
+    defer fs.close();
+
+    try fs.sendInitialize();
+
+    const sdmc_archive = try fs.sendOpenArchive(.sdmc, .empty, &.{});
+    defer fs.sendCloseArchive(sdmc_archive) catch {};
+
+    const romfs_offset: ?u32 = if(!environment.program_meta.is3dsx()) null else blk: {
+        const program_path = pro: {
+            var arg_it = environment.program_meta.argumentListIterator();
+            break :pro arg_it.next() orelse return error.InvalidProgramArgs;
+        };
+
+        if (!std.mem.startsWith(u8, program_path, "sdmc:")) {
+            horizon.outputDebugString(program_path);
+            return error.InvalidProgramArgs;
+        }
+
+        const file = try fs.sendOpenFile(0, sdmc_archive, .ascii, program_path["sdmc:".len..], .r, .{});
+        defer file.sendClose();
+
+        var hdr_buf: extern struct {
+            hdr: zitrus.fmt.@"3dsx".Header,
+            ex: zitrus.fmt.@"3dsx".ExtendedHeader,
+        } = undefined;
+
+        if (try file.sendRead(0, std.mem.asBytes(&hdr_buf)) < @sizeOf(zitrus.fmt.@"3dsx".Header)) {
+            return error.InvalidSelfPath;
+        }
+
+        if (!std.mem.eql(u8, &hdr_buf.hdr.magic, zitrus.fmt.@"3dsx".magic) or hdr_buf.hdr.header_size != (@sizeOf(zitrus.fmt.@"3dsx".Header) + @sizeOf(zitrus.fmt.@"3dsx".ExtendedHeader))) {
+            return error.Invalid3dsxHeader;
+        }
+
+        break :blk hdr_buf.ex.romfs_offset;
+    };
+
     const model = try cfg.sendGetSystemModel();
 
     var utf8_buf: [128]u8 = undefined;
@@ -53,6 +91,16 @@ pub fn main() !void {
         drawString(top, 5 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Country: {}/{}", .{ country_info.province_code, country_info.country_code }), .{});
         drawString(top, 6 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Last elapsed: {}", .{last_elapsed}), .{});
 
+        var current_line: isize = 7;
+
+        var arg_it = environment.program_meta.argumentListIterator();
+
+        while (arg_it.next()) |arg| {
+            drawString(top, current_line * (font_width + 1), 0, arg, .{});
+            current_line += 1;
+        }
+
+        drawString(top, current_line * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "(3DSX) RomFS offset: {?}", .{romfs_offset}), .{});
         soft.flushBuffers();
         soft.swapBuffers(.none);
         try soft.waitVBlank();
@@ -142,12 +190,11 @@ const Screen = pica.Screen;
 const Bgr888 = pica.ColorFormat.Bgr888;
 
 const horizon = zitrus.horizon;
-const ServiceManager = horizon.ServiceManager;
-const Applet = horizon.services.Applet;
+const environment = zitrus.horizon.environment;
 const GspGpu = horizon.services.GspGpu;
-const Hid = horizon.services.Hid;
+
+const Filesystem = horizon.services.Filesystem;
 const Config = horizon.services.Config;
-const Framebuffer = GspGpu.Graphics.Framebuffer;
 
 const mango = zitrus.mango;
 

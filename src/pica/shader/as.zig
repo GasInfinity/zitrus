@@ -1,6 +1,6 @@
-// TODO:
-// - Handle assembler correctness
-// - Diagnostic reporting
+//! Zitrus PICA200 shader assembler / disassembler.
+
+// TODO: Disassembler
 
 pub const Tokenizer = tokenizer.Tokenizer;
 pub const Token = tokenizer.Token;

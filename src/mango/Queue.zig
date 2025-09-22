@@ -60,8 +60,8 @@ pub const Handle = enum(u32) {
         const dst_width = b_dst_image.info.width();
         const dst_height = b_dst_image.info.height();
 
-        const dst_mip_width = backend.imageLevelSize(dst_width, @intFromEnum(info.dst_subresource.mip_level));
-        const dst_mip_height = backend.imageLevelSize(dst_height, @intFromEnum(info.dst_subresource.mip_level));
+        const dst_mip_width = backend.imageLevelDimension(dst_width, @intFromEnum(info.dst_subresource.mip_level));
+        const dst_mip_height = backend.imageLevelDimension(dst_height, @intFromEnum(info.dst_subresource.mip_level));
 
         std.debug.assert(dst_mip_width >= 64 and dst_mip_height >= 16);
 
@@ -149,14 +149,14 @@ pub const Handle = enum(u32) {
         const src_width = b_src_image.info.width();
         const src_height = b_src_image.info.height();
 
-        const src_mip_width = backend.imageLevelSize(src_width, @intFromEnum(info.src_subresource.mip_level));
-        const src_mip_height = backend.imageLevelSize(src_height, @intFromEnum(info.src_subresource.mip_level));
+        const src_mip_width = backend.imageLevelDimension(src_width, @intFromEnum(info.src_subresource.mip_level));
+        const src_mip_height = backend.imageLevelDimension(src_height, @intFromEnum(info.src_subresource.mip_level));
 
         const dst_width = b_dst_image.info.width();
         const dst_height = b_dst_image.info.height();
 
-        const dst_mip_width = backend.imageLevelSize(dst_width, @intFromEnum(info.src_subresource.mip_level));
-        const dst_mip_height = backend.imageLevelSize(dst_height, @intFromEnum(info.src_subresource.mip_level));
+        const dst_mip_width = backend.imageLevelDimension(dst_width, @intFromEnum(info.src_subresource.mip_level));
+        const dst_mip_height = backend.imageLevelDimension(dst_height, @intFromEnum(info.src_subresource.mip_level));
 
         std.debug.assert(src_mip_width >= dst_mip_width and src_mip_height >= dst_mip_height); // Output must not be bigger than input.
 
@@ -324,8 +324,8 @@ pub const Handle = enum(u32) {
         const width = b_image.info.width();
         const height = b_image.info.height();
 
-        const mip_width = backend.imageLevelSize(width, @intFromEnum(info.subresource_range.base_mip_level));
-        const mip_height = backend.imageLevelSize(height, @intFromEnum(info.subresource_range.base_mip_level));
+        const mip_width = backend.imageLevelDimension(width, @intFromEnum(info.subresource_range.base_mip_level));
+        const mip_height = backend.imageLevelDimension(height, @intFromEnum(info.subresource_range.base_mip_level));
 
         const mip_offset = clear_scale * backend.imageLevelOffset(width * mip_height, mip_width * mip_height);
         const full_cleared_size = clear_scale * backend.imageLayerSize(mip_width * mip_height, cleared_levels);
@@ -530,6 +530,8 @@ pub fn State(comptime kind: Type, comptime T: type, comptime capacity: u16) type
         ///
         /// returns the item of the completed operation.
         pub fn complete(state: *QueueState) !T {
+            defer state.completion = undefined;
+
             if (state.completion.signal) |sig_completion| {
                 try state.device.signalSemaphore(.{
                     .semaphore = sig_completion.sema.toHandle(),

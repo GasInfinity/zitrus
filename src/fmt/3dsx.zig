@@ -1,6 +1,5 @@
 //! The defacto format for Nintendo 3DS Homebrew executables.
 //!
-//!
 //! Based on the documentation found in 3dbrew: https://3dbrew.org/wiki/3DSX_Format
 
 pub const magic = "3DSX";

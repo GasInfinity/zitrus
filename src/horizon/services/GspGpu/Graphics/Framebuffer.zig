@@ -1,6 +1,6 @@
 //! Mid-level abstraction for raw framebuffer handling.
 //!
-//! Usage of `mango` is preferred.
+//! Usage of `mango` is preferred!
 
 pub const Config = struct {
     screen: pica.Screen,

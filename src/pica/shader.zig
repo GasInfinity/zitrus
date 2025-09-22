@@ -1,3 +1,12 @@
+//! PICA200 shader ISA encoder, assembler and (TODO) disassembler.
+//!
+//! * `as` - zitrus PICA200 shader assembler / disassebler.
+//! * `register` - register enums for everything shader related
+//! * `encoding` - single instruction encoding
+//! * `spirv` - ?? :) (TODO)
+//!
+//! * `Encoder` - Type-safe PICA200 shader ISA encoder
+
 pub const Type = enum(u1) {
     vertex,
     geometry,

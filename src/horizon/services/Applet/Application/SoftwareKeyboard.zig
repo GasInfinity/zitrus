@@ -1,3 +1,7 @@
+//! Mid-level abstraction around the Horizon `swbkd` library applet.
+//!
+//! Used for parental pin, numeric and general input.
+
 pub const State = extern struct {
     pub const max_button_text_len = 16 + 1;
     pub const max_hint_text_len = 64 + 1;

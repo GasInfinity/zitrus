@@ -2,8 +2,8 @@ pub const description = "Dump / Make / Show an ExeFS";
 
 const Subcommand = enum {
     info,
-    dump,
     // make,
+    dump,
 };
 
 pub const Info = struct {
@@ -28,6 +28,24 @@ pub const Info = struct {
         };
 
         exefs: []const u8,
+    },
+};
+
+pub const Make = struct {
+    pub const description = "Make an ExeFS based on input files.";
+
+    pub const descriptions = .{
+        .output = "The output exefs file",
+    };
+
+    pub const switches = .{
+        .output = 'o',
+    };
+
+    output: []const u8,
+
+    @"--": struct {
+        @"...": []const []const u8,
     },
 };
 
@@ -58,6 +76,7 @@ pub const Dump = struct {
 
 @"-": union(Subcommand) {
     info: Info,
+    // make: Make,
     dump: Dump,
 },
 

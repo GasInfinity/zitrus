@@ -1,3 +1,7 @@
+//! Mid-level abstraction around the Horizon `error` library applet.
+//!
+//! Used for showing non-fatal errors and showing the eula.
+
 pub const State = extern struct {
     pub const Type = enum(u32) {
         code,
@@ -27,10 +31,11 @@ pub const State = extern struct {
         pub const none: Flags = .{};
 
         /// Allow using the home button (is able to return jump to home)
-        allow_home: bool = true,
+        allow_home: bool = false,
         /// Allow using software reset to exit (L + R + START + SELECT)
         allow_reset: bool = false,
-        allow_settings: bool = true,
+        /// Whether to show a popup asking to go to `system settings`.
+        allow_settings: bool = false,
         _unknown1: u8 = 0,
     };
 

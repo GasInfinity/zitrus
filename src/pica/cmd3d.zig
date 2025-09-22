@@ -1,4 +1,4 @@
-//! type-safe PICA200 command queue abstractions
+//! Type-safe PICA200 command queue
 
 pub const Header = packed struct(u32) {
     id: Id,

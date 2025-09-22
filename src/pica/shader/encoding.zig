@@ -1,3 +1,5 @@
+//! PICA200 instruction encodings
+
 pub const Component = enum(u2) {
     const span = "xyzw";
 

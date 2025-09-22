@@ -641,11 +641,13 @@ fn growIfNeeded(cmd: *CommandBuffer) !void {
 }
 
 pub fn notifyPending(cmd: *CommandBuffer) void {
+    std.debug.assert(cmd.state == .executable);
     @atomicStore(backend.CommandBuffer.State, &cmd.state, .pending, .monotonic);
 }
 
 /// NOTE: Should we have a one-time submit?
 pub fn notifyCompleted(cmd: *CommandBuffer) void {
+    std.debug.assert(cmd.state == .pending);
     @atomicStore(backend.CommandBuffer.State, &cmd.state, .executable, .monotonic);
 }
 

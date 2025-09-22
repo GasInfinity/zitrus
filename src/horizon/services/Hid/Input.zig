@@ -1,8 +1,12 @@
+//! Mid-level abstraction around Hid state
+//!
+//! Allows polling current input state.
+
 handles: Hid.Handles,
 shm_memory_data: *align(horizon.heap.page_size) Hid.Shared,
 
 pub fn init(hid: Hid) !Input {
-    var handles = try hid.sendGetIPCHandles();
+    var handles = try hid.sendGetHandles();
     errdefer handles.close();
 
     const shm_memory_data = try horizon.heap.non_thread_safe_shared_memory_address_allocator.alloc(@sizeOf(Hid.Shared), .fromByteUnits(4096));

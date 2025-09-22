@@ -1,5 +1,9 @@
-// Extra metadata stored in ExeFS and CIA files. Contains the icon, region info, ratings, etc...
-// For more info: https://www.3dbrew.org/wiki/SMDH
+//! A `SMDH` is a fixed-size format which contains extra metadata and
+//! is stored in `ExeFS`, `CIA` and `3DSX` files.
+//!
+//! Contains the icon, region info, ratings, etc...
+//!
+//! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/SMDH
 
 pub const magic_value = "SMDH";
 

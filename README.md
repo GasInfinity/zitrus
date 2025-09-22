@@ -45,8 +45,10 @@ b.installArtifact(exe);
 const homebrew_smdh = zitrus.addMakeSmdh(b, .{
     .name = "homebrew.icn",
     .settings = b.path("path-to-smdh-settings.ziggy"), // look at any demo for a quick example or the schema in tools/make-smdh/settings.ziggy-schema
-    .icon = b.path("path-to-icon.png/jpg/..."), // supported formats depends on zigimg image decoding. XXX: regressed until zigimg updates
+    .icon = b.path("path-to-icon.png/jpg/..."), // supported formats depends on zigimg image decoding.
 });
+
+// See `addMakeRomFs` if you need something patchable unlike `@embedFile`.
 
 // This step will convert your executable to 3dsx (the defacto homebrew executable format) to execute it in an emulator or real 3DS
 const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "homebrew.3dsx", .exe = exe, .smdh = homebrew_smdh });
@@ -54,8 +56,8 @@ b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "homebrew.3dsx").st
 ```
 
 In your root file, you must also add this, as there's no way to implicitly tell zig to evaluate/import it automagically:
-```
-pub const panic = zitrus.panic;
+```zig
+pub const panic = zitrus.horizon.panic;
 
 comptime {
     _ = zitrus;
@@ -86,23 +88,23 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 🪫 Low priority
 
 # Tooling coverage
-- 🟢⚠️ smdh creation (tools/smdh)
-- 🟢 elf -> 3dsx conversion (tools/3dsx)
-- 🟢 PICA200 shader assembler/disassembler:
+- 🟢 Smdh creation (tools/Smdh)
+- 🟢 Elf -> 3dsx conversion (tools/3dsx)
+- 🟢 PICA200 shader assembler/disassembler (tools/Pica):
     - 🟢 Instruction encoding/decoding
     - 🟢 Assembler
     - 🔴🪫 Disassembler
     - 🟢 Diagnostics
     - 🟢 Output ZPSH files.
     - 🔴🪫 Output SHBIN/RAW files
-- 🟡 NCCH:
-    - 🟢 ExeFS
-    - 🟢 RomFS
+- 🟡 NCCH (tools/Ncch):
+    - 🟢 ExeFS (tools/ExeFs)
+    - 🟢 RomFS (tools/RomFs)
     - 🔴 elf -> ExeFS .code
 - 🔴 Everything not listed here
   
 - 🟡🪫 Dumping, a.k.a: 3dsx/exefs --> bin/elf, smdh -> config + icons, etc...
-    - 🟢⚠️ smdh -> config + icons
+    - 🟢 Smdh -> config + icons
     - 🟡 NCCH:
         - 🟢 LZrev decompressor.
         - 🟢 ExeFS
@@ -114,7 +116,7 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 
 - 🟡 Tests
 - 🟡 C API
-- 🔴 Docs
+- 🟡 Docs
 
 ## Runtime support
 - 🟢 crt0/startup code
@@ -134,14 +136,19 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 
 - 🟢 `srv:`
 - 🟢 `err:f`
+  
 - 🟡 `APT:S/A/U`
 - 🟡 `hid:SPRV/USER`
-- 🟡 `fs:USER`
+- 🟢 `ir:rst`
+- 🟡 `fs:USER/LDR`
 - 🟡 `cfg:u/s/i`
 - 🟢 `gsp::Gpu`
 - 🟡🪫 `gsp::Lcd`
 - 🟡 `ns:s`
-- 🟢 `ns:p`
+- 🟢 `ns:p/c`
+- 🟡 `csnd:SND`
+- 🟡🪫 `pm:app`
+- 🟢 `pm:dbg`
 - 🔴 All other [services](https://www.3dbrew.org/wiki/Services_API) not listed here
 
 ## Applet Support

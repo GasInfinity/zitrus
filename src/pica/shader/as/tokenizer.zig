@@ -1,4 +1,6 @@
-// This simple tokenizer hass been greatly inspired the zig tokenizer
+//! Tokenizer of the zitrus PICA200 shader assembler.
+
+// This simple tokenizer has been greatly inspired by the zig tokenizer
 
 pub const Token = struct {
     tag: Tag,

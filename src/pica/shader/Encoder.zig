@@ -1,3 +1,5 @@
+//! Type-safe PICA200 shader ISA encoder
+
 pub const Negate = enum(u1) { @"+", @"-" };
 pub const OperandDescriptorAllocationError = error{OutOfDescriptors};
 pub const InstructionEncodingError = error{InvalidSourceRegisterCombination};

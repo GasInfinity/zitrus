@@ -9,7 +9,7 @@
 /// An Application which may use the PICA200 to render to framebuffers.
 ///
 /// Creates a `mango.Device` on your behalf and handles synchronization
-/// appropiately. The `Device` OWNS gsp state.
+/// appropiately. The `mango.Device` OWNS the gsp state.
 ///
 /// You can still do software rendering by mapping framebuffer memory
 /// of a `mango.Swapchain` (if the memory can be mapped).
@@ -21,7 +21,10 @@ pub const Accelerated = Manager(true);
 pub const Software = Manager(false);
 
 pub const Event = enum(u1) {
+    /// The user wanted to do jump to the home menu but we rejected it.
     jump_home_rejected,
+
+    /// The application has been notified to exit.
     quit,
 };
 

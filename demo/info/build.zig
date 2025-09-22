@@ -29,6 +29,16 @@ pub fn build(b: *std.Build) void {
         .settings = b.path("smdh-settings.ziggy"),
     });
 
-    const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "info.3dsx", .exe = exe, .smdh = info_smdh });
+    const test_romfs = zitrus.addMakeRomFs(b, .{
+        .name = "test.romfs",
+        .root = b.path("assets/"),
+    });
+
+    const final_3dsx = zitrus.addMake3dsx(b, .{
+        .name = "info.3dsx",
+        .exe = exe,
+        .smdh = info_smdh,
+        .romfs = test_romfs,
+    });
     b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "info.3dsx").step);
 }

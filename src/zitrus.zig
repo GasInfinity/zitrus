@@ -1,3 +1,20 @@
+//! ## Zitrus - 3DS SDK
+//!
+//! Zitrus is a SDK for writing code for the 3DS family. It doesn't discriminate usage,
+//! it can be used to write normal *applications*, *sysmodules* and even *freestanding* code.
+//!
+//! ## Namespaces
+//!
+//! * `compress` - Compression and decompression functions used in some 3DS formats.
+//!
+//! * `fmt` - File formats not originating from `horizon`, e.g: `fmt.@"3dsx"`, `fmt.zpsh`.
+//!
+//! * `horizon` - Horizon OS support layer. You'll be using this most of the time.
+//!
+//! * `pica` - Low-level PICA200 exposed primitives, registers, etc...
+//!
+//! * `mango` - A Vulkan-like graphics api for the PICA200.
+
 // TODO: Remove this somehow, the kernel COULD be able to provide us with a stack of X size if we could ask somehow in the 3dsx to luma/azahar
 pub const ZitrusOptions = struct {
     stack_size: u32,

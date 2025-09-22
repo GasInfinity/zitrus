@@ -1,9 +1,11 @@
-const service_name = "ns:p";
+//! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/NS_and_APT_Services
+
+pub const service = "ns:p";
 
 session: ClientSession,
 
 pub fn open(srv: ServiceManager) !NUserShellPower {
-    return .{ .session = try srv.getService(service_name, .wait) };
+    return .{ .session = try srv.getService(service, .wait) };
 }
 
 pub fn close(nsp: NUserShellPower) void {

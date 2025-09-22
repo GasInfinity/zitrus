@@ -1,10 +1,11 @@
-//! High-level abstraction for software rendering.
+//! High-level abstraction around software rendering.
+//!
 //! If you need more control, you can use this as a reference
 //! of how should things be done.
 //!
 //! It initializes both screens to black and turns off LCD fill.
 //!
-//! Use this for prototypes only as `mango` is preferred!
+//! Use this for prototypes or simple apps as `mango` is preferred!
 
 pub const Config = struct {
     top_mode: pica.FramebufferFormat.Mode,

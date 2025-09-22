@@ -1,3 +1,5 @@
+//! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/HID_Services
+
 pub const Input = @import("Hid/Input.zig");
 
 pub const Service = enum(u2) {
@@ -152,9 +154,9 @@ pub const Handles = struct {
     }
 };
 
-pub fn sendGetIPCHandles(hid: Hid) !Handles {
+pub fn sendGetHandles(hid: Hid) !Handles {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(hid.session, command.GetIPCHandles, .{}, .{})).cases()) {
+    return switch ((try data.ipc.sendRequest(hid.session, command.GetHandles, .{}, .{})).cases()) {
         .success => |s| .{
             .shm = @bitCast(@intFromEnum(s.value.response.handles[0])),
             .pad_0 = @bitCast(@intFromEnum(s.value.response.handles[1])),
@@ -168,7 +170,7 @@ pub fn sendGetIPCHandles(hid: Hid) !Handles {
 }
 
 pub const command = struct {
-    pub const GetIPCHandles = ipc.Command(Id, .get_ipc_handles, struct {}, struct { handles: [6]horizon.Object });
+    pub const GetHandles = ipc.Command(Id, .get_handles, struct {}, struct { handles: [6]horizon.Object });
 
     pub const Id = enum(u16) {
         calibrate_touch_screen = 0x0001,
@@ -180,7 +182,7 @@ pub const command = struct {
         unknown4,
         unknown5,
         unknown7,
-        get_ipc_handles,
+        get_handles,
         start_analog_stick_calibration,
         stop_analog_stick_calibration,
         set_analog_stick_calibrate_param,

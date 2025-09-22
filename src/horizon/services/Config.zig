@@ -1,4 +1,7 @@
-// https://www.3dbrew.org/wiki/Config_Services
+//! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/Config_Services
+
+// TODO: Missing methods / commands
+
 const service_names = [_][]const u8{ "cfg:i", "cfg:s", "cfg:u" };
 
 pub const Error = ClientSession.RequestError;

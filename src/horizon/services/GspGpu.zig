@@ -1,5 +1,6 @@
-// https://www.3dbrew.org/wiki/GSP_Services
-const service_name = "gsp::Gpu";
+//! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/GSP_Services#GSP_service_%22gsp::Gpu%22
+
+pub const service = "gsp::Gpu";
 
 pub const Graphics = @import("GspGpu/Graphics.zig");
 
@@ -501,7 +502,7 @@ pub const PerfLogInfo = extern struct {
 session: ClientSession,
 
 pub fn open(srv: ServiceManager) !GspGpu {
-    return .{ .session = try srv.getService(service_name, .wait) };
+    return .{ .session = try srv.getService(service, .wait) };
 }
 
 pub fn close(gsp: GspGpu) void {

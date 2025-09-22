@@ -1,4 +1,9 @@
-const port_name = "srv:";
+//! A connection to the `Horizon` service manager.
+//!
+//! This port manages all service registration and retrieval,
+//! while also checking the process service control list.
+
+pub const port = "srv:";
 
 pub const Notification = enum(u32) {
     must_terminate = 0x100,
@@ -76,7 +81,7 @@ pub const Notification = enum(u32) {
 session: ClientSession,
 
 pub fn open() !ServiceManager {
-    return .{ .session = try ClientSession.connect(port_name) };
+    return .{ .session = try ClientSession.connect(port) };
 }
 
 pub fn close(srv: ServiceManager) void {
@@ -160,13 +165,13 @@ pub fn sendGetServiceHandle(srv: ServiceManager, name: []const u8, flags: comman
     };
 }
 
-pub fn sendRegisterPort(srv: ServiceManager, name: []const u8, port: ClientPort) !ServerPort {
+pub fn sendRegisterPort(srv: ServiceManager, name: []const u8, registering_port: ClientPort) !ServerPort {
     std.debug.assert(name.len <= 8);
 
     var req: command.RegisterPort.Request = .{
         .name = undefined,
         .name_len = name.len,
-        .port = port,
+        .port = registering_port,
     };
     @memcpy(req.name[0..name.len], name);
 

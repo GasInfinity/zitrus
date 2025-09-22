@@ -83,7 +83,7 @@ pub fn init(create_info: mango.ImageCreateInfo) Image {
     std.debug.assert(create_info.extent.width >= 8 and create_info.extent.width <= 1024 and std.mem.isAligned(create_info.extent.width, 8) and create_info.extent.height >= 8 and create_info.extent.height <= 1024 and std.mem.isAligned(create_info.extent.height, 8));
 
     if (create_info.usage.sampled) {
-        std.debug.assert(std.math.isPowerOfTwo(create_info.extent.width) and std.math.isPowerOfTwo(create_info.extent.width) and create_info.tiling == .optimal);
+        std.debug.assert(std.math.isPowerOfTwo(create_info.extent.width) and std.math.isPowerOfTwo(create_info.extent.height) and create_info.tiling == .optimal);
     } else {
         // NOTE: We could allow this but it doesn't make sense.
         std.debug.assert(create_info.mip_levels == .@"1");

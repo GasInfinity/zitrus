@@ -131,7 +131,7 @@ pub fn bufDecompress(decompressed: []u8, compressed: []const u8) DecompressionEr
                     const range: PreviousRange = @bitCast(std.mem.readInt(u16, compressed[(current_compressed_index - 1)..][0..2], .little));
                     const offset = range.offset();
 
-                    if ((current_decompressed_index + offset) >= real_decompressed_len) {
+                    if ((current_decompressed_index + offset) >= real_decompressed_len or range.len() > current_decompressed_index) {
                         return error.InvalidLzrevDictionaryRange;
                     }
 

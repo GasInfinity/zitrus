@@ -68,8 +68,8 @@ pub fn getRenderingInfo(view: ImageView) RenderingInfo {
     const img_width = image.info.width();
     const img_height = image.info.height();
 
-    const view_width = backend.imageLevelSize(img_width, view.data.base_mip_level);
-    const view_height = backend.imageLevelSize(img_height, view.data.base_mip_level);
+    const view_width = backend.imageLevelDimension(img_width, view.data.base_mip_level);
+    const view_height = backend.imageLevelDimension(img_height, view.data.base_mip_level);
 
     const unscaled_img_offset = (@as(usize, image.info.layer_size) * view.data.base_array_layer) + backend.imageLevelOffset(img_width * img_height, view_width * view_height);
     const img_offset = native_pixel_fmt.bytesPerPixel() * unscaled_img_offset;

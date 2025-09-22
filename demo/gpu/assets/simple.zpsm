@@ -1,11 +1,15 @@
 .out o0 position 
-.out o1.xy texture_coordinate_0.xy
+.out o3.xy texture_coordinate_0.xy
 
 .alias iPos v0
 .alias iUv v1
+; .alias iNorm v1
+; .alias iUv v2
 
 .alias oPos o0
-.alias oUv o1
+.alias oUv o3
+; .alias oView o1
+; .alias oNormQuat o2
 
 ; layout(location = 0) uniform mat4x4 uPersp;
 .alias uPerspM0 f0

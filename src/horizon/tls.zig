@@ -1,3 +1,7 @@
+/// The `ThreadLocalStorage` of a `Thread` as used by `Horizon`.
+///
+/// `zitrus` reserves some needed state and storage
+/// for some features.
 pub const ThreadLocalStorage = extern struct {
     pub const ExceptionHandler = extern struct {
         pub const Stack = enum(u32) {
@@ -44,6 +48,9 @@ pub const ThreadLocalStorage = extern struct {
 
     /// When TLS variables fit into `(0x40 - 8)` bytes,
     /// this location will be used for the storage.
+    ///
+    /// TODO: Introduce an option to always allocate (if there are TLS variables)
+    /// so the app is allowed to use this location.
     storage: [0x40]u8,
     // TODO: panic on exception
     /// Function to call when an user-mode exception happens.
@@ -54,16 +61,21 @@ pub const ThreadLocalStorage = extern struct {
     ipc: ipc.Buffer,
 };
 
+/// Gets the `ThreadLocalStorage` of the current thread.
+///
+/// `zitrus` reserves some needed state and storage
+/// for some features.
 pub inline fn get() *ThreadLocalStorage {
     return asm volatile ("mrc p15, 0, %[tls], cr13, cr0, 3"
         : [tls] "=r" (-> *ThreadLocalStorage),
     );
 }
 
-// TODO: only export this when not using tpidrurw.
+// TODO: only export this when not using tpidrurw as it wouldn't be needed.
 export fn __aeabi_read_tp() callconv(.naked) void {
     const tp_offset = (@offsetOf(ThreadLocalStorage, "state") + @offsetOf(ThreadLocalStorage.State, "tp"));
 
+    // NOTE: ABI mandates to only clobber `r0`.
     asm volatile (
         \\ mrc p15, 0, r0, cr13, cr0, 3
         \\ ldr r0, [r0, %[tp_offset]]

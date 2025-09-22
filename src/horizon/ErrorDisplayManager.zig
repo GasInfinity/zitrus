@@ -1,6 +1,10 @@
-const port_name = "err:f";
+//! A connection to the `Horizon` error display manager.
+//!
+//! Manages error logging and exception throwing.
 
-pub const Error = Session.RequestError;
+pub const port = "err:f";
+
+pub const Error = ClientSession.RequestError;
 
 pub const FatalErrorInfo = extern struct {
     pub const ErrorType = enum(u8) {
@@ -48,11 +52,10 @@ pub const FatalErrorInfo = extern struct {
     };
 };
 
-session: Session,
+session: ClientSession,
 
 pub fn open() !ErrDispManager {
-    const errdisp_session = try Session.connect(port_name);
-    return ErrDispManager{ .session = errdisp_session };
+    return .{ .session = try ClientSession.connect(port) };
 }
 
 pub fn close(errdisp: ErrDispManager) void {
@@ -101,5 +104,5 @@ const ipc = horizon.ipc;
 
 const Event = horizon.Event;
 const Semaphore = horizon.Semaphore;
-const Session = horizon.ClientSession;
+const ClientSession = horizon.ClientSession;
 const ResultCode = horizon.result.Code;

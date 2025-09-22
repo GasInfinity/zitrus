@@ -4,7 +4,7 @@ const Subcommand = enum { make };
 
 pub const Make = struct {
     pub const description = "Convert an executable, SMDH and RomFS -> 3DSX";
-    pub const descriptions = .{ .smdh = "SMDH metadata to embed", .romfs = "Rom filesystem to embed" };
+    pub const descriptions = .{ .smdh = "SMDH metadata to embed", .romfs = "RomFS to embed" };
 
     pub const switches = .{
         .smdh = 's',
@@ -34,10 +34,6 @@ pub fn main(args: @"3dsx", arena: std.mem.Allocator) !u8 {
 
     return switch (args.@"-") {
         .make => |make| m: {
-            if (make.romfs) |_| {
-                @panic("TODO: romfs in 3dsx");
-            }
-
             const in_path = make.@"--".@"in.elf";
             const out_path = make.@"--".@"out.3dsx";
 
@@ -52,6 +48,7 @@ pub fn main(args: @"3dsx", arena: std.mem.Allocator) !u8 {
                     std.debug.print("could not open smdh file '{s}': {s}\n", .{ smdh_path, @errorName(err) });
                     break :m 1;
                 };
+                defer smdh_file.close();
 
                 var buf: [@sizeOf(smdh.Smdh)]u8 = undefined;
                 var smdh_reader = smdh_file.reader(&buf);
@@ -68,6 +65,17 @@ pub fn main(args: @"3dsx", arena: std.mem.Allocator) !u8 {
                 break :data smdh_data;
             } else null;
 
+            var romfs_buffer: [4096]u8 = undefined;
+            const romfs_file: ?std.fs.File, var romfs_reader: ?std.fs.File.Reader = if (make.romfs) |romfs| blk: {
+                const romfs_file = cwd.openFile(romfs, .{ .mode = .read_only }) catch |err| {
+                    std.debug.print("could not open romfs file '{s}': {s}\n", .{ romfs, @errorName(err) });
+                    break :m 1;
+                };
+
+                break :blk .{ romfs_file, romfs_file.reader(&romfs_buffer) };
+            } else .{ null, null };
+            defer if (romfs_file) |romfs| romfs.close();
+
             const output_file = cwd.createFile(out_path, .{}) catch |err| {
                 std.debug.print("could not create/open output file '{s}' for writing: {s}\n", .{ out_path, @errorName(err) });
                 break :m 1;
@@ -80,6 +88,7 @@ pub fn main(args: @"3dsx", arena: std.mem.Allocator) !u8 {
             zitrus.fmt.@"3dsx".make(input_file, &output_writer.interface, .{
                 .gpa = arena,
                 .smdh = smdh_data,
+                .romfs = (if (romfs_reader) |*reader| &reader.interface else null),
             }) catch |err| switch (err) {
                 error.InvalidMachine => {
                     std.debug.print("elf machine is not ARM!\n", .{});

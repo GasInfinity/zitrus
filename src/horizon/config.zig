@@ -30,7 +30,7 @@ pub const MemoryType = enum(u8) {
     n124mb_dev,
 };
 
-pub const KernelConfig = extern struct {
+pub const Kernel = extern struct {
     version: packed struct(u32) { unknown: u8, revision: u8, minor: u8, major: u8 },
     update_flag: u32,
     ns_tid: u64,
@@ -88,7 +88,7 @@ pub const NetworkState = enum(u8) {
     }
 };
 
-pub const SharedConfig = extern struct {
+pub const Shared = extern struct {
     datetime_select: u32,
     hardware: HardwareType,
     mcu_hardware_info: u8,

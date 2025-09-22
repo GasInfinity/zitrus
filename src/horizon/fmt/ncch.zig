@@ -1,4 +1,9 @@
-// https://www.3dbrew.org/wiki/NCCH
+//! TODO: NCCH
+//!
+//! * `exefs` - Embedded filesystem where the executable and some metadata is stored.
+//! * `romfs` - Embedded filesystem used primarily for *assets*.
+//!
+//! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/NCCH
 
 pub const exefs = @import("ncch/exefs.zig");
 pub const romfs = @import("ncch/romfs.zig");

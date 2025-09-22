@@ -1,4 +1,18 @@
-const service_names = [_][]const u8{ "fs:LDR", "fs:USER" };
+//! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/Filesystem_services
+
+// TODO: Missing methods / commands
+
+pub const Service = enum(u8) {
+    user,
+    loader,
+
+    pub fn name(srv: Service) [:0]const u8 {
+        return switch (srv) {
+            .user => "fs:USER",
+            .loader => "fs:LDR",
+        };
+    }
+};
 
 pub const CardType = enum(u8) {
     ctr,
@@ -11,7 +25,7 @@ pub const MediaType = enum(u8) {
     game_card,
 };
 
-pub const PathType = enum(u32) {
+pub const PathType = enum(i32) {
     @"error" = -1,
     invalid = 0,
     empty,
@@ -21,9 +35,13 @@ pub const PathType = enum(u32) {
 };
 
 pub const OpenFlags = packed struct(u32) {
-    read: bool,
-    write: bool,
-    create: bool,
+    pub const r: OpenFlags = .{ .read = true };
+    pub const w: OpenFlags = .{ .write = true };
+    pub const rw: OpenFlags = .{ .read = true, .write = true };
+
+    read: bool = false,
+    write: bool = false,
+    create: bool = false,
     _unused0: u29 = 0,
 };
 
@@ -59,10 +77,12 @@ pub const WriteOptions = extern struct {
 };
 
 pub const Attributes = extern struct {
-    directory: bool,
-    hidden: bool,
-    archive: bool,
-    read_only: bool,
+    pub const none: Attributes = .{};
+
+    directory: bool = false,
+    hidden: bool = false,
+    archive: bool = false,
+    read_only: bool = false,
 };
 
 pub const ControlArchiveAction = enum(u32) {
@@ -71,7 +91,6 @@ pub const ControlArchiveAction = enum(u32) {
     unknown_calls_fspxi_0x0056,
 };
 
-// TODO: Move this to FilesystemPxi
 pub const ProductInfo = extern struct {
     product_code: [16]u8,
     company_code: [2]u8,
@@ -82,6 +101,13 @@ pub const ProgramInfo = extern struct {
     title_id: u64,
     media_type: MediaType,
     _padding0: [7]u8,
+};
+
+pub const SpecialContentType = enum(u8) {
+    ctr_update = 1,
+    manual,
+    download_play_child,
+    ktr_update,
 };
 
 pub const File = packed struct(u32) {
@@ -145,7 +171,7 @@ pub const File = packed struct(u32) {
 
     pub fn sendClose(file: File) void {
         const data = tls.get();
-        switch ((try data.ipc.sendRequest(file.session, File.command.Close, .{}, .{})).cases()) {
+        switch ((data.ipc.sendRequest(file.session, File.command.Close, .{}, .{}) catch unreachable).cases()) {
             .success => {},
             .failure => unreachable,
         }
@@ -193,8 +219,8 @@ pub const File = packed struct(u32) {
 
     pub const command = struct {
         pub const OpenSubFile = ipc.Command(Id, .open_sub_file, struct { offset: u64, size: u64 }, struct { file: File });
-        pub const Read = ipc.Command(Id, .read, struct { offset: u64, size: usize, buffer: ipc.MappedSlice(.write) }, struct { actual_read: usize });
-        pub const Write = ipc.Command(Id, .write, struct { offset: u64, size: usize, options: WriteOptions, buffer: ipc.MappedSlice(.read) }, struct { actual_written: usize });
+        pub const Read = ipc.Command(Id, .read, struct { offset: u64, size: usize, buffer: ipc.MappedSlice(.write) }, struct { actual_read: usize, buffer: ipc.MappedSlice(.write) });
+        pub const Write = ipc.Command(Id, .write, struct { offset: u64, size: usize, options: WriteOptions, buffer: ipc.MappedSlice(.read) }, struct { actual_written: usize, buffer: ipc.MappedSlice(.read) });
         pub const GetSize = ipc.Command(Id, .get_size, struct {}, struct { size: u64 });
         pub const SetSize = ipc.Command(Id, .set_size, struct { size: u64 }, struct {});
         pub const GetAttributes = ipc.Command(Id, .get_attributes, struct {}, struct { attributes: Attributes });
@@ -290,208 +316,196 @@ pub const Directory = packed struct(u32) {
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !Filesystem {
-    var last_error: anyerror = undefined;
-    const fs_session = used: for (service_names) |service_name| {
-        const fs_session = srv.getService(service_name, .wait) catch |err| {
-            last_error = err;
-            continue;
-        };
-
-        break :used fs_session;
-    } else return last_error;
-
-    return .{ .session = fs_session };
+pub fn open(service: Service, srv: ServiceManager) !Filesystem {
+    return .{ .session = try srv.getService(service.name(), .wait) };
 }
 
 pub fn close(fs: Filesystem) void {
     fs.session.close();
 }
 
-pub fn sendInitialize(fs: Filesystem) void {
+pub fn sendInitialize(fs: Filesystem) !void {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(fs.session, command.Initialize, .{ .process_id = .{} }, .{})).cases()) {
+    return switch ((try data.ipc.sendRequest(fs.session, command.Initialize, .{ .process_id = .replace }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, flags: OpenFlags, attributes: Attributes) !File {
+pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: [:0]const u8, flags: OpenFlags, attributes: Attributes) !File {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.OpenFile, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
-        .path_size = path.len,
+        .path_size = (path.len + 1),
         .flags = flags,
         .attributes = attributes,
-        .path = .init(path),
+        .path = .init(path.ptr[0 .. path.len + 1]),
     }, .{})).cases()) {
-        .success => |s| s.value.response.file,
+        .success => |s| s.value.response.file.handle,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendOpenFileDirectly(fs: Filesystem, transaction: usize, archive_id: ArchiveId, archive_path_type: PathType, archive_path: []const u8, file_path_type: PathType, file_path: []const u8, flags: OpenFlags, attributes: Attributes) !File {
+pub fn sendOpenFileDirectly(fs: Filesystem, transaction: usize, archive_id: ArchiveId, archive_path_type: PathType, archive_path: [:0]const u8, file_path_type: PathType, file_path: [:0]const u8, flags: OpenFlags, attributes: Attributes) !File {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.OpenFileDirectly, .{
         .transaction = transaction,
         .archive_id = archive_id,
         .archive_path_type = archive_path_type,
-        .archive_path_size = archive_path.len,
+        .archive_path_size = (archive_path.len + 1),
         .file_path_type = file_path_type,
-        .file_path_size = file_path.len,
+        .file_path_size = (file_path.len + 1),
         .flags = flags,
         .attributes = attributes,
-        .archive_path = .init(archive_path),
-        .file_path = .init(file_path),
+        .archive_path = .init(archive_path.ptr[0..(archive_path.len + 1)]),
+        .file_path = .init(file_path.ptr[0..(file_path.len + 1)]),
     }, .{})).cases()) {
-        .success => |s| s.value.response.file,
+        .success => |s| s.value.response.file.handle,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendDeleteFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
+pub fn sendDeleteFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: [:0]const u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.DeleteFile, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
-        .path_size = path.len,
-        .path = .init(path),
+        .path_size = (path.len + 1),
+        .path = .init(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) !void {
+pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: [:0]const u8, dst_path_type: PathType, dst_path: [:0]const u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.RenameFile, .{
         .transaction = transaction,
         .source_archive = src_archive,
         .source_path_type = src_path_type,
-        .soruce_path_size = src_path.len,
+        .source_path_size = (src_path.len + 1),
         .destination_archive = dst_archive,
         .destination_path_type = dst_path_type,
-        .destination_path_size = dst_path.len,
-        .source_path = .init(src_path),
-        .destination_path = .init(dst_path),
+        .destination_path_size = (dst_path.len + 1),
+        .source_path = .init(src_path.ptr[0..(src_path.len + 1)]),
+        .destination_path = .init(dst_path.ptr[0..(dst_path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendDeleteDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
+pub fn sendDeleteDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: [:0]const u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.DeleteDirectory, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
-        .path_size = path.len,
-        .path = .init(path),
+        .path_size = (path.len + 1),
+        .path = .init(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendDeleteDirectoryRecursively(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
+pub fn sendDeleteDirectoryRecursively(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: [:0]const u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.DeleteDirectoryRecursively, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
-        .path_size = path.len,
-        .path = .init(path),
+        .path_size = (path.len + 1),
+        .path = .init(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendCreateFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, attributes: Attributes, size: u64) !void {
+pub fn sendCreateFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: [:0]const u8, attributes: Attributes, size: u64) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.CreateFile, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
-        .path_size = path.len,
+        .path_size = (path.len + 1),
         .attributes = attributes,
         .file_size = size,
-        .path = .init(path),
+        .path = .init(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, attributes: Attributes) !void {
+pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: [:0]const u8, attributes: Attributes) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.CreateDirectory, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
-        .path_size = path.len,
+        .path_size = (path.len + 1),
         .attributes = attributes,
-        .path = .init(path),
+        .path = .init(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) !void {
+pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: [:0]const u8, dst_path_type: PathType, dst_path: [:0]const u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.RenameDirectory, .{
         .transaction = transaction,
         .source_archive = src_archive,
         .source_path_type = src_path_type,
-        .soruce_path_size = src_path.len,
+        .soruce_path_size = (src_path.len + 1),
         .destination_archive = dst_archive,
         .destination_path_type = dst_path_type,
-        .destination_path_size = dst_path.len,
-        .source_path = .init(src_path),
-        .destination_path = .init(dst_path),
+        .destination_path_size = (dst_path.len + 1),
+        .source_path = .init(src_path.ptr[0..(src_path.len + 1)]),
+        .destination_path = .init(dst_path.ptr[0..(dst_path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendOpenDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !Directory {
+pub fn sendOpenDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: [:0]const u8) !Directory {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.OpenDirectory, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
-        .path_size = path.len,
-        .path = .init(path),
+        .path_size = (path.len + 1),
+        .path = .init(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
         .success => |s| s.value.response.directory,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendOpenArchive(fs: Filesystem, transaction: usize, archive_id: ArchiveId, path_type: PathType, path: []const u8) !Archive {
+pub fn sendOpenArchive(fs: Filesystem, archive_id: ArchiveId, path_type: PathType, path: [:0]const u8) !Archive {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.OpenArchive, .{
-        .transaction = transaction,
         .archive_id = archive_id,
         .path_type = path_type,
-        .path_size = path.len,
-        .path = .init(path),
+        .path_size = (path.len + 1),
+        .path = .init(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
         .success => |s| s.value.response.archive,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendControlArchive(fs: Filesystem, transaction: usize, archive: Archive, action: ControlArchiveAction, input: []const u8, output: []u8) !void {
+pub fn sendControlArchive(fs: Filesystem, archive: Archive, action: ControlArchiveAction, input: []const u8, output: []u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.ControlArchive, .{
-        .transaction = transaction,
         .archive = archive,
         .action = action,
         .input_size = input.len,
@@ -504,10 +518,9 @@ pub fn sendControlArchive(fs: Filesystem, transaction: usize, archive: Archive, 
     };
 }
 
-pub fn sendCloseArchive(fs: Filesystem, transaction: usize, archive: Archive) !void {
+pub fn sendCloseArchive(fs: Filesystem, archive: Archive) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.CloseArchive, .{
-        .transaction = transaction,
         .archive = archive,
     }, .{})).cases()) {
         .success => {},
@@ -606,14 +619,12 @@ pub const command = struct {
         path: ipc.StaticSlice(0),
     }, struct { directory: ipc.MoveHandle(Directory) });
     pub const OpenArchive = ipc.Command(Id, .open_archive, struct {
-        transaction: usize,
         archive_id: ArchiveId,
         path_type: PathType,
         path_size: usize,
         path: ipc.StaticSlice(0),
     }, struct { archive: Archive });
     pub const ControlArchive = ipc.Command(Id, .control_archive, struct {
-        transaction: usize,
         archive: Archive,
         action: ControlArchiveAction,
         input_size: usize,
@@ -622,7 +633,6 @@ pub const command = struct {
         output: ipc.MappedSlice(.write),
     }, struct {});
     pub const CloseArchive = ipc.Command(Id, .close_archive, struct {
-        transaction: usize,
         archive: Archive,
     }, struct {});
 
@@ -667,8 +677,9 @@ pub const command = struct {
 
     pub const Id = enum(u16) {
         dummy1 = 0x0001,
-        initialize = 0x0401,
-        open_file = 0x0801,
+        control = 0x0401,
+        initialize = 0x0801,
+        open_file,
         open_file_directly,
         delete_file,
         rename_file,

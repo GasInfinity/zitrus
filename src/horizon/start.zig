@@ -43,13 +43,6 @@ fn callMainAndExit() callconv(.c) noreturn {
     @setRuntimeSafety(false);
     @disableInstrumentation();
 
-    const possible_argument_list = environment.program_meta.argument_list;
-
-    const argc: usize, const argv: [*][*:0]u8 = if (possible_argument_list) |argument_list|
-        .{ argument_list[0], @ptrCast(&argument_list[1]) }
-    else
-        .{ 0, &[_][*:0]u8{} };
-
     const opt_init_array_start = @extern([*]*const fn () callconv(.c) void, .{
         .name = "__init_array_start",
         .linkage = .weak,
@@ -66,15 +59,14 @@ fn callMainAndExit() callconv(.c) noreturn {
     }
 
     // TODO: Log to errdisp if return was not 0?
-    _ = callMainWithArgs(argc, argv);
+    _ = callMainWithArgs();
     horizon.exit();
 }
 
 const bad_main_ret = "expected return type of main to be 'void', '!void', 'noreturn', 'u8', or '!u8'";
 
-inline fn callMainWithArgs(argc: usize, argv: [*][*:0]u8) u8 {
+inline fn callMainWithArgs() u8 {
     const ReturnType = @typeInfo(@TypeOf(root.main)).@"fn".return_type.?;
-    std.os.argv = argv[0..argc];
 
     switch (ReturnType) {
         void => {

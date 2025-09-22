@@ -1,5 +1,6 @@
 //! RomFS reader and writer.
 //!
+//!
 //! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/RomFS
 
 pub const Header = extern struct {
@@ -112,10 +113,9 @@ pub const meta = struct {
         if (T != FileHeader and T != DirectoryHeader) @compileError("Can only use a metadata table with a valid header.");
 
         return struct {
-            pub const empty: Self = .{ .raw = .empty, .entries = 0 };
+            pub const empty: Self = .{ .raw = .empty };
 
             raw: std.ArrayList(u32),
-            entries: u32,
 
             pub fn deinit(table: *Self, gpa: std.mem.Allocator) void {
                 table.raw.deinit(gpa);
@@ -132,7 +132,6 @@ pub const meta = struct {
                 const entry_name: []u16 = std.mem.bytesAsSlice(u16, std.mem.sliceAsBytes(entry[(@divExact(@sizeOf(T), @sizeOf(u32)))..]));
 
                 entry_hdr.* = .initEmpty(parent, @intCast(name_byte_len));
-                table.entries += 1;
 
                 const last = name.encode(entry_name);
                 @memset(entry_name[last..], 0x00);
@@ -316,7 +315,7 @@ pub const Builder = struct {
 
     pub fn rehash(builder: *Builder, gpa: std.mem.Allocator) !void {
         inline for (&.{ &builder.directories, &builder.files }, &.{ &builder.directory_hashes, &builder.file_hashes }) |table, hash_table| {
-            const hash_table_size = officialHashPrime(table.entries);
+            const hash_table_size = officialHashPrime(@intCast(table.raw.items.len));
 
             try hash_table.resize(gpa, hash_table_size);
             @memset(hash_table.items, .none);

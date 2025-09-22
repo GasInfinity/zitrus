@@ -1,3 +1,10 @@
+//! `Horizon` result definitions.
+//!
+//! A `Code` is composed of a `Level`, `Summary`,
+//! `Module` and `Description`.
+//!
+//! Positive `Code`s are not considered `errors`.
+
 pub const Level = enum(u5) {
     success,
     info,

@@ -1,7 +1,7 @@
 //! Mid-level abstraction around GSP state, useful for prototypes,
 //! when using raw framebuffers or to see how things should be done.
 //!
-//! Use mango for more complex programs.
+//! Use `mango` for more complex programs if needed.
 
 pub const Software = @import("Graphics/Software.zig");
 pub const Framebuffer = @import("Graphics/Framebuffer.zig");

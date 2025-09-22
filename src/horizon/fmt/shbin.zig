@@ -1,4 +1,6 @@
-// https://www.3dbrew.org/wiki/SHBIN
+//! TODO: SHBIN
+//!
+//! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/SHBIN
 
 pub const Header = extern struct {
     pub const magic_value = "DVLB";

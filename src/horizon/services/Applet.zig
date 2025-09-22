@@ -1,4 +1,7 @@
-// https://www.3dbrew.org/wiki/NS_and_APT_Services
+//! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/NS_and_APT_Services
+
+// TODO: Missing methods / commands
+
 pub const Application = @import("Applet/Application.zig");
 
 pub const Service = enum(u2) {

@@ -103,8 +103,8 @@ fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: s
     tools.addImport("ziggy", ziggy.module("ziggy"));
 
     // TODO: wait until it gets updated
-    // const zigimg = b.dependency("zigimg", .{});
-    // tools.addImport("zigimg", zigimg.module("zigimg"));
+    const zigimg = b.dependency("zigimg", .{});
+    tools.addImport("zigimg", zigimg.module("zigimg"));
 
     const tool_tests = b.addTest(.{ .name = "zitrus-tools-tests", .root_module = tools });
 
@@ -240,11 +240,11 @@ fn addTestDependency(b: *std.Build, zitrus: *std.Build.Dependency, options: Test
     return exe;
 }
 
-// TODO: Add RomFS option
 pub const Make3dsxOptions = struct {
     name: []const u8,
     exe: *std.Build.Step.Compile,
     smdh: ?std.Build.LazyPath = null,
+    romfs: ?std.Build.LazyPath = null,
 };
 
 pub fn addMake3dsx(b: *std.Build, options: Make3dsxOptions) std.Build.LazyPath {
@@ -260,6 +260,11 @@ fn addMake3dsxDependency(b: *std.Build, zitrus: *std.Build.Dependency, options: 
     if (options.smdh) |smdh| {
         run_make.addArg("--smdh");
         run_make.addFileArg(smdh);
+    }
+
+    if (options.romfs) |romfs| {
+        run_make.addArg("--romfs");
+        run_make.addDirectoryArg(romfs);
     }
 
     return run_make.addOutputFileArg(options.name);
@@ -295,6 +300,21 @@ pub fn addMakeSmdh(b: *std.Build, options: MakeSmdhOptions) std.Build.LazyPath {
     }
 
     return smdh;
+}
+
+pub const MakeRomFsOptions = struct {
+    name: []const u8,
+    root: std.Build.LazyPath,
+};
+
+pub fn addMakeRomFs(b: *std.Build, options: MakeRomFsOptions) std.Build.LazyPath {
+    const zitrus = zitrusDependency(b);
+    const run_make = b.addRunArtifact(zitrus.artifact("zitrus-tools"));
+    run_make.addArgs(&.{ "romfs", "make" });
+
+    run_make.addDirectoryArg(options.root);
+    run_make.addArg("--output");
+    return run_make.addOutputFileArg(options.name);
 }
 
 pub const AssembleZpsmOptions = struct {

@@ -1,3 +1,5 @@
+//! Zitrus PICA200 shader assembler.
+
 pub const TokenList = std.MultiArrayList(struct {
     tag: Token.Tag,
     start: u32,

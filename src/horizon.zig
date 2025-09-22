@@ -1,3 +1,80 @@
+//! Represents the `Horizon` support layer. It implements all known syscalls,
+//! services, formats, etc... used by the OS.
+//!
+//! The API can be broken down like this:
+//!
+//! ## `application` - High-level application abstraction
+//!
+//! `zitrus` is architectured as a set of lower-level components which then are
+//! used to make higher-level abstractions.
+//!
+//! If you're only interested in making a normal applications
+//! you have at your disposal:
+//!
+//! * `application.Software` - If you won't be using hardware acceleration.
+//! See `services.GspGpu.Graphics.Software` for the higher-level rendering abstraction.
+//!
+//! * `application.Accelerated` - If you will eventually use hardware acceleration via the `PICA200`.
+//! Creates a `mango.Device` on your behalf and manages average `os` interactions for you with it.
+//!
+//! ## Namespaces
+//!
+//! * `heap` - `heap.page_allocator` and `heap.linear_page_allocator` respectively, It is currently
+//! forbidden to use the `heap.page_allocator` with non-linear `controlMemory`.
+//!
+//! * `result` - `result.Code` and everything related to `Horizon` result codes,
+//! help wanted for getting all possible `result.Description`s.
+//!
+//! * `environment` - only really relevant for homebrew distributed as `3dsx`
+//!
+//! * `memory` - All virtual memory mappings of the standard process, here
+//! you'll find `config.Shared` and `config.Kernel`.
+//!
+//! * `config` - `config.Shared` and `config.Kernel`
+//!
+//! * `ipc` - Type-safe and declarative `IPC` command handling, see `ipc.Buffer`.
+//!
+//! * `tls` - `tls.ThreadLocalStorage` and `threadlocal` variable support,
+//! also where the `ipc.Buffer` is stored for `IPC` communication.
+//!
+//! * `fmt` - Do you need to parse a `fmt.ncch.romfs`? Or maybe a `fmt.smdh`?
+//! There you'll find all `Horizon`-related formats implemented in `zitrus`.
+//!
+//! * `start` - The glue between your `main` and the real entrypoint,
+//! its purpose is to do the bare minimum but still be useful.
+//!
+//! * `panic` - A standard panic handler that reports panics via `ErrorDisplayManager`.
+//! Uses `break` if connecting to it didn't succeed.
+//!
+//! * `testing` - You should use variables defined here when using
+//! the horizon test runner, akin to `std.testing`.
+//!
+//! * `services` - All `Horizon` services live here. See `ServiceManager`.
+//!
+//! ## Ports
+//!
+//! * `ErrorDisplayManager` - Type-safe abstraction of the `err:f` port. Used for logging,
+//! reporting errors and exceptions.
+//!
+//! * `ServiceManager` - Type-safe abstraction of the `srv:` port. You get `services` with
+//! this.
+//!
+//! ## Kernel Handles
+//! * `Object` - All kernel handles inherit from this.
+//! * `Synchronization` - All waitable objects inherit from this, you can do a `waitSynchronization`
+//! with it.
+//! * `Interruptable` - A `Synchronization` which can be triggered by kernel interrupts.
+//! * `ResourceLimit` - For `getResourceLimitLimitValues` and `getResourceLimitCurrentValues`
+//! * `Mutex` - Manages synchronzation between threads and processes. Use `AddressArbiter`s and futexes
+//! for process-local synchronization objects.
+//! * `Semaphore` - `Mutex` ditto.
+//! * `Event` - `Mutex` ditto. They can be signaled and cleared, their behavior changes depending on `ResetType`.
+//! * `Timer` - `Mutex` ditto. Their behavior changes depending on `ResetType`.
+//! * `MemoryBlock` - For inter-process shared memory creation and mapping.
+//! * `ClientSession` - An `ipc` session to `ClientSession.sendRequest`s and get resposes from.
+//! * `Thread` - self-explanatory, you can get the current thread via `Thread.current`.
+//! * `Process` - self-explanatory, you can get the current process via `Process.current`.
+
 pub fn Result(T: type) type {
     return struct {
         const Res = @This();
@@ -166,7 +243,7 @@ pub const Object = enum(u32) {
     }
 };
 
-pub const ResouceLimit = packed struct(u32) {
+pub const ResourceLimit = packed struct(u32) {
     obj: Object,
 };
 
@@ -442,6 +519,10 @@ pub const ClientSession = packed struct(u32) {
     }
 };
 
+pub const Debug = packed struct(u32) {
+    sync: Synchronization,
+};
+
 pub const Session = struct {
     server: ServerSession,
     client: ClientSession,
@@ -564,6 +645,7 @@ pub const Process = packed struct(u32) {
     sync: Synchronization,
 };
 
+/// A `std.Io.Writer` which does `outputDebugString` on drain.
 pub fn outputDebugWriter(buffer: []u8) std.Io.Writer {
     return .{
         .vtable = &.{
@@ -626,6 +708,7 @@ pub fn queryMemory(address: *anyopaque) Result(MemoryQuery) {
     return .of(code, .{ .memory_info = .{ .base_vaddr = base_vaddr, .size = size, .permission = permission, .state = state }, .page_info = .{ .flags = page_flags } });
 }
 
+/// Exits the current process.
 pub fn exit() noreturn {
     asm volatile ("svc 0x03");
     unreachable;
@@ -689,11 +772,13 @@ pub fn createThread(entry: *const fn (ctx: ?*anyopaque) callconv(.c) noreturn, c
     return .of(code, handle);
 }
 
+/// Exits the current thread.
 pub fn exitThread() noreturn {
     asm volatile ("svc 0x09");
     unreachable;
 }
 
+/// Sleeps the current thread `ns` nanoseconds.
 pub fn sleepThread(ns: i64) void {
     const ns_u: u64 = @bitCast(ns);
 
@@ -1132,8 +1217,8 @@ pub fn getThreadId(thread: Thread) Result(u32) {
     return .of(code, id);
 }
 
-pub fn getResourceLimit(process: Process) Result(ResouceLimit) {
-    var resource_limit: ResouceLimit = undefined;
+pub fn getResourceLimit(process: Process) Result(ResourceLimit) {
+    var resource_limit: ResourceLimit = undefined;
 
     const code = asm volatile ("svc 0x38"
         : [code] "={r0}" (-> result.Code),
@@ -1144,7 +1229,7 @@ pub fn getResourceLimit(process: Process) Result(ResouceLimit) {
     return .of(code, resource_limit);
 }
 
-pub fn getResourceLimitLimitValues(values: []i64, resource_limit: ResouceLimit, names: []LimitableResource) result.Code {
+pub fn getResourceLimitLimitValues(values: []i64, resource_limit: ResourceLimit, names: []LimitableResource) result.Code {
     std.debug.assert(values.len == names.len);
 
     return asm volatile ("svc 0x39"
@@ -1156,7 +1241,7 @@ pub fn getResourceLimitLimitValues(values: []i64, resource_limit: ResouceLimit, 
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn getResourceLimitCurrentValues(values: []i64, resource_limit: ResouceLimit, names: []LimitableResource) result.Code {
+pub fn getResourceLimitCurrentValues(values: []i64, resource_limit: ResourceLimit, names: []LimitableResource) result.Code {
     std.debug.assert(values.len == names.len);
 
     return asm volatile ("svc 0x3A"

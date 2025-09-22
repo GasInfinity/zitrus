@@ -4,6 +4,11 @@
 //!
 //! Some operations are provided for the sake of completeness (translation, scale, ...)
 
+pub const Handedness = enum(i2) {
+    left = 1,
+    right = -1,
+};
+
 pub const @"4x4" = [4][4]f32;
 
 pub fn translate(x: f32, y: f32, z: f32) @"4x4" {
@@ -34,6 +39,7 @@ pub fn scaleTranslate(sx: f32, sy: f32, sz: f32, x: f32, y: f32, z: f32) @"4x4" 
     };
 }
 
+// TODO: right-handed ortho
 pub fn ortho(l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
     const x_scale = r - l;
     const y_scale = b - t;
@@ -60,26 +66,28 @@ pub fn orthoRotate90Cw(l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
     };
 }
 
-pub fn persp(fov_y: f32, aspect_ratio: f32, n: f32, f: f32) @"4x4" {
+pub fn persp(comptime handedness: Handedness, fov_y: f32, aspect_ratio: f32, n: f32, f: f32) @"4x4" {
+    const handedness_factor: comptime_float = @floatFromInt(@intFromEnum(handedness));
     const fov_y_tan = @tan(fov_y / 2.0);
     const f_range = f - n;
 
     return .{
         .{ 1 / (fov_y_tan * aspect_ratio), 0, 0, 0 },
         .{ 0, 1 / fov_y_tan, 0, 0 },
-        .{ 0, 0, -f / f_range, (f * n) / f_range },
-        .{ 0, 0, 1, 0 },
+        .{ 0, 0, handedness_factor * (-f / f_range), handedness_factor * ((f * n) / f_range) },
+        .{ 0, 0, handedness_factor * 1, 0 },
     };
 }
 
-pub fn perspRotate90Cw(fov_y: f32, aspect_ratio: f32, n: f32, f: f32) @"4x4" {
+pub fn perspRotate90Cw(comptime handedness: Handedness, fov_y: f32, aspect_ratio: f32, n: f32, f: f32) @"4x4" {
+    const handedness_factor: comptime_float = @floatFromInt(@intFromEnum(handedness));
     const fov_y_tan = @tan(fov_y / 2.0);
     const f_range = f - n;
 
     return .{
         .{ 0, 1 / fov_y_tan, 0, 0 },
         .{ -1 / (fov_y_tan * aspect_ratio), 0, 0, 0 },
-        .{ 0, 0, -f / f_range, (f * n) / f_range },
-        .{ 0, 0, 1, 0 },
+        .{ 0, 0, handedness_factor * (-f / f_range), handedness_factor * ((f * n) / f_range) },
+        .{ 0, 0, handedness_factor * 1, 0 },
     };
 }
