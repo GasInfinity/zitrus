@@ -2,6 +2,24 @@
 //!
 //! As the PICA200 is limited to what it can do with 3D drawing commands,
 //! things like clearing an `Image` or copying data is done with the `Device`.
+//!
+//!
+//! ## Things to consider
+//!
+//! **mango** follows some assumptions about its state:
+//!
+//! * `start_draw_mode` (GPUREG_START_DRAW_FUNC0) is always in `draw`, it's only changed when binding new uniforms
+//! OR changing pipelines. Why this design decision? You usually (and should) issue more drawcalls than you change
+//! pipelines or bind new uniforms. Can be trivially changed so its not an issue.
+//!
+//! * `config` (GPUREG_GEOSTAGE_CONFIG) and `config_2` (GPUREG_GEOSTAGE_CONFIG2) are
+//! initialized with `Drawing triangle elements` to `true` when binding a pipeline or changing primitive topology. Don't
+//! know the implications of this but currently works (Thanks DMP engineers!)
+//!
+//! * `primitive_config` (GPUREG_PRIMITIVE_CONFIG) is initialized to the primitive topology for `drawIndexed` (see `pica.PrimitiveTopology`)
+//! which means less register writes when using `drawIndexed` (which programs should use!).
+//!
+//! TODO: Document more assumptions made.
 
 pub const Handle = enum(u32) {
     null = 0,
@@ -113,9 +131,9 @@ pub const Handle = enum(u32) {
         return b_cmd.setScissor(scissor);
     }
 
-    pub fn setTextureCombiners(cmd: Handle, texture_combiners_len: u32, texture_combiners: [*]const mango.TextureCombiner, texture_combiner_buffer_sources_len: u32, texture_combiner_buffer_sources: [*]const mango.TextureCombiner.BufferSources) void {
+    pub fn setTextureCombiners(cmd: Handle, texture_combiners: []const mango.TextureCombiner, texture_combiner_buffer_sources: []const mango.TextureCombiner.BufferSources) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.setTextureCombiners(texture_combiners_len, texture_combiners, texture_combiner_buffer_sources_len, texture_combiner_buffer_sources);
+        return b_cmd.setTextureCombiners(texture_combiners, texture_combiner_buffer_sources);
     }
 
     pub fn setBlendEquation(cmd: Handle, blend_equation: mango.ColorBlendEquation) void {
@@ -355,7 +373,24 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
     }
 
     const queue = &cmd.queue;
+
+    switch (cmd.gfx_state.misc.primitive_topology) {
+        .triangle_list => queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{
+            .total_vertex_outputs = 0, // NOTE: Ignored by mask
+            .topology = cmd.gfx_state.misc.primitive_topology,
+        }, 0b0010),
+        else => {},
+    }
+    defer switch (cmd.gfx_state.misc.primitive_topology) {
+        .triangle_list => queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{
+            .total_vertex_outputs = 0, // NOTE: Ignored by mask
+            .topology = cmd.gfx_state.misc.primitive_topology.indexedTopology(),
+        }, 0b0010),
+        else => {},
+    };
+
     queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config_2, .{ .inputting_vertices_or_draw_arrays = true }, 0b0001);
+    defer queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config_2, .{ .inputting_vertices_or_draw_arrays = false }, 0b0001);
 
     const first_draw = vertex_info[0];
     queue.addIncremental(internal_regs, .{
@@ -397,7 +432,6 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
         last_vertex_info = current_vertex_info;
         current_vertex_info_ptr = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(current_vertex_info_ptr)) + stride));
     }
-    queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config_2, .{ .inputting_vertices_or_draw_arrays = false }, 0b0001);
 }
 
 pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]const mango.MultiDrawIndexedInfo, stride: u32) void {
@@ -519,9 +553,9 @@ pub fn setScissor(cmd: *CommandBuffer, scissor: mango.Scissor) void {
     cmd.gfx_state.setScissor(scissor);
 }
 
-pub fn setTextureCombiners(cmd: *CommandBuffer, texture_combiners_len: u32, texture_combiners: [*]const mango.TextureCombiner, texture_combiner_buffer_sources_len: u32, texture_combiner_buffer_sources: [*]const mango.TextureCombiner.BufferSources) void {
+pub fn setTextureCombiners(cmd: *CommandBuffer, texture_combiners: []const mango.TextureCombiner, texture_combiner_buffer_sources: []const mango.TextureCombiner.BufferSources) void {
     std.debug.assert(cmd.state == .recording);
-    cmd.gfx_state.setTextureCombiners(texture_combiners_len, texture_combiners, texture_combiner_buffer_sources_len, texture_combiner_buffer_sources);
+    cmd.gfx_state.setTextureCombiners(texture_combiners, texture_combiner_buffer_sources);
 }
 
 pub fn setBlendEquation(cmd: *CommandBuffer, blend_equation: mango.ColorBlendEquation) void {
@@ -637,7 +671,10 @@ fn beforeDraw(cmd: *CommandBuffer) bool {
 
 fn growIfNeeded(cmd: *CommandBuffer) !void {
     // TODO: grow native queue from the pool, we can avoid doing this until we have more complex scenes.
-    _ = cmd;
+
+    if (cmd.queue.remaining().len < backend.safe_native_command_buffer_upper_bound) {
+        return error.OutOfMemory; // Don't ignore it tho!
+    }
 }
 
 pub fn notifyPending(cmd: *CommandBuffer) void {

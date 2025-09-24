@@ -33,6 +33,10 @@ pub const Queue = struct {
         };
     }
 
+    pub fn remaining(queue: Queue) []u32 {
+        return queue.buffer[queue.current_index..];
+    }
+
     pub fn reset(queue: *Queue) void {
         queue.current_index = 0;
     }

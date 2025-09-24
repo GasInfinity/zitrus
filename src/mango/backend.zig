@@ -13,6 +13,8 @@ pub const max_swapchain_images = 3;
 
 pub const max_present_queue_items = max_swapchain_images * max_swapchain_image_layers;
 
+pub const safe_native_command_buffer_upper_bound = 512;
+
 pub const PresentationEngine = @import("PresentationEngine.zig");
 
 pub const Device = @import("Device.zig");
@@ -31,6 +33,8 @@ pub const Swapchain = @import("Swapchain.zig");
 
 pub const GraphicsState = @import("GraphicsState.zig");
 pub const RenderingState = @import("RenderingState.zig");
+
+pub const TextureCombinerState = @import("TextureCombinerState.zig");
 pub const VertexInputLayout = @import("VertexInputLayout.zig");
 
 /// Calculates the dimension of a specific mip level.

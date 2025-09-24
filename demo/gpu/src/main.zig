@@ -106,14 +106,15 @@ pub const Scene = struct {
 
     pipeline: mango.Pipeline,
 
-    render_buffer_memory: mango.DeviceMemory,
-    top_color_buffer: mango.Image,
-    top_color_buffer_view: mango.ImageView,
-    top_depth_buffer: mango.Image,
+    top_renderbuffer: Renderbuffer,
+    cube_mesh: Mesh,
 
-    vertex_index_memory: mango.DeviceMemory,
-    vertex_buffer: mango.Buffer,
-    index_buffer: mango.Buffer,
+    command_pool: mango.CommandPool,
+    cmd: mango.CommandBuffer,
+
+    zero_test_image: SingleImage,
+    simple_sampler: mango.Sampler,
+    time: f32 = 0.0,
 
     pub fn init(device: mango.Device, gpa: std.mem.Allocator) !Scene {
         const sema = try device.createSemaphore(.{
@@ -158,7 +159,9 @@ pub const Scene = struct {
             .viewport_state = null,
             .rasterization_state = &.{
                 .front_face = .ccw,
-                .cull_mode = .back,
+
+                // NOTE: This is done in purpose to show that depth tests WORK!
+                .cull_mode = .none,
 
                 .depth_mode = .z_buffer,
                 .depth_bias_constant = 0.0,
@@ -220,33 +223,175 @@ pub const Scene = struct {
         }, gpa);
         errdefer device.destroyPipeline(pipeline, gpa);
 
+        const top_renderbuffer: Renderbuffer = try .init(device, gpa, 240, 400, .a8b8g8r8_unorm, .d24_unorm);
+        errdefer top_renderbuffer.deinit(device, gpa);
+
+        const cube_mesh: Mesh = try .init(device, gpa, .u8, &cube_indices, std.mem.sliceAsBytes(&cube_vertices));
+        errdefer cube_mesh.deinit(device, gpa);
+
+        const pool = try device.createCommandPool(.{}, gpa);
+        errdefer device.destroyCommandPool(pool, gpa);
+
+        var cmd: [1]mango.CommandBuffer = undefined;
+        try device.allocateCommandBuffers(.{
+            .pool = pool,
+            .command_buffer_count = 1,
+        }, &cmd);
+        errdefer device.freeCommandBuffers(pool, &cmd);
+
+        const zero_test_image: SingleImage = try .initLinear(device, gpa, 64, 64, .b8g8r8_unorm, test_bgr, sema, 0);
+        errdefer zero_test_image.deinit(device, gpa);
+
+        const simple_sampler = try device.createSampler(.{
+            .mag_filter = .linear,
+            .min_filter = .linear,
+            .mip_filter = .linear,
+            .address_mode_u = .clamp_to_edge,
+            .address_mode_v = .clamp_to_edge,
+            .lod_bias = 0.0,
+            .min_lod = 0,
+            .max_lod = 7,
+            .border_color = @splat(0),
+        }, gpa);
+        defer device.destroySampler(simple_sampler, gpa);
+
         return .{
             .semaphore = sema,
-            .current_timeline = 0,
+            .current_timeline = 1,
 
             .pipeline = pipeline,
+
+            .top_renderbuffer = top_renderbuffer,
+            .cube_mesh = cube_mesh,
+
+            .command_pool = pool,
+            .cmd = cmd[0],
+
+            .zero_test_image = zero_test_image,
+            .simple_sampler = simple_sampler,
         };
     }
 
     pub fn deinit(scene: *Scene, device: mango.Device, gpa: std.mem.Allocator) void {
-        _ = scene;
-        _ = device;
-        _ = gpa;
+        device.destroySampler(scene.simple_sampler, gpa);
+        scene.zero_test_image.deinit(device, gpa);
+        device.freeCommandBuffers(scene.command_pool, @ptrCast(&scene.cmd));
+        device.destroyCommandPool(scene.command_pool, gpa);
+        scene.cube_mesh.deinit(device, gpa);
+        scene.top_renderbuffer.deinit(device, gpa);
+        device.destroyPipeline(scene.pipeline, gpa);
+        device.destroySemaphore(scene.semaphore, gpa);
     }
 
-    pub fn update(scene: *Scene) void {
-        _ = scene;
+    pub fn update(scene: *Scene) !void {
+        scene.time += 1.0 / 60.0;
     }
 
-    pub fn render(scene: *Scene, buffer: mango.CommandBuffer) !void {
-        _ = scene;
-        _ = buffer;
+    pub fn render(scene: *Scene) !void {
+        const cmd = scene.cmd;
+
+        try cmd.begin();
+
+        scene.cube_mesh.bind(cmd);
+        cmd.bindPipeline(.graphics, scene.pipeline);
+        cmd.bindCombinedImageSamplers(0, &.{.{
+            .image = scene.zero_test_image.view,
+            .sampler = scene.simple_sampler,
+        }});
+
+        // Render to the top screen
+        cmd.setViewport(.{
+            .rect = .{
+                .offset = .{ .x = 0, .y = 0 },
+                .extent = .{ .width = 240, .height = 400 },
+            },
+            .min_depth = 0.0,
+            .max_depth = 1.0,
+        });
+        cmd.setScissor(.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 400 } }));
+
+        {
+            cmd.beginRendering(.{
+                .color_attachment = scene.top_renderbuffer.color.view,
+                .depth_stencil_attachment = scene.top_renderbuffer.depth.view,
+            });
+            defer cmd.endRendering();
+
+            const zmath = zitrus.math;
+
+            const cos_time = @sin(scene.time);
+            const sin_time = @sin(scene.time * 4);
+
+            cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(.right, std.math.degreesToRadians(90.0), 240.0 / 400.0, 100, 0.8));
+            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scaleTranslate(0.8, 0.8, 0.8, (@abs(cos_time) - 0.5) * 3, sin_time * 2, -2 - @abs(sin_time)));
+
+            scene.cube_mesh.draw(cmd);
+        }
+
+        try cmd.end();
     }
 
-    pub fn submit(device: mango.Device, current_top_image: mango.Image, current_bottom_image: mango.Image) !void {
-        _ = device;
-        _ = current_top_image;
-        _ = current_bottom_image;
+    pub fn submitPresent(scene: *Scene, device: mango.Device, top_swap: DoubleBufferedSwapchain, top_idx: u8, bottom_swap: DoubleBufferedSwapchain, bottom_idx: u8) !void {
+        const transfer_queue = device.getQueue(.transfer);
+        const fill_queue = device.getQueue(.fill);
+        const submit_queue = device.getQueue(.submit);
+        const present_queue = device.getQueue(.present);
+
+        try fill_queue.clearColorImage(.{
+            .wait_semaphore = &.init(scene.semaphore, scene.current_timeline),
+            .image = bottom_swap.images[bottom_idx],
+            .color = @splat(0x22),
+            .subresource_range = .full,
+            .signal_semaphore = &.init(scene.semaphore, scene.current_timeline + 1),
+        });
+        scene.current_timeline += 1;
+
+        // We're not rendering to the bottom screen, we can present now.
+        try bottom_swap.present(present_queue, bottom_idx, &.init(scene.semaphore, scene.current_timeline));
+
+        try fill_queue.clearColorImage(.{
+            .wait_semaphore = &.init(scene.semaphore, scene.current_timeline),
+            .image = scene.top_renderbuffer.color.image,
+            .color = @splat(0x11),
+            .subresource_range = .full,
+            .signal_semaphore = &.init(scene.semaphore, scene.current_timeline + 1),
+        });
+        scene.current_timeline += 1;
+
+        try fill_queue.clearDepthStencilImage(.{
+            .wait_semaphore = &.init(scene.semaphore, scene.current_timeline),
+            .image = scene.top_renderbuffer.depth.image,
+            .depth = 0.0,
+            .stencil = 0x00,
+            // .subresource_range = .full,
+            .signal_semaphore = &.init(scene.semaphore, scene.current_timeline + 1),
+        });
+        scene.current_timeline += 1;
+
+        try submit_queue.submit(.{
+            .wait_semaphore = &.init(scene.semaphore, scene.current_timeline),
+            .command_buffer = scene.cmd,
+            .signal_semaphore = &.init(scene.semaphore, scene.current_timeline + 1),
+        });
+        scene.current_timeline += 1;
+
+        try transfer_queue.blitImage(.{
+            .wait_semaphore = &.init(scene.semaphore, scene.current_timeline),
+            .src_image = scene.top_renderbuffer.color.image,
+            .dst_image = top_swap.images[top_idx],
+            .src_subresource = .full,
+            .dst_subresource = .full,
+            .signal_semaphore = &.init(scene.semaphore, scene.current_timeline + 1),
+        });
+        scene.current_timeline += 1;
+
+        try top_swap.present(present_queue, top_idx, &.init(scene.semaphore, scene.current_timeline));
+
+        // We must wait as we're using a single image to render.
+        try device.waitSemaphore(.{
+            .semaphore = scene.semaphore,
+            .value = scene.current_timeline,
+        }, -1);
     }
 };
 
@@ -296,7 +441,7 @@ pub const DoubleBufferedSwapchain = struct {
 
     pub fn deinit(chain: DoubleBufferedSwapchain, device: mango.Device, gpa: std.mem.Allocator) void {
         device.destroySwapchain(chain.swapchain, gpa);
-        device.destroySwapchain(chain.swapchain, gpa);
+        device.freeMemory(chain.swapchain_memory, gpa);
     }
 
     pub fn acquireNext(chain: DoubleBufferedSwapchain, device: mango.Device) !u8 {
@@ -314,65 +459,41 @@ pub const DoubleBufferedSwapchain = struct {
 };
 
 pub const Renderbuffer = struct {
-    color_memory: mango.DeviceMemory,
-    color: mango.Image,
-    color_view: mango.ImageView,
+    color: SingleImage,
+    depth: SingleImage,
 
-    depth_memory: mango.DeviceMemory,
-    depth: mango.Image,
-    depth_view: mango.ImageView,
-
-    // TODO: RenderBuffer abstraction for this demo
-    // pub fn init(device: mango.Device, gpa: std.mem.Allocator, w: u16, h: u16, color_bpp: usize, depth_bpp: usize, color: mango.Format, depth: mango.Format) !Renderbuffer {
-    //     const color_mem = try device.allocateMemory(.{
-    //         .memory_type = .vram_a,
-    //         .allocation_size = .size(color_bpp * w * h),
-    //     }, gpa);
-    //     errdefer device.freeMemory(color_mem, gpa);
-    //
-    //     return .{
-    //
-    //     };
-    // }
+    pub fn init(device: mango.Device, gpa: std.mem.Allocator, w: u16, h: u16, color_fmt: mango.Format, depth_fmt: mango.Format) !Renderbuffer {
+        return .{
+            .color = if (color_fmt != .undefined) try .initUninitialized(device, gpa, w, h, color_fmt, .vram_a, false) else .empty,
+            .depth = if (depth_fmt != .undefined) try .initUninitialized(device, gpa, w, h, depth_fmt, .vram_b, false) else .empty,
+        };
+    }
 
     pub fn deinit(render: Renderbuffer, device: mango.Device, gpa: std.mem.Allocator) void {
-        device.destroyImageView(render.color_view, gpa);
-        device.destroyImage(render.color, gpa);
-        device.freeMemory(render.color_memory, gpa);
+        if (render.color.image != .null) {
+            render.color.deinit(device, gpa);
+        }
 
-        if (render.depth != .null) {
-            device.destroyImageView(render.depth_view, gpa);
-            device.destroyImage(render.depth, gpa);
-            device.freeMemory(render.depth_memory, gpa);
+        if (render.depth.image != .null) {
+            render.depth.deinit(device, gpa);
         }
     }
 };
 
-pub const SimpleTexture = struct {
+// NOTE: Not the most efficient implementation, works for demonstration purposes.
+pub const SingleImage = struct {
+    pub const empty: SingleImage = .{ .memory = .null, .image = .null, .view = .null };
+
     memory: mango.DeviceMemory,
     image: mango.Image,
     view: mango.ImageView,
 
-    // TODO: Our images are not tiled, we need to use a staging buffer before using this.
-    pub fn init(device: mango.Device, gpa: std.mem.Allocator, w: u16, h: u16, format: mango.Format, data: []const u8) SimpleTexture {
+    pub fn initUninitialized(device: mango.Device, gpa: std.mem.Allocator, w: u16, h: u16, format: mango.Format, mem_type: mango.KnownMemoryType, sampled: bool) !SingleImage {
         const memory = try device.allocateMemory(.{
-            .memory_type = .fcram_cached,
-            .allocation_size = .size(data.len),
+            .memory_type = mem_type,
+            .allocation_size = .size(format.scale(@as(usize, w) * h)),
         }, gpa);
         errdefer device.freeMemory(memory, gpa);
-
-        {
-            const mapped = try device.mapMemory(memory, 0, .whole);
-            defer device.unmapMemory(memory);
-
-            @memcpy(mapped[0..data.len], data);
-
-            try device.flushMappedMemoryRanges(&.{.{
-                .memory = memory,
-                .offset = .size(0),
-                .size = .whole,
-            }});
-        }
 
         const image = try device.createImage(.{
             .flags = .{},
@@ -380,7 +501,7 @@ pub const SimpleTexture = struct {
             .tiling = .optimal,
             .usage = .{
                 .transfer_dst = true,
-                .sampled = true,
+                .sampled = sampled,
             },
             .extent = .{
                 .width = w,
@@ -408,7 +529,52 @@ pub const SimpleTexture = struct {
         };
     }
 
-    pub fn deinit(tex: SimpleTexture, device: mango.Device, gpa: std.mem.Allocator) void {
+    // NOTE: Again, this is a demo. Its much better to load ETC images.
+    pub fn initLinear(device: mango.Device, gpa: std.mem.Allocator, w: u16, h: u16, format: mango.Format, data: []const u8, semaphore: mango.Semaphore, current: u64) !SingleImage {
+        const single: SingleImage = try .initUninitialized(device, gpa, w, h, format, .vram_a, true);
+        errdefer single.deinit(device, gpa);
+
+        const memory = try device.allocateMemory(.{
+            .memory_type = .fcram_cached,
+            .allocation_size = .size(data.len),
+        }, gpa);
+        defer device.freeMemory(memory, gpa);
+
+        {
+            const mapped = try device.mapMemory(memory, 0, .whole);
+            defer device.unmapMemory(memory);
+
+            @memcpy(mapped[0..data.len], data);
+
+            try device.flushMappedMemoryRanges(&.{.{
+                .memory = memory,
+                .offset = .size(0),
+                .size = .whole,
+            }});
+        }
+
+        const staging = try device.createBuffer(.{
+            .usage = .{
+                .transfer_src = true,
+            },
+            .size = .size(data.len),
+        }, gpa);
+        defer device.destroyBuffer(staging, gpa);
+        try device.bindBufferMemory(staging, memory, .size(0));
+
+        try device.getQueue(.transfer).copyBufferToImage(.{
+            .wait_semaphore = &.init(semaphore, current),
+            .src_buffer = staging,
+            .src_offset = .size(0),
+            .dst_image = single.image,
+            .dst_subresource = .full,
+            .signal_semaphore = &.init(semaphore, current + 1),
+        });
+
+        return single;
+    }
+
+    pub fn deinit(tex: SingleImage, device: mango.Device, gpa: std.mem.Allocator) void {
         device.destroyImageView(tex.view, gpa);
         device.destroyImage(tex.image, gpa);
         device.freeMemory(tex.memory, gpa);
@@ -502,305 +668,22 @@ pub fn main() !void {
 
     const device: mango.Device = app.device;
 
-    const transfer_queue = device.getQueue(.transfer);
-    const fill_queue = device.getQueue(.fill);
-    const submit_queue = device.getQueue(.submit);
-    const present_queue = device.getQueue(.present);
-
-    const global_semaphore = try device.createSemaphore(.{
-        .initial_value = 0,
-    }, gpa);
-    defer device.destroySemaphore(global_semaphore, gpa);
-    var global_sync_counter: u64 = 0;
-
     const top_swap: DoubleBufferedSwapchain = try .initBgr888(device, .top_240x400, gpa);
     defer top_swap.deinit(device, gpa);
 
     const bottom_swap: DoubleBufferedSwapchain = try .initBgr888(device, .bottom_240x320, gpa);
     defer bottom_swap.deinit(device, gpa);
 
-    const Vertex = extern struct {
-        pos: [4]i8,
-        uv: [2]u8,
-    };
+    defer device.waitIdle() catch unreachable;
 
-    const indices: []const u8 = &.{ 0, 1, 2, 3 };
-    const vertices: []const Vertex = &.{
-        .{ .pos = .{ -1, -1, 2, 1 }, .uv = .{ 0, 0 } },
-        .{ .pos = .{ 1, -1, 2, 1 }, .uv = .{ 1, 0 } },
-        .{ .pos = .{ -1, 1, 4, 1 }, .uv = .{ 0, 1 } },
-        .{ .pos = .{ 1, 1, 4, 1 }, .uv = .{ 1, 1 } },
-    };
-
-    var quad_mesh: Mesh = try .init(device, gpa, .u8, indices, std.mem.sliceAsBytes(vertices));
-    defer quad_mesh.deinit(device, gpa);
-
-    const color_attachment_image_memory = try device.allocateMemory(.{
-        .memory_type = .vram_a,
-        .allocation_size = .size(320 * 240 * 4 + 400 * 240 * 4 * 2),
-    }, gpa);
-    defer device.freeMemory(color_attachment_image_memory, gpa);
-
-    const top_color_attachment_image = try device.createImage(.{
-        .flags = .{},
-        .type = .@"2d",
-        .tiling = .optimal,
-        .usage = .{
-            .transfer_src = true,
-            .color_attachment = true,
-        },
-        .extent = .{
-            .width = 240,
-            .height = 400,
-        },
-        .format = .a8b8g8r8_unorm,
-        .mip_levels = .@"1",
-        .array_layers = .@"1",
-    }, gpa);
-    defer device.destroyImage(top_color_attachment_image, gpa);
-    try device.bindImageMemory(top_color_attachment_image, color_attachment_image_memory, .size(320 * 240 * 4));
-
-    const bottom_color_attachment_image = try device.createImage(.{
-        .flags = .{},
-        .type = .@"2d",
-        .tiling = .optimal,
-        .usage = .{
-            .transfer_src = true,
-            .color_attachment = true,
-        },
-        .extent = .{
-            .width = 240,
-            .height = 320,
-        },
-        .format = .a8b8g8r8_unorm,
-        .mip_levels = .@"1",
-        .array_layers = .@"1",
-    }, gpa);
-    defer device.destroyImage(bottom_color_attachment_image, gpa);
-    try device.bindImageMemory(bottom_color_attachment_image, color_attachment_image_memory, .size(0));
-
-    const staging_buffer_memory = try device.allocateMemory(.{
-        .memory_type = .fcram_cached,
-        .allocation_size = .size(64 * 64 * 3),
-    }, gpa);
-    defer device.freeMemory(staging_buffer_memory, gpa);
-
-    const staging_buffer = try device.createBuffer(.{
-        .size = .size(64 * 64 * 3),
-        .usage = .{
-            .transfer_src = true,
-        },
-    }, gpa);
-    defer device.destroyBuffer(staging_buffer, gpa);
-    try device.bindBufferMemory(staging_buffer, staging_buffer_memory, .size(0));
-
-    {
-        const mapped_staging = try device.mapMemory(staging_buffer_memory, 0, .whole);
-        defer device.unmapMemory(staging_buffer_memory);
-
-        @memcpy(mapped_staging[0..(64 * 64 * 3)], test_bgr);
-
-        try device.flushMappedMemoryRanges(&.{.{
-            .memory = staging_buffer_memory,
-            .offset = .size(0),
-            .size = .size(64 * 64 * 3),
-        }});
-    }
-
-    const test_sampled_image_memory = try device.allocateMemory(.{
-        .memory_type = .vram_a,
-        .allocation_size = .size(64 * 64 * 3),
-    }, gpa);
-    defer device.freeMemory(test_sampled_image_memory, gpa);
-
-    const test_sampled_image = try device.createImage(.{
-        .flags = .{},
-        .type = .@"2d",
-        .tiling = .optimal,
-        .usage = .{
-            .transfer_dst = true,
-            .sampled = true,
-        },
-        .extent = .{
-            .width = 64,
-            .height = 64,
-        },
-        .format = .b8g8r8_unorm,
-        .mip_levels = .@"1",
-        .array_layers = .@"1",
-    }, gpa);
-    defer device.destroyImage(test_sampled_image, gpa);
-    try device.bindImageMemory(test_sampled_image, test_sampled_image_memory, .size(0));
-
-    try transfer_queue.copyBufferToImage(.{
-        .src_buffer = staging_buffer,
-        .src_offset = .size(0),
-        .dst_image = test_sampled_image,
-        .dst_subresource = .full,
-        .signal_semaphore = &.init(global_semaphore, global_sync_counter + 1),
-    });
-
-    global_sync_counter += 1;
-
-    const test_sampled_image_view = try device.createImageView(.{
-        .type = .@"2d",
-        .format = .b8g8r8_unorm,
-        .image = test_sampled_image,
-        .subresource_range = .{
-            .base_mip_level = .@"0",
-            .level_count = .@"1",
-            .base_array_layer = .@"0",
-            .layer_count = .@"1",
-        },
-    }, gpa);
-    defer device.destroyImageView(test_sampled_image_view, gpa);
-
-    const simple_sampler = try device.createSampler(.{
-        .mag_filter = .linear,
-        .min_filter = .linear,
-        .mip_filter = .linear,
-        .address_mode_u = .clamp_to_edge,
-        .address_mode_v = .clamp_to_edge,
-        .lod_bias = 0.0,
-        .min_lod = 0,
-        .max_lod = 7,
-        .border_color = @splat(0),
-    }, gpa);
-    defer device.destroySampler(simple_sampler, gpa);
-
-    const bottom_color_attachment_image_view = try device.createImageView(.{
-        .type = .@"2d",
-        .format = .a8b8g8r8_unorm,
-        .image = bottom_color_attachment_image,
-        .subresource_range = .full,
-    }, gpa);
-    defer device.destroyImageView(bottom_color_attachment_image_view, gpa);
-
-    const top_color_attachment_image_view = try device.createImageView(.{
-        .type = .@"2d",
-        .format = .a8b8g8r8_unorm,
-        .image = top_color_attachment_image,
-        .subresource_range = .full,
-    }, gpa);
-    defer device.destroyImageView(top_color_attachment_image_view, gpa);
-
-    const simple_pipeline = try device.createGraphicsPipeline(.{
-        .rendering_info = &.{
-            .color_attachment_format = .a8b8g8r8_unorm,
-            .depth_stencil_attachment_format = .undefined,
-        },
-        .vertex_input_state = &.init(&.{
-            .{
-                .stride = @sizeOf(Vertex),
-            },
-        }, &.{
-            .{
-                .location = .v0,
-                .binding = .@"0",
-                .format = .r8g8b8a8_sscaled,
-                .offset = 0,
-            },
-            .{
-                .location = .v1,
-                .binding = .@"0",
-                .format = .r8g8_uscaled,
-                .offset = 4,
-            },
-        }, &.{}),
-        .vertex_shader_state = &.init(simple_vtx, "main"),
-        .geometry_shader_state = null,
-        .input_assembly_state = &.{
-            .topology = .triangle_strip,
-        },
-        .viewport_state = null,
-        .rasterization_state = &.{
-            .front_face = .ccw,
-            .cull_mode = .none,
-
-            .depth_mode = .z_buffer,
-            .depth_bias_constant = 0.0,
-        },
-        .alpha_depth_stencil_state = &.{
-            .alpha_test_enable = false,
-            .alpha_test_compare_op = .never,
-            .alpha_test_reference = 0,
-
-            // (!) Disabling depth tests also disables depth writes like in every other graphics api
-            .depth_test_enable = false,
-            .depth_write_enable = false,
-            .depth_compare_op = .gt,
-
-            .stencil_test_enable = false,
-            .back_front = std.mem.zeroes(mango.GraphicsPipelineCreateInfo.AlphaDepthStencilState.StencilOperationState),
-        },
-        .texture_sampling_state = &.{
-            .texture_enable = .{ true, false, false, false },
-
-            .texture_2_coordinates = .@"2",
-            .texture_3_coordinates = .@"2",
-        },
-        .lighting_state = &.{},
-        .texture_combiner_state = &.init(&.{.{
-            .color_src = @splat(.texture_0),
-            .alpha_src = @splat(.primary_color),
-            .color_factor = @splat(.src_color),
-            .alpha_factor = @splat(.src_alpha),
-            .color_op = .replace,
-            .alpha_op = .replace,
-
-            .color_scale = .@"1x",
-            .alpha_scale = .@"1x",
-
-            .constant = @splat(0),
-        }}, &.{}),
-        .color_blend_state = &.{
-            .logic_op_enable = false,
-            .logic_op = .clear,
-
-            .attachment = .{
-                .blend_equation = .{
-                    .src_color_factor = .one,
-                    .dst_color_factor = .zero,
-                    .color_op = .add,
-                    .src_alpha_factor = .one,
-                    .dst_alpha_factor = .zero,
-                    .alpha_op = .add,
-                },
-                .color_write_mask = .rgba,
-            },
-            .blend_constants = .{ 0, 0, 0, 0 },
-        },
-        .dynamic_state = .{
-            .viewport = true,
-            .scissor = true,
-        },
-    }, gpa);
-    defer device.destroyPipeline(simple_pipeline, gpa);
-
-    const command_pool = try device.createCommandPool(.{}, gpa);
-    defer device.destroyCommandPool(command_pool, gpa);
-
-    const cmd = blk: {
-        var cmd: mango.CommandBuffer = undefined;
-        try device.allocateCommandBuffers(.{
-            .pool = command_pool,
-            .command_buffer_count = 1,
-        }, @ptrCast(&cmd));
-        break :blk cmd;
-    };
-    defer device.freeCommandBuffers(command_pool, @ptrCast(&cmd));
+    var scene: Scene = try .init(device, gpa);
+    defer scene.deinit(device, gpa);
 
     // TODO: unfill lcds when swapchains have at least 1 present instead of here.
     try app.gsp.sendSetLcdForceBlack(false);
     defer if (!app.apt_app.flags.must_close) app.gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
 
-    // XXX: Bad, but we know this is not near graphicaly intensive and we'll always be near 60 FPS.
-    const default_delta_time = 1.0 / 60.0;
-    var current_time: f32 = 0.0;
-    // var current_scale: f32 = 1.0;
     main_loop: while (true) {
-        defer current_time += default_delta_time;
-
         while (try app.pollEvent()) |ev| switch (ev) {
             .jump_home_rejected => {},
             .quit => break :main_loop,
@@ -812,136 +695,13 @@ pub fn main() !void {
             break :main_loop;
         }
 
-        // if(input.current.up) {
-        //     current_scale += 1.0 * default_delta_time * 5;
-        // } else if(input.current.down) {
-        //     current_scale -= 1.0 * default_delta_time * 5;
-        // }
-        // current_scale = std.math.clamp(current_scale, -1.0, 1.0);
-
         const bottom_image_idx = try bottom_swap.acquireNext(device);
         const top_image_idx = try top_swap.acquireNext(device);
 
-        try cmd.begin();
-
-        quad_mesh.bind(cmd);
-        cmd.bindPipeline(.graphics, simple_pipeline);
-        cmd.bindCombinedImageSamplers(0, &.{.{
-            .image = test_sampled_image_view,
-            .sampler = simple_sampler,
-        }});
-
-        // Render to the bottom screen
-        cmd.setViewport(.{
-            .rect = .{
-                .offset = .{ .x = 0, .y = 0 },
-                .extent = .{ .width = 240, .height = 320 },
-            },
-            .min_depth = 0.0,
-            .max_depth = 1.0,
-        });
-        cmd.setScissor(.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 320 } }));
-
-        {
-            cmd.beginRendering(.{
-                .color_attachment = bottom_color_attachment_image_view,
-                .depth_stencil_attachment = .null,
-            });
-            defer cmd.endRendering();
-
-            const zmath = zitrus.math;
-
-            cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(.left, std.math.degreesToRadians(90.0), 240.0 / 320.0, 1, 1000));
-
-            const current_scale = 1; //@sin(current_time);
-            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scale(current_scale, @abs(current_scale), 1));
-            quad_mesh.draw(cmd);
-        }
-
-        // Render to the top screen
-        cmd.setViewport(.{
-            .rect = .{
-                .offset = .{ .x = 0, .y = 0 },
-                .extent = .{ .width = 240, .height = 400 },
-            },
-            .min_depth = 0.0,
-            .max_depth = 1.0,
-        });
-        cmd.setScissor(.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 400 } }));
-
-        {
-            cmd.beginRendering(.{
-                .color_attachment = top_color_attachment_image_view,
-                .depth_stencil_attachment = .null,
-            });
-            defer cmd.endRendering();
-
-            const zmath = zitrus.math;
-
-            cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(.left, std.math.degreesToRadians(90.0), 240.0 / 400.0, 1, 1000));
-
-            const current_scale = 1; //@sin(-current_time);
-            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scaleTranslate(current_scale, @abs(current_scale), 1, 0, 0, 0));
-
-            // NOTE: We haven't changed vertex and index buffers, that's why we don't bind() again!
-            quad_mesh.draw(cmd);
-        }
-
-        try cmd.end();
-
-        try fill_queue.clearColorImage(.{
-            .wait_semaphore = &.init(global_semaphore, global_sync_counter),
-            .image = bottom_color_attachment_image,
-            .color = @splat(0x33),
-            .subresource_range = .full,
-            .signal_semaphore = &.init(global_semaphore, global_sync_counter + 1),
-        });
-
-        try fill_queue.clearColorImage(.{
-            .wait_semaphore = &.init(global_semaphore, global_sync_counter + 1),
-            .image = top_color_attachment_image,
-            .color = @splat(0x22),
-            .subresource_range = .full,
-            .signal_semaphore = &.init(global_semaphore, global_sync_counter + 2),
-        });
-
-        try submit_queue.submit(.{
-            .wait_semaphore = &.init(global_semaphore, global_sync_counter + 2),
-            .command_buffer = cmd,
-            .signal_semaphore = &.init(global_semaphore, global_sync_counter + 3),
-        });
-
-        try transfer_queue.blitImage(.{
-            .wait_semaphore = &.init(global_semaphore, global_sync_counter + 3),
-            .src_image = bottom_color_attachment_image,
-            .dst_image = bottom_swap.images[bottom_image_idx],
-            .src_subresource = .full,
-            .dst_subresource = .full,
-            .signal_semaphore = &.init(global_semaphore, global_sync_counter + 4),
-        });
-
-        try transfer_queue.blitImage(.{
-            .wait_semaphore = &.init(global_semaphore, global_sync_counter + 4),
-            .src_image = top_color_attachment_image,
-            .dst_image = top_swap.images[top_image_idx],
-            .src_subresource = .full,
-            .dst_subresource = .full,
-            .signal_semaphore = &.init(global_semaphore, global_sync_counter + 5),
-        });
-
-        try bottom_swap.present(present_queue, bottom_image_idx, &.init(global_semaphore, global_sync_counter + 4));
-        try top_swap.present(present_queue, top_image_idx, &.init(global_semaphore, global_sync_counter + 5));
-
-        // We're currently using one color attachment so even though we're double-buffered on the swapchain,
-        // we only have a single buffer to work on. We must wait until we finished with the color buffer.
-        try device.waitSemaphore(.{
-            .semaphore = global_semaphore,
-            .value = global_sync_counter + 5,
-        }, -1);
-        global_sync_counter += 5;
+        try scene.update();
+        try scene.render();
+        try scene.submitPresent(device, top_swap, top_image_idx, bottom_swap, bottom_image_idx);
     }
-
-    try device.waitIdle();
 }
 
 const horizon = zitrus.horizon;
@@ -958,5 +718,5 @@ const std = @import("std");
 
 comptime {
     _ = zitrus;
-    _ = zitrus.c;
+    // _ = zitrus.c;
 }

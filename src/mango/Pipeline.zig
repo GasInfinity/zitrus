@@ -1,3 +1,8 @@
+//! A PICA200 pipeline.
+//!
+//! Currently *parses* shaders and stores all non-dynamic fixed-function state.
+//!
+
 pub const Handle = enum(u32) {
     null = 0,
     _,
@@ -26,7 +31,8 @@ pub const Graphics = struct {
 
         stencil_test_enable: bool,
         stencil_test_op: pica.CompareOperation,
-        _: u12 = 0,
+        topology: pica.PrimitiveTopology,
+        _: u10 = 0,
     };
 
     dyn: mango.GraphicsPipelineCreateInfo.DynamicState,
@@ -88,18 +94,19 @@ pub const Graphics = struct {
             gfx.integer_constants = .init(.{ .vertex = vtx_info.integer_constants, .geometry = undefined });
 
             // TODO: When we support geometry shaders, this should be a separate function!
-            gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.vertex_shader_output_map_total_1, .init(@intFromEnum(vtx_info.max_output)));
-            gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.vertex_shader_output_map_total_2, .init(@intFromEnum(vtx_info.max_output)));
-            gfx_queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = @intFromEnum(vtx_info.max_output), .topology = .triangle_list }, 0b0001);
-
-            const max_outputs = @as(usize, @intFromEnum(vtx_info.max_output)) + 1;
+            gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.vertex_shader_output_map_total_1, .init(vtx_info.outputs_minus_one));
+            gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.vertex_shader_output_map_total_2, .init(vtx_info.outputs_minus_one));
+            gfx_queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{
+                .total_vertex_outputs = vtx_info.outputs_minus_one,
+                .topology = .triangle_list, // NOTE: Ignored by mask
+            }, 0b0001);
 
             var attribute_clock: pica.Registers.Internal.Rasterizer.OutputAttributeClock = .{};
 
-            var current_out: usize = 0;
             var out_it = vtx_info.entrypoint.output_set.iterator();
+            var semantic_outputs: usize = 0;
             while (out_it.next()) |o| {
-                const map = vtx_info.entrypoint.output_map[current_out];
+                const map = vtx_info.entrypoint.output_map[semantic_outputs];
 
                 if (@intFromEnum(o) >= @intFromEnum(pica.shader.register.Destination.Output.o7)) {
                     std.debug.assert(map.x == .unused and map.y == .unused and map.z == .unused and map.w == .unused);
@@ -116,11 +123,11 @@ pub const Graphics = struct {
                 attribute_clock.normal_quaternion_or_view_present = attribute_clock.normal_quaternion_or_view_present or (map.x.isView() or map.x.isNormalQuaternion()) or (map.y.isView() or map.y.isNormalQuaternion()) or (map.z.isView() or map.z.isNormalQuaternion()) or (map.w.isView() or map.w.isNormalQuaternion());
                 // zig fmt: off
 
-                gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_map_output[current_out], map);
-                current_out += 1;
+                gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_map_output[semantic_outputs], map);
+                semantic_outputs += 1;
             }
 
-            gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_map_total, .init(@intCast(@min(7, max_outputs))));
+            gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_map_total, .init(@intCast(semantic_outputs)));
             gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_attribute_clock, attribute_clock);
             gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_attribute_mode, .{
                 .use_texture_coordinates = attribute_clock.texture_coordinates_0_present or attribute_clock.texture_coordinates_1_present or attribute_clock.texture_coordinates_2_present or attribute_clock.texture_coordinates_0_w_present,
@@ -166,20 +173,25 @@ pub const Graphics = struct {
 
         if(!dyn.primitive_topology) {
             const topo = create_info.input_assembly_state.?.topology;
+            const native_topo = topo.native();
+
+            gfx.misc.topology = native_topo;
 
             gfx_queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{
                 .total_vertex_outputs = 0, // NOTE: Ignored by mask
-                .topology = topo.native(),
+                // NOTE: Hah, another PICA200 classic, after debugging in azahar and in hardware it seems triangle lists
+                // are drawn with a `geometry` primitive topology, totally acceptable bro. Keep it up DMP
+                .topology = native_topo.indexedTopology(),
             }, 0b0010);
 
             gfx_queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config, .{
                 .geometry_shader_usage = .disabled, // NOTE: Ignored by mask
-                .drawing_triangles = topo == .triangle_list,
+                .drawing_triangles = native_topo == .triangle_list,
                 .use_reserved_geometry_subdivision = false, // NOTE: Ignored by mask
             }, 0b0010);
 
             gfx_queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config_2, .{
-                .drawing_triangles = topo == .triangle_list,
+                .drawing_triangles = native_topo == .triangle_list,
             }, 0b0010);
         }
 
@@ -412,28 +424,15 @@ pub const Graphics = struct {
         }
 
         if(!dyn.texture_combiner) {
-            // TODO: Separate this to a "compile" method like with VertexInputLayout and merge it with GraphicsState
             const texture_combiner_state = create_info.texture_combiner_state.?;
             
             const combiners = texture_combiner_state.texture_combiners[0..texture_combiner_state.texture_combiners_len];
             const combiner_buffer_sources = texture_combiner_state.texture_combiner_buffer_sources[0..texture_combiner_state.texture_combiner_buffer_sources_len];
 
-            std.debug.assert(combiners.len > 0 and combiners.len <= 6);
-            std.debug.assert(combiners.len == 1 or (combiners.len > 1 and combiner_buffer_sources.len == combiners.len - 1));
-
-            var update_buffer: pica.Registers.Internal.TextureCombiners.UpdateBuffer = undefined;
-            
-            update_buffer.z_flip = false;
-            update_buffer.shading_density_source = .plain;
-            update_buffer.fog_mode = .disabled;
-
-            for (combiner_buffer_sources, 0..) |buffer_sources, index| {
-                update_buffer.setColorBufferSource(@enumFromInt(index), buffer_sources.color_buffer_src.native());
-                update_buffer.setAlphaBufferSource(@enumFromInt(index), buffer_sources.alpha_buffer_src.native());
-            }
+            const native_combiners: TextureCombinerState = .compile(std.mem.zeroes(@FieldType(TextureCombinerState, "update_buffer")), combiners, combiner_buffer_sources);
 
             // TODO: Merge / Investigate z_flip. shading_density_source and fog mode
-            gfx_queue.add(internal_regs, &internal_regs.texture_combiners.update_buffer, update_buffer);
+            gfx_queue.add(internal_regs, &internal_regs.texture_combiners.update_buffer, native_combiners.update_buffer);
 
             inline for (0..6) |i| {
                 const current_combiner_reg = switch (i) {
@@ -446,21 +445,7 @@ pub const Graphics = struct {
                     else => unreachable,
                 };
 
-                const defined_combiner = (if(i < combiners.len) combiners[i] else mango.TextureCombiner.previous).native();
-
-                gfx_queue.addIncremental(internal_regs, .{
-                    &current_combiner_reg.sources,
-                    &current_combiner_reg.factors,
-                    &current_combiner_reg.operations,
-                    &current_combiner_reg.color,
-                    &current_combiner_reg.scales,
-                }, .{
-                    defined_combiner.sources,
-                    defined_combiner.factors,
-                    defined_combiner.operations,
-                    defined_combiner.color,
-                    defined_combiner.scales,
-                });
+                gfx_queue.add(internal_regs, current_combiner_reg, native_combiners.combiner[i]);
             }
         }
 
@@ -468,13 +453,13 @@ pub const Graphics = struct {
             const texture_sampling_state = create_info.texture_sampling_state.?;
 
             gfx_queue.add(internal_regs, &internal_regs.texturing.config, .{
-                .texture_0_enabled = texture_sampling_state.texture_enable[0], 
-                .texture_1_enabled = texture_sampling_state.texture_enable[1], 
-                .texture_2_enabled = texture_sampling_state.texture_enable[2], 
+                .texture_0_enabled = texture_sampling_state.texture_enable[0],
+                .texture_1_enabled = texture_sampling_state.texture_enable[1],
+                .texture_2_enabled = texture_sampling_state.texture_enable[2],
                 .texture_3_coordinates = texture_sampling_state.texture_3_coordinates.nativeTexture3(),
                 .texture_3_enabled = texture_sampling_state.texture_enable[2],
                 .texture_2_coordinates = texture_sampling_state.texture_3_coordinates.nativeTexture2(),
-                .clear_texture_cache = false, 
+                .clear_texture_cache = false,
             });
         }
 
@@ -523,89 +508,93 @@ pub const Graphics = struct {
         gfx.* = undefined;
     }
 
-    pub fn copyRenderingState(gfx: Graphics, rnd_state: *RenderingState) void {
-        rnd_state.uniform_state.boolean_constants = gfx.boolean_constants;
-        rnd_state.uniform_state.integer_constants = gfx.integer_constants;
+    pub fn copyRenderingState(gfx_pip: Graphics, rnd_state: *RenderingState) void {
+        rnd_state.uniform_state.boolean_constants = gfx_pip.boolean_constants;
+        rnd_state.uniform_state.integer_constants = gfx_pip.integer_constants;
     }
 
     /// Copies static state that can't be changed alone (they depend on other states)
     /// Dynamic state is and must be preserved
-    pub fn copyGraphicsState(gfx: Graphics, gfx_state: *GraphicsState) void {
-        const dyn = &gfx.dyn;
+    pub fn copyGraphicsState(gfx_pip: Graphics, gfx_state: *GraphicsState) void {
+        const dyn = &gfx_pip.dyn;
+
+        if(!dyn.primitive_topology) {
+            gfx_state.misc.primitive_topology = gfx_pip.misc.topology;
+        }
 
         if(!dyn.cull_mode) {
-            gfx_state.misc.cull_mode_ccw = gfx.misc.cull_mode_ccw;
+            gfx_state.misc.cull_mode_ccw = gfx_pip.misc.cull_mode_ccw;
         }
 
         if(!dyn.front_face) {
-            gfx_state.misc.is_front_ccw = gfx.misc.is_front_ccw;
+            gfx_state.misc.is_front_ccw = gfx_pip.misc.is_front_ccw;
         }
 
         if(!dyn.color_write_mask) {
-            gfx_state.misc.color_r_enable = gfx.misc.color_r_enable;
-            gfx_state.misc.color_g_enable = gfx.misc.color_g_enable;
-            gfx_state.misc.color_b_enable = gfx.misc.color_b_enable;
-            gfx_state.misc.color_a_enable = gfx.misc.color_a_enable;
+            gfx_state.misc.color_r_enable = gfx_pip.misc.color_r_enable;
+            gfx_state.misc.color_g_enable = gfx_pip.misc.color_g_enable;
+            gfx_state.misc.color_b_enable = gfx_pip.misc.color_b_enable;
+            gfx_state.misc.color_a_enable = gfx_pip.misc.color_a_enable;
         }
 
         if(!dyn.viewport) {
-            gfx_state.depth_map_parameters.min_depth = gfx.depth_parameters.min_depth;
-            gfx_state.depth_map_parameters.max_depth = gfx.depth_parameters.max_depth;
+            gfx_state.depth_map_parameters.min_depth = gfx_pip.depth_parameters.min_depth;
+            gfx_state.depth_map_parameters.max_depth = gfx_pip.depth_parameters.max_depth;
         }
 
         if(!dyn.depth_bias_constant) {
-            gfx_state.depth_map_parameters.constant = gfx.depth_parameters.constant;
+            gfx_state.depth_map_parameters.constant = gfx_pip.depth_parameters.constant;
         }
 
         if(!dyn.depth_test_enable) {
-            gfx_state.misc.depth_test_enable = gfx.misc.depth_test_enable;
+            gfx_state.misc.depth_test_enable = gfx_pip.misc.depth_test_enable;
         }
 
         if(!dyn.depth_compare_op) {
-            gfx_state.misc.depth_test_op = gfx.misc.depth_test_op;
+            gfx_state.misc.depth_test_op = gfx_pip.misc.depth_test_op;
         }
 
         if(!dyn.depth_write_enable) {
-            gfx_state.misc.depth_write_enable = gfx.misc.depth_write_enable;
+            gfx_state.misc.depth_write_enable = gfx_pip.misc.depth_write_enable;
         }
 
         if(!dyn.alpha_test_enable) {
-            gfx_state.misc.alpha_test_enable = gfx.misc.alpha_test_enable;
+            gfx_state.misc.alpha_test_enable = gfx_pip.misc.alpha_test_enable;
         }
 
         if(!dyn.alpha_test_compare_op) {
-            gfx_state.misc.alpha_test_op = gfx.misc.alpha_test_op;
+            gfx_state.misc.alpha_test_op = gfx_pip.misc.alpha_test_op;
         }
 
         if(!dyn.alpha_test_reference) {
-            gfx_state.misc.alpha_test_reference = gfx.alpha_test_reference;
+            gfx_state.misc.alpha_test_reference = gfx_pip.alpha_test_reference;
         }
 
         if(!dyn.stencil_test_enable) {
-            gfx_state.stencil.state.enable = gfx.misc.stencil_test_enable;
+            gfx_state.stencil.state.enable = gfx_pip.misc.stencil_test_enable;
         }
 
         if(!dyn.stencil_test_operation) {
-            gfx_state.stencil.state.op = gfx.misc.stencil_test_op;
+            gfx_state.stencil.state.op = gfx_pip.misc.stencil_test_op;
         }
 
         if(!dyn.stencil_compare_mask) {
-            gfx_state.stencil.compare_mask = gfx.stencil_compare_mask;
+            gfx_state.stencil.compare_mask = gfx_pip.stencil_compare_mask;
         }
 
         if(!dyn.stencil_reference) {
-            gfx_state.stencil.reference = gfx.stencil_reference;
+            gfx_state.stencil.reference = gfx_pip.stencil_reference;
         }
 
         if(!dyn.stencil_write_mask) {
-            gfx_state.stencil.write_mask = gfx.stencil_write_mask;
+            gfx_state.stencil.write_mask = gfx_pip.stencil_write_mask;
         }
 
         if(!dyn.vertex_input) {
-            gfx_state.vtx_input.buffers_len = gfx.vertex_attributes_len;
+            gfx_state.vtx_input.buffers_len = gfx_pip.vertex_attributes_len;
 
-            for (0..gfx.vertex_attributes_len) |i| {
-                gfx_state.vtx_input.buffer_config[i].high.bytes_per_vertex = gfx.vertex_attribute_strides[i];
+            for (0..gfx_pip.vertex_attributes_len) |i| {
+                gfx_state.vtx_input.buffer_config[i].high.bytes_per_vertex = gfx_pip.vertex_attribute_strides[i];
             }
         }
     }
@@ -621,7 +610,7 @@ pub const Graphics = struct {
 
 pub const CompiledShaderInfo = struct {
     entrypoint: zpsh.Parsed.EntrypointIterator.Entry,
-    max_output: pica.shader.register.Destination.Output,
+    outputs_minus_one: u4,
 
     boolean_constants: std.EnumSet(pica.shader.register.Integral.Boolean),
     integer_constants: std.EnumArray(pica.shader.register.Integral.Integer, [4]i8),
@@ -692,26 +681,26 @@ pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, c
         }
     }
 
-    const max_output = max_out: {
-        var max_output: pica.shader.register.Destination.Output = .o0;
+    const outputs_minus_one: u4 = max_out: {
         var out_mask: pica.Registers.Internal.Shader.OutputMask = .{};
+        var outputs: usize = 0;
 
+        // NOTE: We could use mask in bitSet and `count`, benchmark needed.
         var out_it = found_entrypoint.output_set.iterator();
-        while(out_it.next()) |o| {
-            if(@intFromEnum(o) > @intFromEnum(max_output)) {
-                max_output = o;
-            }
 
+        while(out_it.next()) |o| {
             out_mask.set(o, true);
+            outputs += 1;
         }
 
         queue.add(internal_regs, &shader.output_map_mask, out_mask);
-        break :max_out max_output;
+
+        break :max_out @intCast(outputs - 1);
     };
 
     return .{
         .entrypoint = found_entrypoint,
-        .max_output = max_output,
+        .outputs_minus_one = outputs_minus_one,
 
         .boolean_constants = found_entrypoint.boolean_constant_set,
         .integer_constants = int_constants,
@@ -724,7 +713,9 @@ const backend = @import("backend.zig");
 
 const GraphicsState = backend.GraphicsState;
 const RenderingState = backend.RenderingState;
+
 const VertexInputLayout = backend.VertexInputLayout;
+const TextureCombinerState = backend.TextureCombinerState;
 
 const std = @import("std");
 const zitrus = @import("zitrus");

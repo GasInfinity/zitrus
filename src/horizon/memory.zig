@@ -25,7 +25,7 @@ pub const shared_page_memory_begin = 0x1FF81000;
 pub const gpu_registers: *pica.Registers = @ptrFromInt(gpu_begin);
 
 pub const kernel_config: *const config.Kernel = @ptrFromInt(configuration_memory_begin);
-pub const shared_config: *config.SharedConfig = @ptrFromInt(shared_page_memory_begin);
+pub const shared_config: *config.Shared = @ptrFromInt(shared_page_memory_begin);
 
 pub fn toPhysical(ptr: usize) zitrus.PhysicalAddress {
     return @enumFromInt(switch (ptr) {

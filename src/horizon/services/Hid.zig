@@ -28,9 +28,9 @@ pub const Pad = extern struct {
         l: bool,
         x: bool,
         y: bool,
-        _: u14 = 0,
         inverted_gpio0: bool,
         inverted_gpio14: bool,
+        _: u14 = 0,
         circle_pad_right: bool,
         circle_pad_left: bool,
         circle_pad_up: bool,
@@ -119,13 +119,6 @@ pub const Shared = extern struct {
     debug_pad: DebugPad,
 };
 
-pub const ControllerState = struct {
-    current: Pad.State,
-    pressed: Pad.State,
-    released: Pad.State,
-    circle: Pad.CircleState,
-};
-
 session: ClientSession,
 
 pub fn open(service: Service, srv: ServiceManager) !Hid {
@@ -144,7 +137,7 @@ pub const Handles = struct {
     gyroscope: Event,
     debug_pad: Event,
 
-    pub fn close(handles: *Handles) void {
+    pub fn close(handles: Handles) void {
         handles.shm.close();
         handles.pad_0.close();
         handles.pad_1.close();

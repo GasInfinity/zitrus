@@ -8,6 +8,7 @@ pub const Handle = enum(u32) {
 };
 
 allocator: std.mem.Allocator,
+// native_allocator: std.mem.Allocator,
 allocated_buffers: std.DoublyLinkedList,
 free_buffers: std.DoublyLinkedList,
 

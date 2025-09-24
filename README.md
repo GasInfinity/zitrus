@@ -48,6 +48,7 @@ const homebrew_smdh = zitrus.addMakeSmdh(b, .{
     .icon = b.path("path-to-icon.png/jpg/..."), // supported formats depends on zigimg image decoding.
 });
 
+// XXX: Blocked by upstream, cache isn't caching.
 // See `addMakeRomFs` if you need something patchable unlike `@embedFile`.
 
 // This step will convert your executable to 3dsx (the defacto homebrew executable format) to execute it in an emulator or real 3DS

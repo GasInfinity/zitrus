@@ -8,11 +8,12 @@
 //!
 //! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/ExeFS
 
-pub const Header = extern struct {
-    pub const max_files = 10;
+pub const max_name_len = 7;
+pub const max_files = 10;
 
+pub const Header = extern struct {
     pub const File = extern struct {
-        name: [7:0]u8,
+        name: [max_name_len:0]u8,
         /// Offset in bytes from the start of the data.
         offset: u32,
         /// Size in bytes.

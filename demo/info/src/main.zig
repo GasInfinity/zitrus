@@ -21,38 +21,13 @@ pub fn main() !void {
 
     try fs.sendInitialize();
 
-    const sdmc_archive = try fs.sendOpenArchive(.sdmc, .empty, &.{});
-    defer fs.sendCloseArchive(sdmc_archive) catch {};
+    var romfs: Filesystem.RomFs = try .initSelf(fs, horizon.heap.linear_page_allocator);
+    defer romfs.deinit(horizon.heap.linear_page_allocator);
 
-    const romfs_offset: ?u32 = if(!environment.program_meta.is3dsx()) null else blk: {
-        const program_path = pro: {
-            var arg_it = environment.program_meta.argumentListIterator();
-            break :pro arg_it.next() orelse return error.InvalidProgramArgs;
-        };
+    const test_file = try romfs.openFile(.root, std.unicode.utf8ToUtf16LeStringLiteral("test.txt"));
 
-        if (!std.mem.startsWith(u8, program_path, "sdmc:")) {
-            horizon.outputDebugString(program_path);
-            return error.InvalidProgramArgs;
-        }
-
-        const file = try fs.sendOpenFile(0, sdmc_archive, .ascii, program_path["sdmc:".len..], .r, .{});
-        defer file.sendClose();
-
-        var hdr_buf: extern struct {
-            hdr: zitrus.fmt.@"3dsx".Header,
-            ex: zitrus.fmt.@"3dsx".ExtendedHeader,
-        } = undefined;
-
-        if (try file.sendRead(0, std.mem.asBytes(&hdr_buf)) < @sizeOf(zitrus.fmt.@"3dsx".Header)) {
-            return error.InvalidSelfPath;
-        }
-
-        if (!std.mem.eql(u8, &hdr_buf.hdr.magic, zitrus.fmt.@"3dsx".magic) or hdr_buf.hdr.header_size != (@sizeOf(zitrus.fmt.@"3dsx".Header) + @sizeOf(zitrus.fmt.@"3dsx".ExtendedHeader))) {
-            return error.Invalid3dsxHeader;
-        }
-
-        break :blk hdr_buf.ex.romfs_offset;
-    };
+    var buf: [1024]u8 = undefined;
+    const read = try romfs.readPositional(test_file, 0, &buf);
 
     const model = try cfg.sendGetSystemModel();
 
@@ -62,6 +37,7 @@ pub fn main() !void {
     const language = try cfg.getConfigUser(.language);
     const birthday = try cfg.getConfigUser(.birthday);
     const country_info = try cfg.getConfigUser(.country_info);
+    const region = try cfg.sendGetRegion();
 
     var last_elapsed: f32 = 0.0;
     main_loop: while (true) {
@@ -83,7 +59,7 @@ pub fn main() !void {
 
         var fmt_buffer: [512]u8 = undefined;
         drawString(top, 0, 0, try std.fmt.bufPrint(&fmt_buffer, "Model: {s} ({s})", .{ @tagName(model), model.description() }), .{});
-        drawString(top, font_width + 1, 0, try std.fmt.bufPrint(&fmt_buffer, "Region: {s}", .{@tagName(try cfg.sendGetRegion())}), .{});
+        drawString(top, font_width + 1, 0, try std.fmt.bufPrint(&fmt_buffer, "Region: {s}", .{@tagName(region)}), .{});
 
         drawString(top, 2 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Name: {s}", .{utf8_buf[0..name_written]}), .{});
         drawString(top, 3 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Language: {s}", .{@tagName(language)}), .{});
@@ -100,7 +76,11 @@ pub fn main() !void {
             current_line += 1;
         }
 
-        drawString(top, current_line * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "(3DSX) RomFS offset: {?}", .{romfs_offset}), .{});
+        current_line += 1;
+        drawString(top, current_line * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "3DSX?: {}", .{environment.program_meta.is3dsx()}), .{});
+        current_line += 1;
+        drawString(top, current_line * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "RomFS 'test.txt': {s}", .{buf[0..read]}), .{});
+
         soft.flushBuffers();
         soft.swapBuffers(.none);
         try soft.waitVBlank();

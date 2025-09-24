@@ -9,11 +9,11 @@
 //!     - Z: [0, -W]
 //!
 //! - Framebuffer origin can be changed so `-1` in NDC could mean bottom-left (GL) or top-left (D3D, Metal, VK)
-
-// Taken from / Credits:
-// https://problemkaputt.de/gbatek.htm#3dsgpuinternalregisteroverview
-// https://www.3dbrew.org/wiki/GPU/External_Registers
-// https://www.3dbrew.org/wiki/GPU/Internal_Registers
+//!
+//! Taken from / Credits:
+//! https://problemkaputt.de/gbatek.htm#3dsgpuinternalregisteroverview
+//! https://www.3dbrew.org/wiki/GPU/External_Registers
+//! https://www.3dbrew.org/wiki/GPU/Internal_Registers
 
 pub const shader = @import("pica/shader.zig");
 pub const cmd3d = @import("pica/cmd3d.zig");
@@ -136,6 +136,14 @@ pub const DepthStencilFormat = enum(u2) {
     d24 = 2,
     /// 3 bytes for depth and 1 byte for stencil `0xSSDDDDDD`.
     d24_s8,
+
+    pub fn bytesPerPixel(format: DepthStencilFormat) usize {
+        return switch (format) {
+            .d16 => @sizeOf(u16),
+            .d24 => 3,
+            .d24_s8 => @sizeOf(u32),
+        };
+    }
 };
 
 pub const FramebufferInterlacingMode = enum(u2) {
@@ -381,6 +389,17 @@ pub const PrimitiveTopology = enum(u2) {
     /// Specifies a series of triangle primitives which are to be defined by the geometry shader.
     /// The number of primitives generated depends on the shader implementation.
     geometry,
+
+    /// Another PICA200 classic. For `drawIndexed` (`drawElements` as GL people call it) you set
+    /// the primitive topology to `geometry`.
+    ///
+    /// Why? Ask the DMP engineers
+    pub fn indexedTopology(topology: PrimitiveTopology) PrimitiveTopology {
+        return switch (topology) {
+            .triangle_list => .geometry,
+            else => |topo| topo,
+        };
+    }
 };
 
 pub const AttributeFormat = packed struct(u4) {
@@ -764,36 +783,6 @@ pub const Registers = extern struct {
     pub const Internal = extern struct {
         pub const Trigger = enum(u1) { trigger = 1 };
 
-        pub fn RightPaddedRegister(comptime T: type) type {
-            std.debug.assert(@bitSizeOf(T) < @bitSizeOf(u32));
-
-            return packed struct(u32) {
-                const Rpr = @This();
-
-                value: T,
-                _: std.meta.Int(.unsigned, @bitSizeOf(u32) - @bitSizeOf(T)) = 0,
-
-                pub fn init(value: T) Rpr {
-                    return .{ .value = value };
-                }
-            };
-        }
-
-        pub fn LeftPaddedRegister(comptime T: type) type {
-            std.debug.assert(@bitSizeOf(T) < @bitSizeOf(u32));
-
-            return packed struct(u32) {
-                const Lpr = @This();
-
-                _: std.meta.Int(.unsigned, @bitSizeOf(u32) - @bitSizeOf(T)) = 0,
-                value: T,
-
-                pub fn init(value: T) Lpr {
-                    return .{ .value = value };
-                }
-            };
-        }
-
         pub const AttributeIndex = enum(u4) { @"0", @"1", @"2", @"3", @"4", @"5", @"6", @"7", @"8", @"9", @"10", @"11" };
         pub const ArrayComponentIndex = enum(u4) { @"0", @"1", @"2", @"3", @"4", @"5", @"6", @"7", @"8", @"9", @"10", @"11" };
 
@@ -835,19 +824,19 @@ pub const Registers = extern struct {
                 _unused2: u8 = 0,
             };
 
-            faceculling_config: RightPaddedRegister(CullMode),
-            viewport_h_scale: RightPaddedRegister(F7_16),
-            viewport_h_step: LeftPaddedRegister(F7_23),
-            viewport_v_scale: RightPaddedRegister(F7_16),
-            viewport_v_step: LeftPaddedRegister(F7_23),
+            faceculling_config: LsbRegister(CullMode),
+            viewport_h_scale: LsbRegister(F7_16),
+            viewport_h_step: MsbRegister(F7_23),
+            viewport_v_scale: LsbRegister(F7_16),
+            viewport_v_step: MsbRegister(F7_23),
             _unknown0: u32,
             _unknown1: u32,
-            fragment_operation_clip: RightPaddedRegister(bool),
-            fragment_operation_clip_data: [4]RightPaddedRegister(F7_16),
+            fragment_operation_clip: LsbRegister(bool),
+            fragment_operation_clip_data: [4]LsbRegister(F7_16),
             _unknown2: u32,
-            depth_map_scale: RightPaddedRegister(F7_16),
-            depth_map_offset: RightPaddedRegister(F7_16),
-            shader_output_map_total: RightPaddedRegister(u3),
+            depth_map_scale: LsbRegister(F7_16),
+            depth_map_offset: LsbRegister(F7_16),
+            shader_output_map_total: LsbRegister(u3),
             shader_output_map_output: [7]OutputMap,
             _unknown3: u32,
             _unknown4: u32,
@@ -858,10 +847,10 @@ pub const Registers = extern struct {
             _unknown6: [3]u32,
             _unknown7: u32,
             early_depth_function: packed struct(u32) { function: EarlyDepthCompareOperation, _: u30 = 0 },
-            early_depth_test_enable_1: RightPaddedRegister(bool),
-            early_depth_clear: RightPaddedRegister(Trigger),
+            early_depth_test_enable_1: LsbRegister(bool),
+            early_depth_clear: LsbRegister(Trigger),
             shader_output_attribute_mode: OutputAttributeMode,
-            scissor_config: RightPaddedRegister(ScissorMode),
+            scissor_config: LsbRegister(ScissorMode),
             scissor_start: U16x2,
             scissor_end: U16x2,
             viewport_xy: U16x2,
@@ -869,7 +858,7 @@ pub const Registers = extern struct {
             early_depth_data: u32,
             _unknown9: u32,
             _unknown10: u32,
-            depth_map_mode: RightPaddedRegister(DepthMapMode),
+            depth_map_mode: LsbRegister(DepthMapMode),
             /// Does not seem to have an effect but it's still documented like this
             _unused_render_buffer_dimensions: u32,
             shader_output_attribute_clock: OutputAttributeClock,
@@ -944,7 +933,7 @@ pub const Registers = extern struct {
                 shadow: u32,
                 _unknown0: u32,
                 _unknown1: u32,
-                format: RightPaddedRegister(TextureUnitFormat),
+                format: LsbRegister(TextureUnitFormat),
             };
 
             pub const Sub = extern struct {
@@ -953,12 +942,12 @@ pub const Registers = extern struct {
                 parameters: TextureParameters,
                 lod: TextureLevelOfDetail,
                 address: zitrus.AlignedPhysicalAddress(.@"8", .@"8"),
-                format: RightPaddedRegister(TextureUnitFormat),
+                format: LsbRegister(TextureUnitFormat),
             };
 
             config: Config,
             texture_0: Main,
-            lighting_enable: RightPaddedRegister(bool),
+            lighting_enable: LsbRegister(bool),
             _unknown0: u32,
             texture_1: Sub,
             _unknown1: [2]u32,
@@ -1193,7 +1182,7 @@ pub const Registers = extern struct {
 
             color_operation: ColorOperation,
             blend_config: BlendConfig,
-            logic_operation: RightPaddedRegister(LogicOperation),
+            logic_operation: LsbRegister(LogicOperation),
             blend_color: [4]u8,
             alpha_test: AlphaTestConfig,
             stencil_test: StencilTestConfig,
@@ -1203,15 +1192,15 @@ pub const Registers = extern struct {
             _unknown1: u32,
             _unknown2: u32,
             _unknown3: u32,
-            render_buffer_invalidate: RightPaddedRegister(Trigger),
-            render_buffer_flush: RightPaddedRegister(Trigger),
+            render_buffer_invalidate: LsbRegister(Trigger),
+            render_buffer_flush: LsbRegister(Trigger),
             color_buffer_reading: ColorRwMask,
             color_buffer_writing: ColorRwMask,
             depth_buffer_reading: DepthStencilRwMask,
             depth_buffer_writing: DepthStencilRwMask,
-            depth_buffer_format: RightPaddedRegister(DepthStencilFormat),
+            depth_buffer_format: LsbRegister(DepthStencilFormat),
             color_buffer_format: ColorBufferFormat,
-            early_depth_test_enable_2: RightPaddedRegister(bool),
+            early_depth_test_enable_2: LsbRegister(bool),
             _unknown4: u32,
             _unknown5: u32,
             render_buffer_block_size: packed struct(u32) { mode: RenderBufferBlockSize, _: u31 = 0 },
@@ -1255,7 +1244,7 @@ pub const Registers = extern struct {
             config_0: u32,
             config_1: u32,
             lut_index: u32,
-            disable: RightPaddedRegister(bool),
+            disable: LsbRegister(bool),
             _unknown2: u32,
             lut_data: [8]u32,
             lut_input_absolute: u32,
@@ -1456,10 +1445,10 @@ pub const Registers = extern struct {
             attribute_buffer_first_index: u32,
             _unknown0: [2]u32,
             post_vertex_cache_num: u32,
-            attribute_buffer_draw_arrays: RightPaddedRegister(Trigger),
-            attribute_buffer_draw_elements: RightPaddedRegister(Trigger),
+            attribute_buffer_draw_arrays: LsbRegister(Trigger),
+            attribute_buffer_draw_elements: LsbRegister(Trigger),
             _unknown1: u32,
-            clear_post_vertex_cache: RightPaddedRegister(Trigger),
+            clear_post_vertex_cache: LsbRegister(Trigger),
             fixed_attribute_index: FixedAttributeIndex,
             fixed_attribute_data: F7_16x4,
             _unknown2: [2]u32,
@@ -1467,21 +1456,21 @@ pub const Registers = extern struct {
             command_buffer_address: [2]u32,
             command_buffer_jump: [2]u32,
             _unknown3: [4]u32,
-            vertex_shader_input_attributes: RightPaddedRegister(u4),
+            vertex_shader_input_attributes: LsbRegister(u4),
             _unknown4: u32,
-            enable_geometry_shader_configuration: RightPaddedRegister(bool),
+            enable_geometry_shader_configuration: LsbRegister(bool),
             start_draw_function: DrawFunction,
             _unknown5: [4]u32,
-            vertex_shader_output_map_total_2: RightPaddedRegister(u4),
+            vertex_shader_output_map_total_2: LsbRegister(u4),
             _unknown6: [6]u32,
-            vertex_shader_output_map_total_1: RightPaddedRegister(u4),
+            vertex_shader_output_map_total_1: LsbRegister(u4),
             geometry_shader_misc0: GeometryShaderConfig,
             config_2: PipelineConfig2,
             geometry_shader_misc1: u32,
             _unknown7: u32,
             _unknown8: [8]u32,
             primitive_config: PrimitiveConfig,
-            restart_primitive: RightPaddedRegister(Trigger),
+            restart_primitive: LsbRegister(Trigger),
         };
 
         pub const Shader = extern struct {
@@ -1601,14 +1590,14 @@ pub const Registers = extern struct {
             attribute_permutation: AttributePermutation,
             output_map_mask: OutputMask,
             _unused1: u32,
-            code_transfer_end: RightPaddedRegister(Trigger),
+            code_transfer_end: LsbRegister(Trigger),
             float_uniform_index: FloatUniformConfig,
             float_uniform_data: [8]u32,
             _unused2: [2]u32,
-            code_transfer_index: RightPaddedRegister(u12),
+            code_transfer_index: LsbRegister(u12),
             code_transfer_data: [8]Instruction,
             _unused3: u32,
-            operand_descriptors_index: RightPaddedRegister(u7),
+            operand_descriptors_index: LsbRegister(u7),
             operand_descriptors_data: [8]OperandDescriptor,
         };
 
@@ -1708,6 +1697,8 @@ const builtin = @import("builtin");
 const std = @import("std");
 const zsflt = @import("zsflt");
 const zitrus = @import("zitrus");
+const LsbRegister = zitrus.hardware.LsbRegister;
+const MsbRegister = zitrus.hardware.MsbRegister;
 
 const OperandDescriptor = shader.encoding.OperandDescriptor;
 const Instruction = shader.encoding.Instruction;

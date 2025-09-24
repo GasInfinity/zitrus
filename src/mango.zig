@@ -1163,8 +1163,18 @@ pub const CombinedImageSampler = extern struct {
 
 pub const TextureCombiner = extern struct {
     pub const BufferSources = extern struct {
+        pub const previous_buffer: BufferSources = .init(.previous_buffer, .previous_buffer);
+        pub const previous: BufferSources = .init(.previous, .previous);
+
         color_buffer_src: TextureCombinerBufferSource,
         alpha_buffer_src: TextureCombinerBufferSource,
+
+        pub fn init(color: TextureCombinerBufferSource, alpha: TextureCombinerBufferSource) BufferSources {
+            return .{
+                .color_buffer_src = color,
+                .alpha_buffer_src = alpha,
+            };
+        }
     };
 
     pub const previous: TextureCombiner = .{

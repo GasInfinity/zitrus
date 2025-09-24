@@ -95,14 +95,14 @@ pub fn beginRendering(rnd: *RenderingState, rendering_info: mango.RenderingInfo)
     const color_width: u16, const color_height: u16, const color_physical_address: zitrus.PhysicalAddress = if (rendering_info.color_attachment != .null) info: {
         @branchHint(.likely);
         const color_attachment: backend.ImageView = .fromHandle(rendering_info.color_attachment);
-        const color_rendering_info = color_attachment.getRenderingInfo();
+        const color_rendering_info = color_attachment.getRenderingInfo(.color);
 
         break :info .{ color_rendering_info.width, color_rendering_info.height, color_rendering_info.address };
     } else .{ 0, 0, .fromAddress(0) };
 
     const depth_stencil_width: u16, const depth_stencil_height: u16, const depth_stencil_physical_address: zitrus.PhysicalAddress = if (rendering_info.depth_stencil_attachment != .null) info: {
         const depth_stencil_attachment: backend.ImageView = .fromHandle(rendering_info.depth_stencil_attachment);
-        const depth_stencil_rendering_info = depth_stencil_attachment.getRenderingInfo();
+        const depth_stencil_rendering_info = depth_stencil_attachment.getRenderingInfo(.depth_stencil);
 
         break :info .{ depth_stencil_rendering_info.width, depth_stencil_rendering_info.height, depth_stencil_rendering_info.address };
     } else .{ 0, 0, .fromAddress(0) };

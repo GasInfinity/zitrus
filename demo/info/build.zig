@@ -29,6 +29,7 @@ pub fn build(b: *std.Build) void {
         .settings = b.path("smdh-settings.ziggy"),
     });
 
+    // XXX: Blocked by upstream.
     const test_romfs = zitrus.addMakeRomFs(b, .{
         .name = "test.romfs",
         .root = b.path("assets/"),

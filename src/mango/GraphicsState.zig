@@ -39,14 +39,6 @@ pub const Scissor = packed struct {
     end_y: u10,
 };
 
-pub const Combiners = struct {
-    pub const NativeState = pica.Registers.Internal.TextureCombiners.UpdateBuffer;
-    pub const NativeCombiner = pica.Registers.Internal.TextureCombiners.Combiner;
-
-    combiner_state: [6]NativeCombiner,
-    update_buffer: NativeState,
-};
-
 pub const Misc = packed struct {
     primitive_topology: pica.PrimitiveTopology,
     cull_mode_ccw: pica.CullMode,
@@ -115,7 +107,11 @@ blend_constants: [4]u8 = undefined,
 depth_map_parameters: DepthParameters = undefined,
 viewport: Viewport = undefined,
 scissor: Scissor = undefined,
-combiners: Combiners = undefined,
+combiners: TextureCombinerState = .{
+    // NOTE: Zeroes as any undefined bits makes the value undefined.
+    .update_buffer = std.mem.zeroes(@FieldType(TextureCombinerState, "update_buffer")),
+    .combiner = undefined,
+},
 vtx_input: VertexInputLayout = undefined,
 dirty: Dirty = .{},
 
@@ -183,32 +179,8 @@ pub fn setScissor(state: *GraphicsState, scissor: mango.Scissor) void {
     state.dirty.scissor_parameters = true;
 }
 
-pub fn setTextureCombiners(state: *GraphicsState, texture_combiners_len: usize, texture_combiners: [*]const mango.TextureCombiner, texture_combiner_buffer_sources_len: usize, texture_combiner_buffer_sources: [*]const mango.TextureCombiner.BufferSources) void {
-    const dyn_combiners = &state.combiners;
-
-    const combiners = texture_combiners[0..texture_combiners_len];
-    const combiner_buffer_sources = texture_combiner_buffer_sources[0..texture_combiner_buffer_sources_len];
-
-    std.debug.assert(combiners.len > 0 and combiners.len <= 6);
-    std.debug.assert(combiners.len == 1 or (combiners.len > 1 and combiner_buffer_sources.len == combiners.len - 1));
-
-    dyn_combiners.update_buffer.z_flip = false;
-    dyn_combiners.update_buffer.shading_density_source = .plain;
-    dyn_combiners.update_buffer.fog_mode = .disabled;
-
-    for (combiner_buffer_sources, 0..) |buffer_sources, index| {
-        dyn_combiners.update_buffer.setColorBufferSource(@enumFromInt(index), buffer_sources.color_buffer_src.native());
-        dyn_combiners.update_buffer.setAlphaBufferSource(@enumFromInt(index), buffer_sources.alpha_buffer_src.native());
-    }
-
-    for (combiners, 0..) |combiner, i| {
-        dyn_combiners.combiner_state[i] = combiner.native();
-    }
-
-    for (combiners.len..dyn_combiners.combiner_state.len) |i| {
-        dyn_combiners.combiner_state[i] = mango.TextureCombiner.previous.native();
-    }
-
+pub fn setTextureCombiners(state: *GraphicsState, combiners: []const mango.TextureCombiner, combiner_buffer_sources: []const mango.TextureCombiner.BufferSources) void {
+    state.combiners = .compile(state.combiners.update_buffer, combiners, combiner_buffer_sources);
     state.dirty.texture_update_buffer = true;
     state.dirty.texture_combiners = true;
 }
@@ -481,21 +453,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *cmd3d.Queue) void {
                 else => unreachable,
             };
 
-            const defined_combiner = state.combiners.combiner_state[i];
-
-            queue.addIncremental(internal_regs, .{
-                &current_combiner_reg.sources,
-                &current_combiner_reg.factors,
-                &current_combiner_reg.operations,
-                &current_combiner_reg.color,
-                &current_combiner_reg.scales,
-            }, .{
-                defined_combiner.sources,
-                defined_combiner.factors,
-                defined_combiner.operations,
-                defined_combiner.color,
-                defined_combiner.scales,
-            });
+            queue.add(internal_regs, current_combiner_reg, state.combiners.combiner[i]);
         }
     }
 
@@ -517,6 +475,8 @@ pub fn emitDirty(state: *GraphicsState, queue: *cmd3d.Queue) void {
 const GraphicsState = @This();
 
 const backend = @import("backend.zig");
+
+const TextureCombinerState = backend.TextureCombinerState;
 const VertexInputLayout = backend.VertexInputLayout;
 
 const std = @import("std");

@@ -86,8 +86,11 @@ pub fn perspRotate90Cw(comptime handedness: Handedness, fov_y: f32, aspect_ratio
 
     return .{
         .{ 0, 1 / fov_y_tan, 0, 0 },
-        .{ -1 / (fov_y_tan * aspect_ratio), 0, 0, 0 },
-        .{ 0, 0, handedness_factor * (-f / f_range), handedness_factor * ((f * n) / f_range) },
+        .{ -aspect_ratio / fov_y_tan, 0, 0, 0 },
+        .{ 0, 0, (-f / f_range), ((f * n) / f_range) },
         .{ 0, 0, handedness_factor * 1, 0 },
     };
 }
+
+const zitrus = @import("zitrus");
+const math = zitrus.math;

@@ -59,11 +59,16 @@ pub const RenderingInfo = struct {
 
 data: Data,
 
-pub fn getRenderingInfo(view: ImageView) RenderingInfo {
+pub const RenderingAttachment = enum { color, depth_stencil };
+
+pub fn getRenderingInfo(view: ImageView, comptime attachment: RenderingAttachment) RenderingInfo {
     std.debug.assert(view.data.levels() == 1);
 
     const image: backend.Image = .fromHandle(view.data.image);
-    const native_pixel_fmt = view.data.format().nativeColorFormat();
+    const fmt = switch (attachment) {
+        .color => view.data.format().nativeColorFormat(),
+        .depth_stencil => view.data.format().nativeDepthStencilFormat(),
+    };
 
     const img_width = image.info.width();
     const img_height = image.info.height();
@@ -72,7 +77,7 @@ pub fn getRenderingInfo(view: ImageView) RenderingInfo {
     const view_height = backend.imageLevelDimension(img_height, view.data.base_mip_level);
 
     const unscaled_img_offset = (@as(usize, image.info.layer_size) * view.data.base_array_layer) + backend.imageLevelOffset(img_width * img_height, view_width * view_height);
-    const img_offset = native_pixel_fmt.bytesPerPixel() * unscaled_img_offset;
+    const img_offset = fmt.bytesPerPixel() * unscaled_img_offset;
 
     return .{
         .width = @intCast(view_width),

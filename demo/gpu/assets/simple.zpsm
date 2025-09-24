@@ -2,9 +2,9 @@
 .out o3.xy texture_coordinate_0.xy
 
 .alias iPos v0
-.alias iUv v1
-; .alias iNorm v1
-; .alias iUv v2
+; .alias iUv v1
+.alias iNorm v1
+.alias iUv v2
 
 .alias oPos o0
 .alias oUv o3

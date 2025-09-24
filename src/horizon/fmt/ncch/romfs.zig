@@ -3,6 +3,9 @@
 //!
 //! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/RomFS
 
+pub const separator = '/';
+pub const ComponentIterator = std.fs.path.ComponentIterator(.posix, u16);
+
 pub const Header = extern struct {
     pub const min_data_alignment = 16;
 
@@ -11,12 +14,24 @@ pub const Header = extern struct {
         hash_table_size: u32,
         meta_table_offset: u32,
         meta_table_size: u32,
+
+        pub fn isAligned(info: HashMetaInfo) bool {
+            return std.mem.isAligned(info.hash_table_offset, @sizeOf(u32)) and std.mem.isAligned(info.hash_table_size, @sizeOf(u32)) or std.mem.isAligned(info.meta_table_offset, @sizeOf(u32)) and std.mem.isAligned(info.meta_table_size, @sizeOf(u32));
+        }
     };
 
     length: u32 = @sizeOf(Header),
     directory_info: HashMetaInfo,
     file_info: HashMetaInfo,
     file_data_offset: u32,
+
+    /// Checks if the header is consistent/valid.
+    pub fn check(hdr: Header) !void {
+        if (hdr.length != @sizeOf(Header)) return error.InvalidHeaderLength;
+        if (!std.mem.isAligned(hdr.file_data_offset, Header.min_data_alignment)) return error.InvalidDataAlignment;
+        if (!hdr.directory_info.isAligned()) return error.InvalidDirectoryAlignment;
+        if (!hdr.file_info.isAligned()) return error.InvalidFileAlignment;
+    }
 };
 
 pub const meta = struct {
@@ -59,7 +74,7 @@ pub const meta = struct {
         parent: DirectoryOffset,
         next_sibling: FileOffset,
         data_offset: u64 align(@sizeOf(u32)),
-        data_len: u64 align(@sizeOf(u32)),
+        data_size: u64 align(@sizeOf(u32)),
         next_hash_collision: FileOffset,
         name_byte_len: u32,
 
@@ -68,7 +83,7 @@ pub const meta = struct {
                 .parent = parent,
                 .next_sibling = .none,
                 .data_offset = undefined,
-                .data_len = undefined,
+                .data_size = undefined,
                 .next_hash_collision = .none,
                 .name_byte_len = name_byte_len,
             };
@@ -109,25 +124,25 @@ pub const meta = struct {
         }
     };
 
-    pub fn Table(comptime T: type, comptime TOffset: type) type {
-        if (T != FileHeader and T != DirectoryHeader) @compileError("Can only use a metadata table with a valid header.");
+    fn Builder(comptime T: type, comptime TOffset: type) type {
+        if ((T != FileHeader or TOffset != FileOffset) and (T != DirectoryHeader or TOffset != DirectoryOffset)) @compileError("Can only use a metadata table with a valid header and offset.");
 
         return struct {
-            pub const empty: Self = .{ .raw = .empty };
+            pub const empty: Self = .{ .data = .empty };
 
-            raw: std.ArrayList(u32),
+            data: std.ArrayList(u32),
 
-            pub fn deinit(table: *Self, gpa: std.mem.Allocator) void {
-                table.raw.deinit(gpa);
+            pub fn deinit(builder: *Self, gpa: std.mem.Allocator) void {
+                builder.data.deinit(gpa);
             }
 
-            pub fn addOne(table: *Self, gpa: std.mem.Allocator, parent: DirectoryOffset, name: Name) !TOffset {
+            pub fn addOne(builder: *Self, gpa: std.mem.Allocator, parent: DirectoryOffset, name: Name) !TOffset {
                 const name_len = name.length();
                 const name_byte_len = name_len * @sizeOf(u16);
                 const total_elements = @divExact(@sizeOf(T) + std.mem.alignForward(usize, name_byte_len, @sizeOf(u32)), @sizeOf(u32));
 
-                const offset: u32 = @intCast(table.raw.items.len * @sizeOf(u32));
-                const entry = try table.raw.addManyAsSlice(gpa, total_elements);
+                const offset: u32 = @intCast(builder.data.items.len * @sizeOf(u32));
+                const entry = try builder.data.addManyAsSlice(gpa, total_elements);
                 const entry_hdr: *T = @ptrCast(entry);
                 const entry_name: []u16 = std.mem.bytesAsSlice(u16, std.mem.sliceAsBytes(entry[(@divExact(@sizeOf(T), @sizeOf(u32)))..]));
 
@@ -139,24 +154,56 @@ pub const meta = struct {
                 return @enumFromInt(offset);
             }
 
-            pub fn get(table: Self, offset: TOffset) *T {
+            pub inline fn get(builder: Self, offset: TOffset) *T {
+                // NOTE: @constCast here is justified, we own the data!
+                return @constCast(builder.toView().get(offset));
+            }
+
+            pub inline fn getName(builder: Self, offset: TOffset) []const u16 {
+                return builder.toView().getName(offset);
+            }
+
+            pub inline fn write(builder: Self, writer: *std.Io.Writer) !void {
+                return builder.toView().write(writer);
+            }
+
+            pub inline fn toView(builder: Self) meta.View(T, TOffset) {
+                return .init(builder.data.items);
+            }
+
+            const Self = @This();
+        };
+    }
+
+    fn View(comptime T: type, comptime TOffset: type) type {
+        if ((T != FileHeader or TOffset != FileOffset) and (T != DirectoryHeader or TOffset != DirectoryOffset)) @compileError("Can only use a metadata table with a valid header and offset.");
+
+        return struct {
+            data: []const u32,
+
+            /// `data` must be in native endian.
+            pub fn init(data: []const u32) Self {
+                return .{ .data = data };
+            }
+
+            pub fn get(table: Self, offset: TOffset) *const T {
                 std.debug.assert(std.mem.isAligned(@intFromEnum(offset), @alignOf(u32)));
                 const aligned_offset = @divExact(@intFromEnum(offset), @sizeOf(u32));
 
-                std.debug.assert(aligned_offset < table.raw.items.len);
-                return std.mem.bytesAsValue(T, std.mem.sliceAsBytes(table.raw.items[aligned_offset..]));
+                std.debug.assert(aligned_offset < table.data.len);
+                return std.mem.bytesAsValue(T, std.mem.sliceAsBytes(table.data[aligned_offset..]));
             }
 
             pub fn getName(table: Self, offset: TOffset) []const u16 {
                 const hdr = table.get(offset);
-                const name_bytes = std.mem.sliceAsBytes(table.raw.items[@divExact(@intFromEnum(offset) + @sizeOf(T), @sizeOf(u32))..])[0..hdr.name_byte_len];
+                const name_bytes = std.mem.sliceAsBytes(table.data[@divExact(@intFromEnum(offset) + @sizeOf(T), @sizeOf(u32))..])[0..hdr.name_byte_len];
 
                 return @alignCast(std.mem.bytesAsSlice(u16, name_bytes));
             }
 
             pub fn write(table: Self, writer: *std.Io.Writer) !void {
                 if (builtin.cpu.arch.endian() == .little) {
-                    try writer.writeAll(std.mem.sliceAsBytes(table.raw.items));
+                    try writer.writeAll(std.mem.sliceAsBytes(table.data));
                 } else @panic("TODO: Big endian write support");
             }
 
@@ -176,7 +223,7 @@ pub const meta = struct {
                     return switch (it.offset) {
                         .none => unreachable,
                         else => |entry| blk: {
-                            if (@divExact(@intFromEnum(entry), 4) >= it.table.raw.items.len) return null;
+                            if (@divExact(@intFromEnum(entry), 4) >= it.table.data.len) return null;
                             const hdr = it.table.get(entry);
 
                             defer it.offset = @enumFromInt(@intFromEnum(it.offset) + @sizeOf(T) + std.mem.alignForward(u32, hdr.name_byte_len, @sizeOf(u32)));
@@ -189,6 +236,11 @@ pub const meta = struct {
             const Self = @This();
         };
     }
+
+    pub const DirectoryBuilder = meta.Builder(DirectoryHeader, DirectoryOffset);
+    pub const DirectoryView = meta.View(DirectoryHeader, DirectoryOffset);
+    pub const FileBuilder = meta.Builder(FileHeader, FileOffset);
+    pub const FileView = meta.View(FileHeader, FileOffset);
 
     pub fn hash(name: []const u16, parent: DirectoryOffset) u32 {
         var ohash: u32 = @intFromEnum(parent) ^ 123456789;
@@ -233,8 +285,8 @@ pub const Builder = struct {
         last_file: meta.FileOffset,
     };
 
-    directories: meta.Table(meta.DirectoryHeader, meta.DirectoryOffset),
-    files: meta.Table(meta.FileHeader, meta.FileOffset),
+    directories: meta.DirectoryBuilder,
+    files: meta.FileBuilder,
     file_data: std.ArrayList(u8),
     directory_hashes: std.ArrayList(meta.DirectoryOffset),
     file_hashes: std.ArrayList(meta.FileOffset),
@@ -295,7 +347,7 @@ pub const Builder = struct {
         const new_hdr = builder.files.get(new);
 
         new_hdr.data_offset = @intCast(builder.file_data.items.len);
-        new_hdr.data_len = @intCast(data.len);
+        new_hdr.data_size = @intCast(data.len);
 
         try builder.file_data.appendSlice(gpa, data);
 
@@ -314,17 +366,18 @@ pub const Builder = struct {
     }
 
     pub fn rehash(builder: *Builder, gpa: std.mem.Allocator) !void {
-        inline for (&.{ &builder.directories, &builder.files }, &.{ &builder.directory_hashes, &builder.file_hashes }) |table, hash_table| {
-            const hash_table_size = officialHashPrime(@intCast(table.raw.items.len));
+        inline for (&.{ &builder.directories, &builder.files }, &.{ &builder.directory_hashes, &builder.file_hashes }) |meta_builder, hash_table| {
+            const hash_table_size = officialHashPrime(@intCast(meta_builder.data.items.len));
 
             try hash_table.resize(gpa, hash_table_size);
             @memset(hash_table.items, .none);
 
-            var it = table.iterator();
+            const view = meta_builder.toView();
+            var it = view.iterator();
 
             while (it.next()) |entry| {
-                const hdr = table.get(entry);
-                const name = table.getName(entry);
+                const hdr = meta_builder.get(entry);
+                const name = meta_builder.getName(entry);
 
                 const hash = meta.hash(name, hdr.parent);
                 const hash_entry = &hash_table.items[hash % hash_table_size];
@@ -345,7 +398,7 @@ pub const Builder = struct {
     /// Remember to `rehash` before writing!
     pub fn write(builder: *Builder, writer: *std.Io.Writer) !void {
         // NOTE: Basically, Hdr -> DirH -> FileH -> DirM -> FileM -> FileD
-        const data_offset: u32 = @intCast(@sizeOf(Header) + @sizeOf(u32) * (builder.directories.raw.items.len + builder.files.raw.items.len + builder.directory_hashes.items.len + builder.file_hashes.items.len));
+        const data_offset: u32 = @intCast(@sizeOf(Header) + @sizeOf(u32) * (builder.directories.data.items.len + builder.files.data.items.len + builder.directory_hashes.items.len + builder.file_hashes.items.len));
         const aligned_data_offset = std.mem.alignForward(u32, data_offset, Header.min_data_alignment);
 
         try writer.writeStruct(Header{
@@ -354,13 +407,13 @@ pub const Builder = struct {
                 .hash_table_offset = @sizeOf(Header),
                 .hash_table_size = @intCast(@sizeOf(u32) * builder.directory_hashes.items.len),
                 .meta_table_offset = @intCast(@sizeOf(Header) + @sizeOf(u32) * (builder.directory_hashes.items.len + builder.file_hashes.items.len)),
-                .meta_table_size = @intCast(@sizeOf(u32) * builder.directories.raw.items.len),
+                .meta_table_size = @intCast(@sizeOf(u32) * builder.directories.data.items.len),
             },
             .file_info = .{
                 .hash_table_offset = @intCast(@sizeOf(Header) + @sizeOf(u32) * builder.directory_hashes.items.len),
                 .hash_table_size = @intCast(@sizeOf(u32) * builder.file_hashes.items.len),
-                .meta_table_offset = @intCast(@sizeOf(Header) + @sizeOf(u32) * (builder.directories.raw.items.len + builder.directory_hashes.items.len + builder.file_hashes.items.len)),
-                .meta_table_size = @intCast(@sizeOf(u32) * builder.files.raw.items.len),
+                .meta_table_offset = @intCast(@sizeOf(Header) + @sizeOf(u32) * (builder.directories.data.items.len + builder.directory_hashes.items.len + builder.file_hashes.items.len)),
+                .meta_table_size = @intCast(@sizeOf(u32) * builder.files.data.items.len),
             },
             .file_data_offset = aligned_data_offset,
         }, .little);
@@ -373,7 +426,319 @@ pub const Builder = struct {
     }
 };
 
-test {
+/// RomFS view, doesn't allow modifications.
+pub const View = struct {
+    pub const Directory = enum(u32) {
+        root = 0x00,
+        _,
+
+        pub fn name(directory: Directory, view: View) []const u16 {
+            return view.directories.getName(@enumFromInt(@intFromEnum(directory)));
+        }
+    };
+
+    pub const File = enum(u32) {
+        pub const Stat = struct {
+            /// Offset of file data starting from `data_offset`.
+            offset: u64,
+            /// Size of the file in bytes.
+            size: u64,
+        };
+
+        _,
+
+        pub fn name(file: File, view: View) []const u16 {
+            return view.files.getName(@enumFromInt(@intFromEnum(file)));
+        }
+
+        pub fn stat(file: File, view: View) Stat {
+            const file_meta = view.files.get(@enumFromInt(@intFromEnum(file)));
+
+            return .{
+                .offset = file_meta.data_offset,
+                .size = file_meta.data_size,
+            };
+        }
+    };
+
+    pub const Entry = struct {
+        pub const Kind = enum(u8) { directory, file };
+        pub const Handle = enum(u32) { _ };
+
+        kind: Kind,
+        handle: Handle,
+
+        pub fn initDirectory(directory: Directory) Entry {
+            return .{
+                .kind = .directory,
+                .handle = @enumFromInt(@intFromEnum(directory)),
+            };
+        }
+
+        pub fn initFile(file: File) Entry {
+            return .{
+                .kind = .file,
+                .handle = @enumFromInt(@intFromEnum(file)),
+            };
+        }
+
+        pub fn name(entry: Entry, view: View) []const u16 {
+            return switch (entry.kind) {
+                .directory => view.directories.getName(@enumFromInt(@intFromEnum(entry.handle))),
+                .file => view.files.getName(@enumFromInt(@intFromEnum(entry.handle))),
+            };
+        }
+    };
+
+    pub const Init = struct {
+        view: View,
+        data_offset: u32,
+    };
+
+    directories: meta.DirectoryView,
+    files: meta.FileView,
+    directory_hashes: []const meta.DirectoryOffset,
+    file_hashes: []const meta.FileOffset,
+
+    /// Reads a `View` of a RomFS from an `std.fs.File.Reader`
+    /// within its current position.
+    ///
+    /// Final seek offset is unaffected if no error is returned.
+    pub fn initFile(file_reader: *std.fs.File.Reader, gpa: std.mem.Allocator) !Init {
+        const initial_offset = file_reader.logicalPos();
+        const hdr = try file_reader.interface.takeStruct(Header, .little);
+
+        try hdr.check();
+
+        const directories = try gpa.alloc(u32, @divExact(hdr.directory_info.meta_table_size, @sizeOf(u32)));
+        errdefer gpa.free(directories);
+
+        const files = try gpa.alloc(u32, @divExact(hdr.file_info.meta_table_size, @sizeOf(u32)));
+        errdefer gpa.free(files);
+
+        const directory_hashes = try gpa.alloc(meta.DirectoryOffset, @divExact(hdr.directory_info.hash_table_size, @sizeOf(u32)));
+        errdefer gpa.free(directory_hashes);
+
+        const file_hashes = try gpa.alloc(meta.FileOffset, @divExact(hdr.file_info.hash_table_size, @sizeOf(u32)));
+        errdefer gpa.free(file_hashes);
+
+        try file_reader.seekTo(initial_offset + hdr.directory_info.hash_table_offset);
+        try file_reader.interface.readSliceEndian(meta.DirectoryOffset, directory_hashes, .little);
+
+        try file_reader.seekTo(initial_offset + hdr.file_info.hash_table_offset);
+        try file_reader.interface.readSliceEndian(meta.FileOffset, file_hashes, .little);
+
+        try file_reader.seekTo(initial_offset + hdr.directory_info.meta_table_offset);
+        try file_reader.interface.readSliceEndian(u32, directories, builtin.cpu.arch.endian());
+
+        try file_reader.seekTo(initial_offset + hdr.file_info.meta_table_offset);
+        try file_reader.interface.readSliceEndian(u32, files, builtin.cpu.arch.endian());
+
+        try file_reader.seekTo(initial_offset);
+
+        comptime {
+            if (builtin.cpu.arch.endian() != .little) @compileError("TODO: Big endian RomFS meta parsing (post-process)");
+        }
+
+        return .{
+            .view = .init(.init(directories), .init(files), directory_hashes, file_hashes),
+            .data_offset = hdr.file_data_offset,
+        };
+    }
+
+    pub fn init(directories: meta.DirectoryView, files: meta.FileView, directory_hashes: []const meta.DirectoryOffset, file_hashes: []const meta.FileOffset) View {
+        return .{
+            .directories = directories,
+            .files = files,
+            .directory_hashes = directory_hashes,
+            .file_hashes = file_hashes,
+        };
+    }
+
+    pub fn deinit(view: View, gpa: std.mem.Allocator) void {
+        gpa.free(view.directories.data);
+        gpa.free(view.files.data);
+        gpa.free(view.directory_hashes);
+        gpa.free(view.file_hashes);
+    }
+
+    pub fn openFile(view: View, parent: Directory, path: []const u16) !File {
+        const opened = try view.openAny(parent, path);
+
+        return switch (opened.kind) {
+            .file => @enumFromInt(@intFromEnum(opened.handle)),
+            .directory => error.IsDir,
+        };
+    }
+
+    pub fn openDir(view: View, parent: Directory, path: []const u16) !Directory {
+        const opened = try view.openAny(parent, path);
+
+        return switch (opened.kind) {
+            .file => error.NotDir,
+            .directory => @enumFromInt(@intFromEnum(opened.handle)),
+        };
+    }
+
+    pub fn openAny(view: View, parent: Directory, path: []const u16) !Entry {
+        if (path.len == 0) return error.FileNotFound;
+
+        var it = ComponentIterator.init(path) catch {};
+
+        var last_parent: Directory = if (it.root()) |_| .root else parent;
+        var last: []const u16 = (it.next() orelse return error.FileNotFound).name;
+
+        while (it.next()) |current| {
+            last_parent = if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral(".")))
+                last_parent
+            else if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral("..")))
+                @enumFromInt(@intFromEnum(view.directories.get(@enumFromInt(@intFromEnum(last_parent))).parent))
+            else
+                view.findDirectory(last_parent, last) orelse return error.FileNotFound;
+
+            last = current.name;
+        }
+
+        if (path[path.len - 1] == separator) {
+            return if (view.findDirectory(last_parent, last)) |dir| .initDirectory(dir) else error.FileNotFound;
+        }
+
+        return if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral(".")))
+            .initDirectory(last_parent)
+        else if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral("..")))
+            .initDirectory(@enumFromInt(@intFromEnum(view.directories.get(@enumFromInt(@intFromEnum(last_parent))).parent)))
+        else if (view.findFile(last_parent, last)) |file|
+            .initFile(file)
+        else if (view.findDirectory(last_parent, last)) |dir|
+            .initDirectory(dir)
+        else
+            return error.FileNotFound;
+    }
+
+    pub fn findFile(view: View, parent: Directory, name: []const u16) ?File {
+        const name_hash = meta.hash(name, @enumFromInt(@intFromEnum(parent)));
+        const first_offset: meta.FileOffset = view.file_hashes[name_hash % view.file_hashes.len];
+
+        return find: switch (first_offset) {
+            .none => null,
+            _ => |offset| {
+                const file = view.files.get(offset);
+                const file_name = view.files.getName(offset);
+
+                if (parent != @as(Directory, @enumFromInt(@intFromEnum(file.parent))) or !std.mem.eql(u16, file_name, name)) {
+                    continue :find file.next_hash_collision;
+                }
+
+                break :find @enumFromInt(@intFromEnum(offset));
+            },
+        };
+    }
+
+    pub fn findDirectory(view: View, parent: Directory, name: []const u16) ?Directory {
+        const name_hash = meta.hash(name, @enumFromInt(@intFromEnum(parent)));
+        const first_offset: meta.DirectoryOffset = view.directory_hashes[name_hash % view.directory_hashes.len];
+
+        return find: switch (first_offset) {
+            // NOTE: You cannot open the root directory, it is already implicitly opened.
+            .root => continue :find view.directories.get(.root).next_hash_collision,
+            .none => null,
+            _ => |offset| {
+                const directory = view.directories.get(offset);
+                const directory_name = view.directories.getName(offset);
+
+                if (parent != @as(Directory, @enumFromInt(@intFromEnum(directory.parent))) or !std.mem.eql(u16, directory_name, name)) {
+                    continue :find directory.next_hash_collision;
+                }
+
+                break :find @enumFromInt(@intFromEnum(offset));
+            },
+        };
+    }
+
+    /// Iterator over all directories and files in a directory.
+    pub fn iterator(view: View, parent: Directory) Iterator {
+        return .init(view, parent);
+    }
+
+    /// Iterator over all files in a directory
+    pub fn fileIterator(view: View, parent: Directory) FileIterator {
+        return .init(view, parent);
+    }
+
+    /// Iterator over all directories in a directory.
+    pub fn directoryIterator(view: View, parent: Directory) DirectoryIterator {
+        return .init(view, parent);
+    }
+
+    pub const Iterator = struct {
+        directory: DirectoryIterator,
+        file: FileIterator,
+
+        pub fn init(view: View, parent: Directory) Iterator {
+            return .{
+                .directory = .init(view, parent),
+                .file = .init(view, parent),
+            };
+        }
+
+        pub fn next(it: *Iterator, view: View) ?Entry {
+            return if (it.directory.next(view)) |current|
+                .initDirectory(current)
+            else if (it.file.next(view)) |current|
+                .initFile(current)
+            else
+                null;
+        }
+    };
+
+    pub const FileIterator = struct {
+        current: meta.FileOffset,
+
+        pub fn init(view: View, parent: Directory) FileIterator {
+            const directory = view.directories.get(@enumFromInt(@intFromEnum(parent)));
+
+            return .{
+                .current = @enumFromInt(@intFromEnum(directory.first_file)),
+            };
+        }
+
+        pub fn next(it: *FileIterator, view: View) ?File {
+            return switch (it.current) {
+                .none => null,
+                _ => |offset| blk: {
+                    defer it.current = view.files.get(offset).next_sibling;
+                    break :blk @enumFromInt(@intFromEnum(offset));
+                },
+            };
+        }
+    };
+
+    pub const DirectoryIterator = struct {
+        current: meta.DirectoryOffset,
+
+        pub fn init(view: View, parent: Directory) DirectoryIterator {
+            const directory = view.directories.get(@enumFromInt(@intFromEnum(parent)));
+
+            return .{
+                .current = @enumFromInt(@intFromEnum(directory.first_directory)),
+            };
+        }
+
+        pub fn next(it: *DirectoryIterator, view: View) ?Directory {
+            return switch (it.current) {
+                .none => null,
+                // root is never the child of any directory.
+                .root => unreachable,
+                _ => |offset| blk: {
+                    defer it.current = view.directories.get(offset).next_sibling;
+                    break :blk @enumFromInt(@intFromEnum(offset));
+                },
+            };
+        }
+    };
+};
+
+test "builder and view are idempotent" {
     if (builtin.target.os.tag == .other) {
         return error.SkipZigTest; // cannot use testing.allocator in horizon currently.
     }
@@ -394,14 +759,27 @@ test {
     var backed_writer: std.Io.Writer.Allocating = .init(gpa);
     defer backed_writer.deinit();
 
-    const writer = &backed_writer.writer;
     try builder.rehash(gpa);
-    try builder.write(writer);
 
-    // for (backed_writer.written()) |b| {
-    //     std.debug.print("{X} ", .{b});
-    // }
-    // std.debug.print("\n", .{});
+    var view: View = .init(builder.directories.toView(), builder.files.toView(), builder.directory_hashes.items, builder.file_hashes.items);
+
+    {
+        const jp = try view.openFile(.root, std.unicode.utf8ToUtf16LeStringLiteral("A/ソウル・ソサエティ"));
+        const jp_stat = jp.stat(view);
+        const jp_data = builder.file_data.items[jp_stat.offset..][0..jp_stat.size];
+
+        try testing.expectEqualSlices(u8, "Ahh yes, japanese\n", jp_data);
+    }
+
+    {
+        const sp = try view.openFile(.root, std.unicode.utf8ToUtf16LeStringLiteral("A/BC/¿qué?"));
+        const sp_stat = sp.stat(view);
+        const sp_data = builder.file_data.items[sp_stat.offset..][0..sp_stat.size];
+
+        try testing.expectEqualSlices(u8, "Spanish or english, decide please\n", sp_data);
+    }
+
+    _ = try view.openDir(.root, std.unicode.utf8ToUtf16LeStringLiteral("A/BC/CD"));
 }
 
 const testing = std.testing;

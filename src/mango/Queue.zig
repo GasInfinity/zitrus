@@ -349,7 +349,7 @@ pub const Handle = enum(u32) {
     }
 
     // TODO: Subresource range
-    pub fn clearDepthStencilImage(queue: Handle, info: mango.ClearDepthStencilInfo) void {
+    pub fn clearDepthStencilImage(queue: Handle, info: mango.ClearDepthStencilInfo) !void {
         std.debug.assert(0.0 <= info.depth and info.depth <= 1.0);
 
         const fill: *Fill = .fromHandleMutable(queue);

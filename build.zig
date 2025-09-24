@@ -264,7 +264,7 @@ fn addMake3dsxDependency(b: *std.Build, zitrus: *std.Build.Dependency, options: 
 
     if (options.romfs) |romfs| {
         run_make.addArg("--romfs");
-        run_make.addDirectoryArg(romfs);
+        run_make.addFileArg(romfs);
     }
 
     return run_make.addOutputFileArg(options.name);
@@ -307,6 +307,7 @@ pub const MakeRomFsOptions = struct {
     root: std.Build.LazyPath,
 };
 
+/// WARNING: Blocked by upstream, see https://github.com/ziglang/zig/issues/20935
 pub fn addMakeRomFs(b: *std.Build, options: MakeRomFsOptions) std.Build.LazyPath {
     const zitrus = zitrusDependency(b);
     const run_make = b.addRunArtifact(zitrus.artifact("zitrus-tools"));

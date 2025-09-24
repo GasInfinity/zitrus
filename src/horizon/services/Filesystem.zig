@@ -2,6 +2,8 @@
 
 // TODO: Missing methods / commands
 
+pub const RomFs = @import("Filesystem/RomFs.zig");
+
 pub const Service = enum(u8) {
     user,
     loader,
@@ -26,11 +28,70 @@ pub const MediaType = enum(u8) {
 };
 
 pub const PathType = enum(i32) {
+    pub const SelfNcch = extern struct {
+        pub const AccessType = enum(u32) {
+            romfs_base,
+            code,
+            system_menu_data,
+            save_data,
+            romfs_all_contents,
+            romfs_patch,
+        };
+
+        pub const AccessData = extern union {
+            pub const empty = std.mem.zeroes(AccessData);
+
+            pub const Path = extern struct {
+                name: [ncch.exefs.max_name_len:0]u8,
+
+                pub fn init(name: []const u8) Path {
+                    var exefs_name: Path = undefined;
+                    @memcpy(&exefs_name.name[0..name.len], name);
+                    exefs_name.name[name.len] = 0;
+                    return exefs_name;
+                }
+            };
+
+            pub const Content = extern struct {
+                pub const Index = packed struct(u32) { value: ncch.Header.Flags.ContentFlags.Type, _: u26 = 0 };
+
+                content_index: Index,
+                _padding0: u32 = 0,
+            };
+
+            exefs: Path,
+            romfs: Content,
+
+            pub fn path(name: []const u8) AccessData {
+                return .{ .exefs = .init(name) };
+            }
+
+            pub fn content(index: ncch.Header.Flags.ContentFlags.Type) AccessData {
+                return .{ .romfs = .{ .content_index = .{ .value = index } } };
+            }
+        };
+
+        access: AccessType,
+        data: AccessData,
+
+        pub fn romfs_base() SelfNcch {
+            return .{ .access = .romfs_base, .data = .empty };
+        }
+
+        pub fn romfs_patch() SelfNcch {
+            return .{ .access = .romfs_patch, .data = .empty };
+        }
+    };
+
     @"error" = -1,
     invalid = 0,
+    /// Must include a null terminator.
     empty,
+    /// Archive-dependent, null terminator not needed.
     binary,
+    /// 7-bit ASCII path. Must include a null terminator.
     ascii,
+    /// UTF-16 path. Must include a null terminator.
     utf16,
 };
 
@@ -247,7 +308,7 @@ pub const File = packed struct(u32) {
             set_priority,
             get_priority,
             open_link_file,
-            get_available,
+            get_available = 0x0C01,
         };
     };
 };
@@ -348,19 +409,19 @@ pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_t
     };
 }
 
-pub fn sendOpenFileDirectly(fs: Filesystem, transaction: usize, archive_id: ArchiveId, archive_path_type: PathType, archive_path: [:0]const u8, file_path_type: PathType, file_path: [:0]const u8, flags: OpenFlags, attributes: Attributes) !File {
+pub fn sendOpenFileDirectly(fs: Filesystem, transaction: usize, archive_id: ArchiveId, archive_path_type: PathType, archive_path: []const u8, file_path_type: PathType, file_path: []const u8, flags: OpenFlags, attributes: Attributes) !File {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.OpenFileDirectly, .{
         .transaction = transaction,
         .archive_id = archive_id,
         .archive_path_type = archive_path_type,
-        .archive_path_size = (archive_path.len + 1),
+        .archive_path_size = archive_path.len,
         .file_path_type = file_path_type,
-        .file_path_size = (file_path.len + 1),
+        .file_path_size = file_path.len,
         .flags = flags,
         .attributes = attributes,
-        .archive_path = .init(archive_path.ptr[0..(archive_path.len + 1)]),
-        .file_path = .init(file_path.ptr[0..(file_path.len + 1)]),
+        .archive_path = .init(archive_path),
+        .file_path = .init(file_path),
     }, .{})).cases()) {
         .success => |s| s.value.response.file.handle,
         .failure => |code| horizon.unexpectedResult(code),
@@ -822,6 +883,8 @@ const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
+
+const ncch = horizon.fmt.ncch;
 
 const ResultCode = horizon.result.Code;
 const ClientSession = horizon.ClientSession;
