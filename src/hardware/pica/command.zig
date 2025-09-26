@@ -1,4 +1,4 @@
-//! Type-safe PICA200 command queue
+//! Type-safe PICA200 `pica.Pipeline` command `Queue`
 
 pub const Header = packed struct(u32) {
     id: Id,
@@ -11,8 +11,8 @@ pub const Header = packed struct(u32) {
 pub const Id = enum(u16) {
     _,
 
-    pub fn fromRegister(comptime base: *pica.Registers.Internal, register: *anyopaque) Id {
-        std.debug.assert(@intFromPtr(register) >= @intFromPtr(base) and @intFromPtr(register) < (@intFromPtr(base) + @sizeOf(pica.Registers.Internal))); // invalid internal register, pointer is not within the valid range
+    pub fn fromRegister(comptime base: *pica.Graphics, register: *anyopaque) Id {
+        std.debug.assert(@intFromPtr(register) >= @intFromPtr(base) and @intFromPtr(register) < (@intFromPtr(base) + @sizeOf(pica.Graphics))); // invalid internal register, pointer is not within the valid range
 
         const offset = @intFromPtr(register) - @intFromPtr(base);
 
@@ -41,11 +41,11 @@ pub const Queue = struct {
         queue.current_index = 0;
     }
 
-    pub fn add(queue: *Queue, comptime base: *pica.Registers.Internal, register: anytype, value: std.meta.Child(@TypeOf(register))) void {
+    pub fn add(queue: *Queue, comptime base: *pica.Graphics, register: anytype, value: std.meta.Child(@TypeOf(register))) void {
         return queue.addMasked(base, register, value, 0xF);
     }
 
-    pub fn addMasked(queue: *Queue, comptime base: *pica.Registers.Internal, register: anytype, value: std.meta.Child(@TypeOf(register)), mask: u4) void {
+    pub fn addMasked(queue: *Queue, comptime base: *pica.Graphics, register: anytype, value: std.meta.Child(@TypeOf(register)), mask: u4) void {
         comptime std.debug.assert(@typeInfo(@TypeOf(register)) == .pointer);
 
         const Child = std.meta.Child(@TypeOf(register));
@@ -105,7 +105,7 @@ pub const Queue = struct {
         }
     }
 
-    fn IncrementalWritesTuple(comptime base: *pica.Registers.Internal, comptime registers: anytype) type {
+    fn IncrementalWritesTuple(comptime base: *pica.Graphics, comptime registers: anytype) type {
         const RegistersType = @TypeOf(registers);
 
         std.debug.assert(@typeInfo(RegistersType) == .@"struct");
@@ -144,11 +144,11 @@ pub const Queue = struct {
         return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &needed_fields, .decls = &.{}, .is_tuple = true } });
     }
 
-    pub fn addIncremental(queue: *Queue, comptime base: *pica.Registers.Internal, comptime registers: anytype, values: IncrementalWritesTuple(base, registers)) void {
+    pub fn addIncremental(queue: *Queue, comptime base: *pica.Graphics, comptime registers: anytype, values: IncrementalWritesTuple(base, registers)) void {
         return queue.addIncrementalMasked(base, registers, values, 0b1111);
     }
 
-    pub fn addIncrementalMasked(queue: *Queue, comptime base: *pica.Registers.Internal, comptime registers: anytype, values: IncrementalWritesTuple(base, registers), mask: u4) void {
+    pub fn addIncrementalMasked(queue: *Queue, comptime base: *pica.Graphics, comptime registers: anytype, values: IncrementalWritesTuple(base, registers), mask: u4) void {
         if (registers.len == 0) return;
 
         const first_id: Id = .fromRegister(base, registers[0]);
@@ -175,11 +175,11 @@ pub const Queue = struct {
         }
     }
 
-    pub fn addConsecutive(queue: *Queue, comptime base: *pica.Registers.Internal, comptime register: anytype, values: []const std.meta.Child(@TypeOf(register))) void {
+    pub fn addConsecutive(queue: *Queue, comptime base: *pica.Graphics, comptime register: anytype, values: []const std.meta.Child(@TypeOf(register))) void {
         return queue.addConsecutiveMasked(base, register, values, 0b1111);
     }
 
-    pub fn addConsecutiveMasked(queue: *Queue, comptime base: *pica.Registers.Internal, comptime register: anytype, values: []const std.meta.Child(@TypeOf(register)), mask: u4) void {
+    pub fn addConsecutiveMasked(queue: *Queue, comptime base: *pica.Graphics, comptime register: anytype, values: []const std.meta.Child(@TypeOf(register)), mask: u4) void {
         comptime std.debug.assert(@typeInfo(@TypeOf(register)) == .pointer);
 
         if (values.len == 0) {
@@ -214,12 +214,12 @@ pub const Queue = struct {
     }
 
     pub fn finalize(queue: *Queue) void {
-        const internal = &zitrus.memory.arm11.gpu.internal;
+        const pipeline = &zitrus.memory.arm11.pica.p3d;
 
-        queue.add(internal, &internal.irq.req[0..4].*, @bitCast(@as(u32, 0x12345678)));
+        queue.add(pipeline, &pipeline.irq.req[0..4].*, @bitCast(@as(u32, 0x12345678)));
 
         if (!std.mem.isAligned(queue.current_index, 4)) {
-            queue.add(internal, &internal.irq.req[0..4].*, @bitCast(@as(u32, 0x12345678)));
+            queue.add(pipeline, &pipeline.irq.req[0..4].*, @bitCast(@as(u32, 0x12345678)));
         }
     }
 };
@@ -227,4 +227,4 @@ pub const Queue = struct {
 const std = @import("std");
 
 const zitrus = @import("zitrus");
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;

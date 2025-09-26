@@ -81,12 +81,10 @@ pub fn discardInterrupts(gfx: *Graphics) void {
 pub fn initializeHardware(gsp: GspGpu) !void {
     const gpu_registers: *pica.Registers = memory.gpu_registers;
 
-    try gsp.writeHwRegs(&gpu_registers.internal.irq.ack[0], std.mem.asBytes(&[_]u32{0x00}));
-    try gsp.writeHwRegs(&gpu_registers.internal.irq.cmp[0], std.mem.asBytes(&[_]u32{0x12345678}));
-    try gsp.writeHwRegs(&gpu_registers.internal.irq.mask, std.mem.asBytes(&[_]u32{ 0xFFFFFFF0, 0xFFFFFFFF }));
-    try gsp.writeHwRegs(&gpu_registers.internal.irq.autostop, std.mem.asBytes(&pica.Registers.Internal.Interrupt.AutoStop{
-        .stop_command_list = true,
-    }));
+    try gsp.writeHwRegs(&gpu_registers.p3d.irq.ack[0], std.mem.asBytes(&[_]u32{0x00}));
+    try gsp.writeHwRegs(&gpu_registers.p3d.irq.cmp[0], std.mem.asBytes(&[_]u32{0x12345678}));
+    try gsp.writeHwRegs(&gpu_registers.p3d.irq.mask, std.mem.asBytes(&[_]u32{ 0xFFFFFFF0, 0xFFFFFFFF }));
+    try gsp.writeHwRegs(&gpu_registers.p3d.irq.autostop, std.mem.asBytes(&zitrus.hardware.LsbRegister(bool).init(true)));
     try gsp.writeHwRegs(&gpu_registers.timing_control, std.mem.asBytes(&[_]u32{ 0x22221200, 0xFF2 }));
 
     // Initialize top screen
@@ -114,17 +112,17 @@ pub fn initializeHardware(gsp: GspGpu) !void {
     }));
     try gsp.writeHwRegs(&gpu_registers.pdc[0]._unknown1, std.mem.asBytes(&@as(u32, 0x00)));
     try gsp.writeHwRegs(&gpu_registers.pdc[0].disable_sync, std.mem.asBytes(&@as(u32, 0x00)));
-    try gsp.writeHwRegs(&gpu_registers.pdc[0].pixel_dimensions, std.mem.asBytes(&pica.U16x2{
-        .x = Screen.top.width(),
-        .y = Screen.top.height(),
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].pixel_dimensions, std.mem.asBytes(&[2]u16{
+        Screen.top.width(),
+        Screen.top.height(),
     }));
-    try gsp.writeHwRegs(&gpu_registers.pdc[0].horizontal_border, std.mem.asBytes(&pica.U16x2{
-        .x = 209,
-        .y = 449,
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].horizontal_border, std.mem.asBytes(&[2]u16{
+        209,
+        449,
     }));
-    try gsp.writeHwRegs(&gpu_registers.pdc[0].vertical_border, std.mem.asBytes(&pica.U16x2{
-        .x = 2,
-        .y = 402,
+    try gsp.writeHwRegs(&gpu_registers.pdc[0].vertical_border, std.mem.asBytes(&[2]u16{
+        2,
+        402,
     }));
     try gsp.writeHwRegs(&gpu_registers.pdc[0].framebuffer_format, std.mem.asBytes(&FramebufferFormat{
         .color_format = .abgr8888,
@@ -169,17 +167,17 @@ pub fn initializeHardware(gsp: GspGpu) !void {
     }));
     try gsp.writeHwRegs(&gpu_registers.pdc[1]._unknown1, std.mem.asBytes(&@as(u32, 0x00)));
     try gsp.writeHwRegs(&gpu_registers.pdc[1].disable_sync, std.mem.asBytes(&@as(u32, 0x11)));
-    try gsp.writeHwRegs(&gpu_registers.pdc[1].pixel_dimensions, std.mem.asBytes(&pica.U16x2{
-        .x = Screen.bottom.width(),
-        .y = Screen.bottom.height(),
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].pixel_dimensions, std.mem.asBytes(&[2]u16{
+        Screen.bottom.width(),
+        Screen.bottom.height(),
     }));
-    try gsp.writeHwRegs(&gpu_registers.pdc[1].horizontal_border, std.mem.asBytes(&pica.U16x2{
-        .x = 209,
-        .y = 449,
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].horizontal_border, std.mem.asBytes(&[2]u16{
+        209,
+        449,
     }));
-    try gsp.writeHwRegs(&gpu_registers.pdc[1].vertical_border, std.mem.asBytes(&pica.U16x2{
-        .x = 82,
-        .y = 402,
+    try gsp.writeHwRegs(&gpu_registers.pdc[1].vertical_border, std.mem.asBytes(&[2]u16{
+        82,
+        402,
     }));
     try gsp.writeHwRegs(&gpu_registers.pdc[1].framebuffer_format, std.mem.asBytes(&FramebufferFormat{
         .color_format = .abgr8888,
@@ -211,7 +209,7 @@ pub fn initializeHardware(gsp: GspGpu) !void {
 
     // libctru does this also so we'll follow along
     try gsp.writeHwRegs(&gpu_registers.clock, std.mem.asBytes(&@as(u32, 0x70100)));
-    try gsp.writeHwRegsWithMask(&gpu_registers.dma.control, std.mem.asBytes(&@as(u32, 0x00)), std.mem.asBytes(&@as(u32, 0xFF00)));
+    try gsp.writeHwRegsWithMask(&gpu_registers.ppf.control, std.mem.asBytes(&@as(u32, 0x00)), std.mem.asBytes(&@as(u32, 0xFF00)));
     try gsp.writeHwRegsWithMask(&gpu_registers.psc[0].control, std.mem.asBytes(&@as(u32, 0x00)), std.mem.asBytes(&@as(u32, 0xFF)));
     try gsp.writeHwRegsWithMask(&gpu_registers.psc[1].control, std.mem.asBytes(&@as(u32, 0x00)), std.mem.asBytes(&@as(u32, 0xFF)));
 }
@@ -221,7 +219,7 @@ const GspGpu = horizon.services.GspGpu;
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
 
 const horizon = zitrus.horizon;
 const memory = horizon.memory;

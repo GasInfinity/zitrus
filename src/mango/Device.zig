@@ -748,6 +748,6 @@ const GspGpu = horizon.services.GspGpu;
 const Thread = horizon.Thread;
 
 const mango = zitrus.mango;
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
 
-const PhysicalAddress = zitrus.PhysicalAddress;
+const PhysicalAddress = zitrus.hardware.PhysicalAddress;

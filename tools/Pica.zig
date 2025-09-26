@@ -355,7 +355,7 @@ const zitrus = @import("zitrus");
 
 const zpsh = zitrus.fmt.zpsh;
 
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
 const shader = pica.shader;
 
 const Assembler = shader.as.Assembler;

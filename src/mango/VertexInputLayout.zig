@@ -3,10 +3,10 @@ pub const Handle = enum(u64) {
     _,
 };
 
-const GpuAttributeConfig = pica.Registers.Internal.GeometryPipeline.AttributeConfig;
-const GpuAttributeBufferConfig = pica.Registers.Internal.GeometryPipeline.AttributeBuffer.Config;
+const GpuAttributeConfig = pica.Graphics.GeometryPipeline.Attributes.Config;
+const GpuAttributeBufferConfig = pica.Graphics.GeometryPipeline.Attributes.VertexBuffer.Config;
 const GpuArrayComponent = GpuAttributeBufferConfig.ArrayComponent;
-const GpuAttributePermutation = pica.Registers.Internal.Shader.AttributePermutation;
+const GpuAttributePermutation = pica.Graphics.Shader.AttributePermutation;
 
 config: GpuAttributeConfig,
 buffer_config: [12]GpuAttributeBufferConfig,
@@ -156,8 +156,4 @@ const VertexInputLayout = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
 const mango = zitrus.mango;
-const pica = zitrus.pica;
-
-const cmd3d = pica.cmd3d;
-
-const PhysicalAddress = zitrus.PhysicalAddress;
+const pica = zitrus.hardware.pica;

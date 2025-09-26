@@ -63,16 +63,10 @@ comptime {
     _ = compress;
     _ = fmt;
     _ = horizon;
+    _ = hardware;
 
-    _ = pica;
     _ = mango;
 }
-
-/// Deprecated: use `hardware.PhysicalAddress`
-pub const PhysicalAddress = hardware.PhysicalAddress;
-
-/// Deprecated: use `hardware.AlignedPhysicalAddress`
-pub const AlignedPhysicalAddress = hardware.AlignedPhysicalAddress;
 
 pub const c = @import("c.zig");
 
@@ -84,9 +78,6 @@ pub const hardware = @import("hardware.zig");
 pub const math = @import("math.zig");
 
 pub const mango = @import("mango.zig");
-
-// Deprecated: use `hardware.pica`
-pub const pica = hardware.pica;
 
 const builtin = @import("builtin");
 const std = @import("std");

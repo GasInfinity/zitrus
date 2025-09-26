@@ -47,7 +47,7 @@ pub const Graphics = struct {
     boolean_constants: std.EnumArray(mango.ShaderStage, std.EnumSet(pica.shader.register.Integral.Boolean)),
     integer_constants: std.EnumArray(mango.ShaderStage, std.EnumArray(pica.shader.register.Integral.Integer, [4]i8)),
 
-    cmd3d_state: []align(8) u32,
+    encoded_command_state: []align(8) u32,
 
     pub fn init(create_info: mango.GraphicsPipelineCreateInfo, gpa: std.mem.Allocator) !Graphics {
         const dyn = create_info.dynamic_state;
@@ -64,44 +64,44 @@ pub const Graphics = struct {
             .stencil_write_mask = undefined,
             .boolean_constants = undefined,
             .integer_constants = undefined,
-            .cmd3d_state = try gpa.alignedAlloc(u32, .@"8", 1024),
+            .encoded_command_state = try gpa.alignedAlloc(u32, .@"8", 1024),
         };
         errdefer gfx.deinit(gpa);
 
-        var gfx_queue: cmd3d.Queue = .{
-            .buffer = gfx.cmd3d_state,
+        var gfx_queue: command.Queue = .{
+            .buffer = gfx.encoded_command_state,
             .current_index = 0,
         };
 
-        // NOTE: It doesn't make sense to set internal_regs.geometry_pipeline.start_draw_function to config mode always, what do you do more, pipeline changes or drawcalls bro? (silly question)
-        gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.start_draw_function, .config);
+        // NOTE: It doesn't make sense to set p3d.geometry_pipeline.start_draw_function to config mode always, what do you do more, pipeline changes or drawcalls bro? (silly question)
+        gfx_queue.add(p3d, &p3d.geometry_pipeline.start_draw_function, .init(.config));
         // TODO: What to do with early depth?
-        gfx_queue.add(internal_regs, &internal_regs.rasterizer.early_depth_test_enable_1, .init(false));
-        gfx_queue.add(internal_regs, &internal_regs.framebuffer.early_depth_test_enable_2, .init(false));
+        gfx_queue.add(p3d, &p3d.rasterizer.early_depth_test_enable_1, .init(false));
+        gfx_queue.add(p3d, &p3d.framebuffer.early_depth_test_enable, .init(false));
 
         // TODO: Lighting in pipelines
-        gfx_queue.add(internal_regs, &internal_regs.texturing.lighting_enable, .init(false));
-        gfx_queue.add(internal_regs, &internal_regs.fragment_lighting.disable, .init(true));
+        gfx_queue.add(p3d, &p3d.texturing.lighting_enable, .init(false));
+        gfx_queue.add(p3d, &p3d.fragment_lighting.disable, .init(true));
 
         if (create_info.geometry_shader_state) |_| {
             @panic("TODO");
         } else {
-            gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.enable_geometry_shader_configuration, .init(false));
+            gfx_queue.add(p3d, &p3d.geometry_pipeline.enable_geometry_shader_configuration, .init(false));
 
-            const vtx_info = try compileShader(create_info.vertex_shader_state.*, &internal_regs.vertex_shader, &gfx_queue);
+            const vtx_info = try compileShader(create_info.vertex_shader_state.*, &p3d.vertex_shader, &gfx_queue);
 
             gfx.boolean_constants = .init(.{ .vertex = vtx_info.boolean_constants, .geometry = undefined });
             gfx.integer_constants = .init(.{ .vertex = vtx_info.integer_constants, .geometry = undefined });
 
             // TODO: When we support geometry shaders, this should be a separate function!
-            gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.vertex_shader_output_map_total_1, .init(vtx_info.outputs_minus_one));
-            gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.vertex_shader_output_map_total_2, .init(vtx_info.outputs_minus_one));
-            gfx_queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{
+            gfx_queue.add(p3d, &p3d.geometry_pipeline.vertex_shader_output_map_total_1, .init(vtx_info.outputs_minus_one));
+            gfx_queue.add(p3d, &p3d.geometry_pipeline.vertex_shader_output_map_total_2, .init(vtx_info.outputs_minus_one));
+            gfx_queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{
                 .total_vertex_outputs = vtx_info.outputs_minus_one,
                 .topology = .triangle_list, // NOTE: Ignored by mask
             }, 0b0001);
 
-            var attribute_clock: pica.Registers.Internal.Rasterizer.OutputAttributeClock = .{};
+            var attribute_clock: pica.Graphics.Rasterizer.OutputAttributeClock = .{};
 
             var out_it = vtx_info.entrypoint.output_set.iterator();
             var semantic_outputs: usize = 0;
@@ -113,24 +113,26 @@ pub const Graphics = struct {
                     continue;
                 }
 
+                const tex_coords_present = &attribute_clock.texture_coordinates_present;
+
                 // zig fmt: on
                 attribute_clock.color_present = attribute_clock.color_present or (map.x.isColor() or map.y.isColor() or map.z.isColor() or map.w.isColor());
                 attribute_clock.position_z_present = attribute_clock.position_z_present or (map.x == .position_z or map.y == .position_z or map.z == .position_z or map.w == .position_z);
-                attribute_clock.texture_coordinates_0_present = attribute_clock.texture_coordinates_0_present or (map.x.isTextureCoordinate0() or map.y.isTextureCoordinate0() or map.z.isTextureCoordinate0() or map.w.isTextureCoordinate0());
-                attribute_clock.texture_coordinates_1_present = attribute_clock.texture_coordinates_1_present or (map.x.isTextureCoordinate1() or map.y.isTextureCoordinate1() or map.z.isTextureCoordinate1() or map.w.isTextureCoordinate1());
-                attribute_clock.texture_coordinates_2_present = attribute_clock.texture_coordinates_2_present or (map.x.isTextureCoordinate2() or map.y.isTextureCoordinate2() or map.z.isTextureCoordinate2() or map.w.isTextureCoordinate2());
+                tex_coords_present.* = tex_coords_present.copyWith(0, tex_coords_present.get(0) or (map.x.isTextureCoordinate0() or map.y.isTextureCoordinate0() or map.z.isTextureCoordinate0() or map.w.isTextureCoordinate0()));
+                tex_coords_present.* = tex_coords_present.copyWith(1, tex_coords_present.get(1) or (map.x.isTextureCoordinate1() or map.y.isTextureCoordinate1() or map.z.isTextureCoordinate1() or map.w.isTextureCoordinate1()));
+                tex_coords_present.* = tex_coords_present.copyWith(2, tex_coords_present.get(2) or (map.x.isTextureCoordinate2() or map.y.isTextureCoordinate2() or map.z.isTextureCoordinate2() or map.w.isTextureCoordinate2()));
                 attribute_clock.texture_coordinates_0_w_present = attribute_clock.texture_coordinates_0_w_present or (map.x == .texture_coordinate_0_w or map.y == .texture_coordinate_0_w or map.z == .texture_coordinate_0_w or map.w == .texture_coordinate_0_w);
                 attribute_clock.normal_quaternion_or_view_present = attribute_clock.normal_quaternion_or_view_present or (map.x.isView() or map.x.isNormalQuaternion()) or (map.y.isView() or map.y.isNormalQuaternion()) or (map.z.isView() or map.z.isNormalQuaternion()) or (map.w.isView() or map.w.isNormalQuaternion());
                 // zig fmt: off
 
-                gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_map_output[semantic_outputs], map);
+                gfx_queue.add(p3d, &p3d.rasterizer.shader_output_map_output[semantic_outputs], map);
                 semantic_outputs += 1;
             }
 
-            gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_map_total, .init(@intCast(semantic_outputs)));
-            gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_attribute_clock, attribute_clock);
-            gfx_queue.add(internal_regs, &internal_regs.rasterizer.shader_output_attribute_mode, .{
-                .use_texture_coordinates = attribute_clock.texture_coordinates_0_present or attribute_clock.texture_coordinates_1_present or attribute_clock.texture_coordinates_2_present or attribute_clock.texture_coordinates_0_w_present,
+            gfx_queue.add(p3d, &p3d.rasterizer.shader_output_map_total, .init(@intCast(semantic_outputs)));
+            gfx_queue.add(p3d, &p3d.rasterizer.shader_output_attribute_clock, attribute_clock);
+            gfx_queue.add(p3d, &p3d.rasterizer.shader_output_attribute_mode, .{
+                .use_texture_coordinates = (attribute_clock.texture_coordinates_present.raw != 0) or attribute_clock.texture_coordinates_0_w_present,
             });
         }
 
@@ -144,10 +146,10 @@ pub const Graphics = struct {
 
             gfx.vertex_attributes_len = vtx_input_layout.buffers_len;
 
-            gfx_queue.addIncremental(internal_regs, .{
-                &internal_regs.geometry_pipeline.attribute_buffer_base,
-                &internal_regs.geometry_pipeline.attribute_config.low,
-                &internal_regs.geometry_pipeline.attribute_config.high,
+            gfx_queue.addIncremental(p3d, .{
+                &p3d.geometry_pipeline.attributes.base,
+                &p3d.geometry_pipeline.attributes.config.low,
+                &p3d.geometry_pipeline.attributes.config.high,
             }, .{
                 .fromPhysical(backend.global_attribute_buffer_base),
                 vtx_input_layout.config.low,
@@ -157,18 +159,18 @@ pub const Graphics = struct {
             for (0..vtx_input_layout.buffers_len) |i| {
                 gfx.vertex_attribute_strides[i] = vtx_input_layout.buffer_config[i].high.bytes_per_vertex;
 
-                gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer[i].config, vtx_input_layout.buffer_config[i]);
+                gfx_queue.add(p3d, &p3d.geometry_pipeline.attributes.vertex_buffers[i].config, vtx_input_layout.buffer_config[i]);
             }
             
-            gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.vertex_shader_input_attributes, .init(vtx_input_layout.config.high.attributes_end));
+            gfx_queue.add(p3d, &p3d.geometry_pipeline.vertex_shader_input_attributes, .init(vtx_input_layout.config.high.attributes_end));
 
-            gfx_queue.add(internal_regs, &internal_regs.vertex_shader.input_buffer_config, .{
+            gfx_queue.add(p3d, &p3d.vertex_shader.input_buffer_config, .{
                 .num_input_attributes = (vtx_input_layout.config.high.attributes_end),
                 .enabled_for_vertex_0 = true,
                 .enabled_for_vertex_1 = true,
             });
 
-            gfx_queue.add(internal_regs, &internal_regs.vertex_shader.attribute_permutation, vtx_input_layout.permutation);
+            gfx_queue.add(p3d, &p3d.vertex_shader.attribute_permutation, vtx_input_layout.permutation);
         }
 
         if(!dyn.primitive_topology) {
@@ -177,20 +179,20 @@ pub const Graphics = struct {
 
             gfx.misc.topology = native_topo;
 
-            gfx_queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{
+            gfx_queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{
                 .total_vertex_outputs = 0, // NOTE: Ignored by mask
                 // NOTE: Hah, another PICA200 classic, after debugging in azahar and in hardware it seems triangle lists
                 // are drawn with a `geometry` primitive topology, totally acceptable bro. Keep it up DMP
                 .topology = native_topo.indexedTopology(),
             }, 0b0010);
 
-            gfx_queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config, .{
+            gfx_queue.addMasked(p3d, &p3d.geometry_pipeline.config, .{
                 .geometry_shader_usage = .disabled, // NOTE: Ignored by mask
                 .drawing_triangles = native_topo == .triangle_list,
                 .use_reserved_geometry_subdivision = false, // NOTE: Ignored by mask
             }, 0b0010);
 
-            gfx_queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config_2, .{
+            gfx_queue.addMasked(p3d, &p3d.geometry_pipeline.config_2, .{
                 .drawing_triangles = native_topo == .triangle_list,
             }, 0b0010);
         }
@@ -206,14 +208,14 @@ pub const Graphics = struct {
             if(!dyn.cull_mode) {
                 gfx.misc.cull_mode_ccw = raster_state.cull_mode.native(.ccw);
 
-                gfx_queue.add(internal_regs, &internal_regs.rasterizer.faceculling_config, .init(raster_state.cull_mode.native(raster_state.front_face)));
+                gfx_queue.add(p3d, &p3d.rasterizer.cull_config, .init(raster_state.cull_mode.native(raster_state.front_face)));
             }
         } else if(!dyn.cull_mode) {
             gfx.misc.cull_mode_ccw = create_info.rasterization_state.?.cull_mode.native(.ccw);
         }
 
         if(!dyn.depth_mode) {
-            gfx_queue.add(internal_regs, &internal_regs.rasterizer.depth_map_mode, .init(create_info.rasterization_state.?.depth_mode.native()));
+            gfx_queue.add(p3d, &p3d.rasterizer.depth_map_mode, .init(create_info.rasterization_state.?.depth_mode.native()));
         }
 
         if(!dyn.viewport) {
@@ -221,11 +223,11 @@ pub const Graphics = struct {
             const flt_width: f32 = @floatFromInt(static_viewport.rect.extent.width);
             const flt_height: f32 = @floatFromInt(static_viewport.rect.extent.height);
 
-            gfx_queue.addIncremental(internal_regs, .{
-                &internal_regs.rasterizer.viewport_h_scale,
-                &internal_regs.rasterizer.viewport_h_step,
-                &internal_regs.rasterizer.viewport_v_scale,
-                &internal_regs.rasterizer.viewport_v_step,
+            gfx_queue.addIncremental(p3d, .{
+                &p3d.rasterizer.viewport_h_scale,
+                &p3d.rasterizer.viewport_h_step,
+                &p3d.rasterizer.viewport_v_scale,
+                &p3d.rasterizer.viewport_v_step,
             }, .{
                 .init(.of(flt_width / 2.0)),
                 .init(.of(2.0 / flt_width)),
@@ -233,7 +235,7 @@ pub const Graphics = struct {
                 .init(.of(2.0 / flt_height)),
             });
 
-            gfx_queue.add(internal_regs, &internal_regs.rasterizer.viewport_xy, .{ .x = static_viewport.rect.offset.x, .y = static_viewport.rect.offset.y });
+            gfx_queue.add(p3d, &p3d.rasterizer.viewport_xy, .{ static_viewport.rect.offset.x, static_viewport.rect.offset.y });
 
             gfx.depth_parameters.min_depth = static_viewport.min_depth;
             gfx.depth_parameters.max_depth = static_viewport.max_depth;
@@ -242,9 +244,9 @@ pub const Graphics = struct {
                 const depth_map_scale = (static_viewport.min_depth - static_viewport.max_depth); 
                 const depth_map_offset = static_viewport.min_depth + create_info.rasterization_state.?.depth_bias_constant;
 
-                gfx_queue.addIncremental(internal_regs, .{
-                    &internal_regs.rasterizer.depth_map_scale,
-                    &internal_regs.rasterizer.depth_map_offset,
+                gfx_queue.addIncremental(p3d, .{
+                    &p3d.rasterizer.depth_map_scale,
+                    &p3d.rasterizer.depth_map_bias,
                 }, .{
                     .init(.of(depth_map_scale)),
                     .init(.of(depth_map_offset)),
@@ -257,14 +259,10 @@ pub const Graphics = struct {
         if(!dyn.scissor) {
             const static_scissor = create_info.viewport_state.?.scissor.?;
             
-            gfx_queue.addIncremental(internal_regs, .{
-                &internal_regs.rasterizer.scissor_config,
-                &internal_regs.rasterizer.scissor_start,
-                &internal_regs.rasterizer.scissor_end,
-            }, .{
-                .init(static_scissor.mode.native()),
-                @bitCast(static_scissor.rect.offset),
-                .{ .x = static_scissor.rect.offset.x + static_scissor.rect.extent.width, .y = static_scissor.rect.offset.y + static_scissor.rect.extent.height },
+            gfx_queue.add(p3d, &p3d.rasterizer.scissor, .{
+                .mode = .init(static_scissor.mode.native()),
+                .start = @bitCast(static_scissor.rect.offset),
+                .end = .{ static_scissor.rect.offset.x + static_scissor.rect.extent.width - 1, static_scissor.rect.offset.y + static_scissor.rect.extent.height - 1 }
             });
         }
 
@@ -272,46 +270,46 @@ pub const Graphics = struct {
             const color_blend_state = create_info.color_blend_state.?;
 
             if(color_blend_state.logic_op_enable) {
-                gfx_queue.add(internal_regs, &internal_regs.framebuffer.color_operation, .{
+                gfx_queue.add(p3d, &p3d.framebuffer.color_operation, .{
                     .fragment_operation = .default,
                     .mode = .logic,
                 });
 
                 if(!dyn.logic_op) {
-                    gfx_queue.add(internal_regs, &internal_regs.framebuffer.logic_operation, .init(color_blend_state.logic_op.native()));
+                    gfx_queue.add(p3d, &p3d.framebuffer.logic_operation, .init(color_blend_state.logic_op.native()));
                 }
             } else {
-                gfx_queue.add(internal_regs, &internal_regs.framebuffer.color_operation, .{
+                gfx_queue.add(p3d, &p3d.framebuffer.color_operation, .{
                     .fragment_operation = .default,
                     .mode = .blend,
                 });
 
                 if(!dyn.blend_equation) {
-                    gfx_queue.add(internal_regs, &internal_regs.framebuffer.blend_config, color_blend_state.attachment.blend_equation.native());
+                    gfx_queue.add(p3d, &p3d.framebuffer.blend_config, color_blend_state.attachment.blend_equation.native());
                 } 
 
                 if(!dyn.blend_constants) {
-                    gfx_queue.add(internal_regs, &internal_regs.framebuffer.blend_color, color_blend_state.blend_constants);
+                    gfx_queue.add(p3d, &p3d.framebuffer.blend_color, color_blend_state.blend_constants);
                 }
             }
         } else {
             if(!dyn.logic_op) {
-                gfx_queue.add(internal_regs, &internal_regs.framebuffer.logic_operation, .init(create_info.color_blend_state.?.logic_op.native()));
+                gfx_queue.add(p3d, &p3d.framebuffer.logic_operation, .init(create_info.color_blend_state.?.logic_op.native()));
             }
 
             if(!dyn.blend_equation) {
-                gfx_queue.add(internal_regs, &internal_regs.framebuffer.blend_config, create_info.color_blend_state.?.attachment.blend_equation.native());
+                gfx_queue.add(p3d, &p3d.framebuffer.blend_config, create_info.color_blend_state.?.attachment.blend_equation.native());
             } 
 
             if(!dyn.blend_constants) {
-                gfx_queue.add(internal_regs, &internal_regs.framebuffer.blend_color, create_info.color_blend_state.?.blend_constants);
+                gfx_queue.add(p3d, &p3d.framebuffer.blend_color, create_info.color_blend_state.?.blend_constants);
             }
         }
 
         if(!dyn.alpha_test_enable and !dyn.alpha_test_compare_op and !dyn.alpha_test_reference) {
             const alpha_depth_stencil_state = create_info.alpha_depth_stencil_state.?;
 
-            gfx_queue.add(internal_regs, &internal_regs.framebuffer.alpha_test, .{
+            gfx_queue.add(p3d, &p3d.framebuffer.alpha_test, .{
                 .enable = alpha_depth_stencil_state.alpha_test_enable,
                 .op = alpha_depth_stencil_state.alpha_test_compare_op.native(),
                 .reference = alpha_depth_stencil_state.alpha_test_reference,
@@ -328,7 +326,7 @@ pub const Graphics = struct {
             const alpha_depth_stencil_state = create_info.alpha_depth_stencil_state.?;
 
             if(!alpha_depth_stencil_state.stencil_test_enable) {
-                gfx_queue.add(internal_regs, &internal_regs.framebuffer.stencil_test, .{
+                gfx_queue.add(p3d, &p3d.framebuffer.stencil_test, .{
                     .enable = false,
                     .op = .never,
                     .compare_mask = 0x00,
@@ -336,7 +334,7 @@ pub const Graphics = struct {
                     .write_mask = 0x00,
                 });
             } else if(!dyn.stencil_test_operation and !dyn.stencil_compare_mask and !dyn.stencil_reference and !dyn.stencil_write_mask) {
-                gfx_queue.add(internal_regs, &internal_regs.framebuffer.stencil_test, .{
+                gfx_queue.add(p3d, &p3d.framebuffer.stencil_test, .{
                     .enable = true,
                     .op = alpha_depth_stencil_state.back_front.compare_op.native(),
                     .compare_mask = alpha_depth_stencil_state.back_front.compare_mask,
@@ -362,7 +360,7 @@ pub const Graphics = struct {
 
             gfx.misc.stencil_test_op = alpha_depth_stencil_state.back_front.compare_op.native();
 
-            gfx_queue.add(internal_regs, &internal_regs.framebuffer.stencil_operation, .{
+            gfx_queue.add(p3d, &p3d.framebuffer.stencil_operation, .{
                 .fail_op = alpha_depth_stencil_state.back_front.fail_op.native(),
                 .depth_fail_op = alpha_depth_stencil_state.back_front.depth_fail_op.native(),
                 .pass_op = alpha_depth_stencil_state.back_front.pass_op.native(),
@@ -381,7 +379,7 @@ pub const Graphics = struct {
             gfx.misc.color_a_enable = color_blend_state.attachment.color_write_mask.a_enable;
 
             if(!alpha_depth_stencil_state.depth_test_enable) {
-                gfx_queue.add(internal_regs, &internal_regs.framebuffer.depth_color_mask, .{
+                gfx_queue.add(p3d, &p3d.framebuffer.depth_color_mask, .{
                     .enable_depth_test = false,
                     .depth_op = .never,
                     .r_write_enable = color_blend_state.attachment.color_write_mask.r_enable,
@@ -391,7 +389,7 @@ pub const Graphics = struct {
                     .depth_write_enable = false,
                 });
             } else if(!dyn.depth_compare_op and !dyn.depth_write_enable) {
-                gfx_queue.add(internal_regs, &internal_regs.framebuffer.depth_color_mask, .{
+                gfx_queue.add(p3d, &p3d.framebuffer.depth_color_mask, .{
                     .enable_depth_test = true,
                     .depth_op = alpha_depth_stencil_state.depth_compare_op.native(),
                     .r_write_enable = color_blend_state.attachment.color_write_mask.r_enable,
@@ -429,33 +427,23 @@ pub const Graphics = struct {
             const combiners = texture_combiner_state.texture_combiners[0..texture_combiner_state.texture_combiners_len];
             const combiner_buffer_sources = texture_combiner_state.texture_combiner_buffer_sources[0..texture_combiner_state.texture_combiner_buffer_sources_len];
 
-            const native_combiners: TextureCombinerState = .compile(std.mem.zeroes(@FieldType(TextureCombinerState, "update_buffer")), combiners, combiner_buffer_sources);
+            const native_combiners: TextureCombinerState = .compile(combiners, combiner_buffer_sources);
 
             // TODO: Merge / Investigate z_flip. shading_density_source and fog mode
-            gfx_queue.add(internal_regs, &internal_regs.texture_combiners.update_buffer, native_combiners.update_buffer);
+            gfx_queue.add(p3d, &p3d.texture_combiners.config, native_combiners.config);
 
             inline for (0..6) |i| {
-                const current_combiner_reg = switch (i) {
-                    0 => &internal_regs.texture_combiners.texture_combiner_0,
-                    1 => &internal_regs.texture_combiners.texture_combiner_1,
-                    2 => &internal_regs.texture_combiners.texture_combiner_2,
-                    3 => &internal_regs.texture_combiners.texture_combiner_3,
-                    4 => &internal_regs.texture_combiners.texture_combiner_4,
-                    5 => &internal_regs.texture_combiners.texture_combiner_5,
-                    else => unreachable,
-                };
+                const current_combiner_unit = &@field(p3d.texture_combiners, std.fmt.comptimePrint("{}", .{i}));
 
-                gfx_queue.add(internal_regs, current_combiner_reg, native_combiners.combiner[i]);
+                gfx_queue.add(p3d, current_combiner_unit, native_combiners.units[i]);
             }
         }
 
         if(!dyn.texture_config) {
             const texture_sampling_state = create_info.texture_sampling_state.?;
 
-            gfx_queue.add(internal_regs, &internal_regs.texturing.config, .{
-                .texture_0_enabled = texture_sampling_state.texture_enable[0],
-                .texture_1_enabled = texture_sampling_state.texture_enable[1],
-                .texture_2_enabled = texture_sampling_state.texture_enable[2],
+            gfx_queue.add(p3d, &p3d.texturing.config, .{
+                .texture_enabled = .init(.{ texture_sampling_state.texture_enable[0], texture_sampling_state.texture_enable[1], texture_sampling_state.texture_enable[2] }),
                 .texture_3_coordinates = texture_sampling_state.texture_3_coordinates.nativeTexture3(),
                 .texture_3_enabled = texture_sampling_state.texture_enable[2],
                 .texture_2_coordinates = texture_sampling_state.texture_3_coordinates.nativeTexture2(),
@@ -465,38 +453,33 @@ pub const Graphics = struct {
 
         const rendering_info = create_info.rendering_info;
 
-        gfx_queue.addIncremental(internal_regs, .{
-            &internal_regs.framebuffer.color_buffer_reading,
-            &internal_regs.framebuffer.color_buffer_writing,
-            &internal_regs.framebuffer.depth_buffer_reading,
-            &internal_regs.framebuffer.depth_buffer_writing,
-            &internal_regs.framebuffer.depth_buffer_format,
-            &internal_regs.framebuffer.color_buffer_format,
+        gfx_queue.addIncremental(p3d, .{
+            &p3d.framebuffer.color_read,
+            &p3d.framebuffer.color_write,
+            &p3d.framebuffer.depth_read,
+            &p3d.framebuffer.depth_write,
+            &p3d.framebuffer.depth_format,
+            &p3d.framebuffer.color_format,
         }, .{
-            if(rendering_info.color_attachment_format != .undefined) .enable else .disable,
-            if(rendering_info.color_attachment_format != .undefined) .enable else .disable,
-            .{
-                .depth_enable = rendering_info.depth_stencil_attachment_format != .undefined,
-                .stencil_enable = false, // TODO: stencil test reading enable
-            },
-            .{
-                .depth_enable = rendering_info.depth_stencil_attachment_format != .undefined,
-                .stencil_enable = false, // TODO: stencil test writing enable
-            },
+            .init(if(rendering_info.color_attachment_format != .undefined) .all else .disable),
+            .init(if(rendering_info.color_attachment_format != .undefined) .all else .disable),
+            // TODO: Proper stencil
+            .init(if(rendering_info.depth_stencil_attachment_format != .undefined) .depth else .disable),
+            .init(if(rendering_info.depth_stencil_attachment_format != .undefined) .depth else .disable),
             .init(if(rendering_info.depth_stencil_attachment_format != .undefined) rendering_info.depth_stencil_attachment_format.nativeDepthStencilFormat() else .d16),
             .init(if(rendering_info.color_attachment_format != .undefined) rendering_info.color_attachment_format.nativeColorFormat() else .abgr8888),
         });
 
-        gfx_queue.add(internal_regs, &internal_regs.framebuffer.render_buffer_block_size, .{ .mode = .@"8x8" });
-        gfx_queue.add(internal_regs, &internal_regs.geometry_pipeline.start_draw_function, .drawing);
+        gfx_queue.add(p3d, &p3d.framebuffer.block_size, .init(.@"8x8"));
+        gfx_queue.add(p3d, &p3d.geometry_pipeline.start_draw_function, .init(.drawing));
 
-        gfx.cmd3d_state = if(gpa.remap(gfx.cmd3d_state, gfx_queue.current_index * @sizeOf(u32))) |remapped|
+        gfx.encoded_command_state = if(gpa.remap(gfx.encoded_command_state, gfx_queue.current_index * @sizeOf(u32))) |remapped|
             remapped
         else manual: {
             const new = try gpa.alignedAlloc(u32, .@"8", gfx_queue.current_index);
-            @memcpy(new, gfx.cmd3d_state[0..new.len]);
+            @memcpy(new, gfx.encoded_command_state[0..new.len]);
 
-            gpa.free(gfx.cmd3d_state);
+            gpa.free(gfx.encoded_command_state);
             break :manual new;
         };
 
@@ -504,7 +487,7 @@ pub const Graphics = struct {
     }
 
     pub fn deinit(gfx: *Graphics, gpa: std.mem.Allocator) void {
-        gpa.free(gfx.cmd3d_state);
+        gpa.free(gfx.encoded_command_state);
         gfx.* = undefined;
     }
 
@@ -616,7 +599,7 @@ pub const CompiledShaderInfo = struct {
     integer_constants: std.EnumArray(pica.shader.register.Integral.Integer, [4]i8),
 };
 
-pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, comptime shader: *pica.Registers.Internal.Shader, queue: *cmd3d.Queue) !CompiledShaderInfo {
+pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, comptime shader: *pica.Graphics.Shader, queue: *command.Queue) !CompiledShaderInfo {
     const requested_entrypoint_name = state.name[0..state.name_len];
     const parsed: zpsh.Parsed = .initBuffer(state.code[0..state.code_len]);
 
@@ -632,21 +615,21 @@ pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, c
         return error.ValidationFailed;
     };
 
-    queue.add(internal_regs, &shader.code_transfer_index, .init(0));
+    queue.add(p3d, &shader.code_transfer_index, .init(0));
     {
         var instructions_written: usize = 0;
 
         while (instructions_written < parsed.instructions.len) : (instructions_written += std.math.maxInt(u8)) {
-            queue.addConsecutive(internal_regs, &shader.code_transfer_data[0], parsed.instructions[instructions_written..]);
+            queue.addConsecutive(p3d, &shader.code_transfer_data[0], parsed.instructions[instructions_written..]);
         }
     }
-    queue.add(internal_regs, &shader.code_transfer_end, .init(.trigger));
+    queue.add(p3d, &shader.code_transfer_end, .init(.trigger));
 
-    queue.add(internal_regs, &shader.operand_descriptors_index, .init(0));
-    queue.addConsecutive(internal_regs, &shader.operand_descriptors_data[0], parsed.operand_descriptors);
+    queue.add(p3d, &shader.operand_descriptors_index, .init(0));
+    queue.addConsecutive(p3d, &shader.operand_descriptors_data[0], parsed.operand_descriptors);
 
-    queue.add(internal_regs, &shader.entrypoint, .initEntry(found_entrypoint.offset));
-    queue.add(internal_regs, &shader.bool_uniform, @bitCast(@as(u32, 0x7FFF0000) | @as(u16, @bitCast(found_entrypoint.boolean_constant_set.bits))));
+    queue.add(p3d, &shader.entrypoint, .initEntry(found_entrypoint.offset));
+    queue.add(p3d, &shader.bool_uniform, @bitCast(@as(u32, 0x7FFF0000) | @as(u16, @bitCast(found_entrypoint.boolean_constant_set.bits))));
 
     var int_constants: std.enums.EnumArray(pica.shader.register.Integral.Integer, [4]i8) = .initUndefined();
 
@@ -658,7 +641,7 @@ pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, c
             current_const += 1;
         }
 
-        queue.add(internal_regs, &shader.int_uniform, int_constants.values);
+        queue.add(p3d, &shader.int_uniform, int_constants.values);
     }
 
     {
@@ -668,13 +651,13 @@ pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, c
         var const_it = found_entrypoint.floating_constant_set.iterator();
         while (const_it.next()) |f| {
             if(last_const == null or (@intFromEnum(last_const.?) > @intFromEnum(f)) or (@intFromEnum(f) - @intFromEnum(last_const.?)) != 1) {
-                queue.add(internal_regs, &shader.float_uniform_index, .{
+                queue.add(p3d, &shader.float_uniform_index, .{
                     .index = f,
                     .mode = .f7_16,
                 });
             }
 
-            queue.add(internal_regs, &shader.float_uniform_data[0..3].*, found_entrypoint.floating_constants[current_const].data);
+            queue.add(p3d, &shader.float_uniform_data[0..3].*, found_entrypoint.floating_constants[current_const].data);
 
             current_const += 1;
             last_const = f;
@@ -682,7 +665,7 @@ pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, c
     }
 
     const outputs_minus_one: u4 = max_out: {
-        var out_mask: pica.Registers.Internal.Shader.OutputMask = .{};
+        var out_mask: pica.Graphics.Shader.OutputMask = .{};
         var outputs: usize = 0;
 
         // NOTE: We could use mask in bitSet and `count`, benchmark needed.
@@ -693,7 +676,7 @@ pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, c
             outputs += 1;
         }
 
-        queue.add(internal_regs, &shader.output_map_mask, out_mask);
+        queue.add(p3d, &shader.output_map_mask, out_mask);
 
         break :max_out @intCast(outputs - 1);
     };
@@ -722,8 +705,8 @@ const zitrus = @import("zitrus");
 const zpsh = zitrus.fmt.zpsh;
 
 const mango = zitrus.mango;
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
 
-const cmd3d = pica.cmd3d;
+const command = pica.command;
 
-const internal_regs = &zitrus.memory.arm11.gpu.internal;
+const p3d = &zitrus.memory.arm11.pica.p3d;

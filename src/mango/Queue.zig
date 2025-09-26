@@ -161,7 +161,7 @@ pub const Handle = enum(u32) {
         std.debug.assert(src_mip_width >= dst_mip_width and src_mip_height >= dst_mip_height); // Output must not be bigger than input.
 
         // Only allow downscale of the X or XY axes. Otherwise sizes must match (for simplicity, the hardware allows bigger inputs than outputs, does that have an use-case?).
-        const downscale: pica.Registers.MemoryCopy.Flags.Downscale = if (dst_mip_width < src_mip_width and dst_mip_height < src_mip_height) blk: {
+        const downscale: pica.MemoryCopy.Flags.Downscale = if (dst_mip_width < src_mip_width and dst_mip_height < src_mip_height) blk: {
             std.debug.assert(dst_mip_width == (src_mip_width >> 1) and dst_mip_height == (src_mip_height >> 1));
             break :blk .@"2x2";
         } else if (dst_mip_width < src_mip_width) blk: {
@@ -360,9 +360,9 @@ pub const Handle = enum(u32) {
         const bound_virtual = b_image.memory_info.boundVirtualAddress();
 
         const clear_slice, const clear_value: GspGpu.GxCommand.MemoryFill.Unit.Value = switch (b_image.info.format) {
-            .d16_unorm => .{ bound_virtual[0..(b_image.info.width() * b_image.info.height() * @sizeOf(u16))], .fill16(@intFromFloat(depth * @sizeOf(u16))) },
-            .d24_unorm => .{ bound_virtual[0..(b_image.info.width() * b_image.info.height() * 3)], .fill24(@intFromFloat(depth * @sizeOf(u24))) },
-            .d24_unorm_s8_uint => .{ bound_virtual[0..(b_image.info.width() * b_image.info.height() * @sizeOf(u32))], .fill32(@as(u32, @intFromFloat(depth * @sizeOf(u24))) | (@as(u32, stencil) << 24)) },
+            .d16_unorm => .{ bound_virtual[0..(b_image.info.width() * b_image.info.height() * @sizeOf(u16))], .fill16(@intFromFloat(@trunc(depth * std.math.maxInt(u16)))) },
+            .d24_unorm => .{ bound_virtual[0..(b_image.info.width() * b_image.info.height() * 3)], .fill24(@intFromFloat(@trunc(depth * std.math.maxInt(u24)))) },
+            .d24_unorm_s8_uint => .{ bound_virtual[0..(b_image.info.width() * b_image.info.height() * @sizeOf(u32))], .fill32(@as(u32, @intFromFloat(@trunc(depth * std.math.maxInt(u24)))) | (@as(u32, stencil) << 24)) },
             else => unreachable,
         };
 
@@ -435,7 +435,7 @@ pub const TransferItem = struct {
             transfer: packed struct(u30) {
                 src_fmt: pica.ColorFormat,
                 dst_fmt: pica.ColorFormat,
-                downscale: pica.Registers.MemoryCopy.Flags.Downscale,
+                downscale: pica.MemoryCopy.Flags.Downscale,
                 _: u22 = 0,
             },
         },
@@ -567,4 +567,4 @@ const horizon = zitrus.horizon;
 const GspGpu = horizon.services.GspGpu;
 
 const mango = zitrus.mango;
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;

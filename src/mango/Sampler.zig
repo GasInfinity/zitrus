@@ -59,8 +59,6 @@ const Sampler = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
 const mango = zitrus.mango;
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
 
-const cmd3d = pica.cmd3d;
-
-const PhysicalAddress = zitrus.PhysicalAddress;
+const PhysicalAddress = zitrus.hardware.PhysicalAddress;

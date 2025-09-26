@@ -63,7 +63,7 @@ pub const TextureUnitState = struct {
     };
 
     info: [3]ImageInfo,
-    address: [3]zitrus.PhysicalAddress,
+    address: [3]PhysicalAddress,
     sampler: [3]backend.Sampler,
 };
 
@@ -73,7 +73,7 @@ pub const empty: RenderingState = .{
     .vertex_buffers_offset = undefined,
     .color_attachment = undefined,
     .depth_stencil_attachment = undefined,
-    .dimensions = undefined,
+    .framebuffer_dimensions = undefined,
     .uniform_state = undefined,
     .texture_unit_state = undefined,
     .dirty = .{},
@@ -81,18 +81,18 @@ pub const empty: RenderingState = .{
 
 misc: Misc,
 index_buffer_offset: u28,
-vertex_buffers_offset: [12]u32,
+vertex_buffers_offset: [12]u28,
 
 color_attachment: PhysicalAddress,
 depth_stencil_attachment: PhysicalAddress,
-dimensions: pica.U16x2 = undefined,
+framebuffer_dimensions: [2]u16 = undefined,
 
 uniform_state: UniformState,
 texture_unit_state: TextureUnitState,
 dirty: Dirty,
 
 pub fn beginRendering(rnd: *RenderingState, rendering_info: mango.RenderingInfo) void {
-    const color_width: u16, const color_height: u16, const color_physical_address: zitrus.PhysicalAddress = if (rendering_info.color_attachment != .null) info: {
+    const color_width: u16, const color_height: u16, const color_physical_address: PhysicalAddress = if (rendering_info.color_attachment != .null) info: {
         @branchHint(.likely);
         const color_attachment: backend.ImageView = .fromHandle(rendering_info.color_attachment);
         const color_rendering_info = color_attachment.getRenderingInfo(.color);
@@ -100,7 +100,7 @@ pub fn beginRendering(rnd: *RenderingState, rendering_info: mango.RenderingInfo)
         break :info .{ color_rendering_info.width, color_rendering_info.height, color_rendering_info.address };
     } else .{ 0, 0, .fromAddress(0) };
 
-    const depth_stencil_width: u16, const depth_stencil_height: u16, const depth_stencil_physical_address: zitrus.PhysicalAddress = if (rendering_info.depth_stencil_attachment != .null) info: {
+    const depth_stencil_width: u16, const depth_stencil_height: u16, const depth_stencil_physical_address: PhysicalAddress = if (rendering_info.depth_stencil_attachment != .null) info: {
         const depth_stencil_attachment: backend.ImageView = .fromHandle(rendering_info.depth_stencil_attachment);
         const depth_stencil_rendering_info = depth_stencil_attachment.getRenderingInfo(.depth_stencil);
 
@@ -113,10 +113,10 @@ pub fn beginRendering(rnd: *RenderingState, rendering_info: mango.RenderingInfo)
 
     rnd.color_attachment = color_physical_address;
     rnd.depth_stencil_attachment = depth_stencil_physical_address;
-    rnd.dimensions = if (color_physical_address != .zero)
-        .{ .x = color_width, .y = color_height }
+    rnd.framebuffer_dimensions = if (color_physical_address != .zero)
+        .{ color_width, color_height }
     else
-        .{ .x = depth_stencil_width, .y = depth_stencil_height };
+        .{ depth_stencil_width, depth_stencil_height };
 
     rnd.dirty.rendering_data = true;
 }
@@ -134,7 +134,7 @@ pub fn bindVertexBuffers(rnd: *RenderingState, first_binding: u32, binding_count
         return;
     }
 
-    std.debug.assert(first_binding < internal_regs.geometry_pipeline.attribute_buffer.len and first_binding + binding_count <= internal_regs.geometry_pipeline.attribute_buffer.len);
+    std.debug.assert(first_binding < p3d.geometry_pipeline.attributes.vertex_buffers.len and first_binding + binding_count <= p3d.geometry_pipeline.attributes.vertex_buffers.len);
     std.debug.assertReadable(std.mem.sliceAsBytes(buffers[0..binding_count]));
     std.debug.assertReadable(std.mem.sliceAsBytes(offsets[0..binding_count]));
 
@@ -149,7 +149,7 @@ pub fn bindVertexBuffers(rnd: *RenderingState, first_binding: u32, binding_count
         const buffer_physical_address = buffer.memory_info.boundPhysicalAddress();
         const bound_vertex_offset = (@intFromEnum(buffer_physical_address) - @intFromEnum(backend.global_attribute_buffer_base)) + offset;
 
-        rnd.vertex_buffers_offset[current_binding] = bound_vertex_offset;
+        rnd.vertex_buffers_offset[current_binding] = @intCast(bound_vertex_offset);
     }
 
     rnd.misc.vertex_buffers_dirty_start, rnd.misc.vertex_buffers_dirty_end = if (rnd.dirty.vertex_buffers)
@@ -215,35 +215,35 @@ pub fn bindCombinedImageSamplers(rnd: *RenderingState, first_combined: u32, comb
     }
 }
 
-pub fn emitDirty(rnd: *RenderingState, queue: *cmd3d.Queue) void {
+pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
     const dirty = &rnd.dirty;
 
     if (dirty.isAnyUniformsDirty()) {
-        queue.add(internal_regs, &internal_regs.geometry_pipeline.start_draw_function, .config);
-        defer queue.add(internal_regs, &internal_regs.geometry_pipeline.start_draw_function, .drawing);
+        queue.add(p3d, &p3d.geometry_pipeline.start_draw_function, .init(.config));
+        defer queue.add(p3d, &p3d.geometry_pipeline.start_draw_function, .init(.drawing));
 
         if (dirty.isUniformsDirty(.vertex, .bool)) {
-            queue.add(internal_regs, &internal_regs.vertex_shader.bool_uniform, @bitCast(@as(u32, 0x7FFF0000) | @as(u16, @bitCast(rnd.uniform_state.boolean_constants.get(.vertex).bits))));
+            queue.add(p3d, &p3d.vertex_shader.bool_uniform, @bitCast(@as(u32, 0x7FFF0000) | @as(u16, @bitCast(rnd.uniform_state.boolean_constants.get(.vertex).bits))));
         }
 
         if (dirty.isUniformsDirty(.geometry, .bool)) {
-            queue.add(internal_regs, &internal_regs.geometry_shader.bool_uniform, @bitCast(@as(u32, 0x7FFF0000) | @as(u16, @bitCast(rnd.uniform_state.boolean_constants.get(.geometry).bits))));
+            queue.add(p3d, &p3d.geometry_shader.bool_uniform, @bitCast(@as(u32, 0x7FFF0000) | @as(u16, @bitCast(rnd.uniform_state.boolean_constants.get(.geometry).bits))));
         }
 
         if (dirty.isUniformsDirty(.vertex, .int)) {
-            queue.add(internal_regs, &internal_regs.vertex_shader.int_uniform[0..4].*, rnd.uniform_state.integer_constants.get(.vertex).values);
+            queue.add(p3d, &p3d.vertex_shader.int_uniform[0..4].*, rnd.uniform_state.integer_constants.get(.vertex).values);
         }
 
         if (dirty.isUniformsDirty(.geometry, .int)) {
-            queue.add(internal_regs, &internal_regs.geometry_shader.int_uniform[0..4].*, rnd.uniform_state.integer_constants.get(.geometry).values);
+            queue.add(p3d, &p3d.geometry_shader.int_uniform[0..4].*, rnd.uniform_state.integer_constants.get(.geometry).values);
         }
 
         if (dirty.isUniformsDirty(.vertex, .float)) {
-            emitFloatUniforms(rnd.uniform_state.floating_dirty.get(.vertex), rnd.uniform_state.floating_constants.get(.vertex), &internal_regs.vertex_shader, queue);
+            emitFloatUniforms(rnd.uniform_state.floating_dirty.get(.vertex), rnd.uniform_state.floating_constants.get(.vertex), &p3d.vertex_shader, queue);
         }
 
         if (dirty.isUniformsDirty(.geometry, .float)) {
-            emitFloatUniforms(rnd.uniform_state.floating_dirty.get(.geometry), rnd.uniform_state.floating_constants.get(.geometry), &internal_regs.geometry_shader, queue);
+            emitFloatUniforms(rnd.uniform_state.floating_dirty.get(.geometry), rnd.uniform_state.floating_constants.get(.geometry), &p3d.geometry_shader, queue);
         }
     }
 
@@ -256,15 +256,15 @@ pub fn emitDirty(rnd: *RenderingState, queue: *cmd3d.Queue) void {
                 const unit_address = rnd.texture_unit_state.address[unit];
                 const unit_sampler = rnd.texture_unit_state.sampler[unit];
 
-                queue.addIncremental(internal_regs, .{
-                    &internal_regs.texturing.texture_0.border_color,
-                    &internal_regs.texturing.texture_0.dimensions,
-                    &internal_regs.texturing.texture_0.parameters,
-                    &internal_regs.texturing.texture_0.lod,
-                    &internal_regs.texturing.texture_0.address[0],
+                queue.addIncremental(p3d, .{
+                    &p3d.texturing.@"0".border_color,
+                    &p3d.texturing.@"0".dimensions,
+                    &p3d.texturing.@"0".parameters,
+                    &p3d.texturing.@"0".lod,
+                    &p3d.texturing.@"0".address[0],
                 }, .{
                     .{ unit_sampler.data.border_color_r, unit_sampler.data.border_color_g, unit_sampler.data.border_color_b, unit_sampler.data.border_color_a },
-                    .{ .width = unit_info.width, .height = unit_info.height },
+                    .{ unit_info.width, unit_info.height },
                     .{
                         .mag_filter = unit_sampler.data.mag_filter,
                         .min_filter = unit_sampler.data.min_filter,
@@ -283,12 +283,12 @@ pub fn emitDirty(rnd: *RenderingState, queue: *cmd3d.Queue) void {
                     .fromPhysical(unit_address),
                 });
 
-                queue.add(internal_regs, &internal_regs.texturing.texture_0.format, .init(unit_info.format));
+                queue.add(p3d, &p3d.texturing.@"0".format, .init(unit_info.format));
             },
             1, 2 => {
                 const unit_reg = switch (unit) {
-                    1 => &internal_regs.texturing.texture_1,
-                    2 => &internal_regs.texturing.texture_2,
+                    1 => &p3d.texturing.@"1",
+                    2 => &p3d.texturing.@"2",
                     else => unreachable,
                 };
 
@@ -296,7 +296,7 @@ pub fn emitDirty(rnd: *RenderingState, queue: *cmd3d.Queue) void {
                 const unit_address = rnd.texture_unit_state.address[unit];
                 const unit_sampler = rnd.texture_unit_state.sampler[unit];
 
-                queue.addIncremental(internal_regs, .{
+                queue.addIncremental(p3d, .{
                     &unit_reg.border_color,
                     &unit_reg.dimensions,
                     &unit_reg.parameters,
@@ -305,7 +305,7 @@ pub fn emitDirty(rnd: *RenderingState, queue: *cmd3d.Queue) void {
                     &unit_reg.format,
                 }, .{
                     .{ unit_sampler.data.border_color_r, unit_sampler.data.border_color_g, unit_sampler.data.border_color_b, unit_sampler.data.border_color_a },
-                    .{ .width = unit_info.width, .height = unit_info.height },
+                    .{ unit_info.width, unit_info.height },
                     .{
                         .mag_filter = unit_sampler.data.mag_filter,
                         .min_filter = unit_sampler.data.min_filter,
@@ -328,36 +328,33 @@ pub fn emitDirty(rnd: *RenderingState, queue: *cmd3d.Queue) void {
             else => unreachable,
         };
 
-        queue.addMasked(internal_regs, &internal_regs.texturing.config, .{
-            // undefined due to mask
-            .texture_0_enabled = undefined,
-            .texture_1_enabled = undefined,
-            .texture_2_enabled = undefined,
-            .texture_3_coordinates = undefined,
-            .texture_3_enabled = undefined,
-            .texture_2_coordinates = undefined,
-            .clear_texture_cache = true,
+        queue.addMasked(p3d, &p3d.texturing.config, .{
+            .texture_enabled = .splat(false),
+            .texture_3_coordinates = .@"0",
+            .texture_3_enabled = false,
+            .texture_2_coordinates = .@"1",
+            .clear_texture_cache = true, // NOTE: Not affected by the mask
         }, 0b0100);
     }
 
     if (dirty.vertex_buffers) {
         for (rnd.misc.vertex_buffers_dirty_start..rnd.misc.vertex_buffers_dirty_end) |current_binding| {
-            queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer[current_binding].offset, rnd.vertex_buffers_offset[current_binding]);
+            queue.add(p3d, &p3d.geometry_pipeline.attributes.vertex_buffers[current_binding].offset, .init(rnd.vertex_buffers_offset[current_binding]));
         }
     }
 
     if (dirty.rendering_data) {
-        queue.add(internal_regs, &internal_regs.framebuffer.render_buffer_invalidate, .init(.trigger));
-        queue.addIncremental(internal_regs, .{
-            &internal_regs.framebuffer.depth_buffer_location,
-            &internal_regs.framebuffer.color_buffer_location,
-            &internal_regs.framebuffer.render_buffer_dimensions,
+        queue.add(p3d, &p3d.framebuffer.invalidate, .init(.trigger));
+        queue.addIncremental(p3d, .{
+            &p3d.framebuffer.depth_location,
+            &p3d.framebuffer.color_location,
+            &p3d.framebuffer.dimensions,
         }, .{
             .fromPhysical(rnd.depth_stencil_attachment),
             .fromPhysical(rnd.color_attachment),
             .{
-                .width = @intCast(rnd.dimensions.x),
-                .height_end = @intCast(rnd.dimensions.y - 1),
+                .width = @intCast(rnd.framebuffer_dimensions[0]),
+                .height_end = @intCast(rnd.framebuffer_dimensions[1] - 1),
                 // TODO: Expose a flag for flipping?
                 .flip_vertically = true,
             },
@@ -367,19 +364,19 @@ pub fn emitDirty(rnd: *RenderingState, queue: *cmd3d.Queue) void {
     dirty.* = .{};
 }
 
-fn emitFloatUniforms(flt_dirty: std.EnumSet(pica.shader.register.Source.Constant), flt_constants: std.EnumArray(pica.shader.register.Source.Constant, [4]f32), comptime shader: *pica.Registers.Internal.Shader, queue: *cmd3d.Queue) void {
+fn emitFloatUniforms(flt_dirty: std.EnumSet(pica.shader.register.Source.Constant), flt_constants: std.EnumArray(pica.shader.register.Source.Constant, [4]f32), comptime shader: *pica.Graphics.Shader, queue: *command.Queue) void {
     var last_const: ?pica.shader.register.Source.Constant = null;
 
     var it = flt_dirty.iterator();
     while (it.next()) |f| {
         if (last_const == null or (@intFromEnum(last_const.?) > @intFromEnum(f)) or (@intFromEnum(f) - @intFromEnum(last_const.?)) != 1) {
-            queue.add(internal_regs, &shader.float_uniform_index, .{
+            queue.add(p3d, &shader.float_uniform_index, .{
                 .index = f,
                 .mode = .f8_23,
             });
         }
 
-        queue.add(internal_regs, &shader.float_uniform_data[0..4].*, @bitCast(flt_constants.get(f)));
+        queue.add(p3d, &shader.float_uniform_data[0..4].*, @bitCast(flt_constants.get(f)));
         last_const = f;
     }
 }
@@ -391,10 +388,10 @@ const backend = @import("backend.zig");
 const std = @import("std");
 const zitrus = @import("zitrus");
 const mango = zitrus.mango;
-const pica = zitrus.pica;
 
-const cmd3d = pica.cmd3d;
+const pica = zitrus.hardware.pica;
+const PhysicalAddress = zitrus.hardware.PhysicalAddress;
 
-const PhysicalAddress = zitrus.PhysicalAddress;
+const command = pica.command;
 
-const internal_regs = &zitrus.memory.arm11.gpu.internal;
+const p3d = &zitrus.memory.arm11.pica.p3d;

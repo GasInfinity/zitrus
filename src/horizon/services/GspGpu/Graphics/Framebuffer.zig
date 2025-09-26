@@ -80,7 +80,7 @@ const Framebuffer = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
 
 const horizon = zitrus.horizon;
 

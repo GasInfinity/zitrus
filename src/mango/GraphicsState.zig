@@ -25,14 +25,14 @@ pub const DepthParameters = struct {
     constant: f32 = 0,
 };
 
-pub const Viewport = packed struct {
+pub const Viewport = packed struct(u40) {
     x: u10,
     y: u10,
     width_minus_one: u10,
     height_minus_one: u10,
 };
 
-pub const Scissor = packed struct {
+pub const Scissor = packed struct(u40) {
     x: u10,
     y: u10,
     end_x: u10,
@@ -61,16 +61,15 @@ pub const Misc = packed struct {
     alpha_test_op: pica.CompareOperation,
     alpha_test_reference: u8,
 
-    texture_0_enable: bool,
-    texture_1_enable: bool,
-    texture_2_enable: bool,
-    texture_3_enable: bool,
+    texture_enable: hardware.BitpackedArray(bool, 4),
 
     texture_2_coordinates: pica.TextureUnitTexture2Coordinates,
     texture_3_coordinates: pica.TextureUnitTexture3Coordinates,
 };
 
 pub const Stencil = struct {
+    pub const empty: Stencil = .{ .state = std.mem.zeroes(State), .compare_mask = undefined, .write_mask = undefined, .reference = undefined };
+
     pub const State = packed struct {
         enable: bool,
         op: pica.CompareOperation,
@@ -85,33 +84,37 @@ pub const Stencil = struct {
     reference: u8,
 };
 
-const GpuBlendConfig = pica.Registers.Internal.Framebuffer.BlendConfig;
+const GpuBlendConfig = pica.Graphics.Framebuffer.BlendConfig;
 
 pub const empty: GraphicsState = .{
-    .misc = undefined,
-    .stencil = undefined,
+    .misc = std.mem.zeroes(Misc),
+    .stencil = .empty,
+    // NOTE: Always modified as a whole, can be `undefined`.
     .blend_config = undefined,
     .blend_constants = undefined,
     .depth_map_parameters = undefined,
+    // NOTE: Always modified as a whole, can be `undefined`.
     .viewport = undefined,
+    // NOTE: Always modified as a whole, can be `undefined`.
     .scissor = undefined,
     .combiners = undefined,
+    // NOTE: Always modified as a whole, can be `undefined`.
     .vtx_input = undefined,
     .dirty = .{},
 };
 
-misc: Misc = undefined,
+misc: Misc,
 stencil: Stencil = undefined,
+/// Always modify this as a whole or change `empty`
 blend_config: GpuBlendConfig = undefined,
 blend_constants: [4]u8 = undefined,
 depth_map_parameters: DepthParameters = undefined,
+/// Always modify this as a whole or change `empty`
 viewport: Viewport = undefined,
+/// Always modify this as a whole or change `empty`
 scissor: Scissor = undefined,
-combiners: TextureCombinerState = .{
-    // NOTE: Zeroes as any undefined bits makes the value undefined.
-    .update_buffer = std.mem.zeroes(@FieldType(TextureCombinerState, "update_buffer")),
-    .combiner = undefined,
-},
+combiners: TextureCombinerState = .empty,
+/// Always modify this as a whole or change `empty`
 vtx_input: VertexInputLayout = undefined,
 dirty: Dirty = .{},
 
@@ -150,10 +153,12 @@ pub fn setViewport(state: *GraphicsState, viewport: mango.Viewport) void {
     const viewport_width_minus_one: u10 = @intCast(viewport.rect.extent.width - 1);
     const viewport_height_minus_one: u10 = @intCast(viewport.rect.extent.height - 1);
 
-    state.viewport.x = viewport_x;
-    state.viewport.y = viewport_y;
-    state.viewport.width_minus_one = viewport_width_minus_one;
-    state.viewport.height_minus_one = viewport_height_minus_one;
+    state.viewport = .{
+        .x = viewport_x,
+        .y = viewport_y,
+        .width_minus_one = viewport_width_minus_one,
+        .height_minus_one = viewport_height_minus_one,
+    };
     state.dirty.viewport_parameters = true;
 
     state.depth_map_parameters.min_depth = viewport.min_depth;
@@ -179,8 +184,8 @@ pub fn setScissor(state: *GraphicsState, scissor: mango.Scissor) void {
     state.dirty.scissor_parameters = true;
 }
 
-pub fn setTextureCombiners(state: *GraphicsState, combiners: []const mango.TextureCombiner, combiner_buffer_sources: []const mango.TextureCombiner.BufferSources) void {
-    state.combiners = .compile(state.combiners.update_buffer, combiners, combiner_buffer_sources);
+pub fn setTextureCombiners(state: *GraphicsState, combiners: []const mango.TextureCombinerUnit, combiner_buffer_sources: []const mango.TextureCombinerUnit.BufferSources) void {
+    state.combiners = .compile(combiners, combiner_buffer_sources);
     state.dirty.texture_update_buffer = true;
     state.dirty.texture_combiners = true;
 }
@@ -285,8 +290,9 @@ pub fn setStencilReference(state: *GraphicsState, reference: u8) void {
     state.dirty.stencil_test = true;
 }
 
+// TODO: This will be removed, textures will be enabled/disabled automatically with bindCombinedImageSamplers
 pub fn setTextureEnable(state: *GraphicsState, enable: *const [4]bool) void {
-    state.misc.texture_0_enable, state.misc.texture_1_enable, state.misc.texture_2_enable, state.misc.texture_3_enable = enable.*;
+    state.misc.texture_enable = .init(enable.*);
     state.dirty.texture_config = true;
 }
 
@@ -296,17 +302,17 @@ pub fn setTextureCoordinates(state: *GraphicsState, texture_2_coordinates: mango
     state.dirty.texture_config = true;
 }
 
-pub fn emitDirty(state: *GraphicsState, queue: *cmd3d.Queue) void {
+pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     if (state.dirty.cull_mode) {
         const cull_mode_ccw = state.misc.cull_mode_ccw;
         const is_front_ccw = state.misc.is_front_ccw;
 
-        queue.add(internal_regs, &internal_regs.rasterizer.faceculling_config, .init(if (is_front_ccw)
+        queue.add(p3d, &p3d.rasterizer.cull_config, .init(if (is_front_ccw)
             cull_mode_ccw
         else switch (cull_mode_ccw) {
             .none => .none,
-            .front_ccw => .back_ccw,
-            .back_ccw => .front_ccw,
+            .ccw => .cw,
+            .cw => .ccw,
         }));
     }
 
@@ -314,11 +320,11 @@ pub fn emitDirty(state: *GraphicsState, queue: *cmd3d.Queue) void {
         const flt_width = @as(f32, @floatFromInt(state.viewport.width_minus_one)) + 1.0;
         const flt_height = @as(f32, @floatFromInt(state.viewport.height_minus_one)) + 1.0;
 
-        queue.addIncremental(internal_regs, .{
-            &internal_regs.rasterizer.viewport_h_scale,
-            &internal_regs.rasterizer.viewport_h_step,
-            &internal_regs.rasterizer.viewport_v_scale,
-            &internal_regs.rasterizer.viewport_v_step,
+        queue.addIncremental(p3d, .{
+            &p3d.rasterizer.viewport_h_scale,
+            &p3d.rasterizer.viewport_h_step,
+            &p3d.rasterizer.viewport_v_scale,
+            &p3d.rasterizer.viewport_v_step,
         }, .{
             .init(.of(flt_width / 2.0)),
             .init(.of(2.0 / flt_width)),
@@ -326,73 +332,66 @@ pub fn emitDirty(state: *GraphicsState, queue: *cmd3d.Queue) void {
             .init(.of(2.0 / flt_height)),
         });
 
-        queue.add(internal_regs, &internal_regs.rasterizer.viewport_xy, .{
-            .x = state.viewport.x,
-            .y = state.viewport.y,
-        });
+        queue.add(p3d, &p3d.rasterizer.viewport_xy, .{ state.viewport.x, state.viewport.y });
     }
 
     if (state.dirty.scissor_parameters) {
-        queue.addIncremental(internal_regs, .{
-            &internal_regs.rasterizer.scissor_config,
-            &internal_regs.rasterizer.scissor_start,
-            &internal_regs.rasterizer.scissor_end,
-        }, .{
-            .init(if (state.misc.is_scissor_inside) .inside else .outside),
-            .{ .x = state.scissor.x, .y = state.scissor.y },
-            .{ .x = state.scissor.end_x, .y = state.scissor.end_y },
+        queue.add(p3d, &p3d.rasterizer.scissor, .{
+            .mode = .init(if (state.misc.is_scissor_inside) .inside else .outside),
+            .start = .{ state.scissor.x, state.scissor.y },
+            .end = .{ state.scissor.end_x, state.scissor.end_y },
         });
     }
 
     if (state.dirty.depth_map_mode) {
-        queue.add(internal_regs, &internal_regs.rasterizer.depth_map_mode, .init(state.misc.depth_mode));
+        queue.add(p3d, &p3d.rasterizer.depth_map_mode, .init(state.misc.depth_mode));
     }
 
     if (state.dirty.depth_map_parameters) {
         const depth_map_scale = (state.depth_map_parameters.min_depth - state.depth_map_parameters.max_depth);
-        const depth_map_offset = state.depth_map_parameters.min_depth + state.depth_map_parameters.constant;
+        const depth_map_bias = state.depth_map_parameters.min_depth + state.depth_map_parameters.constant;
 
-        queue.addIncremental(internal_regs, .{
-            &internal_regs.rasterizer.depth_map_scale,
-            &internal_regs.rasterizer.depth_map_offset,
+        queue.addIncremental(p3d, .{
+            &p3d.rasterizer.depth_map_scale,
+            &p3d.rasterizer.depth_map_bias,
         }, .{
             .init(.of(depth_map_scale)),
-            .init(.of(depth_map_offset)),
+            .init(.of(depth_map_bias)),
         });
     }
 
     if (state.dirty.primitive_topology) {
         const primitive_topology = state.misc.primitive_topology;
 
-        queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{
+        queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{
             .total_vertex_outputs = 0, // NOTE: Ignored by mask
             .topology = primitive_topology,
         }, 0b0010);
 
-        queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config, .{
+        queue.addMasked(p3d, &p3d.geometry_pipeline.config, .{
             .geometry_shader_usage = .disabled, // NOTE: Ignored by mask
             .drawing_triangles = primitive_topology == .triangle_list,
             .use_reserved_geometry_subdivision = false, // NOTE: Ignored by mask
         }, 0b0010);
 
-        queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config_2, .{
+        queue.addMasked(p3d, &p3d.geometry_pipeline.config_2, .{
             .drawing_triangles = primitive_topology == .triangle_list, // NOTE: Ignored by mask
         }, 0b0010);
     }
 
     if (state.dirty.color_operation) {
-        queue.addMasked(internal_regs, &internal_regs.framebuffer.color_operation, .{
+        queue.addMasked(p3d, &p3d.framebuffer.color_operation, .{
             .fragment_operation = .default, // NOTE: Ignored by mask
             .mode = if (state.misc.logic_op_enable) .logic else .blend,
         }, 0b0010);
     }
 
     if (state.dirty.logic_operation) {
-        queue.add(internal_regs, &internal_regs.framebuffer.logic_operation, .init(state.misc.logic_op));
+        queue.add(p3d, &p3d.framebuffer.logic_operation, .init(state.misc.logic_op));
     }
 
     if (state.dirty.depth_test_masks) {
-        queue.add(internal_regs, &internal_regs.framebuffer.depth_color_mask, .{
+        queue.add(p3d, &p3d.framebuffer.depth_color_mask, .{
             .enable_depth_test = state.misc.depth_test_enable,
             .depth_op = state.misc.depth_test_op,
             .r_write_enable = state.misc.color_r_enable,
@@ -404,15 +403,15 @@ pub fn emitDirty(state: *GraphicsState, queue: *cmd3d.Queue) void {
     }
 
     if (state.dirty.blend_config) {
-        queue.add(internal_regs, &internal_regs.framebuffer.blend_config, state.blend_config);
+        queue.add(p3d, &p3d.framebuffer.blend_config, state.blend_config);
     }
 
     if (state.dirty.blend_constants) {
-        queue.add(internal_regs, &internal_regs.framebuffer.blend_color, state.blend_constants);
+        queue.add(p3d, &p3d.framebuffer.blend_color, state.blend_constants);
     }
 
     if (state.dirty.alpha_test) {
-        queue.add(internal_regs, &internal_regs.framebuffer.alpha_test, .{
+        queue.add(p3d, &p3d.framebuffer.alpha_test, .{
             .enable = state.misc.alpha_test_enable,
             .op = state.misc.alpha_test_op,
             .reference = state.misc.alpha_test_reference,
@@ -420,7 +419,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *cmd3d.Queue) void {
     }
 
     if (state.dirty.stencil_test) {
-        queue.add(internal_regs, &internal_regs.framebuffer.stencil_test, .{
+        queue.add(p3d, &p3d.framebuffer.stencil_test, .{
             .enable = state.stencil.state.enable,
             .op = state.stencil.state.op,
             .compare_mask = state.stencil.compare_mask,
@@ -430,7 +429,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *cmd3d.Queue) void {
     }
 
     if (state.dirty.stencil_operation) {
-        queue.add(internal_regs, &internal_regs.framebuffer.stencil_operation, .{
+        queue.add(p3d, &p3d.framebuffer.stencil_operation, .{
             .fail_op = state.stencil.state.fail_op,
             .depth_fail_op = state.stencil.state.depth_fail_op,
             .pass_op = state.stencil.state.pass_op,
@@ -438,32 +437,22 @@ pub fn emitDirty(state: *GraphicsState, queue: *cmd3d.Queue) void {
     }
 
     if (state.dirty.texture_update_buffer) {
-        queue.add(internal_regs, &internal_regs.texture_combiners.update_buffer, state.combiners.update_buffer);
+        queue.add(p3d, &p3d.texture_combiners.config, state.combiners.config);
     }
 
     if (state.dirty.texture_combiners) {
         inline for (0..6) |i| {
-            const current_combiner_reg = switch (i) {
-                0 => &internal_regs.texture_combiners.texture_combiner_0,
-                1 => &internal_regs.texture_combiners.texture_combiner_1,
-                2 => &internal_regs.texture_combiners.texture_combiner_2,
-                3 => &internal_regs.texture_combiners.texture_combiner_3,
-                4 => &internal_regs.texture_combiners.texture_combiner_4,
-                5 => &internal_regs.texture_combiners.texture_combiner_5,
-                else => unreachable,
-            };
+            const current_combiner_unit = &@field(p3d.texture_combiners, std.fmt.comptimePrint("{}", .{i}));
 
-            queue.add(internal_regs, current_combiner_reg, state.combiners.combiner[i]);
+            queue.add(p3d, current_combiner_unit, state.combiners.units[i]);
         }
     }
 
     if (state.dirty.texture_config) {
-        queue.add(internal_regs, &internal_regs.texturing.config, .{
-            .texture_0_enabled = state.misc.texture_0_enable,
-            .texture_1_enabled = state.misc.texture_1_enable,
-            .texture_2_enabled = state.misc.texture_2_enable,
+        queue.add(p3d, &p3d.texturing.config, .{
+            .texture_enabled = state.misc.texture_enable.slice(0, 3),
             .texture_3_coordinates = state.misc.texture_3_coordinates,
-            .texture_3_enabled = state.misc.texture_3_enable,
+            .texture_3_enabled = state.misc.texture_enable.get(3),
             .texture_2_coordinates = state.misc.texture_2_coordinates,
             .clear_texture_cache = false,
         });
@@ -481,9 +470,11 @@ const VertexInputLayout = backend.VertexInputLayout;
 
 const std = @import("std");
 const zitrus = @import("zitrus");
+
+const hardware = zitrus.hardware;
 const mango = zitrus.mango;
-const pica = zitrus.pica;
+const pica = hardware.pica;
 
-const cmd3d = pica.cmd3d;
+const command = pica.command;
 
-const internal_regs = &zitrus.memory.arm11.gpu.internal;
+const p3d = &zitrus.memory.arm11.pica.p3d;

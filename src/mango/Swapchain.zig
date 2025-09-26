@@ -29,4 +29,4 @@ const std = @import("std");
 const zitrus = @import("zitrus");
 const mango = zitrus.mango;
 
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;

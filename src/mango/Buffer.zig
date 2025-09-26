@@ -47,8 +47,3 @@ const DeviceMemory = backend.DeviceMemory;
 const std = @import("std");
 const zitrus = @import("zitrus");
 const mango = zitrus.mango;
-const pica = zitrus.pica;
-
-const cmd3d = pica.cmd3d;
-
-const internal_regs = &zitrus.memory.arm11.gpu.internal;

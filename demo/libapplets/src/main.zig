@@ -85,7 +85,7 @@ pub fn main() !void {
     }
 }
 
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
 const Screen = pica.Screen;
 const Bgr888 = pica.ColorFormat.Bgr888;
 

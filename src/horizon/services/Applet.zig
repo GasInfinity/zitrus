@@ -149,9 +149,9 @@ pub const CaptureBuffer = extern struct {
             .full_resolution => .{ 1, 2 },
         };
 
-        const top_framebuffer_size = top_scale * zitrus.pica.Screen.top.height() * zitrus.pica.Screen.width_po2 * capture.top.format.color_format.bytesPerPixel();
+        const top_framebuffer_size = top_scale * pica.Screen.top.height() * pica.Screen.width_po2 * capture.top.format.color_format.bytesPerPixel();
         const top_size = top_framebuffers * top_framebuffer_size;
-        const bottom_size = zitrus.pica.Screen.bottom.height() * zitrus.pica.Screen.width_po2 * capture.bottom.format.color_format.bytesPerPixel();
+        const bottom_size = pica.Screen.bottom.height() * pica.Screen.width_po2 * capture.bottom.format.color_format.bytesPerPixel();
 
         return CaptureBuffer{
             // So, the GSP trips when this value is exactly what it should? XXX: Why do I need to multiply bottom_size by 2 for library applets?
@@ -775,6 +775,8 @@ const horizon = zitrus.horizon;
 const environment = horizon.environment;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
+
+const pica = zitrus.hardware.pica;
 
 const Result = horizon.Result;
 const ResultCode = horizon.result.Code;

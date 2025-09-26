@@ -1,6 +1,8 @@
 //! Useful matrix operations.
 //!
-//! They all transform to the PICA200 NDC volume (Same as OpenGL except Z [0, -1])
+//! They all transform to the PICA200 NDC volume (Same as OpenGL/VK/D3D except Z [0, -1]).
+//! If you already have a matrix which expects a VK/D3D Z [0, 1] and don't want to use 
+//! these helpers, you can negate m33 and m34
 //!
 //! Some operations are provided for the sake of completeness (translation, scale, ...)
 
@@ -74,7 +76,7 @@ pub fn persp(comptime handedness: Handedness, fov_y: f32, aspect_ratio: f32, n: 
     return .{
         .{ 1 / (fov_y_tan * aspect_ratio), 0, 0, 0 },
         .{ 0, 1 / fov_y_tan, 0, 0 },
-        .{ 0, 0, handedness_factor * (-f / f_range), handedness_factor * ((f * n) / f_range) },
+        .{ 0, 0, handedness_factor * (-f / f_range), ((f * n) / f_range) },
         .{ 0, 0, handedness_factor * 1, 0 },
     };
 }
@@ -87,7 +89,7 @@ pub fn perspRotate90Cw(comptime handedness: Handedness, fov_y: f32, aspect_ratio
     return .{
         .{ 0, 1 / fov_y_tan, 0, 0 },
         .{ -aspect_ratio / fov_y_tan, 0, 0, 0 },
-        .{ 0, 0, (-f / f_range), ((f * n) / f_range) },
+        .{ 0, 0, handedness_factor * (-f / f_range), ((f * n) / f_range) },
         .{ 0, 0, handedness_factor * 1, 0 },
     };
 }

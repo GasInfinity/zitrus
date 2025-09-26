@@ -61,7 +61,7 @@ pub const BoundMemoryInfo = packed struct(u64) {
         return @ptrFromInt((@as(u32, info.virtual_page_shifted) << 12) + info.byte_offset);
     }
 
-    pub fn boundPhysicalAddress(info: BoundMemoryInfo) zitrus.PhysicalAddress {
+    pub fn boundPhysicalAddress(info: BoundMemoryInfo) PhysicalAddress {
         return .fromAddress((@as(u32, info.physical_page_shifted) << 12) + info.byte_offset);
     }
 
@@ -76,7 +76,7 @@ pub fn virtualAddress(memory: DeviceMemory) [*]u8 {
     return @ptrFromInt((@as(u32, memory.data.virtual_page_shifted) << 12));
 }
 
-pub fn physicalAddress(memory: DeviceMemory) zitrus.PhysicalAddress {
+pub fn physicalAddress(memory: DeviceMemory) PhysicalAddress {
     return .fromAddress((@as(u32, memory.data.physical_page_shifted) << 12));
 }
 
@@ -89,7 +89,6 @@ pub fn toHandle(memory: DeviceMemory) Handle {
 }
 
 pub fn fromHandle(handle: Handle) DeviceMemory {
-    // TODO: With runtime safety the handle is a real pointer with some metadata
     return .{
         .data = @bitCast(@intFromEnum(handle)),
     };
@@ -100,8 +99,6 @@ const DeviceMemory = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
 const mango = zitrus.mango;
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
 
-const cmd3d = pica.cmd3d;
-
-const PhysicalAddress = zitrus.PhysicalAddress;
+const PhysicalAddress = zitrus.hardware.PhysicalAddress;

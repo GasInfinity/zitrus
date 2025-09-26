@@ -212,7 +212,7 @@ pub const GxCommand = extern struct {
     pub const MemoryFill = extern struct {
         // TODO: This could be moved
         pub const Unit = struct {
-            pub const Value = union(gpu.PixelSize) {
+            pub const Value = union(pica.PixelSize) {
                 @"16": u16,
                 @"24": u24,
                 @"32": u32,
@@ -257,7 +257,7 @@ pub const GxCommand = extern struct {
         };
 
         buffers: [2]Buffer,
-        controls: [2]gpu.Registers.MemoryFill.Control,
+        controls: [2]pica.MemoryFill.Control,
     };
 
     pub const DisplayTransfer = extern struct {
@@ -271,7 +271,7 @@ pub const GxCommand = extern struct {
             flip_v: bool = false,
             mode: Mode = .tiled_linear,
             use_32x32: bool = false,
-            downscale: gpu.Registers.MemoryCopy.Flags.Downscale = .none,
+            downscale: pica.MemoryCopy.Flags.Downscale = .none,
             _: u2 = 0,
         };
 
@@ -279,7 +279,7 @@ pub const GxCommand = extern struct {
         destination: [*]align(8) u8,
         source_dimensions: [2]u16,
         destination_dimensions: [2]u16,
-        flags: gpu.Registers.MemoryCopy.Flags,
+        flags: pica.MemoryCopy.Flags,
         _unused0: [2]u32 = @splat(0),
     };
 
@@ -289,7 +289,7 @@ pub const GxCommand = extern struct {
         size: u32,
         source_line_gap: [2]u16,
         destination_line_gap: [2]u16,
-        flags: gpu.Registers.MemoryCopy.Flags,
+        flags: pica.MemoryCopy.Flags,
         _unused0: u32 = 0,
     };
 
@@ -405,7 +405,7 @@ pub const GxCommand = extern struct {
         };
     }
 
-    pub fn initDisplayTransfer(src: [*]align(8) const u8, dst: [*]align(8) u8, src_color: gpu.ColorFormat, src_dimensions: [2]u16, dst_color: gpu.ColorFormat, dst_dimensions: [2]u16, transfer_flags: DisplayTransfer.Flags, flags: Header.Flags) GxCommand {
+    pub fn initDisplayTransfer(src: [*]align(8) const u8, dst: [*]align(8) u8, src_color: pica.ColorFormat, src_dimensions: [2]u16, dst_color: pica.ColorFormat, dst_dimensions: [2]u16, transfer_flags: DisplayTransfer.Flags, flags: Header.Flags) GxCommand {
         return .{ .header = .{
             .id = .display_transfer,
             .flags = flags,
@@ -855,17 +855,17 @@ const GspGpu = @This();
 const builtin = @import("builtin");
 const std = @import("std");
 const zitrus = @import("zitrus");
-const gpu = zitrus.pica;
+const pica = zitrus.hardware.pica;
 
 const horizon = zitrus.horizon;
 const memory = horizon.memory;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
 
-const Screen = gpu.Screen;
-const ColorFormat = gpu.ColorFormat;
-const DmaSize = gpu.DmaSize;
-const FramebufferFormat = gpu.FramebufferFormat;
+const Screen = pica.Screen;
+const ColorFormat = pica.ColorFormat;
+const DmaSize = pica.DmaSize;
+const FramebufferFormat = pica.FramebufferFormat;
 const FramebufferMode = FramebufferFormat.Mode;
 
 const ResultCode = horizon.result.Code;

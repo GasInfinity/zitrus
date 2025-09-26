@@ -165,7 +165,7 @@ fn drawCharacter(ctx: ScreenCtx, x: isize, y: isize, character: u8) void {
 const zoftblit = @import("zoftblit.zig");
 const ScreenCtx = zoftblit.Context(Bgr888);
 
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
 const Screen = pica.Screen;
 const Bgr888 = pica.ColorFormat.Bgr888;
 

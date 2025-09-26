@@ -542,7 +542,7 @@ pub const ColorBlendEquation = extern struct {
     dst_alpha_factor: BlendFactor,
     alpha_op: BlendOperation,
 
-    pub fn native(equation: ColorBlendEquation) pica.Registers.Internal.Framebuffer.BlendConfig {
+    pub fn native(equation: ColorBlendEquation) pica.Graphics.Framebuffer.BlendConfig {
         return .{
             .color_op = equation.color_op.native(),
             .alpha_op = equation.alpha_op.native(),
@@ -719,12 +719,12 @@ pub const CullMode = enum(u8) {
         return switch (mode) {
             .none => .none,
             .front => switch (front) {
-                .ccw => .front_ccw,
-                .cw => .back_ccw,
+                .ccw => .ccw,
+                .cw => .cw,
             },
             .back => switch (front) {
-                .ccw => .back_ccw,
-                .cw => .front_ccw,
+                .ccw => .cw,
+                .cw => .ccw,
             },
         };
     }
@@ -951,13 +951,13 @@ pub const GraphicsPipelineCreateInfo = extern struct {
     pub const LightingState = extern struct {};
 
     pub const TextureCombinerState = extern struct {
-        texture_combiners: [*]const TextureCombiner,
+        texture_combiners: [*]const TextureCombinerUnit,
         texture_combiners_len: usize,
 
-        texture_combiner_buffer_sources: [*]const TextureCombiner.BufferSources,
+        texture_combiner_buffer_sources: [*]const TextureCombinerUnit.BufferSources,
         texture_combiner_buffer_sources_len: usize,
 
-        pub fn init(texture_combiners: []const TextureCombiner, texture_combiner_buffer_sources: []const TextureCombiner.BufferSources) TextureCombinerState {
+        pub fn init(texture_combiners: []const TextureCombinerUnit, texture_combiner_buffer_sources: []const TextureCombinerUnit.BufferSources) TextureCombinerState {
             return .{
                 .texture_combiners = texture_combiners.ptr,
                 .texture_combiners_len = texture_combiners.len,
@@ -1161,7 +1161,7 @@ pub const CombinedImageSampler = extern struct {
     sampler: Sampler,
 };
 
-pub const TextureCombiner = extern struct {
+pub const TextureCombinerUnit = extern struct {
     pub const BufferSources = extern struct {
         pub const previous_buffer: BufferSources = .init(.previous_buffer, .previous_buffer);
         pub const previous: BufferSources = .init(.previous, .previous);
@@ -1177,7 +1177,7 @@ pub const TextureCombiner = extern struct {
         }
     };
 
-    pub const previous: TextureCombiner = .{
+    pub const previous: TextureCombinerUnit = .{
         .color_src = @splat(.previous),
         .alpha_src = @splat(.previous),
         .color_factor = @splat(.src_color),
@@ -1201,23 +1201,15 @@ pub const TextureCombiner = extern struct {
 
     constant: [4]u8,
 
-    pub fn native(combiner: TextureCombiner) pica.Registers.Internal.TextureCombiners.Combiner {
+    pub fn native(combiner: TextureCombinerUnit) pica.Graphics.TextureCombiners.Unit {
         return .{
             .sources = .{
-                .color_src_0 = combiner.color_src[0].native(),
-                .color_src_1 = combiner.color_src[1].native(),
-                .color_src_2 = combiner.color_src[2].native(),
-                .alpha_src_0 = combiner.alpha_src[0].native(),
-                .alpha_src_1 = combiner.alpha_src[1].native(),
-                .alpha_src_2 = combiner.alpha_src[2].native(),
+                .color_src = .init(.{ combiner.color_src[0].native(), combiner.color_src[1].native(), combiner.color_src[2].native() }),
+                .alpha_src = .init(.{ combiner.alpha_src[0].native(), combiner.alpha_src[1].native(), combiner.alpha_src[2].native() }),
             },
             .factors = .{
-                .color_factor_0 = combiner.color_factor[0].native(),
-                .color_factor_1 = combiner.color_factor[1].native(),
-                .color_factor_2 = combiner.color_factor[2].native(),
-                .alpha_factor_0 = combiner.alpha_factor[0].native(),
-                .alpha_factor_1 = combiner.alpha_factor[1].native(),
-                .alpha_factor_2 = combiner.alpha_factor[2].native(),
+                .color_factor = .init(.{ combiner.color_factor[0].native(), combiner.color_factor[1].native(), combiner.color_factor[2].native() }),
+                .alpha_factor = .init(.{ combiner.alpha_factor[0].native(), combiner.alpha_factor[1].native(), combiner.alpha_factor[2].native() }),
             },
             .operations = .{
                 .color_op = combiner.color_op.native(),
@@ -1357,7 +1349,6 @@ pub fn createHorizonBackedDevice(create_info: HorizonBackedDeviceCreateInfo, all
     return (try backend.Device.initHorizonBacked(create_info, allocator)).toHandle();
 }
 
-// FIXME: Rename this to Device when we finish the entrypoint.
 pub const Device = backend.Device.Handle;
 pub const Queue = backend.Queue.Handle;
 pub const DeviceMemory = backend.DeviceMemory.Handle;
@@ -1381,9 +1372,7 @@ const backend = @import("mango/backend.zig");
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const pica = zitrus.pica;
-
-const cmd3d = pica.cmd3d;
+const pica = zitrus.hardware.pica;
 
 /// WARNING: Nothing, I mean NOTHING in mango should depend on this.
 /// This is only for creating Horizon backed devices!

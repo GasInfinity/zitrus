@@ -161,4 +161,4 @@ pub const UniformRegister = enum(u8) {
 };
 
 const zitrus = @import("zitrus");
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;

@@ -54,7 +54,7 @@ pub const Data = packed struct(u64) {
 pub const RenderingInfo = struct {
     width: u16,
     height: u16,
-    address: zitrus.PhysicalAddress,
+    address: zitrus.hardware.PhysicalAddress,
 };
 
 data: Data,
@@ -103,8 +103,5 @@ const backend = @import("backend.zig");
 const std = @import("std");
 const zitrus = @import("zitrus");
 const mango = zitrus.mango;
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
 
-const cmd3d = pica.cmd3d;
-
-const internal_regs = &zitrus.memory.arm11.gpu.internal;

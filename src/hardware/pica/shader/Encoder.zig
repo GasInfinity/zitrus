@@ -369,7 +369,7 @@ const testing = std.testing;
 const Allocator = std.mem.Allocator;
 
 const zitrus = @import("zitrus");
-const shader = zitrus.pica.shader;
+const shader = zitrus.hardware.pica.shader;
 
 const encoding = shader.encoding;
 const Instruction = encoding.Instruction;

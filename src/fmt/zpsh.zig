@@ -288,7 +288,7 @@ comptime {
 const builtin = @import("builtin");
 const std = @import("std");
 const zitrus = @import("zitrus");
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
 const shader = pica.shader;
 
 const BooleanRegister = shader.register.Integral.Boolean;

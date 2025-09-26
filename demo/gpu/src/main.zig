@@ -174,7 +174,7 @@ pub const Scene = struct {
                 // (!) Disabling depth tests also disables depth writes like in every other graphics api
                 .depth_test_enable = true,
                 .depth_write_enable = true,
-                .depth_compare_op = .gt,
+                .depth_compare_op = .lt,
 
                 .stencil_test_enable = false,
                 .back_front = std.mem.zeroes(mango.GraphicsPipelineCreateInfo.AlphaDepthStencilState.StencilOperationState),
@@ -320,10 +320,11 @@ pub const Scene = struct {
             const zmath = zitrus.math;
 
             const cos_time = @sin(scene.time);
-            const sin_time = @sin(scene.time * 4);
+            const sin_time_two = @sin(scene.time * 2);
+            const sin_time = @sin(scene.time / 2);
 
-            cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(.right, std.math.degreesToRadians(90.0), 240.0 / 400.0, 100, 0.8));
-            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scaleTranslate(0.8, 0.8, 0.8, (@abs(cos_time) - 0.5) * 3, sin_time * 2, -2 - @abs(sin_time)));
+            cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(.right, std.math.degreesToRadians(90.0), 240.0 / 400.0, 0.8, 100));
+            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scaleTranslate(0.8, 0.8, 0.8, -(@abs(cos_time) - 0.5) * 10, -sin_time_two * 8, -3 - @abs(sin_time) * 20));
 
             scene.cube_mesh.draw(cmd);
         }
@@ -361,7 +362,7 @@ pub const Scene = struct {
         try fill_queue.clearDepthStencilImage(.{
             .wait_semaphore = &.init(scene.semaphore, scene.current_timeline),
             .image = scene.top_renderbuffer.depth.image,
-            .depth = 0.0,
+            .depth = 1.0,
             .stencil = 0x00,
             // .subresource_range = .full,
             .signal_semaphore = &.init(scene.semaphore, scene.current_timeline + 1),

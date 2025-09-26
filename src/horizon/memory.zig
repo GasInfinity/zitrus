@@ -27,7 +27,7 @@ pub const gpu_registers: *pica.Registers = @ptrFromInt(gpu_begin);
 pub const kernel_config: *const config.Kernel = @ptrFromInt(configuration_memory_begin);
 pub const shared_config: *config.Shared = @ptrFromInt(shared_page_memory_begin);
 
-pub fn toPhysical(ptr: usize) zitrus.PhysicalAddress {
+pub fn toPhysical(ptr: usize) zitrus.hardware.PhysicalAddress {
     return @enumFromInt(switch (ptr) {
         old_linear_heap_begin...old_linear_heap_end => (ptr - old_linear_heap_begin) + memory.arm11.fcram_begin,
         linear_heap_begin...linear_heap_end => (ptr - linear_heap_begin) + memory.arm11.fcram_begin,
@@ -41,4 +41,4 @@ const horizon = zitrus.horizon;
 const config = horizon.config;
 
 const memory = zitrus.memory;
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;

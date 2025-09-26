@@ -131,7 +131,7 @@ pub const Handle = enum(u32) {
         return b_cmd.setScissor(scissor);
     }
 
-    pub fn setTextureCombiners(cmd: Handle, texture_combiners: []const mango.TextureCombiner, texture_combiner_buffer_sources: []const mango.TextureCombiner.BufferSources) void {
+    pub fn setTextureCombiners(cmd: Handle, texture_combiners: []const mango.TextureCombinerUnit, texture_combiner_buffer_sources: []const mango.TextureCombinerUnit.BufferSources) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         return b_cmd.setTextureCombiners(texture_combiners, texture_combiner_buffer_sources);
     }
@@ -238,12 +238,13 @@ pub const State = enum {
 pub const Scope = enum {
     none,
     render_pass,
+    immediate_draw,
 };
 
 pool: *backend.CommandPool,
 node: std.DoublyLinkedList.Node = .{},
 
-queue: cmd3d.Queue,
+queue: command.Queue,
 gfx_state: GraphicsState = .empty,
 rnd_state: RenderingState = .empty,
 emitted_graphics_pipeline: ?*backend.Pipeline.Graphics = null,
@@ -282,7 +283,7 @@ pub fn end(cmd: *CommandBuffer) !void {
     }
 
     // XXX: Homebrew apps expect start_draw_function to start in configuration mode. Or you have a dreaded black screen of death x-x
-    cmd.queue.add(internal_regs, &internal_regs.geometry_pipeline.start_draw_function, .config);
+    cmd.queue.add(p3d, &p3d.geometry_pipeline.start_draw_function, .init(.config));
     cmd.queue.finalize();
     cmd.state = .executable;
 }
@@ -353,7 +354,7 @@ pub fn endRendering(cmd: *CommandBuffer) void {
     const queue = &cmd.queue;
 
     if (cmd.rnd_state.endRendering()) {
-        queue.add(internal_regs, &internal_regs.framebuffer.render_buffer_flush, .init(.trigger));
+        queue.add(p3d, &p3d.framebuffer.flush, .init(.trigger));
     }
 }
 
@@ -375,39 +376,36 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
     const queue = &cmd.queue;
 
     switch (cmd.gfx_state.misc.primitive_topology) {
-        .triangle_list => queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{
+        .triangle_list => queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{
             .total_vertex_outputs = 0, // NOTE: Ignored by mask
             .topology = cmd.gfx_state.misc.primitive_topology,
         }, 0b0010),
         else => {},
     }
     defer switch (cmd.gfx_state.misc.primitive_topology) {
-        .triangle_list => queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{
+        .triangle_list => queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{
             .total_vertex_outputs = 0, // NOTE: Ignored by mask
             .topology = cmd.gfx_state.misc.primitive_topology.indexedTopology(),
         }, 0b0010),
         else => {},
     };
 
-    queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config_2, .{ .inputting_vertices_or_draw_arrays = true }, 0b0001);
-    defer queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.config_2, .{ .inputting_vertices_or_draw_arrays = false }, 0b0001);
+    queue.addMasked(p3d, &p3d.geometry_pipeline.config_2, .{ .inputting_vertices_or_draw_arrays = true }, 0b0001);
+    defer queue.addMasked(p3d, &p3d.geometry_pipeline.config_2, .{ .inputting_vertices_or_draw_arrays = false }, 0b0001);
 
     const first_draw = vertex_info[0];
-    queue.addIncremental(internal_regs, .{
-        &internal_regs.geometry_pipeline.attribute_buffer_index_buffer,
-        &internal_regs.geometry_pipeline.attribute_buffer_num_vertices,
+    queue.addIncremental(p3d, .{
+        &p3d.geometry_pipeline.attributes.index_buffer,
+        &p3d.geometry_pipeline.draw_vertex_count,
     }, .{
-        .{
-            .base_offset = 0x00,
-            .format = .u16, // NOTE: MUST be u16 for non-indexed draws
-        },
+        .init(0x00, .u16), // NOTE: MUST be u16 for non-indexed draws
         first_draw.vertex_count,
     });
 
-    queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_first_index, first_draw.first_vertex);
-    queue.add(internal_regs, &internal_regs.geometry_pipeline.restart_primitive, .init(.trigger));
-    queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_draw_arrays, .init(.trigger));
-    queue.add(internal_regs, &internal_regs.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
+    queue.add(p3d, &p3d.geometry_pipeline.draw_first_index, first_draw.first_vertex);
+    queue.add(p3d, &p3d.geometry_pipeline.restart_primitive, .init(.trigger));
+    queue.add(p3d, &p3d.geometry_pipeline.draw, .init(.trigger));
+    queue.add(p3d, &p3d.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
 
     var last_vertex_info = first_draw;
     var current_vertex_info_ptr: *const mango.MultiDrawInfo = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(vertex_info)) + stride));
@@ -418,16 +416,16 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
         const current_vertex_info = current_vertex_info_ptr.*;
 
         if (current_vertex_info.vertex_count != last_vertex_info.vertex_count) {
-            queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_num_vertices, current_vertex_info.vertex_count);
+            queue.add(p3d, &p3d.geometry_pipeline.draw_vertex_count, current_vertex_info.vertex_count);
         }
 
         if (current_vertex_info.first_vertex != last_vertex_info.first_vertex) {
-            queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_first_index, current_vertex_info.first_vertex);
+            queue.add(p3d, &p3d.geometry_pipeline.draw_first_index, current_vertex_info.first_vertex);
         }
 
-        queue.add(internal_regs, &internal_regs.geometry_pipeline.restart_primitive, .init(.trigger));
-        queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_draw_arrays, .init(.trigger));
-        queue.add(internal_regs, &internal_regs.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
+        queue.add(p3d, &p3d.geometry_pipeline.restart_primitive, .init(.trigger));
+        queue.add(p3d, &p3d.geometry_pipeline.draw, .init(.trigger));
+        queue.add(p3d, &p3d.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
 
         last_vertex_info = current_vertex_info;
         current_vertex_info_ptr = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(current_vertex_info_ptr)) + stride));
@@ -454,32 +452,32 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
     const dynamic_rendering_state = cmd.rnd_state;
 
     const first_draw = index_info[0];
-    queue.addIncremental(internal_regs, .{
-        &internal_regs.geometry_pipeline.attribute_buffer_index_buffer,
-        &internal_regs.geometry_pipeline.attribute_buffer_num_vertices,
+    queue.addIncremental(p3d, .{
+        &p3d.geometry_pipeline.attributes.index_buffer,
+        &p3d.geometry_pipeline.draw_vertex_count,
     }, .{
-        .{
-            .base_offset = @intCast(dynamic_rendering_state.index_buffer_offset + first_draw.first_index),
-            .format = dynamic_rendering_state.misc.index_format,
-        },
+        .init(@intCast(dynamic_rendering_state.index_buffer_offset + first_draw.first_index), dynamic_rendering_state.misc.index_format),
         first_draw.index_count,
     });
 
     if (first_draw.vertex_offset != 0) {
         for (&dynamic_rendering_state.vertex_buffers_offset, &dynamic_graphics_state.vtx_input.buffer_config, 0..) |offset, buf_conf, i| {
-            queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer[i].offset, offset + @as(u32, @bitCast(first_draw.vertex_offset * buf_conf.high.bytes_per_vertex)));
+            const offset_from_bound: i32 = first_draw.vertex_offset * buf_conf.high.bytes_per_vertex;
+            const new_offset: u28 = @intCast(offset + offset_from_bound);
+
+            queue.add(p3d, &p3d.geometry_pipeline.attributes.vertex_buffers[i].offset, .init(new_offset));
         }
 
         cmd.rnd_state.dirty.vertex_buffers = true;
     }
 
-    queue.add(internal_regs, &internal_regs.geometry_pipeline.restart_primitive, .init(.trigger));
-    queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_draw_elements, .init(.trigger));
-    queue.add(internal_regs, &internal_regs.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
+    queue.add(p3d, &p3d.geometry_pipeline.restart_primitive, .init(.trigger));
+    queue.add(p3d, &p3d.geometry_pipeline.draw_indexed, .init(.trigger));
+    queue.add(p3d, &p3d.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
 
     // NOTE: Seems to be needed, weird things happens if we don't write these?
-    queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
-    queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
+    queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
+    queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
 
     var last_index_info = first_draw;
     var current_index_info_ptr: *const mango.MultiDrawIndexedInfo = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(index_info)) + stride));
@@ -490,31 +488,31 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
         const current_index_info = current_index_info_ptr.*;
 
         if (current_index_info.index_count != last_index_info.index_count) {
-            queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_num_vertices, current_index_info.index_count);
+            queue.add(p3d, &p3d.geometry_pipeline.draw_vertex_count, current_index_info.index_count);
         }
 
         if (current_index_info.first_index != last_index_info.first_index) {
-            queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_index_buffer, .{
-                .base_offset = @intCast(dynamic_rendering_state.index_buffer_offset + current_index_info.first_index),
-                .format = dynamic_rendering_state.misc.index_format,
-            });
+            queue.add(p3d, &p3d.geometry_pipeline.attributes.index_buffer, .init(@intCast(dynamic_rendering_state.index_buffer_offset + current_index_info.first_index), dynamic_rendering_state.misc.index_format));
         }
 
         if (current_index_info.vertex_offset != last_index_info.vertex_offset) {
             for (&dynamic_rendering_state.vertex_buffers_offset, &dynamic_graphics_state.vtx_input.buffer_config, 0..) |offset, buf_conf, i| {
-                queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer[i].offset, offset + @as(u32, @bitCast(current_index_info.vertex_offset * buf_conf.high.bytes_per_vertex)));
+                const offset_from_bound: i32 = first_draw.vertex_offset * buf_conf.high.bytes_per_vertex;
+                const new_offset: u28 = @intCast(offset + offset_from_bound);
+
+                queue.add(p3d, &p3d.geometry_pipeline.attributes.vertex_buffers[i].offset, .init(new_offset));
             }
 
             cmd.rnd_state.dirty.vertex_buffers = true;
         }
 
-        queue.add(internal_regs, &internal_regs.geometry_pipeline.restart_primitive, .init(.trigger));
-        queue.add(internal_regs, &internal_regs.geometry_pipeline.attribute_buffer_draw_elements, .init(.trigger));
-        queue.add(internal_regs, &internal_regs.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
+        queue.add(p3d, &p3d.geometry_pipeline.restart_primitive, .init(.trigger));
+        queue.add(p3d, &p3d.geometry_pipeline.draw_indexed, .init(.trigger));
+        queue.add(p3d, &p3d.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
 
         // NOTE: See above
-        queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
-        queue.addMasked(internal_regs, &internal_regs.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
+        queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
+        queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
 
         last_index_info = current_index_info;
         current_index_info_ptr = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(current_index_info_ptr)) + stride));
@@ -553,7 +551,7 @@ pub fn setScissor(cmd: *CommandBuffer, scissor: mango.Scissor) void {
     cmd.gfx_state.setScissor(scissor);
 }
 
-pub fn setTextureCombiners(cmd: *CommandBuffer, texture_combiners: []const mango.TextureCombiner, texture_combiner_buffer_sources: []const mango.TextureCombiner.BufferSources) void {
+pub fn setTextureCombiners(cmd: *CommandBuffer, texture_combiners: []const mango.TextureCombinerUnit, texture_combiner_buffer_sources: []const mango.TextureCombinerUnit.BufferSources) void {
     std.debug.assert(cmd.state == .recording);
     cmd.gfx_state.setTextureCombiners(texture_combiners, texture_combiner_buffer_sources);
 }
@@ -656,8 +654,8 @@ fn beforeDraw(cmd: *CommandBuffer) bool {
     const queue = &cmd.queue;
 
     if (cmd.bound_graphics_pipeline != cmd.emitted_graphics_pipeline) if (cmd.bound_graphics_pipeline) |bound_gfx_pipeline| {
-        @memcpy(cmd.queue.buffer[cmd.queue.current_index..][0..bound_gfx_pipeline.cmd3d_state.len], bound_gfx_pipeline.cmd3d_state);
-        cmd.queue.current_index += bound_gfx_pipeline.cmd3d_state.len;
+        @memcpy(cmd.queue.buffer[cmd.queue.current_index..][0..bound_gfx_pipeline.encoded_command_state.len], bound_gfx_pipeline.encoded_command_state);
+        cmd.queue.current_index += bound_gfx_pipeline.encoded_command_state.len;
 
         bound_gfx_pipeline.copyGraphicsState(&cmd.gfx_state);
         bound_gfx_pipeline.copyRenderingState(&cmd.rnd_state);
@@ -705,10 +703,9 @@ const RenderingState = backend.RenderingState;
 const std = @import("std");
 const zitrus = @import("zitrus");
 const mango = zitrus.mango;
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
+const PhysicalAddress = zitrus.hardware.PhysicalAddress;
 
-const cmd3d = pica.cmd3d;
+const command = pica.command;
 
-const PhysicalAddress = zitrus.PhysicalAddress;
-
-const internal_regs = &zitrus.memory.arm11.gpu.internal;
+const p3d = &zitrus.memory.arm11.pica.p3d;

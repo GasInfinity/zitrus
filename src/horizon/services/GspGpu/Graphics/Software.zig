@@ -119,7 +119,7 @@ const Framebuffer = Graphics.Framebuffer;
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const pica = zitrus.pica;
+const pica = zitrus.hardware.pica;
 
 const horizon = zitrus.horizon;
 const memory = horizon.memory;

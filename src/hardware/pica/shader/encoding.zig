@@ -713,7 +713,7 @@ const std = @import("std");
 const testing = std.testing;
 
 const zitrus = @import("zitrus");
-const shader = zitrus.pica.shader;
+const shader = zitrus.hardware.pica.shader;
 
 const RelativeComponent = shader.register.RelativeComponent;
 const SourceRegister = shader.register.Source;

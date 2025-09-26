@@ -1,4 +1,4 @@
-//! Definitions for all things PICA200.
+//! Definitions for MMIO `CSND` registers.
 //!
 //! Based on the documentation found in GBATEK and 3dbrew:
 //! * https://problemkaputt.de/gbatek.htm#3dssoundandmicrophone

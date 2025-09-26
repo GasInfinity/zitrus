@@ -1332,8 +1332,8 @@ const Assembler = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const pica = zitrus.pica;
-const shader = zitrus.pica.shader;
+const pica = zitrus.hardware.pica;
+const shader = pica.shader;
 
 const encoding = shader.encoding;
 const Component = encoding.Component;

@@ -339,7 +339,7 @@ pub export fn mgCmdSetScissor(cmd: mango.CommandBuffer, scissor: *const mango.Sc
     return cmd.setScissor(scissor.*);
 }
 
-pub export fn mgCmdSetTextureCombiners(cmd: mango.CommandBuffer, texture_combiners_len: u32, texture_combiners: [*]const mango.TextureCombiner, texture_combiner_buffer_sources_len: u32, texture_combiner_buffer_sources: [*]const mango.TextureCombiner.BufferSources) void {
+pub export fn mgCmdSetTextureCombiners(cmd: mango.CommandBuffer, texture_combiners_len: u32, texture_combiners: [*]const mango.TextureCombinerUnit, texture_combiner_buffer_sources_len: u32, texture_combiner_buffer_sources: [*]const mango.TextureCombinerUnit.BufferSources) void {
     return cmd.setTextureCombiners(texture_combiners[0..texture_combiners_len], texture_combiner_buffer_sources[0..texture_combiner_buffer_sources_len]);
 }
 
