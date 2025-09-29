@@ -18,6 +18,13 @@
 pub const command = @import("pica/command.zig");
 pub const shader = @import("pica/shader.zig");
 
+pub const UQ0_11 = zsflt.Fixed(.unsigned, 0, 11);
+pub const UQ0_12 = zsflt.Fixed(.unsigned, 0, 11);
+pub const UQ0_23 = zsflt.Fixed(.unsigned, 0, 23);
+pub const Q4_8 = zsflt.Fixed(.signed, 4, 8);
+pub const Q0_11 = zsflt.Fixed(.signed, 0, 11);
+pub const Q1_11 = zsflt.Fixed(.signed, 1, 11);
+
 pub const F5_10 = zsflt.Float(5, 10);
 pub const F3_12 = zsflt.Float(3, 12);
 pub const F7_12 = zsflt.Float(7, 12);
@@ -799,8 +806,7 @@ pub const Graphics = extern struct {
         };
 
         pub const LevelOfDetail = packed struct(u32) {
-            // TODO: Fixed point numbers (this is a fixed1.4.8)
-            bias: u13,
+            bias: Q4_8,
             _unknown0: u3 = 0,
             max_level_of_detail: u4,
             _unknown1: u4 = 0,
@@ -810,8 +816,9 @@ pub const Graphics = extern struct {
 
         pub const Shadow = packed struct(u32) {
             orthogonal: bool,
-            z_bias: u24,
-            _unknown0: u7 = 0,
+            // XXX: Documented as "the higher 23-bits of an UQ0.24": Bro, thats just an UQ0.23?
+            z_bias: UQ0_23,
+            _unknown0: u8 = 0,
         };
 
         pub const Main = extern struct {
@@ -915,9 +922,8 @@ pub const Graphics = extern struct {
         };
 
         pub const FogLutValue = packed struct(u24) {
-            // TODO: Fixed 1.1.11
-            next_difference: u13,
-            value: u11, 
+            next_difference: Q1_11,
+            value: UQ0_11,
         };
 
         @"0": Unit,
@@ -1093,7 +1099,7 @@ pub const Graphics = extern struct {
             };
 
             pub const Index = packed struct(u32) {
-                index: u8, 
+                index: u8,
                 table: LookupTable,
                 _unused0: u19 = 0,
             };
@@ -1137,7 +1143,7 @@ pub const Graphics = extern struct {
 
             pub const Scale = packed struct(u32) {
                 pub const Multiplier = enum(u3) { @"1x", @"2x", @"4x", @"8x", @"0.25x", @"0.5x" };
-                
+
                 d0: Multiplier,
                 _unused0: u1 = 0,
                 d1: Multiplier,
@@ -1155,9 +1161,9 @@ pub const Graphics = extern struct {
             };
 
             pub const Data = packed struct(u32) {
-                entry: u12,
-                next_absolute_difference: i12,
-                _unused0: u8 = 0,
+                entry: UQ0_12,
+                next_absolute_difference: Q0_11,
+                _unused0: u9 = 0,
             };
 
             // zig fmt: off
@@ -1230,7 +1236,7 @@ pub const Graphics = extern struct {
                 @"6": Id,
                 _unused6: u1 = 0,
                 @"7": Id,
-                _unused7: u1 = 0, 
+                _unused7: u1 = 0,
             };
 
             pub const Type = enum(u1) { positional, directional };
@@ -1424,7 +1430,7 @@ pub const Graphics = extern struct {
             pub const IndexBuffer = packed struct(u32) {
                 offset: u28,
                 _unused0: u3 = 0,
-                format: IndexFormat,    
+                format: IndexFormat,
 
                 pub fn init(base_offset: u28, format: IndexFormat) IndexBuffer {
                     return .{ .offset = base_offset, .format = format };
@@ -1432,7 +1438,7 @@ pub const Graphics = extern struct {
             };
 
             base: AlignedPhysicalAddress(.@"16", .@"8"),
-            config: Config, 
+            config: Config,
             vertex_buffers: [12]VertexBuffer,
             index_buffer: IndexBuffer,
         };
@@ -1450,9 +1456,9 @@ pub const Graphics = extern struct {
                     return .{ .index = input };
                 }
             };
-            
+
             /// If `Index.immediate` the written `value`s will begin filling shader inputs
-            /// and drawing primitives. Otherwise it is an index representing the attribute 
+            /// and drawing primitives. Otherwise it is an index representing the attribute
             /// whose `value` will be set.
             index: Index,
 
@@ -1476,10 +1482,10 @@ pub const Graphics = extern struct {
         draw_first_index: u32,
         _unknown0: [2]u32,
         post_vertex_cache_num: LsbRegister(u8),
-        /// Triggers a non-indexed drawcall, will begin reading from `draw_first_index` 
+        /// Triggers a non-indexed drawcall, will begin reading from `draw_first_index`
         /// until `draw_vertex_count` vertices are processed.
         draw: LsbRegister(Trigger),
-        /// Triggers an indexed drawcall, 
+        /// Triggers an indexed drawcall,
         draw_indexed: LsbRegister(Trigger),
         _unknown1: u32,
         clear_post_vertex_cache: LsbRegister(Trigger),

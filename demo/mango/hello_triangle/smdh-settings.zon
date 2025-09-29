@@ -1,9 +1,9 @@
-{
-    .titles = Titles {
-        .english = Title {
+.{
+    .titles = .{
+        .english = .{
             .title = "Hello Triangle",
             .description = "accelerating triangles with fruits!",
             .publisher = "zitrus",
-        } 
+        },
     },
 }

@@ -6,6 +6,21 @@
 pub const separator = '/';
 pub const ComponentIterator = std.fs.path.ComponentIterator(.posix, u16);
 
+pub const IvfcHeader = extern struct {
+    pub const Level = extern struct { logical_offset: u64, hash_data_size: u64, block_size: u32, _reserved0: u32 };
+    magic: [4]u8 = "IVFC".*,
+    magic_int: u32 = 0x10000,
+    master_hash_size: u32,
+    levels: [3]ivfc.Level,
+    _reserved0: u32,
+    // XXX: ???
+    optional_info_size: u32,
+
+    comptime {
+        std.debug.assert(@sizeOf(IvfcHeader) == 0x5C);
+    }
+};
+
 pub const Header = extern struct {
     pub const min_data_alignment = 16;
 
@@ -786,3 +801,5 @@ const testing = std.testing;
 
 const builtin = @import("builtin");
 const std = @import("std");
+const zitrus = @import("zitrus");
+const ivfc = zitrus.horizon.fmt.ivfc;

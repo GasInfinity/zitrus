@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) void {
 
     const info_smdh = zitrus.addMakeSmdh(b, .{
         .name = "libapplets.icn",
-        .settings = b.path("smdh-settings.ziggy"),
+        .settings = b.path("smdh-settings.zon"),
     });
 
     const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "libapplets.3dsx", .exe = exe, .smdh = info_smdh });

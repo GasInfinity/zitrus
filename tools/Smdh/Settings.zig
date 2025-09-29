@@ -1,5 +1,3 @@
-const ApplicationSettings = @This();
-
 const Title = struct {
     title: []const u8,
     description: []const u8,
@@ -232,7 +230,7 @@ matchmaking_bit_id: u64 = 0,
 optimal_animation_frame: f32 = 0,
 streetpass_id: u32 = 0,
 
-pub fn initSmdh(in_smdh: smdh.Smdh, arena: std.mem.Allocator) !ApplicationSettings {
+pub fn initSmdh(in_smdh: smdh.Smdh, arena: std.mem.Allocator) !Settings {
     const settings = in_smdh.settings;
 
     const english = in_smdh.titles[@intFromEnum(smdh.Language.english)];
@@ -274,19 +272,19 @@ pub fn initSmdh(in_smdh: smdh.Smdh, arena: std.mem.Allocator) !ApplicationSettin
     };
 }
 
-pub fn toSmdh(app_settings: ApplicationSettings, icons: smdh.Icons) !smdh.Smdh {
-    const english = try app_settings.titles.english.toSmdh();
-    const japanese = if (app_settings.titles.japanese) |t| try t.toSmdh() else english;
-    const french = if (app_settings.titles.french) |t| try t.toSmdh() else english;
-    const german = if (app_settings.titles.german) |t| try t.toSmdh() else english;
-    const italian = if (app_settings.titles.italian) |t| try t.toSmdh() else english;
-    const spanish = if (app_settings.titles.spanish) |t| try t.toSmdh() else english;
-    const simplified_chinese = if (app_settings.titles.simplified_chinese) |t| try t.toSmdh() else english;
-    const korean = if (app_settings.titles.korean) |t| try t.toSmdh() else english;
-    const dutch = if (app_settings.titles.dutch) |t| try t.toSmdh() else english;
-    const portuguese = if (app_settings.titles.portuguese) |t| try t.toSmdh() else english;
-    const russian = if (app_settings.titles.russian) |t| try t.toSmdh() else english;
-    const traditional_chinese = if (app_settings.titles.traditional_chinese) |t| try t.toSmdh() else english;
+pub fn toSmdh(settings: Settings, icons: smdh.Icons) !smdh.Smdh {
+    const english = try settings.titles.english.toSmdh();
+    const japanese = if (settings.titles.japanese) |t| try t.toSmdh() else english;
+    const french = if (settings.titles.french) |t| try t.toSmdh() else english;
+    const german = if (settings.titles.german) |t| try t.toSmdh() else english;
+    const italian = if (settings.titles.italian) |t| try t.toSmdh() else english;
+    const spanish = if (settings.titles.spanish) |t| try t.toSmdh() else english;
+    const simplified_chinese = if (settings.titles.simplified_chinese) |t| try t.toSmdh() else english;
+    const korean = if (settings.titles.korean) |t| try t.toSmdh() else english;
+    const dutch = if (settings.titles.dutch) |t| try t.toSmdh() else english;
+    const portuguese = if (settings.titles.portuguese) |t| try t.toSmdh() else english;
+    const russian = if (settings.titles.russian) |t| try t.toSmdh() else english;
+    const traditional_chinese = if (settings.titles.traditional_chinese) |t| try t.toSmdh() else english;
 
     return smdh.Smdh{
         .titles = [_]smdh.Title{
@@ -304,24 +302,21 @@ pub fn toSmdh(app_settings: ApplicationSettings, icons: smdh.Icons) !smdh.Smdh {
             traditional_chinese,
         } ++ (.{std.mem.zeroes(smdh.Title)} ** 4),
         .settings = smdh.Settings{
-            .region_ratings = app_settings.ratings.toSmdh(),
-            .region_lockout = if (app_settings.region_lockout) |lockout| lockout.toSmdh() else .free,
-            .matchmaking_id = app_settings.matchmaking_id,
-            .matchmaking_bit_id = app_settings.matchmaking_bit_id,
-            .flags = app_settings.flags.toSmdh(),
-            .eula_version = app_settings.eula_version,
-            .optimal_animation_default_frame = app_settings.optimal_animation_frame,
-            .cec_id = app_settings.streetpass_id,
+            .region_ratings = settings.ratings.toSmdh(),
+            .region_lockout = if (settings.region_lockout) |lockout| lockout.toSmdh() else .free,
+            .matchmaking_id = settings.matchmaking_id,
+            .matchmaking_bit_id = settings.matchmaking_bit_id,
+            .flags = settings.flags.toSmdh(),
+            .eula_version = settings.eula_version,
+            .optimal_animation_default_frame = settings.optimal_animation_frame,
+            .cec_id = settings.streetpass_id,
         },
         .icons = icons,
     };
 }
 
-test ApplicationSettings {
-    try ziggy.schema.checkType(ApplicationSettings, @embedFile("settings.ziggy-schema"));
-}
+const Settings = @This();
 
 const std = @import("std");
-const ziggy = @import("ziggy");
 const zitrus = @import("zitrus");
 const smdh = zitrus.horizon.fmt.smdh;

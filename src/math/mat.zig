@@ -1,7 +1,7 @@
 //! Useful matrix operations.
 //!
 //! They all transform to the PICA200 NDC volume (Same as OpenGL/VK/D3D except Z [0, -1]).
-//! If you already have a matrix which expects a VK/D3D Z [0, 1] and don't want to use 
+//! If you already have a matrix which expects a VK/D3D Z [0, 1] and don't want to use
 //! these helpers, you can negate m33 and m34
 //!
 //! Some operations are provided for the sake of completeness (translation, scale, ...)

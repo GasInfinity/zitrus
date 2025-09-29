@@ -9,16 +9,12 @@
             .hash = "zalloc-0.0.0-xJbxwdsmAADqSpLvU298eMJ4MRG-rsepdJcfEEUwudQv",
         },
         .zsflt = .{
-            .url = "git+https://github.com/GasInfinity/zsflt.git#d5868fe99fd7c659071f83e92fe2ba7846022f16",
-            .hash = "zsflt-0.0.0-_pCibecdAAD3Ul0lr4MlKdEWCUsxQSP5gh8AxEfbvMkw",
+            .url = "git+https://github.com/GasInfinity/zsflt#86113741c8bb88886fafa4dad00606054e53eda1",
+            .hash = "zsflt-0.0.0-_pCibcspAAB2Ph7txUSu7AkDb-zJfGKQnLQytGr_xclR",
         },
         .zdap = .{
             .url = "git+https://github.com/GasInfinity/zdap#1b1fc477d2506d979ec38356f41a976693de3f2e",
             .hash = "zdap-0.1.0-wEMl7vF7AADjRQP9W--Y4UTCr7mCuYmbCypTGO0HxPue",
-        },
-        .ziggy = .{
-            .url = "git+https://github.com/kristoff-it/ziggy#4353b20ef2ac750e35c6d68e4eb2a07c2d7cf901",
-            .hash = "ziggy-0.1.0-kTg8v5pABgDztlefWHceH-Sh8tVveguFC61QkmLkIRaA",
         },
         .zigimg = .{
             .url = "git+https://github.com/zigimg/zigimg.git?ref=migration-to-zig-0.15#d7b7ab0ba0899643831ef042bd73289510b39906",

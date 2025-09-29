@@ -6,6 +6,7 @@ const Applets = union(enum) {
     ncch: @import("Ncch.zig"),
     @"3dsx": @import("3dsx.zig"),
     pica: @import("Pica.zig"),
+    firm: @import("Firm.zig"),
 };
 
 const Arguments = struct {

@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) void {
 
     const smdh = zitrus.addMakeSmdh(b, .{
         .name = "hello_triangle.icn",
-        .settings = b.path("smdh-settings.ziggy"),
+        .settings = b.path("smdh-settings.zon"),
     });
 
     const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "hello_triangle.3dsx", .exe = exe, .smdh = smdh });

@@ -247,6 +247,10 @@ pub const ResourceLimit = packed struct(u32) {
     obj: Object,
 };
 
+pub const CodeSet = packed struct(u32) {
+    obj: Object,
+};
+
 pub const AddressArbiter = packed struct(u32) {
     obj: Object,
 
@@ -277,6 +281,41 @@ pub const AddressArbiter = packed struct(u32) {
 
     pub fn close(arbiter: AddressArbiter) void {
         _ = closeHandle(arbiter.obj);
+    }
+};
+
+pub const MemoryBlock = packed struct(u32) {
+    pub const Error = error{ InvalidPermissions, Unexpected };
+    pub const CreationError = error{OutOfMemoryBlocks} || Error;
+
+    obj: Object,
+
+    pub fn create(address: [*]align(heap.page_size) u8, size: u32, this: MemoryPermission, other: MemoryPermission) CreationError!MemoryBlock {
+        return switch (createMemoryBlock(address, size, this, other).cases()) {
+            .success => |s| s.value,
+            .failure => |code| if (code == result.Code.out_of_memory_blocks) error.OutOfMemoryBlocks else unexpectedResult(code),
+        };
+    }
+
+    pub const MapError = error{ InvalidPermissions, Unexpected };
+    pub fn map(mem: MemoryBlock, address: [*]align(heap.page_size) u8, this: MemoryPermission, other: MemoryPermission) Error!void {
+        if (this.execute) {
+            return error.InvalidPermissions;
+        }
+
+        const map_result = mapMemoryBlock(mem, address, this, other);
+
+        if (!map_result.isSuccess()) {
+            return error.Unexpected;
+        }
+    }
+
+    pub fn unmap(mem: MemoryBlock, address: [*]align(heap.page_size) u8) void {
+        _ = unmapMemoryBlock(mem, address);
+    }
+
+    pub fn close(mem: MemoryBlock) void {
+        _ = closeHandle(mem.obj);
     }
 };
 
@@ -446,41 +485,6 @@ pub const Timer = packed struct(u32) {
     }
 };
 
-pub const MemoryBlock = packed struct(u32) {
-    pub const Error = error{ InvalidPermissions, Unexpected };
-    pub const CreationError = error{OutOfMemoryBlocks} || Error;
-
-    obj: Object,
-
-    pub fn create(address: [*]align(heap.page_size) u8, size: u32, this: MemoryPermission, other: MemoryPermission) CreationError!MemoryBlock {
-        return switch (createMemoryBlock(address, size, this, other).cases()) {
-            .success => |s| s.value,
-            .failure => |code| if (code == result.Code.out_of_memory_blocks) error.OutOfMemoryBlocks else unexpectedResult(code),
-        };
-    }
-
-    pub const MapError = error{ InvalidPermissions, Unexpected };
-    pub fn map(mem: MemoryBlock, address: [*]align(heap.page_size) u8, this: MemoryPermission, other: MemoryPermission) Error!void {
-        if (this.execute) {
-            return error.InvalidPermissions;
-        }
-
-        const map_result = mapMemoryBlock(mem, address, this, other);
-
-        if (!map_result.isSuccess()) {
-            return error.Unexpected;
-        }
-    }
-
-    pub fn unmap(mem: MemoryBlock, address: [*]align(heap.page_size) u8) void {
-        _ = unmapMemoryBlock(mem, address);
-    }
-
-    pub fn close(mem: MemoryBlock) void {
-        _ = closeHandle(mem.obj);
-    }
-};
-
 pub const ServerSession = packed struct(u32) {
     sync: Synchronization,
 
@@ -640,6 +644,94 @@ pub const Thread = packed struct(u32) {
 };
 
 pub const Process = packed struct(u32) {
+    // TODO: Make union(u32) when implemented in zig
+    pub const CapabilityDescriptor = packed union {
+        // I suppose this allows you to use `svcBindInterrupt`?
+        pub const InterruptInfo = packed struct(u32) {
+            pub const magic_value = 0b1110;
+
+            info: u28,
+            header: u4 = magic_value,
+        };
+
+        // There's no info about this but I think that index is the 24-bit window of the syscall
+        // table and mask are the syscalls which the app uses?
+        pub const SystemCallMask = packed struct(u32) {
+            pub const magic_value = 0b11110;
+
+            mask: u24,
+            index: u3,
+            header: u5 = magic_value,
+        };
+
+        pub const KernelReleaseVersion = packed struct(u32) {
+            pub const magic_value = 0b1111110;
+
+            minor: u8,
+            major: u8,
+            _unused0: u9 = 0,
+            header: u7 = magic_value,
+        };
+
+        pub const HandleTableSize = packed struct(u32) {
+            pub const magic_value = 0b11111110;
+
+            size: u19,
+            _unused0: u5 = 0,
+            header: u8 = magic_value,
+        };
+
+        pub const KernelFlags = packed struct(u32) {
+            pub const magic_value = 0b111111110;
+            pub const MemoryType = enum(u3) { application = 1, system, base, _ };
+
+            allow_debug: bool,
+            force_debug: bool,
+            allow_non_alphanumeric: bool,
+            shared_page_writing: bool,
+            allow_privileged_priorities: bool,
+            allow_main_args: bool,
+            shared_device_memory: bool,
+            runnable_on_sleep: bool,
+            memory_type: MemoryType,
+            special_memory: bool,
+            allow_cpu2: bool,
+            _unused0: u10 = 0,
+            header: u9 = magic_value,
+        };
+
+        pub const MapAddressRangeStart = packed struct(u32) {
+            pub const magic_value = 0b11111111100;
+
+            page: u20,
+            read_only: bool,
+            header: u11 = magic_value,
+        };
+
+        pub const MapAddressRangeEnd = packed struct(u32) {
+            page: u20,
+            cacheable: bool,
+            header: u11 = MapAddressRangeStart.magic_value,
+        };
+
+        pub const MapIoPage = packed struct(u32) {
+            pub const magic_value = 0b11111111111;
+
+            page: u20,
+            read_only: bool,
+            header: u11 = 0b11111111111,
+        };
+
+        interrupt_info: InterruptInfo,
+        system_call_mask: SystemCallMask,
+        kernel_release: KernelReleaseVersion,
+        kernel_flags: KernelFlags,
+        handle_table_size: HandleTableSize,
+        map_range_start: MapAddressRangeStart,
+        map_range_end: MapAddressRangeEnd,
+        map_io_page: MapIoPage,
+    };
+
     pub const current: Process = @bitCast(@as(u32, 0xFFFF8001));
 
     sync: Synchronization,

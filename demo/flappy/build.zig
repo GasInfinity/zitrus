@@ -29,7 +29,7 @@ pub fn build(b: *std.Build) void {
 
     const flappy_smdh = zitrus.addMakeSmdh(b, .{
         .name = "flappy.smdh",
-        .settings = b.path("smdh-settings.ziggy"),
+        .settings = b.path("smdh-settings.zon"),
         .icon = b.path("icon.png"),
     });
 

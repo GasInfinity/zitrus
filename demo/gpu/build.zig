@@ -34,7 +34,7 @@ pub fn build(b: *std.Build) void {
 
         const bitmap_smdh = zitrus.addMakeSmdh(b, .{
             .name = "gpu.icn",
-            .settings = b.path("smdh-settings.ziggy"),
+            .settings = b.path("smdh-settings.zon"),
         });
 
         const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "gpu.3dsx", .exe = exe, .smdh = bitmap_smdh });

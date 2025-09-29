@@ -214,12 +214,12 @@ pub const Queue = struct {
     }
 
     pub fn finalize(queue: *Queue) void {
-        const pipeline = &zitrus.memory.arm11.pica.p3d;
+        const p3d = &zitrus.memory.arm11.pica.p3d;
 
-        queue.add(pipeline, &pipeline.irq.req[0..4].*, @bitCast(@as(u32, 0x12345678)));
+        queue.add(p3d, &p3d.irq.req[0..4].*, @bitCast(@as(u32, 0x12345678)));
 
         if (!std.mem.isAligned(queue.current_index, 4)) {
-            queue.add(pipeline, &pipeline.irq.req[0..4].*, @bitCast(@as(u32, 0x12345678)));
+            queue.add(p3d, &p3d.irq.req[0..4].*, @bitCast(@as(u32, 0x12345678)));
         }
     }
 };

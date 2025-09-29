@@ -8,6 +8,7 @@ pub const Handle = enum(u64) {
 };
 
 pub const Data = packed struct(u64) {
+    // NOTE: This is to make a possibly valid `Handle` null.
     valid: bool = true,
     mag_filter: pica.TextureUnitFilter,
     min_filter: pica.TextureUnitFilter,
@@ -16,7 +17,7 @@ pub const Data = packed struct(u64) {
     address_mode_v: pica.TextureUnitAddressMode,
     min_lod: u4,
     max_lod: u4,
-    lod_bias: u13,
+    lod_bias: pica.Q4_8,
     border_color_r: u8,
     border_color_g: u8,
     border_color_b: u8,
@@ -32,7 +33,7 @@ pub const Data = packed struct(u64) {
             .address_mode_v = create_info.address_mode_v.native(),
             .min_lod = @intCast(create_info.min_lod),
             .max_lod = @intCast(create_info.max_lod),
-            .lod_bias = 0, // TODO: Fixed point
+            .lod_bias = .ofSaturating(create_info.lod_bias),
             .border_color_r = create_info.border_color[0],
             .border_color_g = create_info.border_color[1],
             .border_color_b = create_info.border_color[2],
@@ -48,10 +49,7 @@ pub fn toHandle(sampler: Sampler) Handle {
 }
 
 pub fn fromHandle(handle: Handle) Sampler {
-    // TODO: With runtime safety the handle is a real pointer with some metadata
-    return .{
-        .data = @bitCast(@intFromEnum(handle)),
-    };
+    return .{ .data = @bitCast(@intFromEnum(handle)) };
 }
 
 const Sampler = @This();

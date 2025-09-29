@@ -44,7 +44,7 @@ b.installArtifact(exe);
 
 const homebrew_smdh = zitrus.addMakeSmdh(b, .{
     .name = "homebrew.icn",
-    .settings = b.path("path-to-smdh-settings.ziggy"), // look at any demo for a quick example or the schema in tools/make-smdh/settings.ziggy-schema
+    .settings = b.path("path-to-smdh-settings.zon"), // look at any demo for a quick example
     .icon = b.path("path-to-icon.png/jpg/..."), // supported formats depends on zigimg image decoding.
 });
 
@@ -75,8 +75,9 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 - [flappy](demo/flappy) is a simple fully functional flappy bird clone written entirely with software blitting.
 - [gpu](demo/gpu/) is a playground for [mango](src/mango.zig), bleeding edge features are tested there. Not really an example per-se.
 
+# Coverage
 
-# Legend
+### Legend
 ⚠️ Feature regressed temporarily due to dependency or upstream (usually when zig updates this can happen)
  
 ⛔ Blocked due to upstream. Impossible to do until something gets fixed or added, usually listed in https://github.com/GasInfinity/zitrus/issues/1
@@ -88,56 +89,37 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 🔋 High priority
 🪫 Low priority
 
-# Tooling coverage
-- 🟢 Smdh creation (tools/Smdh)
-- 🟢 Elf -> 3dsx conversion (tools/3dsx)
-- 🟢 PICA200 shader assembler/disassembler (tools/Pica):
-    - 🟢 Instruction encoding/decoding
-    - 🟢 Assembler
-    - 🔴🪫 Disassembler
-    - 🟢 Diagnostics
-    - 🟢 Output ZPSH files.
-    - 🔴🪫 Output SHBIN/RAW files
-- 🟡 NCCH (tools/Ncch):
-    - 🟢 ExeFS (tools/ExeFs)
-    - 🟢 RomFS (tools/RomFs)
-    - 🔴 elf -> ExeFS .code
-- 🔴 Everything not listed here
-  
-- 🟡🪫 Dumping, a.k.a: 3dsx/exefs --> bin/elf, smdh -> config + icons, etc...
-    - 🟢 Smdh -> config + icons
-    - 🟡 NCCH:
-        - 🟢 LZrev decompressor.
-        - 🟢 ExeFS
-        - 🔴 RomFS
-    - 🔴 Everything not listed here
+## Documentation
 
-# HOS Coverage
-Zitrus is currently very work in progress, it's able to run basic homebrew but lots of things are missing (services, io, etc...)
+- 🟡 Mango
+- 🟡 Horizon
 
-- 🟡 Tests
-- 🟡 C API
-- 🟡 Docs
+## Tests
 
-## Runtime support
-- 🟢 crt0/startup code
-- 🔴⛔ Thread local variables.
-- 🟡⛔🔋 panic and error reporting and tracing.
-- 🔴⛔🔋 Io interface support (zig 0.16).
+- 🟡 Horizon
+- 🟡 Mango
+
+## Formats (+ Tooling)
+- 🟢 Smdh (tools/Smdh): Make / Dump
+- 🟢 3dsx (tools/3dsx): Make 
+- 🟢 Zpsh (tools/Pica): Make. Specific to zitrus, **Z**itrus**P**ica**SH**ader. Used in mango
+- 🟡 Firm (tools/Firm): Info
+- 🟡 Ncch (tools/Ncch): Dump (Info)
+    - 🟡 ExeFS (tools/ExeFs): Info / Dump
+    - 🟡 RomFS (tools/RomFs): Make / Ls
+- 🟡 LZrev: Decompression
+
+## Horizon
+
+### Runtime
+- 🔴⛔ `threadlocal` variables.
+- 🟡⛔🔋 Panic / error reporting and tracing.
 - 🟡⛔🔋 *Application* Test runner.
 
-## Gpu Support
-
-- 🟢 Software rendering with Framebuffers
-- 🟢 GX Commands
-- 🟢 2D/3D Acceleration (a.k.a: REALLY using the Gpu to do things)
-- 🟡🔋🔋 mango, a low-level, vulkan-like graphics api for the PICA200.
-
-## Port/Service Support
-
+### Services
+    
 - 🟢 `srv:`
 - 🟢 `err:f`
-  
 - 🟡 `APT:S/A/U`
 - 🟡 `hid:SPRV/USER`
 - 🟢 `ir:rst`
@@ -152,42 +134,50 @@ Zitrus is currently very work in progress, it's able to run basic homebrew but l
 - 🟢 `pm:dbg`
 - 🔴 All other [services](https://www.3dbrew.org/wiki/Services_API) not listed here
 
-## Applet Support
+### Library Applets
+
 - 🟢 `error`
 - 🟡 `swkbd`
 - 🔴 All other [applets](https://www.3dbrew.org/wiki/NS_and_APT_Services#AppIDs) not listed here.
 
-# Mango coverage
+## Mango (PICA200 VK-like Graphics API)
 
-- 🔴 Tests
-- 🟡 C API
-- 🟡 Docs
+### Backends
+- 🟢 Horizon
+- 🔴 Interface (for `freestanding` usage)
 
-- 🟡 Device HOS implementation.
+### Objects
+- 🟢 Presentation engine: 240x400, 240x400x2, 240x800 + 240x320. `Double` or `Triple` buffered in `Mailbox` or `Fifo`.
 - 🟡 Queues
     - 🟡 Fill (clear and fill operations)
     - 🟡 Transfer (copy and blit operations)
     - 🟢 Submit (`CommandBuffer` submission)
-    - 🟡 Present (see `PresentationEngine` support)
-- 🟡 Memory / Buffers
-- 🟡 Pipelines
-- 🟡 CommandPool
+    - 🟢 Present (see `PresentationEngine`) 
+- 🟢 `Semaphore`s
+- 🟢 `DeviceMemory`
+- 🟢 `Buffer`s
+- 🟢 `Sampler`
+- 🟡 `Image`s / ImageViews
+    - 🟡 Up to 8 `Image` layers
+    - 🟡 Up to 8 mipmap levels (1024x1024 -> 8x8)
+- 🟡 `Pipeline`s
+    - 🔴 Lighting
+    - 🔴 Fog
+    - 🔴 Geometry shaders
+    - 🔴 Gas
+- 🟡 `CommandPool`s
     - 🟢 `CommandBuffer` recycling
     - 🔴 Native buffer pooling/reusing
     - 🔴 Prewarm parameters.
-- 🟡 CommandBuffer's
-- 🟡 Images / ImageViews
-    - 🟡 Up to 8 `Image` layers
-    - 🟡 Up to 8 mipmap levels (1024x1024 -> 8x8)
-- 🟡 Image Sampling
-- 🟢 Synchronization primitives / driver thread.
-- 🟡 Presentation engine.
-    - 🟢 2D (Top and bottom)
-    - 🟢 3D (Top, 2 layers per image)
-    - 🟡 Full resolution (Top 240x800 swapchain, needs testing but should work)
+- 🟡 `CommandBuffer`s
+    - 🟡 Image Sampling
+        - 🔴 Cubemaps
+        - 🔴 Shadow textures
 
-- 🔴🪫 Device `HAL` abstraction.
-- 🔴🪫 Device baremetal implementation (prerequsite: `HAL` abstraction).
+## Hardware
+
+- 🟢 CSND
+- 🟡 PICA200: Missing typing of some documented registers, mostly done.
 
 ## Why?
 I wanted to learn arm and always wanted to develop 3DS homebrew, also I searched and I haven't found any kind of zig package that doesn't use libctru, so I just started reading a lot and doing things. Furthermore, using only zig has a lot of advantages:

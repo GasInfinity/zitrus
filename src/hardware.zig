@@ -119,7 +119,7 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
         pub inline fn get(bt: Self, index: usize) T {
             const value = std.mem.readPackedIntNative(ElementInt, @ptrCast(&bt.raw), index * @bitSizeOf(ElementInt));
 
-            return switch(@typeInfo(T)) {
+            return switch (@typeInfo(T)) {
                 .@"enum" => @enumFromInt(value),
                 else => @bitCast(value),
             };

@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 
     const info_smdh = zitrus.addMakeSmdh(b, .{
-        .name = "info.smdh",
+        .name = "info.icn",
         .settings = b.path("smdh-settings.ziggy"),
     });
 

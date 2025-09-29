@@ -99,9 +99,6 @@ fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: s
     const zdap = b.dependency("zdap", .{});
     tools.addImport("zdap", zdap.module("zdap"));
 
-    const ziggy = b.dependency("ziggy", .{});
-    tools.addImport("ziggy", ziggy.module("ziggy"));
-
     // TODO: wait until it gets updated
     const zigimg = b.dependency("zigimg", .{});
     tools.addImport("zigimg", zigimg.module("zigimg"));

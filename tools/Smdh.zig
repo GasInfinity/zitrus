@@ -7,14 +7,14 @@ pub const Make = struct {
 
     @"--": struct {
         pub const descriptions = .{
-            .@"out.smdh" = "Output SMDH",
-            .@"settings.ziggy" = "Application settings",
+            .@"out.icn" = "Output SMDH",
+            .@"settings.zon" = "Application settings",
             .@"48x48" = "Large icon (image decode support depends on zigimg)",
             .@"24x24" = "Small icon (optional)",
         };
 
-        @"out.smdh": []const u8,
-        @"settings.ziggy": []const u8,
+        @"out.icn": []const u8,
+        @"settings.zon": []const u8,
         @"48x48": []const u8,
         @"24x24": ?[]const u8,
     },
@@ -57,7 +57,7 @@ pub fn main(args: Smdh, arena: std.mem.Allocator) !u8 {
     const cwd = std.fs.cwd();
     return switch (args.@"-") {
         .make => |make| m: {
-            const settings_path = make.@"--".@"settings.ziggy";
+            const settings_path = make.@"--".@"settings.zon";
             const settings_code = code: {
                 const file = cwd.openFile(settings_path, .{ .mode = .read_only }) catch |err| {
                     std.debug.print("could not open settings file '{s}': {s}\n", .{ settings_path, @errorName(err) });
@@ -75,21 +75,16 @@ pub fn main(args: Smdh, arena: std.mem.Allocator) !u8 {
             };
             defer arena.free(settings_code);
 
-            var diagnostic: ziggy.Diagnostic = .{
-                .path = settings_path,
-                .errors = .{},
-            };
+            var diagnostic: std.zon.parse.Diagnostics = .{};
             defer diagnostic.deinit(arena);
 
-            const app_settings: ApplicationSettings = ziggy.parseLeaky(ApplicationSettings, arena, settings_code, .{
-                .diagnostic = &diagnostic,
-            }) catch |err| switch (err) {
-                error.Syntax => {
+            const app_settings = std.zon.parse.fromSlice(Settings, arena, settings_code, &diagnostic, .{}) catch |err| switch (err) {
+                error.ParseZon => {
                     var buf: [256]u8 = undefined;
                     var stderr_writer = std.fs.File.stderr().writer(&buf);
                     const stderr = &stderr_writer.interface;
 
-                    try stderr.print("error parsing {s}\n{f}", .{ settings_path, diagnostic.fmt(settings_code) });
+                    try stderr.print("error parsing {s}\n{f}", .{ settings_path, diagnostic });
                     try stderr.flush();
                     break :m 1;
                 },
@@ -108,7 +103,7 @@ pub fn main(args: Smdh, arena: std.mem.Allocator) !u8 {
                 break :m err;
             };
 
-            const out_path = make.@"--".@"out.smdh";
+            const out_path = make.@"--".@"out.icn";
             const out = cwd.createFile(out_path, .{}) catch |err| {
                 std.debug.print("could not create output file '{s}': {s}\n", .{ out_path, @errorName(err) });
                 break :m 1;
@@ -142,7 +137,7 @@ pub fn main(args: Smdh, arena: std.mem.Allocator) !u8 {
             };
 
             if (dump.settings) |settings_path| {
-                const app_settings = try ApplicationSettings.initSmdh(input_smdh, arena);
+                const app_settings = try Settings.initSmdh(input_smdh, arena);
 
                 const out = cwd.createFile(settings_path, .{}) catch |err| {
                     std.debug.print("could not create output settings file '{s}': {s}\n", .{ settings_path, @errorName(err) });
@@ -154,9 +149,9 @@ pub fn main(args: Smdh, arena: std.mem.Allocator) !u8 {
                 var out_writer = out.writer(&buf);
                 const writer = &out_writer.interface;
 
-                try ziggy.stringify(app_settings, .{
-                    .whitespace = .space_4,
-                    .emit_null_fields = false,
+                try std.zon.stringify.serialize(app_settings, .{
+                    .whitespace = true,
+                    .emit_default_optional_fields = false,
                 }, writer);
 
                 try writer.flush();
@@ -294,15 +289,14 @@ const morton = struct {
 };
 
 comptime {
-    _ = ApplicationSettings;
+    _ = Settings;
 }
 
 const Smdh = @This();
 
-const ApplicationSettings = @import("Smdh/ApplicationSettings.zig");
+const Settings = @import("Smdh/Settings.zig");
 
 const std = @import("std");
-const ziggy = @import("ziggy");
 const zigimg = @import("zigimg");
 const zitrus = @import("zitrus");
 const smdh = zitrus.horizon.fmt.smdh;

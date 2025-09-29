@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) void {
 
     const panic_smdh = zitrus.addMakeSmdh(b, .{
         .name = "panic.icn",
-        .settings = b.path("smdh-settings.ziggy"),
+        .settings = b.path("smdh-settings.zon"),
     });
 
     const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "panic.3dsx", .exe = exe, .smdh = panic_smdh });
