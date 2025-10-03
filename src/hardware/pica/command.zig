@@ -33,7 +33,7 @@ pub const Queue = struct {
         };
     }
 
-    pub fn remaining(queue: Queue) []u32 {
+    pub fn unusedCapacitySlice(queue: Queue) []u32 {
         return queue.buffer[queue.current_index..];
     }
 
@@ -90,10 +90,8 @@ pub const Queue = struct {
                 });
                 queue.current_index += 2;
 
-                inline for (1..as_u32_array.len) |i| {
-                    queue.buffer[queue.current_index] = as_u32_array[i];
-                    queue.current_index += 1;
-                }
+                @memcpy(queue.buffer[queue.current_index..][0..(as_u32_array.len - 1)], as_u32_array[1..as_u32_array.len]);
+                queue.current_index += (as_u32_array.len - 1);
 
                 // add padding as commands must be aligned to 8 bytes
                 if (!std.mem.isAligned(as_u32_array.len - 1, 2)) {
@@ -108,10 +106,10 @@ pub const Queue = struct {
     fn IncrementalWritesTuple(comptime base: *pica.Graphics, comptime registers: anytype) type {
         const RegistersType = @TypeOf(registers);
 
-        std.debug.assert(@typeInfo(RegistersType) == .@"struct");
+        comptime std.debug.assert(@typeInfo(RegistersType) == .@"struct");
         const st_ty = @typeInfo(RegistersType).@"struct";
 
-        std.debug.assert(st_ty.is_tuple);
+        comptime std.debug.assert(st_ty.is_tuple);
 
         var needed_fields: [st_ty.fields.len]std.builtin.Type.StructField = undefined;
 
@@ -128,8 +126,8 @@ pub const Queue = struct {
             if (i > 0) {
                 const last_id: Id = .fromRegister(base, registers[i - 1]);
 
-                std.debug.assert(std.math.order(@intFromEnum(current_id), @intFromEnum(last_id)) == .gt);
-                std.debug.assert((@intFromEnum(current_id) - @intFromEnum(last_id)) == 1);
+                comptime std.debug.assert(std.math.order(@intFromEnum(current_id), @intFromEnum(last_id)) == .gt);
+                comptime std.debug.assert((@intFromEnum(current_id) - @intFromEnum(last_id)) == 1);
             }
 
             needed_fields[i] = .{
@@ -151,6 +149,8 @@ pub const Queue = struct {
     pub fn addIncrementalMasked(queue: *Queue, comptime base: *pica.Graphics, comptime registers: anytype, values: IncrementalWritesTuple(base, registers), mask: u4) void {
         if (registers.len == 0) return;
 
+        comptime std.debug.assert(values.len <= 256);
+
         const first_id: Id = .fromRegister(base, registers[0]);
 
         // NOTE: I do the ptrCast instead of a bitCast because enums cannot be bitcasted, its just a shortcut.
@@ -163,10 +163,8 @@ pub const Queue = struct {
         });
         queue.current_index += 2;
 
-        inline for (1..values.len) |i| {
-            queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&values[i]))).*;
-            queue.current_index += 1;
-        }
+        @memcpy(queue.buffer[queue.current_index..][0..(values.len - 1)], @as([*]const u32, @ptrCast(@alignCast(&values)))[1..values.len]);
+        queue.current_index += (values.len - 1);
 
         // add padding as commands must be aligned to 8 bytes
         if (!std.mem.isAligned(values.len - 1, 2)) {
@@ -189,27 +187,39 @@ pub const Queue = struct {
         const Child = std.meta.Child(@TypeOf(register));
         const id: Id = .fromRegister(base, register);
 
-        std.debug.assert(@bitSizeOf(Child) == @bitSizeOf(u32));
-        std.debug.assert(values.len <= std.math.maxInt(u8));
+        comptime std.debug.assert(@bitSizeOf(Child) == @bitSizeOf(u32));
 
-        queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&values[0]))).*;
-        queue.buffer[queue.current_index + 1] = @bitCast(Header{
-            .id = id,
-            .mask = mask,
-            .extra = @intCast(values.len - 1),
-            .incremental_writing = false,
-        });
-        queue.current_index += 2;
+        var current: usize = 0;
+        var remaining: usize = values.len;
 
-        for (1..values.len) |i| {
-            queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&values[i]))).*;
-            queue.current_index += 1;
-        }
+        while (remaining > 0) {
+            const len = @min(remaining, 256);
+            defer {
+                current += len;
+                remaining -= len;
+            }
 
-        // add padding as commands must be aligned to 8 bytes
-        if (!std.mem.isAligned(values.len - 1, 2)) {
-            queue.buffer[queue.current_index] = 0;
-            queue.current_index += 1;
+            const slice = values[current..][0..len];
+
+            queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&slice[0]))).*;
+            queue.buffer[queue.current_index + 1] = @bitCast(Header{
+                .id = id,
+                .mask = mask,
+                .extra = @intCast(len - 1),
+                .incremental_writing = false,
+            });
+            queue.current_index += 2;
+
+            for (1..values.len) |i| {
+                queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&slice[i]))).*;
+                queue.current_index += 1;
+            }
+
+            // add padding as commands must be aligned to 8 bytes
+            if (!std.mem.isAligned(len - 1, 2)) {
+                queue.buffer[queue.current_index] = 0;
+                queue.current_index += 1;
+            }
         }
     }
 

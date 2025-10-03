@@ -129,7 +129,7 @@ save_data_size: u64 = 0,
 access_control: AccessControl,
 dependencies: []const u64 = &.{},
 
-pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.ExtendedHeader) !Settings {
+pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.ExtendedHeader, gpa: std.mem.Allocator) !Settings {
     return .{
         .title = std.mem.span((&extended_header.system_control.application_title).ptr),
         .product_code = std.mem.span((&header.product_code).ptr),
@@ -152,10 +152,13 @@ pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.Extende
                 var capabilities: KernelCapabilities = .{};
                 var i: usize = 0;
 
+                var used_syscalls: std.ArrayListUnmanaged(u16) = .empty;
+
                 while (i < extended_header.access_control.kernel_capabilities.descriptors.len) {
                     const descriptor = extended_header.access_control.kernel_capabilities.descriptors[i];
 
                     // NOTE: We cannot use a switch as the header is not fixed-size.
+                    // XXX: ^ This is ugly as hell still.
                     if (descriptor.kernel_release.header == Descriptor.KernelReleaseVersion.magic_value) capabilities.version = .{
                         .major = descriptor.kernel_release.major,
                         .minor = descriptor.kernel_release.minor,
@@ -179,7 +182,12 @@ pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.Extende
                     } else if (descriptor.interrupt_info.header == Descriptor.InterruptInfo.magic_value) {
                         // TODO:
                     } else if (descriptor.system_call_mask.header == Descriptor.SystemCallMask.magic_value) {
-                        // TODO:
+                        const mask = descriptor.system_call_mask.mask;
+                        const start = descriptor.system_call_mask.index * @as(u8, @bitSizeOf(u24));
+
+                        for (0..@bitSizeOf(u24)) |bit| {
+                            if (((mask >> @intCast(bit)) & 0b1) != 0) try used_syscalls.append(gpa, @intCast(start + bit));
+                        }
                     } else if (descriptor.map_range_start.header == Descriptor.MapAddressRangeStart.magic_value) {
                         // TODO:
                     } else if (descriptor.map_range_start.header == Descriptor.MapAddressRangeStart.magic_value) {
@@ -193,6 +201,7 @@ pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.Extende
                     i += 1;
                 }
 
+                capabilities.system_call_access = try used_syscalls.toOwnedSlice(gpa);
                 break :blk capabilities;
             },
             .new_speedup = .{
@@ -238,8 +247,25 @@ pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.Extende
                 },
                 .attributes = .{ .enable_extended_save_data = extended_header.access_control.user_capabilities.storage.attributes.enable_extended_save_data },
             },
-            // TODO:
-            .service_access = &.{},
+            .service_access = blk: {
+                var accessed_service_count: usize = 0;
+
+                for (extended_header.access_control.user_capabilities.service_access_control) |service| {
+                    const len = std.mem.indexOfScalar(u8, &service, 0) orelse service.len;
+                    if (len == 0) break;
+                    accessed_service_count += 1;
+                }
+
+                const accessed_services = try gpa.alloc([]const u8, accessed_service_count);
+                for (accessed_services, 0..) |*accessed, i| {
+                    const service = &extended_header.access_control.user_capabilities.service_access_control[i];
+                    const len = std.mem.indexOfScalar(u8, service, 0) orelse service.len;
+
+                    accessed.* = service[0..len];
+                }
+
+                break :blk accessed_services;
+            },
             .category = @enumFromInt(@intFromEnum(extended_header.access_control.user_capabilities.resource_limit_category)),
         },
         .dependencies = blk: {
@@ -256,6 +282,11 @@ pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.Extende
             break :blk extended_header.system_control.dependency_titles[0..last];
         },
     };
+}
+
+pub fn deinit(settings: Settings, gpa: std.mem.Allocator) void {
+    gpa.free(settings.access_control.service_access);
+    gpa.free(settings.access_control.kernel.system_call_access);
 }
 
 const Settings = @This();

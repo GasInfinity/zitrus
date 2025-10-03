@@ -948,7 +948,10 @@ pub const GraphicsPipelineCreateInfo = extern struct {
         texture_3_coordinates: TextureCoordinateSource,
     };
 
-    pub const LightingState = extern struct {};
+    pub const LightingState = extern struct {
+        // TODO: Proper lighting support
+        enable: bool,
+    };
 
     pub const TextureCombinerState = extern struct {
         texture_combiners: [*]const TextureCombinerUnit,

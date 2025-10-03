@@ -161,7 +161,7 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
     - 🟡 Up to 8 `Image` layers
     - 🟡 Up to 8 mipmap levels (1024x1024 -> 8x8)
 - 🟡 `Pipeline`s
-    - 🔴 Lighting
+    - 🟡 Lighting
     - 🔴 Fog
     - 🔴 Geometry shaders
     - 🔴 Gas

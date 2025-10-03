@@ -5,8 +5,7 @@ units: [6]pica.Graphics.TextureCombiners.Unit,
 
 pub fn compile(combiners: []const mango.TextureCombinerUnit, combiner_buffer_sources: []const mango.TextureCombinerUnit.BufferSources) TextureCombinerState {
     std.debug.assert(combiners.len > 0 and combiners.len <= 6);
-    // TODO: Test this assertion? Do buffer sources apply to combiners 0-3, 1-4 or 2-5?
-    std.debug.assert((combiner_buffer_sources.len == 0 and combiners.len == 1) or (combiner_buffer_sources.len == 4 and combiners.len > 4) or combiner_buffer_sources.len == combiners.len);
+    std.debug.assert((combiner_buffer_sources.len == 0 and combiners.len == 1) or (combiner_buffer_sources.len == 4 and combiners.len > 4) or combiner_buffer_sources.len == (combiners.len - 1));
 
     var combiner_state: TextureCombinerState = .{
         .config = std.mem.zeroes(pica.Graphics.TextureCombiners.Config),

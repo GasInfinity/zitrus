@@ -81,11 +81,15 @@ pub fn build(b: *std.Build) void {
     const run_tests_step = b.step("test", "Runs zitrus tests");
     run_tests_step.dependOn(&run_tests.step);
 
-    buildTools(b, optimize, tools_target, zitrus);
+    const zdap = b.dependency("zdap", .{});
+    const zdap_mod = zdap.module("zdap");
+
+    buildScripts(b, zdap_mod);
+    buildTools(b, optimize, tools_target, zdap_mod, zitrus);
     buildTests(b, zitrus);
 }
 
-fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: std.Build.ResolvedTarget, zitrus_mod: *std.Build.Module) void {
+fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: std.Build.ResolvedTarget, zdap: *std.Build.Module, zitrus_mod: *std.Build.Module) void {
     const no_bin = b.option(bool, "no-bin", "Don't emit a binary (incremental compilation)") orelse false;
 
     const tools = b.createModule(.{
@@ -95,11 +99,8 @@ fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: s
     });
 
     tools.addImport("zitrus", zitrus_mod);
+    tools.addImport("zdap", zdap);
 
-    const zdap = b.dependency("zdap", .{});
-    tools.addImport("zdap", zdap.module("zdap"));
-
-    // TODO: wait until it gets updated
     const zigimg = b.dependency("zigimg", .{});
     tools.addImport("zigimg", zigimg.module("zigimg"));
 
@@ -123,6 +124,36 @@ fn buildTools(b: *std.Build, optimize: std.builtin.OptimizeMode, tools_target: s
 
     const run_step = b.step("run-tools", "Runs zitrus-tools");
     run_step.dependOn(&run_tool.step);
+}
+
+const Script = struct { name: []const u8, path: []const u8 };
+const scripts: []const Script = &.{
+    .{ .name = "gen-spirv-spec", .path = "scripts/gen-spirv-spec.zig" },
+};
+
+fn buildScripts(b: *std.Build, zdap: *std.Build.Module) void {
+    inline for (scripts) |script| {
+        const script_exe = b.addExecutable(.{
+            .name = script.name,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path(script.path),
+                .target = b.resolveTargetQuery(.{}),
+                .optimize = .Debug,
+                .imports = &.{
+                    .{ .name = "zdap", .module = zdap },
+                },
+            }),
+        });
+
+        const run_script_step = b.step("run-script-" ++ script.name, "Run " ++ script.name);
+        const run_script = b.addRunArtifact(script_exe);
+
+        if (b.args) |args| {
+            run_script.addArgs(args);
+        }
+
+        run_script_step.dependOn(&run_script.step);
+    }
 }
 
 const StandaloneTest = struct {

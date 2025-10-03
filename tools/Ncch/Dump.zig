@@ -141,10 +141,10 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
 }
 
 pub fn dumpSettings(args: Dump, arena: std.mem.Allocator, writer: *std.Io.Writer, header: ncch.Header, exheader: ncch.ExtendedHeader, access_descriptor: ncch.AccessDescriptor) !void {
-    _ = arena;
     _ = access_descriptor;
 
-    const settings = try Settings.initNcch(&header, &exheader);
+    const settings = try Settings.initNcch(&header, &exheader, arena);
+    defer settings.deinit(arena);
 
     try std.zon.stringify.serialize(settings, .{
         .whitespace = !args.minify,

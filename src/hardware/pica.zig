@@ -19,7 +19,7 @@ pub const command = @import("pica/command.zig");
 pub const shader = @import("pica/shader.zig");
 
 pub const UQ0_11 = zsflt.Fixed(.unsigned, 0, 11);
-pub const UQ0_12 = zsflt.Fixed(.unsigned, 0, 11);
+pub const UQ0_12 = zsflt.Fixed(.unsigned, 0, 12);
 pub const UQ0_23 = zsflt.Fixed(.unsigned, 0, 23);
 pub const Q4_8 = zsflt.Fixed(.signed, 4, 8);
 pub const Q0_11 = zsflt.Fixed(.signed, 0, 11);
@@ -30,6 +30,17 @@ pub const F3_12 = zsflt.Float(3, 12);
 pub const F7_12 = zsflt.Float(7, 12);
 pub const F7_16 = zsflt.Float(7, 16);
 pub const F7_23 = zsflt.Float(7, 23);
+
+pub const Q1_11x2 = packed struct(u32) {
+    x: Q1_11,
+    _unused0: u3 = 0,
+    y: Q1_11,
+    _unused1: u3 = 0,
+
+    pub fn init(x: Q1_11, y: Q1_11) Q1_11x2 {
+        return .{ .x = x, .y = y };
+    }
+};
 
 pub const F5_10x2 = packed struct(u32) {
     x: F5_10,
@@ -281,7 +292,7 @@ pub const OutputMap = packed struct(u32) {
 
         pub fn isTextureCoordinate0(semantic: Semantic) bool {
             return switch (semantic) {
-                .texture_coordinate_0_u, .texture_coordinate_0_v => true,
+                .texture_coordinate_0_u, .texture_coordinate_0_v, .texture_coordinate_0_w => true,
                 else => false,
             };
         }
@@ -724,12 +735,11 @@ pub const Graphics = extern struct {
             color_present: bool = false,
             _unused0: u6 = 0,
             texture_coordinates_present: BitpackedArray(bool, 3) = .splat(false),
-            _unknown0: u4 = 0,
+            _unused1: u5 = 0,
             texture_coordinates_0_w_present: bool = false,
-            _unknown1: u1 = 0,
-            _unused1: u6 = 0,
-            normal_quaternion_or_view_present: bool = false,
-            _unused2: u8 = 0,
+            _unused2: u7 = 0,
+            normal_view_present: bool = false,
+            _unused3: u7 = 0,
         };
 
         cull_config: LsbRegister(CullMode),
@@ -1083,8 +1093,71 @@ pub const Graphics = extern struct {
         _unknown5: [15]u32,
     };
 
-    /// Look at 'Primitive Processing and Advanced Shading Architecture for Embedded Space' by Max Kazakov & Eisaku Ohbuchi
+    /// Fragment lighting in the PICA200 is done primarily through 1D lookup tables and quaternion interpolation.
+    ///
+    /// The vertex shader (or geometry if used) must output a Quaternion representing the rotation from the z-axis
+    /// to the normal. This can be done in different ways, with the standard RotationFromTo(.{0, 0, 1}, Normal) or
+    /// the approach in the 'Shading by Quaternion Interpolation' paper.
+    ///
+    /// It must also output a View position that is optionally used for positional lights to calculate the
+    /// light vector, as directional lights are not affected by it.
+    ///
+    /// There are 22 `LookupTable`s available:
+    ///     - 2 distribution tables for specular: D0 and D1
+    ///     - 1 fresnel table: Fr
+    ///     - 3 reflection tables for each color channel for reflection (D1): Rr, Rg and Rb
+    ///     - 8 spotlight tables: Sp0 to Sp7
+    ///     - 8 distance attenuation tables: Da0 to Da7
+    ///
+    /// The relevant lighting formulas are these (sources below):
+    ///     Cp -> primary color, also called diffuse / Cs -> secondary color, also called specular
+    ///
+    /// Cp = ambient + foreach light ( Da*i*(*sd*) * Sp*i*(*in*) * H * (ambient*i* + diffuse*i* * f(L * N)) )
+    ///
+    /// Cs = foreach light ( Da*i*(*sd*) * Sp*i*(*in*) * H * (specular*i*0**x** * D0(*in*) * G + specular*i*1**x** * R**x**(*in*) * D1(*in*) * G) )
+    ///
+    /// where:
+    ///     - H -> shadow attenuation factor
+    ///     - *i* -> For light *i*
+    ///     - **x** -> Color channel (r, g or b)
+    ///     - *sd* -> Scaled distance, clip(`bias`*i* + `scale`*i* * distance, 0, 1)
+    ///     - *in* -> One of the `LookupTable.Input`s
+    ///     - G -> Geometric factor, when enabled is `(L * N) / lengthSqr(L + N)`, `1.0` otherwise
+    ///
+    /// Lookup tables (except Da) can have an input domain of [-1.0, 1.0] or [0.0, 1.0] depending on the `LookupTable.Absolute` flags.
+    /// Da always has an input domain of [0.0, 1.0]. The mapping of input to index is:
+    /// - [0.0, 1.0] -> [0, 255]
+    /// - [-1.0, 1.0] -> [0.0, 1.0] is [0, 127] and [-1.0, 0.0] is [128, 255]
+    ///
+    ///
+    /// With all of that, the PICA200 can do both PBR and NPBR, for example a Blinn-Phong shading model can be done with:
+    /// - D0 enabled (absolute) with input N * H where each entry is `(N * H)^s` and `s` is the *shininess* of the surface.
+    ///
+    /// Sources:
+    /// - 3dbrew
+    /// - 'Primitive Processing and Advanced Shading Architecture for Embedded Space' by Max Kazakov & Eisaku Ohbuchi.
+    ///     - Both slides and paper are useful!
+    /// - 'A Real-Time Configurable Shader Based on Lookup Tables' by Eisaku Ohbuchi & Hiroshi Unno.
+    ///     - Warning: Paywalled, you must pay or access it through an institution (e.g: university)
+    /// - 'Shading by Quaternion Interpolation' by Anders Hast.
     pub const FragmentLighting = extern struct {
+        pub const Color = packed struct(u32) {
+            b: u8,
+            _unused0: u2 = 0,
+            g: u8,
+            _unused1: u2 = 0,
+            r: u8,
+            _unused2: u4 = 0,
+
+            pub fn init(r: u8, g: u8, b: u8) Color {
+                return .{ .r = r, .g = g, .b = b };
+            }
+
+            pub fn splat(v: u8) Color {
+                return .init(v, v, v);
+            }
+        };
+
         pub const FresnelSelector = enum(u2) { none, primary_alpha, secondary_alpha, primary_secondary_alpha };
         pub const LookupTable = enum(u5) {
             pub const Enabled = enum(u4) {
@@ -1095,82 +1168,86 @@ pub const Graphics = extern struct {
                 d0_d1_rx_sp_da,
                 d0_fr_rx_sp_da,
                 d0_fr_rr_sp_da,
-                all,
+                all = 8,
             };
 
             pub const Index = packed struct(u32) {
                 index: u8,
                 table: LookupTable,
                 _unused0: u19 = 0,
+
+                pub fn init(table: LookupTable, index: u8) Index {
+                    return .{ .table = table, .index = index };
+                }
             };
 
             pub const Absolute = packed struct(u32) {
                 _unused0: u1 = 0,
-                d0: bool,
+                disable_d0: bool = false,
                 _unused1: u3 = 0,
-                d1: bool,
+                disable_d1: bool = false,
                 _unused2: u3 = 0,
-                sp: bool,
+                disable_sp: bool = false,
                 _unused3: u3 = 0,
-                fr: bool,
+                disable_fr: bool = false,
                 _unused4: u3 = 0,
-                rb: bool,
+                disable_rb: bool = false,
                 _unused5: u3 = 0,
-                rg: bool,
+                disable_rg: bool = false,
                 _unused6: u3 = 0,
-                rr: bool,
+                disable_rr: bool = false,
                 _unused7: u6 = 0,
             };
 
             pub const Select = packed struct(u32) {
                 pub const Input = enum(u3) { @"N * H", @"V * H", @"N * V", @"L * N", @"-L * P", @"cos(phi)" };
 
-                d0: Input,
+                d0: Input = .@"N * H",
                 _unused0: u1 = 0,
-                d1: Input,
+                d1: Input = .@"N * H",
                 _unused1: u1 = 0,
-                sp: Input,
+                sp: Input = .@"N * H",
                 _unused2: u1 = 0,
-                fr: Input,
+                fr: Input = .@"N * H",
                 _unused3: u1 = 0,
-                rb: Input,
+                rb: Input = .@"N * H",
                 _unused4: u1 = 0,
-                rg: Input,
+                rg: Input = .@"N * H",
                 _unused5: u1 = 0,
-                rr: Input,
+                rr: Input = .@"N * H",
                 _unused6: u5 = 0,
             };
 
             pub const Scale = packed struct(u32) {
                 pub const Multiplier = enum(u3) { @"1x", @"2x", @"4x", @"8x", @"0.25x", @"0.5x" };
 
-                d0: Multiplier,
+                d0: Multiplier = .@"1x",
                 _unused0: u1 = 0,
-                d1: Multiplier,
+                d1: Multiplier = .@"1x",
                 _unused1: u1 = 0,
-                sp: Multiplier,
+                sp: Multiplier = .@"1x",
                 _unused2: u1 = 0,
-                fr: Multiplier,
+                fr: Multiplier = .@"1x",
                 _unused3: u1 = 0,
-                rb: Multiplier,
+                rb: Multiplier = .@"1x",
                 _unused4: u1 = 0,
-                rg: Multiplier,
+                rg: Multiplier = .@"1x",
                 _unused5: u1 = 0,
-                rr: Multiplier,
+                rr: Multiplier = .@"1x",
                 _unused6: u5 = 0,
             };
 
             pub const Data = packed struct(u32) {
                 entry: UQ0_12,
                 next_absolute_difference: Q0_11,
-                _unused0: u9 = 0,
+                _unused0: u8 = 0,
             };
 
             // zig fmt: off
             d0, d1,
-            fr,
+            fr = 3,
             rb, rg, rr,
-            sp0, sp1, sp2, sp3, sp4, sp5, sp6, sp7,
+            sp0 = 8, sp1, sp2, sp3, sp4, sp5, sp6, sp7,
             da0, da1, da2, da3, da4, da5, da6, da7,
             // zig fmt: on
         };
@@ -1209,7 +1286,7 @@ pub const Graphics = extern struct {
                 disable_rb: bool,
                 disable_rg: bool,
                 disable_rr: bool,
-                _unused0: u1 = 0,
+                _unused0: u1 = 0x1,
                 light_distance_attenuation_disabled: BitpackedArray(bool, 8),
             };
 
@@ -1218,25 +1295,12 @@ pub const Graphics = extern struct {
         };
 
         pub const Light = extern struct {
-            pub const Id = enum(u3) { _ };
+            pub const Id = enum(u4) {
+                _,
 
-            pub const Permutation = packed struct(u32) {
-                @"0": Id,
-                _unused0: u1 = 0,
-                @"1": Id,
-                _unused1: u1 = 0,
-                @"2": Id,
-                _unused2: u1 = 0,
-                @"3": Id,
-                _unused3: u1 = 0,
-                @"4": Id,
-                _unused4: u1 = 0,
-                @"5": Id,
-                _unused5: u1 = 0,
-                @"6": Id,
-                _unused6: u1 = 0,
-                @"7": Id,
-                _unused7: u1 = 0,
+                pub fn init(value: u3) Id {
+                    return @enumFromInt(value);
+                }
             };
 
             pub const Type = enum(u1) { positional, directional };
@@ -1249,21 +1313,22 @@ pub const Graphics = extern struct {
                 _unused0: u28 = 0,
             };
 
-            /// Specular0 and Specular1 colors, as `BGR`.
-            specular: [2][4]u8,
-            /// Diffuse color, as `BGR`.
-            diffuse: [4]u8,
-            /// Ambient color, as `BGR`.
-            ambient: [4]u8,
+            /// Specular0 and Specular1 colors
+            specular: [2]Color,
+            /// Diffuse color
+            diffuse: Color,
+            /// Ambient color
+            ambient: Color,
             /// Its `xy` position if positional, otherwise its `xy` direction (unitary).
+            ///
+            /// If it is a directional light, the direction vector is Object -> Light,
             xy: F5_10x2,
             /// Its `z` position if positional, otherwise its `z` direction (unitary).
             z: LsbRegister(F5_10),
             /// Its `xy` spot (for spotlights) direction (unitary).
-            /// TODO: fixed 1.1.11
-            spot_xy: u32,
+            spot_xy: Q1_11x2,
             /// Its `z` spot (for spotlights) direction (unitary).
-            spot_z: LsbRegister(u13),
+            spot_z: LsbRegister(Q1_11),
             _unknown0: u32,
             config: Config,
             /// Distance attenuation bias of the light `DA(clamp(distance * scale + bias, 0.0, 1.0))`
@@ -1274,8 +1339,8 @@ pub const Graphics = extern struct {
 
         light: [8]Light,
         _unknown0: [32]u32,
-        /// Scene/Global ambient color, as `BGR`.
-        ambient: [4]u8,
+        /// Scene/Global ambient color.
+        ambient: Color,
         _unknown1: u32,
         /// Number of active lights minus one.
         num_lights_min_one: LsbRegister(u3),
@@ -1288,7 +1353,8 @@ pub const Graphics = extern struct {
         lut_input_select: LookupTable.Select,
         lut_input_scale: LookupTable.Scale,
         _unknown3: [6]u32,
-        light_permutation: Light.Permutation,
+        /// Maps enabled light index to its configuration. e.g: you can have 3 lights enabled but have those 3 lights be 0, 4 and 7 for example.
+        light_permutation: BitpackedArray(Light.Id, 8),
     };
 
     pub const GeometryPipeline = extern struct {

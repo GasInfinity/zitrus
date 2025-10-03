@@ -1,15 +1,22 @@
 .out o0 position 
+.out o1 view
+.out o2 normal_quaternion
 .out o3.xy texture_coordinate_0.xy
 
+.set f95 (1, 0, 0.5, 0)
+.alias cOrthoQuat f95.xyyy
+.alias cOne f95.xxxx
+.alias cZero f95.yyyy
+.alias cHalf f95.zzzz
+
 .alias iPos v0
-; .alias iUv v1
 .alias iNorm v1
 .alias iUv v2
 
 .alias oPos o0
 .alias oUv o3
-; .alias oView o1
-; .alias oNormQuat o2
+.alias oView o1
+.alias oNormQuat o2
 
 ; layout(location = 0) uniform mat4x4 uPersp;
 .alias uPerspM0 f0
@@ -37,6 +44,36 @@ main:
     dp4 oPos.y, uPerspM1, r0 
     dp4 oPos.z, uPerspM2, r0
     dp4 oPos.w, uPerspM3, r0 
+
+    mov oView, -r0
+
+    ; TODO: transpose(inverse(modelView)) * norm for non-uniform transformations
+    dp3 r1.x, uModelM0, iNorm
+    dp3 r1.y, uModelM1, iNorm
+    dp3 r1.z, uModelM2, iNorm
+
+    ; Normalize the normal after the transformation.
+    dp3 r2, r1, r1
+    rsq r2, r2
+    mul r1, r1, r2
+
+    ; The following code is equivalent to a standard RotationBetween(.{0, 0, 1}, Normal) which outputs a Quaternion
+    ; Cross product will give us (-y, x, 0) while dot product will give us only z
+    mov r0, cOrthoQuat
+
+    cmp r1.zz, -f95.xx, eq, eq
+    jmpc x, true, false, degen
+
+    mov r0.x, -r1.yx
+    mov r0.y,  r1.yx
+    add r0.w, r1.z, cOne
+
+    ; normalize the final quaternion for numeric stability.
+    dp4 r1, r0, r0
+    rsq r1, r1
+    mul r0, r0, r1
+degen:
+    mov oNormQuat, r0
 
     ; oUv = iUv;
     mov oUv, iUv

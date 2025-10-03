@@ -33,8 +33,6 @@ pub fn log(comptime message_level: std.log.Level, comptime scope: @TypeOf(.enum_
     horizon.outputDebugString(buf[0..(prefix.len + message.len)]);
 }
 
-// TODO: Finish rendering this cube.
-/// Uses a RH coordinate system.
 pub const Scene = struct {
     const Vertex = extern struct {
         pos: [3]f32,
@@ -185,20 +183,34 @@ pub const Scene = struct {
                 .texture_2_coordinates = .@"2",
                 .texture_3_coordinates = .@"2",
             },
-            .lighting_state = &.{},
-            .texture_combiner_state = &.init(&.{.{
-                .color_src = @splat(.texture_0),
+            .lighting_state = &.{
+                .enable = true,
+            },
+            .texture_combiner_state = &.init(&.{ .{
+                .color_src = .{ .fragment_primary_color, .fragment_secondary_color, .previous },
                 .alpha_src = @splat(.primary_color),
                 .color_factor = @splat(.src_color),
                 .alpha_factor = @splat(.src_alpha),
-                .color_op = .replace,
+                .color_op = .add,
                 .alpha_op = .replace,
 
                 .color_scale = .@"1x",
                 .alpha_scale = .@"1x",
 
                 .constant = @splat(0),
-            }}, &.{}),
+            }, .{
+                .color_src = .{ .previous, .texture_0, .previous },
+                .alpha_src = @splat(.primary_color),
+                .color_factor = @splat(.src_color),
+                .alpha_factor = @splat(.src_alpha),
+                .color_op = .modulate,
+                .alpha_op = .replace,
+
+                .color_scale = .@"1x",
+                .alpha_scale = .@"1x",
+
+                .constant = @splat(0),
+            } }, &.{.previous}),
             .color_blend_state = &.{
                 .logic_op_enable = false,
                 .logic_op = .clear,
@@ -319,12 +331,15 @@ pub const Scene = struct {
 
             const zmath = zitrus.math;
 
-            const cos_time = @sin(scene.time);
-            const sin_time_two = @sin(scene.time * 2);
-            const sin_time = @sin(scene.time / 2);
+            const sin_time = @sin(scene.time / 4);
+
+            const model_rotation_axis, _ = zmath.vec.normalize(3, f32, .{ 1, 1, 1 });
+            const model_rotation = zmath.quat.axisAngleV(f32, model_rotation_axis, std.math.pi * scene.time / 2.0);
+
+            const model_matrix = zmath.mat.scaleRotateTranslateV(.{ 1, 1, 1 }, model_rotation, .{ 0, 0, -2.5 - (@abs(sin_time)) * 4 });
 
             cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(.right, std.math.degreesToRadians(90.0), 240.0 / 400.0, 0.8, 100));
-            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.scaleTranslate(0.8, 0.8, 0.8, -(@abs(cos_time) - 0.5) * 10, -sin_time_two * 8, -3 - @abs(sin_time) * 20));
+            cmd.bindFloatUniforms(.vertex, 4, &model_matrix);
 
             scene.cube_mesh.draw(cmd);
         }

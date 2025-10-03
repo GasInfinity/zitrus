@@ -49,6 +49,63 @@ pub const Graphics = struct {
 
     encoded_command_state: []align(8) u32,
 
+    const PhongDistributionContext = struct {
+        shininess: f32,
+
+        pub fn init(shininess: f32) PhongDistributionContext {
+            return .{ .shininess = shininess };
+        }
+
+        pub fn value(ctx: PhongDistributionContext, x: f32) f32 {
+            return std.math.pow(f32, x, ctx.shininess);
+        }
+    };
+
+    const DistanceAttenuationContext = struct {
+        range: f32,
+        constant: f32,
+        linear: f32,
+        quadratic: f32,
+
+        pub fn init(range: f32, constant: f32, linear: f32, quadratic: f32) DistanceAttenuationContext {
+            return .{ .range = range, .constant = constant, .linear = linear, .quadratic = quadratic };
+        }
+
+        pub fn value(ctx: DistanceAttenuationContext, x: f32) f32 {
+            return 1.0 / (ctx.constant + ctx.linear * ctx.range * x + ctx.quadratic * ctx.range * x * x);
+        }
+    };
+
+    // TODO: This should not be here. This should be in hardware.pica!
+    fn initLookupTable(
+        context: anytype,
+        absolute: bool,
+    ) [256]pica.Graphics.FragmentLighting.LookupTable.Data {
+        var lut: [256]pica.Graphics.FragmentLighting.LookupTable.Data = undefined;
+
+        const absolute_unit: f32 = @floatFromInt(@intFromBool(absolute));
+        const negated_unit = 1 - absolute_unit;
+
+        const msb_multiplier: f32 = (absolute_unit * 2 - 1) * 128;
+        const max = 256.0 - (negated_unit * 128.0);
+
+        var last: f32 = context.value(0.0);
+        for (1..lut.len) |i| {
+            const input = (@as(f32, @floatFromInt(i & 0x7F)) + @as(f32, @floatFromInt((i >> 7) & 0b1)) * msb_multiplier) / max;
+
+            const current: f32 = context.value(input);
+            defer last = current;
+
+            lut[i - 1] = .{
+                .entry = .ofSaturating(last),
+                .next_absolute_difference = .ofSaturating(@abs(current - last)),
+            };
+        }
+
+        lut[255] = .{ .entry = .ofSaturating(last), .next_absolute_difference = .ofSaturating(context.value(absolute_unit) - last) };
+        return lut;
+    }
+
     pub fn init(create_info: mango.GraphicsPipelineCreateInfo, gpa: std.mem.Allocator) !Graphics {
         const dyn = create_info.dynamic_state;
 
@@ -79,9 +136,75 @@ pub const Graphics = struct {
         gfx_queue.add(p3d, &p3d.rasterizer.early_depth_test_enable_1, .init(false));
         gfx_queue.add(p3d, &p3d.framebuffer.early_depth_test_enable, .init(false));
 
-        // TODO: Lighting in pipelines
-        gfx_queue.add(p3d, &p3d.texturing.lighting_enable, .init(false));
-        gfx_queue.add(p3d, &p3d.fragment_lighting.disable, .init(true));
+        gfx_queue.add(p3d, &p3d.texturing.lighting_enable, .init(create_info.lighting_state.?.enable));
+        gfx_queue.add(p3d, &p3d.fragment_lighting.disable, .init(!create_info.lighting_state.?.enable));
+
+        // TODO: Proper lighting support
+        if (create_info.lighting_state.?.enable) {
+            // 1 light
+            gfx_queue.add(p3d, &p3d.fragment_lighting.light_permutation, .splat(.init(0)));
+            gfx_queue.add(p3d, &p3d.fragment_lighting.num_lights_min_one, .init(0));
+
+            gfx_queue.add(p3d, &p3d.fragment_lighting.ambient, .splat(0));
+
+            gfx_queue.add(p3d, &p3d.fragment_lighting.control, .{
+                .environment = .{
+                    .enable_shadow_factor = false,
+                    .fresnel = .none,
+                    .enabled_lookup_tables = .d0_rr_sp_da,
+                    .apply_shadow_attenuation_to_primary_color = false,
+                    .apply_shadow_attenuation_to_secondary_color = false,
+                    .invert_shadow_attenuation = false,
+                    .apply_shadow_attenuation_to_alpha = false,
+                    .bump_map_unit = .@"0",
+                    .shadow_map_unit = .@"0",
+                    .clamp_highlights = false,
+                    .bump_mode = .none,
+                    .recalculate_bump_vectors = false,
+                },
+                .lights = .{
+                    .light_shadows_disabled = .splat(true),
+                    .light_spot_disabled = .splat(true),
+                    .disable_d0 = false,
+                    .disable_d1 = true,
+                    .disable_fr = true,
+                    .disable_rb = true,
+                    .disable_rg = true,
+                    .disable_rr = true,
+                    .light_distance_attenuation_disabled = .init(.{false} ++ @as([7]bool, @splat(true))),
+                },
+            });
+
+            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].xy, .init(.of(-0.0), .of(0.0)));
+            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].z, .init(.of(-0.5)));
+            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].attenuation_scale, .init(.of(1.0 / 7.0)));
+            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].attenuation_bias, .init(.of(0.0)));
+
+            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].ambient, .splat(16));
+            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].diffuse, .splat(255));
+            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].specular, .{ .splat(255), .splat(0) });
+
+            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].config, .{
+                .type = .positional,
+                .diffuse_sides = .one,
+                .geometric_factor_enable = .splat(false),
+            });
+
+            gfx_queue.add(p3d, &p3d.fragment_lighting.lut_input_select, .{
+                .d0 = .@"N * H",
+            });
+
+            gfx_queue.add(p3d, &p3d.fragment_lighting.lut_input_scale, .{});
+            gfx_queue.add(p3d, &p3d.fragment_lighting.lut_input_absolute, .{
+                .disable_d0 = false,
+            });
+
+            gfx_queue.add(p3d, &p3d.fragment_lighting.lut_index, .init(.d0, 0));
+            gfx_queue.addConsecutive(p3d, &p3d.fragment_lighting.lut_data[0], &initLookupTable(PhongDistributionContext.init(32), true));
+
+            gfx_queue.add(p3d, &p3d.fragment_lighting.lut_index, .init(.da0, 0));
+            gfx_queue.addConsecutive(p3d, &p3d.fragment_lighting.lut_data[0], &initLookupTable(DistanceAttenuationContext.init(7, 1.0, 0.7, 1.8), true));
+        }
 
         if (create_info.geometry_shader_state) |_| {
             @panic("TODO");
@@ -122,7 +245,7 @@ pub const Graphics = struct {
                 tex_coords_present.* = tex_coords_present.copyWith(1, tex_coords_present.get(1) or (map.x.isTextureCoordinate1() or map.y.isTextureCoordinate1() or map.z.isTextureCoordinate1() or map.w.isTextureCoordinate1()));
                 tex_coords_present.* = tex_coords_present.copyWith(2, tex_coords_present.get(2) or (map.x.isTextureCoordinate2() or map.y.isTextureCoordinate2() or map.z.isTextureCoordinate2() or map.w.isTextureCoordinate2()));
                 attribute_clock.texture_coordinates_0_w_present = attribute_clock.texture_coordinates_0_w_present or (map.x == .texture_coordinate_0_w or map.y == .texture_coordinate_0_w or map.z == .texture_coordinate_0_w or map.w == .texture_coordinate_0_w);
-                attribute_clock.normal_quaternion_or_view_present = attribute_clock.normal_quaternion_or_view_present or (map.x.isView() or map.x.isNormalQuaternion()) or (map.y.isView() or map.y.isNormalQuaternion()) or (map.z.isView() or map.z.isNormalQuaternion()) or (map.w.isView() or map.w.isNormalQuaternion());
+                attribute_clock.normal_view_present = attribute_clock.normal_view_present or (map.x.isView() or map.x.isNormalQuaternion()) or (map.y.isView() or map.y.isNormalQuaternion()) or (map.z.isView() or map.z.isNormalQuaternion()) or (map.w.isView() or map.w.isNormalQuaternion());
                 // zig fmt: off
 
                 gfx_queue.add(p3d, &p3d.rasterizer.shader_output_map_output[semantic_outputs], map);
@@ -473,7 +596,7 @@ pub const Graphics = struct {
         gfx_queue.add(p3d, &p3d.framebuffer.block_size, .init(.@"8x8"));
         gfx_queue.add(p3d, &p3d.geometry_pipeline.start_draw_function, .init(.drawing));
 
-        gfx.encoded_command_state = if(gpa.remap(gfx.encoded_command_state, gfx_queue.current_index * @sizeOf(u32))) |remapped|
+        gfx.encoded_command_state = if(gpa.remap(gfx.encoded_command_state, gfx_queue.current_index)) |remapped|
             remapped
         else manual: {
             const new = try gpa.alignedAlloc(u32, .@"8", gfx_queue.current_index);
@@ -616,13 +739,8 @@ pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, c
     };
 
     queue.add(p3d, &shader.code_transfer_index, .init(0));
-    {
-        var instructions_written: usize = 0;
+    queue.addConsecutive(p3d, &shader.code_transfer_data[0], parsed.instructions);
 
-        while (instructions_written < parsed.instructions.len) : (instructions_written += std.math.maxInt(u8)) {
-            queue.addConsecutive(p3d, &shader.code_transfer_data[0], parsed.instructions[instructions_written..]);
-        }
-    }
     queue.add(p3d, &shader.code_transfer_end, .init(.trigger));
 
     queue.add(p3d, &shader.operand_descriptors_index, .init(0));

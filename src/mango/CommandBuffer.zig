@@ -670,7 +670,7 @@ fn beforeDraw(cmd: *CommandBuffer) bool {
 fn growIfNeeded(cmd: *CommandBuffer) !void {
     // TODO: grow native queue from the pool, we can avoid doing this until we have more complex scenes.
 
-    if (cmd.queue.remaining().len < backend.safe_native_command_buffer_upper_bound) {
+    if (cmd.queue.unusedCapacitySlice().len < backend.safe_native_command_buffer_upper_bound) {
         return error.OutOfMemory; // Don't ignore it tho!
     }
 }

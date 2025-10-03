@@ -1530,6 +1530,7 @@ pub fn unexpectedResult(code: result.Code) UnexpectedError {
 comptime {
     _ = ipc;
     _ = fmt;
+    _ = services;
 }
 
 /// Higher-level Application abstraction.

@@ -317,7 +317,9 @@ pub fn main() !void {
             .texture_3_coordinates = .@"2",
         },
         // (Mango specific) Fragment lighting is added as a fixed function stage. TODO: Implement this
-        .lighting_state = &.{},
+        .lighting_state = &.{
+            .enable = false,
+        },
         // (Mango specific) Fragment color combiner is added as a fixed function stage.
         .texture_combiner_state = &.init(&.{.{
             .color_src = @splat(.primary_color),
