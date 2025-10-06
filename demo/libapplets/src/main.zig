@@ -6,14 +6,7 @@ pub const std_options: std.Options = .{
 };
 
 pub fn log(comptime message_level: std.log.Level, comptime scope: @TypeOf(.enum_literal), comptime format: []const u8, args: anytype) void {
-    var buf: [8192]u8 = undefined;
-    const prefix = std.fmt.bufPrint(&buf, "[{s}] ({s}): ", .{ @tagName(message_level), @tagName(scope) }) catch {
-        horizon.outputDebugString("fatal: logged message prefix does not fit into the buffer. message skipped!");
-        return;
-    };
-
-    const message = std.fmt.bufPrint(buf[prefix.len..], format, args) catch buf[prefix.len..];
-    horizon.outputDebugString(buf[0..(prefix.len + message.len)]);
+    horizon.debug.print("[" ++ @tagName(message_level) ++ "](" ++ @tagName(scope) ++ "): " ++ format, args);
 }
 
 pub fn main() !void {

@@ -22,38 +22,43 @@ Then add this to your `build.zig`:
 const zitrus = @import("zitrus");
 
 const zitrus_dep = b.dependency("zitrus", .{});
-const zitrus_mod = zitrus_dep.module("zitrus");
+
 // zitrus contains code useful for tooling outside of a 3DS environment.
+const zitrus_mod = zitrus_dep.module("zitrus");
 
-// You must use the same target as `zitrus_mod`
-const exe_mod = b.createModule(.{
-    .root_source_file = b.path("src/your_main.zig"),
-    .target = zitrus.horizon_arm11, // this is currently deprecated as we will now have 'arm-3ds' in zig: https://github.com/ziglang/zig/pull/24938
-    .optimize = optimize,
+const exe = b.addExecutable(.{
+    .name = "panic.elf",
+    .root_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = b.resolveTargetQuery(zitrus.target.arm11.horizon.query), // zig 0.16.0 will add 'arm-3ds' and this will be deprecated!
+        .optimize = optimize,
+        .single_threaded = true, // XXX: Currently needed for page_allocator.
+        .imports = &.{
+            .{ .name = "zitrus", .module = zitrus_mod },
+        },
+    }),
 });
 
-exe_mod.addImport("zitrus", zitrus_mod);
+// Needed for 3DSX's
+exe.link_emit_relocs = true;
 
-const exe = zitrus.addExecutable(b, .{
-    .name = "homebrew.elf",
-    .root_module = exe_mod,
-});
+// Needed for any binary which targets the 3DS
+exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
 
 // You can skip installing the elf but it is recommended to keep it for debugging purposes
 b.installArtifact(exe);
 
-const homebrew_smdh = zitrus.addMakeSmdh(b, .{
-    .name = "homebrew.icn",
-    .settings = b.path("path-to-smdh-settings.zon"), // look at any demo for a quick example
+const smdh: zitrus.MakeSmdh = .init(zitrus_dep, .{
+    .settings = b.path("path-to-smdh-settings.zon"), // look at any demo for a quick sample.
     .icon = b.path("path-to-icon.png/jpg/..."), // supported formats depends on zigimg image decoding.
 });
 
-// XXX: Blocked by upstream, cache isn't caching.
-// See `addMakeRomFs` if you need something patchable unlike `@embedFile`.
+// See `MakeRomFs` if you need something patchable unlike `@embedFile`.
+// WARNING: Won't be properly cached as there's an issue upstream.
 
 // This step will convert your executable to 3dsx (the defacto homebrew executable format) to execute it in an emulator or real 3DS
-const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "homebrew.3dsx", .exe = exe, .smdh = homebrew_smdh });
-b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "homebrew.3dsx").step);
+const final_3dsx: zitrus.Make3dsx = .init(zitrus_dep, .{ .exe = exe, .smdh = homebrew_smdh });
+final_3dsx.install(b, .default);
 ```
 
 In your root file, you must also add this, as there's no way to implicitly tell zig to evaluate/import it automagically:
@@ -132,6 +137,10 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 - 🟡 `csnd:SND`
 - 🟡🪫 `pm:app`
 - 🟢 `pm:dbg`
+- 🟡 `soc:U`
+- 🟡 `ps:ps`
+- 🟡 `pxi:ps9`
+- 🟡 `Loader`
 - 🔴 All other [services](https://www.3dbrew.org/wiki/Services_API) not listed here
 
 ### Library Applets
@@ -177,6 +186,10 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 ## Hardware
 
 - 🟢 CSND
+- 🟢 PXI
+- 🟢 LGY
+- 🟢 HID
+- 🟡 DSP
 - 🟡 PICA200: Missing typing of some documented registers, mostly done.
 
 ## Why?

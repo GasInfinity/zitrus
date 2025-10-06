@@ -2,6 +2,10 @@
 
 pub const pica = @import("hardware/pica.zig");
 pub const csnd = @import("hardware/csnd.zig");
+pub const pxi = @import("hardware/pxi.zig");
+pub const dsp = @import("hardware/dsp.zig");
+pub const hid = @import("hardware/hid.zig");
+pub const lgy = @import("hardware/lgy.zig");
 
 /// Represents a register which is triggered by writing a value to it.
 pub const Trigger = enum(u1) { trigger = 1 };
@@ -145,6 +149,9 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
 comptime {
     _ = pica;
     _ = csnd;
+    _ = pxi;
+    _ = dsp;
+    _ = lgy;
 }
 
 const testing = std.testing;

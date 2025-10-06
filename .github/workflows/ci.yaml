@@ -5,13 +5,13 @@ on:
     branches:
       - main
 jobs:
-  compile-test:
+  build-test:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 

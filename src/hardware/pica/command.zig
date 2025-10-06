@@ -1,4 +1,4 @@
-//! Type-safe PICA200 `pica.Pipeline` command `Queue`
+//! Type-safe PICA200 `pica.Graphics` command `Queue`
 
 pub const Header = packed struct(u32) {
     id: Id,

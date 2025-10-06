@@ -11,7 +11,7 @@ const Applets = union(enum) {
 
 const Arguments = struct {
     pub const description =
-        \\Tools for working with different 3DS-related things.
+        \\Tool suite for working with different 3DS-related things.
     ;
 
     pub const descriptions = .{
@@ -38,7 +38,7 @@ pub fn main() !u8 {
     const args = try std.process.argsAlloc(arena);
     defer std.process.argsFree(arena, args);
 
-    const arguments = zdap.parse(args, "zitrus-tools", Arguments, .{});
+    const arguments = zdap.parse(args, "zitrus", Arguments, .{});
 
     if (arguments.version) {
         std.debug.print("0.0.0-pre\n", .{}); // Don't even try to change this until the first release.
@@ -46,7 +46,7 @@ pub fn main() !u8 {
     }
 
     if (arguments.@"-" == null) {
-        std.debug.print("access the help menu with 'zitrus-tools -h'\n", .{});
+        std.debug.print("access the help menu with 'zitrus' -h'\n", .{});
         return 0;
     }
 
@@ -57,7 +57,11 @@ pub fn main() !u8 {
 
 test {
     _ = Applets;
+    _ = zitrus;
 }
+
 
 const std = @import("std");
 const zdap = @import("zdap");
+
+const zitrus = @import("zitrus");

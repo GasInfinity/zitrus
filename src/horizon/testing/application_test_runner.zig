@@ -26,6 +26,9 @@ pub fn main() void {
     var notif_man = horizon.ServiceManager.Notification.Manager.init(srv) catch unreachable;
     defer notif_man.deinit();
 
+    horizon.testing.srv = srv;
+    defer horizon.testing.srv = undefined;
+
     const apt = horizon.services.Applet.open(.app, srv) catch unreachable;
     defer apt.close();
 

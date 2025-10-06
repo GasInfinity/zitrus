@@ -1,0 +1,42 @@
+name: Release on Tag
+on:
+  push:
+    tags:
+      - "v*"
+permissions:
+  contents: write
+jobs:
+  build-release:
+    runs-on: ubuntu-latest 
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.1 
+      
+      - name: Build
+        run: zig build -Drelease
+
+      - name: Package artifacts
+        working-directory: zig-out
+        run: |
+          set -e
+          for artifact in *; do 
+            if [[ $artifact == *"-windows" ]]; then
+              zip -q -r "$artifact.zip" "$artifact"/*
+            else 
+              tar -czf "$artifact.tar.gz" "$artifact"/*
+            fi
+            rm -r -- $artifact
+          done
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: zig-out/*

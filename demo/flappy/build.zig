@@ -7,33 +7,37 @@ pub fn build(b: *std.Build) void {
     const zitrus_dep = b.dependency("zitrus", .{});
     const zitrus_mod = zitrus_dep.module("zitrus");
 
-    const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = b.resolveTargetQuery(zitrus.target.horizon_arm11),
-        .optimize = optimize,
-        .single_threaded = true,
-    });
-
-    exe_mod.addImport("zitrus", zitrus_mod);
-    exe_mod.addAnonymousImport("bird", .{ .root_source_file = b.path("assets/bird.bgr") });
-    exe_mod.addAnonymousImport("pipes", .{ .root_source_file = b.path("assets/pipes.bgr") });
-    exe_mod.addAnonymousImport("ground", .{ .root_source_file = b.path("assets/ground.bgr") });
-    exe_mod.addAnonymousImport("titles", .{ .root_source_file = b.path("assets/titles.bgr") });
-
-    const exe = zitrus.addExecutable(b, .{
+    const exe = b.addExecutable(.{
         .name = "flappy.elf",
-        .root_module = exe_mod,
+            .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = b.resolveTargetQuery(zitrus.target.arm11.horizon.query),
+            .optimize = optimize,
+            .single_threaded = true,
+            .imports = &.{
+                .{ .name = "zitrus", .module = zitrus_mod },
+            },
+        }),
     });
 
+    exe.root_module.addAnonymousImport("bird", .{ .root_source_file = b.path("assets/bird.bgr") });
+    exe.root_module.addAnonymousImport("pipes", .{ .root_source_file = b.path("assets/pipes.bgr") });
+    exe.root_module.addAnonymousImport("ground", .{ .root_source_file = b.path("assets/ground.bgr") });
+    exe.root_module.addAnonymousImport("titles", .{ .root_source_file = b.path("assets/titles.bgr") });
+
+    exe.link_emit_relocs = true;
+    exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
     b.installArtifact(exe);
 
-    const flappy_smdh = zitrus.addMakeSmdh(b, .{
-        .name = "flappy.smdh",
+    const smdh = zitrus.MakeSmdh.init(zitrus_dep, .{
         .settings = b.path("smdh-settings.zon"),
         .icon = b.path("icon.png"),
     });
 
-    const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "flappy.3dsx", .exe = exe, .smdh = flappy_smdh });
+    const final_3dsx = zitrus.Make3dsx.init(zitrus_dep, .{
+        .exe = exe,
+        .smdh = smdh.out,
+    });
 
-    b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "flappy.3dsx").step);
+    final_3dsx.install(b, .default);
 }

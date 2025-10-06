@@ -1521,9 +1521,7 @@ pub fn sbrk(n: usize) usize {
 
 pub const UnexpectedError = error{Unexpected};
 pub fn unexpectedResult(code: result.Code) UnexpectedError {
-    // OutputDebugString?
-    var buf: [256]u8 = undefined;
-    outputDebugString(std.fmt.bufPrint(&buf, "unexpected result: {} ({})", .{ @as(u32, @bitCast(code)), code }) catch unreachable);
+    debug.print("Unexpected result: 0x{X:0>8} ({}, {}, {}, {})", .{ @as(u32, @bitCast(code)), code.level, code.module, code.summary, code.description });
     return error.Unexpected;
 }
 
@@ -1548,6 +1546,7 @@ pub const fmt = @import("horizon/fmt.zig");
 pub const start = @import("horizon/start.zig");
 pub const panic = @import("horizon/panic.zig");
 pub const testing = @import("horizon/testing.zig");
+pub const debug = @import("horizon/debug.zig");
 
 pub const ServiceManager = @import("horizon/ServiceManager.zig");
 pub const ErrorDisplayManager = @import("horizon/ErrorDisplayManager.zig");

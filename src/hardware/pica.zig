@@ -1,16 +1,13 @@
-//! Definitions for MMIO PICA200 registers.
+//! Definitions for MMIO `PICA200` registers.
 //!
-//! Info:
 //! - LCD screens are physically rotated 90º CCW from how the devices are held (i.e: bottom is not 320x240, is 240x320)
-//!
 //! - NDC clipping volume:
 //!     - X: [-W, W]
 //!     - Y: [-W, W]
 //!     - Z: [0, -W]
-//!
 //! - Framebuffer origin can be changed so `-1` in NDC could mean bottom-left (GL) or top-left (D3D, Metal, VK)
 //!
-//! Taken from / Credits:
+//! Based on the documentation found in GBATEK and 3dbrew:
 //! https://problemkaputt.de/gbatek.htm#3dsgpuinternalregisteroverview
 //! https://www.3dbrew.org/wiki/GPU/External_Registers
 //! https://www.3dbrew.org/wiki/GPU/Internal_Registers
@@ -1241,6 +1238,35 @@ pub const Graphics = extern struct {
                 entry: UQ0_12,
                 next_absolute_difference: Q0_11,
                 _unused0: u8 = 0,
+
+                pub fn initContext(
+                    context: anytype,
+                    absolute: bool,
+                ) [256]Data {
+                    var lut: [256]Data = undefined;
+
+                    const absolute_unit: f32 = @floatFromInt(@intFromBool(absolute));
+                    const negated_unit = 1 - absolute_unit;
+
+                    const msb_multiplier: f32 = (absolute_unit * 2 - 1) * 128;
+                    const max = 256.0 - (negated_unit * 128.0);
+
+                    var last: f32 = context.value(0.0);
+                    for (1..lut.len) |i| {
+                        const input = (@as(f32, @floatFromInt(i & 0x7F)) + @as(f32, @floatFromInt((i >> 7) & 0b1)) * msb_multiplier) / max;
+
+                        const current: f32 = context.value(input);
+                        defer last = current;
+
+                        lut[i - 1] = .{
+                            .entry = .ofSaturating(last),
+                            .next_absolute_difference = .ofSaturating(@abs(current - last)),
+                        };
+                    }
+
+                    lut[255] = .{ .entry = .ofSaturating(last), .next_absolute_difference = .ofSaturating(context.value(absolute_unit) - last) };
+                    return lut;
+                }
             };
 
             // zig fmt: off

@@ -70,8 +70,9 @@ pub const ReplaceByProcessId = enum(u0) { replace };
 
 pub fn MoveHandle(comptime T: type) type {
     return packed struct(u32) {
-        const MovHandle = @This();
         pub const Handle = T;
+
+        const MovHandle = @This();
 
         handle: Handle,
 
@@ -106,9 +107,10 @@ pub const MappingModifier = packed struct(u2) {
 
 pub fn MappedSlice(comptime mapping_modifier: MappingModifier) type {
     return struct {
-        const Mapped = @This();
         pub const modifier = mapping_modifier;
         pub const Slice = if (modifier.write_only) []u8 else []const u8;
+
+        const Mapped = @This();
 
         slice: Slice,
 
@@ -161,101 +163,70 @@ pub fn calculateParameters(comptime T: type) Buffer.PackedCommand.Header.Paramet
     return .{ .normal = normal, .translate = translate };
 }
 
+fn isHandleOrProcessId(comptime T: type) bool {
+    return T == horizon.Object or T == ReplaceByProcessId;
+}
+
+fn isMoveHandle(comptime T: type) bool {
+    return @hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32) and T == MoveHandle(@field(T, "Handle"));
+}
+
+fn isStaticSlice(comptime T: type) bool {
+    return @hasDecl(T, "static_buffer_index") and @TypeOf(@field(T, "static_buffer_index")) == u4 and T == StaticSlice(@field(T, "static_buffer_index"));
+}
+
+fn isMappedSlice(comptime T: type) bool {
+    return @hasDecl(T, "modifier") and @TypeOf(@field(T, "modifier")) == MappingModifier and T == MappedSlice(@field(T, "modifier"));
+}
+
+fn isWrappedHandle(comptime T: type) bool {
+    return switch (@typeInfo(T)) {
+        .@"struct" => |s| s.fields.len == 1 and isWrappedHandle(s.fields[0].type),
+        .@"enum" => T == horizon.Object,
+        else => false,
+    };
+}
+
 fn calculateParametersType(comptime T: type, comptime normal: *comptime_int, comptime translate: *comptime_int) void {
     switch (@typeInfo(T)) {
         .undefined, .void, .noreturn, .@"opaque" => {},
-        .bool, .int, .float => {
-            if (translate.* != 0) {
-                @compileError("normal parameters cannot be added after adding translate parameters");
-            }
-
+        .bool, .int, .float => if (translate.* == 0) {
             normal.* += (@sizeOf(T) + (@sizeOf(u32) - 1)) / @sizeOf(u32);
-        },
-        .@"enum" => |e| {
-            if (T == horizon.Object or T == ReplaceByProcessId) {
-                translate.* += 2; // descriptor + handle
-                return;
-            }
-
-            return calculateParametersType(e.tag_type, normal, translate);
-        },
+        } else @compileError("normal parameters cannot be added after adding translate parameters"),
+        .@"enum" => |e| if (comptime isHandleOrProcessId(T)) {
+            translate.* += 2;
+        } else return calculateParametersType(e.tag_type, normal, translate),
         .array => |a| switch (@typeInfo(a.child)) {
             .undefined, .void, .noreturn, .@"opaque" => {},
-            .bool, .int, .float => {
-                if (translate.* != 0) {
-                    @compileError("normal parameters cannot be added after adding translate parameters");
-                }
-
+            .bool, .int, .float => if (translate.* == 0) {
                 normal.* += (@sizeOf(T) + (@sizeOf(u32) - 1)) / @sizeOf(u32);
-            },
-            .@"enum" => |e| {
-                if (a.child == horizon.Object or a.child == ReplaceByProcessId) {
-                    translate.* += 1 + a.len;
-                    return;
-                }
-
-                return calculateParametersType([a.len]e.tag_type, normal, translate);
-            },
-            .@"struct" => |s| {
-                if (s.layout == .@"packed" or s.layout == .@"extern") {
-                    if (@hasDecl(a.child, "Handle") and @bitSizeOf(@field(a.child, "Handle")) == @bitSizeOf(u32) and a.child == MoveHandle(@field(a.child, "Handle"))) {
-                        translate.* += 1 + a.len;
-                        return;
-                    }
-
-                    if (s.fields.len == 1) {
-                        return calculateParametersType([a.len]s.fields[0].type, normal, translate);
-                    }
-
-                    return calculateParametersType(std.meta.Int(.unsigned, @bitSizeOf(a.child)), normal, translate);
-                }
-
-                @compileError("cannot serialize struct with non-defined layout");
-            },
-            .@"union" => |u| {
-                if (u.layout != .@"packed" or u.layout != .@"extern") {
-                    @compileError("cannot serialize union with non-defined layout");
-                }
-
+            } else @compileError("normal parameters cannot be added after adding translate parameters"),
+            .@"enum" => |e| if (comptime isHandleOrProcessId(a.child)) {
+                translate.* += 1 + a.len;
+            } else return calculateParametersType([a.len]e.tag_type, normal, translate),
+            .@"struct" => |s| if (comptime isWrappedHandle(a.child)) {
+                translate.* += 1 + a.len;
+            } else if (s.layout == .@"packed" or s.layout == .@"extern") {
                 return calculateParametersType(std.meta.Int(.unsigned, @bitSizeOf(a.child)), normal, translate);
-            },
+            } else @compileError("cannot serialize struct with non-defined layout"),
+            .@"union" => |u| if (u.layout == .@"packed" or u.layout == .@"extern") {
+                return calculateParametersType(std.meta.Int(.unsigned, @bitSizeOf(a.child)), normal, translate);
+            } else @compileError("cannot serialize union with non-defined layout"),
             .@"fn" => @compileError("cannot serialize fn"),
             .optional => @compileError("cannot serialize optional as it doesn't have a defined layout"),
             .error_union, .error_set => @compileError("cannot serialize errors as they are obviously not supported"),
-            .array => @compileError("nested arrays are not supported, if"),
+            .array => @compileError("nested arrays are not supported"),
             .pointer => @compileError("pointers/slices are not supported, please use mapped and static slice types"),
             else => @compileError("cannot serialize " ++ @typeName(a.child) ++ " (in array)"),
         },
-        .@"struct" => |s| {
-            // NOTE: looks like a hack, is there a better way to do this?
-
-            // zig fmt: off
-            if ((@hasDecl(T, "static_buffer_index") and @TypeOf(@field(T, "static_buffer_index")) == u4 and T == StaticSlice(@field(T, "static_buffer_index")))
-            or (@hasDecl(T, "modifier") and @TypeOf(@field(T, "modifier")) == MappingModifier and T == MappedSlice(@field(T, "modifier")))
-            or (@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32)) and T == MoveHandle(@field(T, "Handle"))) {
-            // zig fmt: on
-
-                translate.* += 2;
-                return;
-            }
-
-            if (s.layout == .@"packed" or s.layout == .@"extern") {
-                if (s.fields.len == 1) {
-                    return calculateParametersType(s.fields[0].type, normal, translate);
-                }
-
-                return calculateParametersType(std.meta.Int(.unsigned, @bitSizeOf(T)), normal, translate);
-            }
-
-            @compileError("cannot serialize struct with non-defined layout");
-        },
-        .@"union" => |u| {
-            if (u.layout != .@"packed" or u.layout != .@"extern") {
-                @compileError("cannot serialize union with non-defined layout");
-            }
-
+        .@"struct" => |s| if (comptime (isWrappedHandle(T) or isStaticSlice(T) or isMappedSlice(T))) {
+            translate.* += 2;
+        } else if (s.layout == .@"packed" or s.layout == .@"extern") {
             return calculateParametersType(std.meta.Int(.unsigned, @bitSizeOf(T)), normal, translate);
-        },
+        } else @compileError("cannot serialize struct with non-defined layout"),
+        .@"union" => |u| if (u.layout == .@"packed" or u.layout == .@"extern") {
+            return calculateParametersType(std.meta.Int(.unsigned, @bitSizeOf(T)), normal, translate);
+        } else @compileError("cannot serialize union with non-defined layout"),
         .@"fn" => @compileError("cannot serialize fn"),
         .optional => @compileError("cannot serialize optional as it doesn't have a defined layout"),
         .error_union, .error_set => @compileError("cannot serialize errors as they are obviously not supported"),
@@ -360,7 +331,6 @@ pub const Buffer = extern struct {
         const parameters: []u32 = &buffer.packed_command.parameters;
 
         // NOTE: We don't need to do any checking as calculateParameters has already done some
-        // XXX: This is recursive as we cannot use switch loops with runtime flow at comptime :(
         return switch (@typeInfo(T)) {
             .undefined, .void, .noreturn, .@"opaque" => {},
             .bool => {
@@ -373,12 +343,9 @@ pub const Buffer = extern struct {
                 current_parameter.* += parameters_size;
             },
             .@"enum" => |e| {
-                if (T == horizon.Object or T == ReplaceByProcessId) {
-                    parameters[current_parameter.*] = @bitCast(TranslationDescriptor.Handle{
-                        .replace_by_process_id = (T == ReplaceByProcessId),
-                    });
+                if (comptime isHandleOrProcessId(T)) {
+                    parameters[current_parameter.*] = @bitCast(TranslationDescriptor.Handle{ .replace_by_process_id = (T == ReplaceByProcessId) });
                     parameters[current_parameter.* + 1] = @intFromEnum(value);
-
                     current_parameter.* += 2;
                     return;
                 }
@@ -386,40 +353,38 @@ pub const Buffer = extern struct {
                 return packMember(buffer, current_parameter, e.tag_type, @intFromEnum(value));
             },
             .array => |a| switch (a.child) {
-                else => |at| switch (@typeInfo(at)) {
+                else => |AT| switch (@typeInfo(AT)) {
                     .undefined, .void, .noreturn, .@"opaque" => {},
-                    .@"struct" => |s| {
-                        if (s.fields.len == 1) {
-                            if (@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32) and T == MoveHandle(@field(T, "Handle"))) {
-                                parameters[current_parameter.*] = @bitCast(TranslationDescriptor.Handle{
-                                    .extra_handles = (a.len - 1),
-                                    .close_handles = true,
-                                });
+                    .@"struct" => {
+                        if (comptime isWrappedHandle(a.child)) {
+                            parameters[current_parameter.*] = @bitCast(TranslationDescriptor.Handle{
+                                .extra_handles = (a.len - 1),
+                                .close_handles = isMoveHandle(a.child),
+                            });
+                            current_parameter.* += 1;
+
+                            inline for (0..a.len) |i| {
+                                parameters[current_parameter.*] = @bitCast(value[i]);
                                 current_parameter.* += 1;
-
-                                inline for (0..a.len) |i| {
-                                    parameters[current_parameter.*] = @bitCast(value[i]);
-                                    current_parameter.* += 1;
-                                }
                             }
-
-                            return packMember(buffer, current_parameter, [a.len]s.fields[0].type, @bitCast(value));
                         }
 
-                        return packMember(buffer, current_parameter, [a.len]std.meta.Int(.unsigned, @bitSizeOf(T)), @bitCast(value));
+                        return packMember(buffer, current_parameter, [a.len]std.meta.Int(.unsigned, @bitSizeOf(AT)), @bitCast(value));
                     },
                     .@"union", .bool, .int, .float => {
-                        const total_byte_size = a.len * @sizeOf(at);
-                        const param_size = ((a.len * @sizeOf(at)) + (@sizeOf(u32) - 1)) / 4;
+                        const total_byte_size = a.len * @sizeOf(AT);
+                        const param_size = ((a.len * @sizeOf(AT)) + (@sizeOf(u32) - 1)) / 4;
 
-                        std.mem.sliceAsBytes(parameters[current_parameter.*..])[0..total_byte_size].* = @bitCast(value);
+                        const remaining_bytes = std.mem.sliceAsBytes(parameters[current_parameter.*..]);
+
+                        @memcpy(remaining_bytes[0..total_byte_size], @as([]const u8, @ptrCast(&value)));
                         current_parameter.* += param_size;
                     },
                     .@"enum" => |e| {
-                        if (at == horizon.Object or at == ReplaceByProcessId) {
+                        if (comptime isHandleOrProcessId(AT)) {
                             parameters[current_parameter.*] = @bitCast(TranslationDescriptor.Handle{
                                 .extra_handles = (a.len - 1),
-                                .replace_by_process_id = (at == ReplaceByProcessId),
+                                .replace_by_process_id = (AT == ReplaceByProcessId),
                             });
 
                             current_parameter.* += 1;
@@ -437,37 +402,38 @@ pub const Buffer = extern struct {
                     else => unreachable,
                 },
             },
-            .@"union" => packMember(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T)), @bitCast(value)),
+            .@"union" => packMember(buffer, current_parameter, [@divExact(@bitSizeOf(T), @bitSizeOf(u8))]u8, @bitCast(value)),
             .@"struct" => |s| {
+                if (comptime isWrappedHandle(T)) {
+                    parameters[current_parameter.*] = @bitCast(TranslationDescriptor.Handle{
+                        .extra_handles = 0,
+                        .close_handles = isMoveHandle(T),
+                    });
+                    parameters[current_parameter.* + 1] = @bitCast(value);
+                    current_parameter.* += 2;
+                    return;
+                }
+
                 if (s.layout == .@"packed" or s.layout == .@"extern") {
-                    if (@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32) and T == MoveHandle(@field(T, "Handle"))) {
-                        parameters[current_parameter.*] = @bitCast(TranslationDescriptor.Handle{
-                            .extra_handles = 0,
-                            .close_handles = true,
-                        });
-                        parameters[current_parameter.* + 1] = @bitCast(value);
-                        current_parameter.* += 2;
-                    }
-
-                    if (s.fields.len == 1) {
-                        return packMember(buffer, current_parameter, s.fields[0].type, @field(value, s.fields[0].name));
-                    }
-
-                    return packMember(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T)), @bitCast(value));
+                    return packMember(buffer, current_parameter, [@divExact(@bitSizeOf(T), @bitSizeOf(u8))]u8, @bitCast(value));
                 }
 
                 const slice = value.slice;
 
-                parameters[current_parameter.*] = if (@hasDecl(T, "static_buffer_index")) sb: {
-                    break :sb @bitCast(TranslationDescriptor.StaticBuffer{
+                parameters[current_parameter.*] = if (comptime isStaticSlice(T))
+                    @bitCast(TranslationDescriptor.StaticBuffer{
                         .index = @field(T, "static_buffer_index"),
                         .size = @intCast(slice.len),
-                    });
-                } else @bitCast(TranslationDescriptor.BufferMapping{
-                    .read = T.modifier.read_only,
-                    .write = T.modifier.write_only,
-                    .size = @intCast(slice.len),
-                });
+                    })
+                else if (comptime isMappedSlice(T))
+                    @bitCast(TranslationDescriptor.BufferMapping{
+                        .read = T.modifier.read_only,
+                        .write = T.modifier.write_only,
+                        .size = @intCast(slice.len),
+                    })
+                else
+                    comptime unreachable;
+
                 parameters[current_parameter.* + 1] = @intFromPtr(slice.ptr);
                 current_parameter.* += 2;
             },
@@ -490,10 +456,10 @@ pub const Buffer = extern struct {
                     break :out .{ undefined, result };
                 }
 
-                std.debug.assert(buffer.packed_command.header == PackedCommand.Header{
+                expectReply(.{
                     .parameters = params,
                     .command_id = @intFromEnum(DefinedCommand.id),
-                });
+                }, buffer.packed_command.header);
 
                 break :out .{ buffer.unpackType(1, T), result };
             },
@@ -543,15 +509,16 @@ pub const Buffer = extern struct {
                 break :fi std.mem.bytesAsValue(T, std.mem.sliceAsBytes(parameters[current_parameter.*..])).*;
             },
             .@"enum" => |e| en: {
-                if (T == horizon.Object or T == ReplaceByProcessId) {
+                if (comptime isHandleOrProcessId(T)) {
                     defer current_parameter.* += 2;
-
                     const handle_translation_descriptor: TranslationDescriptor.Handle = @bitCast(parameters[current_parameter.*]);
 
-                    std.debug.assert(handle_translation_descriptor.type == .handle);
-                    std.debug.assert(handle_translation_descriptor.extra_handles == 0);
-                    std.debug.assert(handle_translation_descriptor.replace_by_process_id == (T == ReplaceByProcessId));
-                    // std.debug.assert(handle_translation_descriptor.close_handles == false);
+                    expectHandle(.{
+                        .type = .handle,
+                        .extra_handles = 0,
+                        .replace_by_process_id = (T == ReplaceByProcessId),
+                        .close_handles = false,
+                    }, handle_translation_descriptor);
 
                     break :en @enumFromInt(parameters[current_parameter.* + 1]);
                 }
@@ -559,44 +526,44 @@ pub const Buffer = extern struct {
                 break :en @enumFromInt(unpackMember(buffer, current_parameter, e.tag_type));
             },
             .array => |a| switch (a.child) {
-                else => |at| switch (@typeInfo(at)) {
+                else => |AT| switch (@typeInfo(AT)) {
                     .undefined, .void, .noreturn, .@"opaque" => {},
-                    .@"struct" => |s| st: {
-                        if (@hasDecl(at, "Handle") and @bitSizeOf(@field(at, "Handle")) == @bitSizeOf(u32) and at == MoveHandle(@field(at, "Handle"))) {
+                    .@"struct" => st: {
+                        if (comptime isWrappedHandle(AT)) {
                             const handle_translation_descriptor: TranslationDescriptor.Handle = @bitCast(parameters[current_parameter.*]);
                             current_parameter.* += 1;
 
-                            std.debug.assert(handle_translation_descriptor.type == .handle);
-                            std.debug.assert(handle_translation_descriptor.extra_handles == (a.len - 1));
-                            std.debug.assert(handle_translation_descriptor.replace_by_process_id == false);
-                            // std.debug.assert(handle_translation_descriptor.close_handles == true);
+                            expectHandle(.{
+                                .type = .handle,
+                                .extra_handles = (a.len - 1),
+                                .replace_by_process_id = false,
+                                .close_handles = isMoveHandle(AT),
+                            }, handle_translation_descriptor);
 
                             defer current_parameter.* += a.len;
-                            break :st @bitCast(unpackMember(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T))));
+                            break :st @bitCast(unpackMember(buffer, current_parameter, [@divExact(@bitSizeOf(T), @bitSizeOf(u8))]u8));
                         }
 
-                        if (s.fields.len == 1) {
-                            break :st @bitCast(unpackMember(buffer, current_parameter, [a.len]s.fields[0].type));
-                        }
-
-                        break :st @bitCast(unpackMember(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T))));
+                        break :st @bitCast(unpackMember(buffer, current_parameter, [@divExact(@bitSizeOf(T), @bitSizeOf(u8))]u8));
                     },
                     .@"union", .bool, .int, .float => g: {
-                        const total_byte_size = a.len * @sizeOf(at);
-                        const param_size = ((a.len * @sizeOf(at)) + (@sizeOf(u32) - 1)) / 4;
+                        const total_byte_size = a.len * @sizeOf(AT);
+                        const param_size = ((a.len * @sizeOf(AT)) + (@sizeOf(u32) - 1)) / 4;
 
                         defer current_parameter.* += param_size;
                         break :g @bitCast(std.mem.sliceAsBytes(parameters[current_parameter.*..])[0..total_byte_size].*);
                     },
                     .@"enum" => |e| e: {
-                        if (at == horizon.Object or at == ReplaceByProcessId) {
+                        if (comptime isHandleOrProcessId(AT)) {
                             const handle_translation_descriptor: TranslationDescriptor.Handle = @bitCast(parameters[current_parameter.*]);
                             current_parameter.* += 1;
 
-                            std.debug.assert(handle_translation_descriptor.type == .handle);
-                            std.debug.assert(handle_translation_descriptor.extra_handles == (a.len - 1));
-                            std.debug.assert(handle_translation_descriptor.replace_by_process_id == (T == ReplaceByProcessId));
-                            // std.debug.assert(handle_translation_descriptor.close_handles == false);
+                            expectHandle(.{
+                                .type = .handle,
+                                .extra_handles = (a.len - 1),
+                                .replace_by_process_id = (AT == ReplaceByProcessId),
+                                .close_handles = false,
+                            }, handle_translation_descriptor);
 
                             defer current_parameter.* += a.len;
                             break :e @bitCast(parameters[current_parameter.*..][0..a.len].*);
@@ -609,46 +576,69 @@ pub const Buffer = extern struct {
             },
             .@"union" => @bitCast(unpackMember(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T)))),
             .@"struct" => |s| s: {
-                if (@hasDecl(T, "Handle") and @bitSizeOf(@field(T, "Handle")) == @bitSizeOf(u32) and T == MoveHandle(@field(T, "Handle"))) {
+                if (comptime isWrappedHandle(T)) {
                     const handle_translation_descriptor: TranslationDescriptor.Handle = @bitCast(parameters[current_parameter.*]);
                     current_parameter.* += 1;
 
-                    std.debug.assert(handle_translation_descriptor.type == .handle);
-                    std.debug.assert(handle_translation_descriptor.extra_handles == 0);
-                    std.debug.assert(handle_translation_descriptor.replace_by_process_id == false);
-                    // FIXME: remove when azahar fixes apt GlanceParameter
-                    // std.debug.assert(handle_translation_descriptor.close_handles == true);
+                    expectHandle(.{
+                        .type = .handle,
+                        .extra_handles = 0,
+                        .replace_by_process_id = false,
+                        .close_handles = isMoveHandle(T),
+                    }, handle_translation_descriptor);
 
                     defer current_parameter.* += 1;
                     break :s @bitCast(parameters[current_parameter.*]);
                 }
 
                 if (s.layout == .@"packed" or s.layout == .@"extern") {
-                    if (s.fields.len == 1) {
-                        const out = unpackMember(buffer, current_parameter, s.fields[0].type);
-
-                        break :s @bitCast(if (@typeInfo(s.fields[0].type) == .@"enum") @intFromEnum(out) else out);
-                    }
-
-                    break :s @bitCast(unpackMember(buffer, current_parameter, std.meta.Int(.unsigned, @bitSizeOf(T))));
+                    break :s @bitCast(unpackMember(buffer, current_parameter, [@divExact(@bitSizeOf(T), @bitSizeOf(u8))]u8));
                 }
 
                 const translation_descriptor: TranslationDescriptor = @bitCast(parameters[current_parameter.*]);
                 const ptr: [*]u8 = @ptrFromInt(parameters[current_parameter.* + 1]);
                 current_parameter.* += 2;
 
-                if (@hasDecl(T, "static_buffer_index")) {
+                if (comptime isStaticSlice(T)) {
                     std.debug.assert(translation_descriptor.static_buffer.type == .static_buffer);
                     break :s .init(ptr[0..translation_descriptor.static_buffer.size]);
-                } else {
+                } else if (comptime isMappedSlice(T)) {
                     std.debug.assert(translation_descriptor.buffer_mapping.type == 1);
                     break :s .init(ptr[0..translation_descriptor.buffer_mapping.size]);
-                }
+                } else comptime unreachable;
             },
             else => unreachable,
         };
     }
 };
+
+pub fn expectReply(expected: Buffer.PackedCommand.Header, actual: Buffer.PackedCommand.Header) void {
+    if (expected != actual) {
+        horizon.debug.print("Unexpected reply, expecting {} and got {}", .{ expected, actual });
+        std.debug.assert(false);
+    }
+}
+
+pub fn expectHandle(expected: TranslationDescriptor.Handle, actual: TranslationDescriptor.Handle) void {
+    if (expected != actual) {
+        horizon.debug.print("Unexpected handle, expecting {} and got {}", .{ expected, actual });
+        std.debug.assert(false);
+    }
+}
+
+pub fn expectStaticBuffer(expected: TranslationDescriptor.StaticBuffer, actual: TranslationDescriptor.StaticBuffer) void {
+    if (expected != actual) {
+        horizon.debug.print("Unexpected static buffer, expecting {} and got {}", .{ expected, actual });
+        std.debug.assert(false);
+    }
+}
+
+pub fn expectMappedBuffer(expected: TranslationDescriptor.BufferMapping, actual: TranslationDescriptor.BufferMapping) void {
+    if (expected != actual) {
+        horizon.debug.print("Unexpected mapped buffer, expecting {} and got {}", .{ expected, actual });
+        std.debug.assert(false);
+    }
+}
 
 const testing = std.testing;
 
@@ -742,7 +732,9 @@ test "packType and unpackType are idempotent for auto structs" {
     try testing.expect(std.meta.eql(test_value, unpacked_value));
 }
 
+const builtin = @import("builtin");
 const std = @import("std");
+
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
 const ClientSession = horizon.ClientSession;

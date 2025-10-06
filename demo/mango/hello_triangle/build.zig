@@ -7,36 +7,37 @@ pub fn build(b: *std.Build) void {
     const zitrus_dep = b.dependency("zitrus", .{});
     const zitrus_mod = zitrus_dep.module("zitrus");
 
-    const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = b.resolveTargetQuery(zitrus.target.horizon_arm11),
-        .optimize = optimize,
-        .single_threaded = true,
+    const exe = b.addExecutable(.{
+        .name = "hello_triangle.elf",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = b.resolveTargetQuery(zitrus.target.arm11.horizon.query),
+            .optimize = optimize,
+            .single_threaded = true,
+            .imports = &.{
+                .{ .name = "zitrus", .module = zitrus_mod },
+            },
+        }),
     });
 
-    exe_mod.addImport("zitrus", zitrus_mod);
-    exe_mod.addAnonymousImport("position.zpsh", .{ .root_source_file = zitrus.addAssembleZpsm(b, .{
+    const position_shader = zitrus.AssembleZpsm.init(zitrus_dep, .{
         .name = "position.zpsh",
         .root_source_file = b.path("assets/position.zpsm"),
-    }) });
-
-    const exe = zitrus.addExecutable(b, .{
-        .name = "hello_triangle.elf",
-        .root_module = exe_mod,
     });
 
-    exe.build_id = .uuid;
-    exe.link_function_sections = true;
-    exe.link_gc_sections = true;
-
+    exe.root_module.addAnonymousImport("position.zpsh", .{ .root_source_file = position_shader.out });
+    exe.link_emit_relocs = true;
+    exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
     b.installArtifact(exe);
 
-    const smdh = zitrus.addMakeSmdh(b, .{
-        .name = "hello_triangle.icn",
+    const smdh = zitrus.MakeSmdh.init(zitrus_dep, .{
         .settings = b.path("smdh-settings.zon"),
     });
 
-    const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "hello_triangle.3dsx", .exe = exe, .smdh = smdh });
+    const final_3dsx = zitrus.Make3dsx.init(zitrus_dep, .{
+        .exe = exe,
+        .smdh = smdh.out,
+    });
 
-    b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "hello_triangle.3dsx").step);
+    final_3dsx.install(b, .default);
 }

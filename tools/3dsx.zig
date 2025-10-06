@@ -115,7 +115,11 @@ pub fn main(args: @"3dsx", arena: std.mem.Allocator) !u8 {
                     break :m 1;
                 },
                 error.CodeSegmentMustBeFirst => {
-                    std.debug.print("elf .text/.code segment must be the first to appear\n", .{});
+                    std.debug.print(
+                        \\elf .text/.code segment must be the first to appear
+                        \\are you using a linkerscript?
+                        \\
+                    , .{});
                     break :m 1;
                 },
                 error.RodataSegmentMustBeSecond => {

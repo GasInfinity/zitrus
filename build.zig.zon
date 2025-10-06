@@ -17,15 +17,15 @@
             .hash = "zdap-0.1.0-wEMl7vF7AADjRQP9W--Y4UTCr7mCuYmbCypTGO0HxPue",
         },
         .zigimg = .{
-            .url = "git+https://github.com/zigimg/zigimg.git?ref=migration-to-zig-0.15#d7b7ab0ba0899643831ef042bd73289510b39906",
-            .hash = "zigimg-0.1.0-8_eo2vHnEwCIVW34Q14Ec-xUlzIoVg86-7FU2ypPtxms",
+            .url = "git+https://github.com/zigimg/zigimg.git#d7717b3617d58160635623fe86d4bf86065498e0",
+            .hash = "zigimg-0.1.0-8_eo2vBrFQAvZmO9NzDP85_qC5JFksuMdyI_KMMEr4bq",
         },
     },
     .paths = .{
         "assets",
+        "build",
         "src",
         "tools",
-        "arm-3ds.ld",
         "build.zig",
         "build.zig.zon",
         "LICENSE",

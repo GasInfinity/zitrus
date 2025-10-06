@@ -47,6 +47,9 @@ pub const Graphics = struct {
     boolean_constants: std.EnumArray(mango.ShaderStage, std.EnumSet(pica.shader.register.Integral.Boolean)),
     integer_constants: std.EnumArray(mango.ShaderStage, std.EnumArray(pica.shader.register.Integral.Integer, [4]i8)),
 
+    // TODO: Instead of allocating from the heap and copying it to the linear heap, why
+    // don't we try using the command buffer registers? We could save a LOT of memory if we can
+    // jump between native command queues!
     encoded_command_state: []align(8) u32,
 
     const PhongDistributionContext = struct {
@@ -75,36 +78,6 @@ pub const Graphics = struct {
             return 1.0 / (ctx.constant + ctx.linear * ctx.range * x + ctx.quadratic * ctx.range * x * x);
         }
     };
-
-    // TODO: This should not be here. This should be in hardware.pica!
-    fn initLookupTable(
-        context: anytype,
-        absolute: bool,
-    ) [256]pica.Graphics.FragmentLighting.LookupTable.Data {
-        var lut: [256]pica.Graphics.FragmentLighting.LookupTable.Data = undefined;
-
-        const absolute_unit: f32 = @floatFromInt(@intFromBool(absolute));
-        const negated_unit = 1 - absolute_unit;
-
-        const msb_multiplier: f32 = (absolute_unit * 2 - 1) * 128;
-        const max = 256.0 - (negated_unit * 128.0);
-
-        var last: f32 = context.value(0.0);
-        for (1..lut.len) |i| {
-            const input = (@as(f32, @floatFromInt(i & 0x7F)) + @as(f32, @floatFromInt((i >> 7) & 0b1)) * msb_multiplier) / max;
-
-            const current: f32 = context.value(input);
-            defer last = current;
-
-            lut[i - 1] = .{
-                .entry = .ofSaturating(last),
-                .next_absolute_difference = .ofSaturating(@abs(current - last)),
-            };
-        }
-
-        lut[255] = .{ .entry = .ofSaturating(last), .next_absolute_difference = .ofSaturating(context.value(absolute_unit) - last) };
-        return lut;
-    }
 
     pub fn init(create_info: mango.GraphicsPipelineCreateInfo, gpa: std.mem.Allocator) !Graphics {
         const dyn = create_info.dynamic_state;
@@ -200,10 +173,10 @@ pub const Graphics = struct {
             });
 
             gfx_queue.add(p3d, &p3d.fragment_lighting.lut_index, .init(.d0, 0));
-            gfx_queue.addConsecutive(p3d, &p3d.fragment_lighting.lut_data[0], &initLookupTable(PhongDistributionContext.init(32), true));
+            gfx_queue.addConsecutive(p3d, &p3d.fragment_lighting.lut_data[0], &.initContext(PhongDistributionContext.init(32), true));
 
             gfx_queue.add(p3d, &p3d.fragment_lighting.lut_index, .init(.da0, 0));
-            gfx_queue.addConsecutive(p3d, &p3d.fragment_lighting.lut_data[0], &initLookupTable(DistanceAttenuationContext.init(7, 1.0, 0.7, 1.8), true));
+            gfx_queue.addConsecutive(p3d, &p3d.fragment_lighting.lut_data[0], &.initContext(DistanceAttenuationContext.init(7, 1.0, 0.7, 1.8), true));
         }
 
         if (create_info.geometry_shader_state) |_| {

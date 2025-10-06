@@ -159,7 +159,7 @@ pub fn main(args: Smdh, arena: std.mem.Allocator) !u8 {
 
             var write_buffer: [4096]u8 = undefined;
             inline for (&.{ dump.@"24x24", dump.@"48x48" }, &.{ &input_smdh.icons.small, &input_smdh.icons.large }, &.{ smdh.Icons.small_size, smdh.Icons.large_size }) |out_icon_path, icon, icon_size| if (out_icon_path) |path| {
-                var out = try zigimg.ImageUnmanaged.create(arena, icon_size, icon_size, .rgb565);
+                var out = try zigimg.Image.create(arena, icon_size, icon_size, .rgb565);
                 defer out.deinit(arena);
 
                 // XXX: we allocate too much, shouldn't we able to convert in-place also here?
@@ -177,9 +177,9 @@ pub fn main(args: Smdh, arena: std.mem.Allocator) !u8 {
 const Bgr565 = packed struct(u16) { b: u5, g: u6, r: u5 };
 
 // XXX: this allocates too much when we could just convert it once...
-fn loadIconWithSize(size: usize, arena: std.mem.Allocator, path: []const u8) !zigimg.ImageUnmanaged {
+fn loadIconWithSize(size: usize, arena: std.mem.Allocator, path: []const u8) !zigimg.Image {
     var read_buffer: [4096]u8 = undefined;
-    var img = zigimg.ImageUnmanaged.fromFilePath(arena, path, &read_buffer) catch |err| {
+    var img = zigimg.Image.fromFilePath(arena, path, &read_buffer) catch |err| {
         std.debug.print("could not open icon file '{s}': {s}\n", .{ path, @errorName(err) });
         return err;
     };
@@ -207,7 +207,7 @@ fn loadIcons(arena: std.mem.Allocator, large_path: []const u8, small_path: ?[]co
 
         processImage(.tile, smdh.Icons.small_size, @alignCast(std.mem.bytesAsSlice(Bgr565, &icons.small)), @ptrCast(small_image.pixels.rgb565));
     } else {
-        var downsampled = try zigimg.ImageUnmanaged.create(arena, smdh.Icons.small_size, smdh.Icons.small_size, .rgb565);
+        var downsampled = try zigimg.Image.create(arena, smdh.Icons.small_size, smdh.Icons.small_size, .rgb565);
         defer downsampled.deinit(arena);
 
         // XXX: I think zigimg should have a resize function, I'll cook something when I have time if nothing is done

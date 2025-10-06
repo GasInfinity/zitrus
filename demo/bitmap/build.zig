@@ -7,30 +7,34 @@ pub fn build(b: *std.Build) void {
     const zitrus_dep = b.dependency("zitrus", .{});
     const zitrus_mod = zitrus_dep.module("zitrus");
 
-    const exe_mod = b.createModule(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = b.resolveTargetQuery(zitrus.target.horizon_arm11),
-        .optimize = optimize,
-        .single_threaded = true,
-    });
-
-    exe_mod.addImport("zitrus", zitrus_mod);
-    exe_mod.addAnonymousImport("top-screen", .{ .root_source_file = b.path("assets/top.bgr") });
-    exe_mod.addAnonymousImport("bottom-screen", .{ .root_source_file = b.path("assets/bottom.bgr") });
-
-    const exe = zitrus.addExecutable(b, .{
+    const exe = b.addExecutable(.{
         .name = "bitmap.elf",
-        .root_module = exe_mod,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = b.resolveTargetQuery(zitrus.target.arm11.horizon.query),
+            .optimize = optimize,
+            .single_threaded = true,
+            .imports = &.{
+                .{ .name = "zitrus", .module = zitrus_mod },
+            },
+        }),
     });
 
+    exe.root_module.addAnonymousImport("top-screen", .{ .root_source_file = b.path("assets/top.bgr") });
+    exe.root_module.addAnonymousImport("bottom-screen", .{ .root_source_file = b.path("assets/bottom.bgr") });
+
+    exe.link_emit_relocs = true;
+    exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
     b.installArtifact(exe);
 
-    const bitmap_smdh = zitrus.addMakeSmdh(b, .{
-        .name = "bitmap.icn",
+    const smdh = zitrus.MakeSmdh.init(zitrus_dep, .{
         .settings = b.path("smdh-settings.zon"),
     });
 
-    const final_3dsx = zitrus.addMake3dsx(b, .{ .name = "bitmap.3dsx", .exe = exe, .smdh = bitmap_smdh });
+    const final_3dsx = zitrus.Make3dsx.init(zitrus_dep, .{
+        .exe = exe,
+        .smdh = smdh.out,
+    });
 
-    b.getInstallStep().dependOn(&b.addInstallBinFile(final_3dsx, "bitmap.3dsx").step);
+    final_3dsx.install(b, .default);
 }

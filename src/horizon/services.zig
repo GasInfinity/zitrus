@@ -12,3 +12,9 @@ pub const Config = @import("services/Config.zig");
 pub const Filesystem = @import("services/Filesystem.zig");
 pub const ChannelSound = @import("services/ChannelSound.zig");
 pub const IrRst = @import("services/IrRst.zig");
+
+pub const Process = @import("services/Process.zig");
+pub const PxiProcess9 = @import("services/PxiProcess9.zig");
+pub const SocketUser = @import("services/SocketUser.zig");
+
+pub const Loader = @import("services/Loader.zig");
