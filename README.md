@@ -57,7 +57,7 @@ const smdh: zitrus.MakeSmdh = .init(zitrus_dep, .{
 // WARNING: Won't be properly cached as there's an issue upstream.
 
 // This step will convert your executable to 3dsx (the defacto homebrew executable format) to execute it in an emulator or real 3DS
-const final_3dsx: zitrus.Make3dsx = .init(zitrus_dep, .{ .exe = exe, .smdh = homebrew_smdh });
+const final_3dsx: zitrus.Make3dsx = .init(zitrus_dep, .{ .exe = exe, .smdh = smdh });
 final_3dsx.install(b, .default);
 ```
 

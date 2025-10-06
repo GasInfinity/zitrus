@@ -92,7 +92,7 @@ pub fn build(b: *Build) void {
     });
 
     zitrus_lib.root_module.addImport("zitrus", zitrus_lib.root_module);
-    b.installArtifact(zitrus_lib);
+    // b.installArtifact(zitrus_lib);
 
     const install_docs = b.addInstallDirectory(.{
         .source_dir = zitrus_lib.getEmittedDocs(),
