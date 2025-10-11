@@ -166,22 +166,22 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 - 🟢 `DeviceMemory`
 - 🟢 `Buffer`s
 - 🟢 `Sampler`
-- 🟡 `Image`s / ImageViews
-    - 🟡 Up to 8 `Image` layers
-    - 🟡 Up to 8 mipmap levels (1024x1024 -> 8x8)
+- 🟢 `Image`s / ImageViews
 - 🟡 `Pipeline`s
-    - 🟡 Lighting
-    - 🔴 Fog
+    - 🟢 Lighting
+    - 🔴 Shadows
     - 🔴 Geometry shaders
+    - 🔴 Fog
     - 🔴 Gas
 - 🟡 `CommandPool`s
     - 🟢 `CommandBuffer` recycling
     - 🔴 Native buffer pooling/reusing
     - 🔴 Prewarm parameters.
 - 🟡 `CommandBuffer`s
+    - 🔴 Shadow Rendering
     - 🟡 Image Sampling
-        - 🔴 Cubemaps
         - 🔴 Shadow textures
+        - 🔴 Cubemaps
 
 ## Hardware
 

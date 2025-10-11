@@ -26,6 +26,7 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.addAnonymousImport("position.zpsh", .{ .root_source_file = position_shader.out });
+    exe.root_module.strip = false;
     exe.link_emit_relocs = true;
     exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
     b.installArtifact(exe);

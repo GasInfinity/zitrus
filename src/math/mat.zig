@@ -23,6 +23,20 @@ pub fn transpose(comptime n: usize, comptime T: type, a: [n][n]T) [n][n]T {
     return result;
 }
 
+pub fn mul(a: @"4x4", b: @"4x4") @"4x4" {
+    var r: [4][4]f32 = undefined;
+    for (0..4) |i| {
+        for (0..4) |j| {
+            r[i][j] = math.vec.dot(4, f32, a[i], .{ b[0][j], b[1][j], b[2][j], b[3][j] });
+        }
+    }
+    return r;
+}
+
+pub fn mulVec(a: @"4x4", b: @Vector(4, f32)) @Vector(4, f32) {
+    return .{ math.vec.dot(4, f32, a[0], b), math.vec.dot(4, f32, a[1], b), math.vec.dot(4, f32, a[2], b), math.vec.dot(4, f32, a[3], b) };
+}
+
 pub fn translate(x: f32, y: f32, z: f32) @"4x4" {
     return .{
         .{ 1, 0, 0, x },
@@ -117,6 +131,23 @@ pub fn scaleRotateTranslate(
 /// Same as `scaleRotateTranslate` but with parameters as vectors / quaternions.
 pub fn scaleRotateTranslateV(s: [3]f32, r: [4]f32, t: [3]f32) @"4x4" {
     return scaleRotateTranslate(s[0], s[1], s[2], r[0], r[1], r[2], r[3], t[0], t[1], t[2]);
+}
+
+pub fn lookAt(position: @Vector(3, f32), forward: @Vector(3, f32), up: @Vector(3, f32)) @"4x4" {
+    const cbackward = -forward;
+    const cright, _ = math.vec.normalize(3, f32, math.vec.cross(f32, up, cbackward));
+    const cup, _ = math.vec.normalize(3, f32, math.vec.cross(f32, cbackward, cright));
+
+    const x: @Vector(3, f32) = @splat(-math.vec.dot(3, f32, position, cright));
+    const y: @Vector(3, f32) = @splat(-math.vec.dot(3, f32, position, cup));
+    const z: @Vector(3, f32) = @splat(-math.vec.dot(3, f32, position, cbackward));
+
+    return .{
+        @shuffle(f32, cright, x, [_]i32{ 0, 1, 2, ~@as(i32, 0) }),
+        @shuffle(f32, cup, y, [_]i32{ 0, 1, 2, ~@as(i32, 0) }),
+        @shuffle(f32, cbackward, z, [_]i32{ 0, 1, 2, ~@as(i32, 0) }),
+        .{ 0, 0, 0, 1 },
+    };
 }
 
 // TODO: right-handed ortho

@@ -107,11 +107,30 @@ pub const Scene = struct {
     simple_sampler: mango.Sampler,
     time: f32 = 0.0,
 
+    camera_speed: f32 = 5,
+    camera_yaw: f32 = 0,
+    camera_pitch: f32 = 0,
+    camera_position: @Vector(3, f32) = .{ 1, 5, 1 },
+    camera_right: @Vector(3, f32) = .{ -1, 0, 0 },
+    camera_forward: @Vector(3, f32) = .{ 0, 0, 1 },
+
+    fn phongDistribution(_: ?*anyopaque, x: f32) callconv(.c) f32 {
+        return std.math.pow(f32, x, 256);
+    }
+
     pub fn init(device: mango.Device, gpa: std.mem.Allocator) !Scene {
         const sema = try device.createSemaphore(.{
             .initial_value = 0,
         }, gpa);
         errdefer device.destroySemaphore(sema, gpa);
+
+        const phong_distribution_lut = try device.createLightLookupTable(.{
+            .map = &phongDistribution,
+            .context = null,
+            .absolute = true,
+        }, gpa);
+        // NOTE: As we won't have a dynamic light environment, we can destroy the LUT after creating the pipeline.
+        defer device.destroyLightLookupTable(phong_distribution_lut, gpa);
 
         const pipeline = try device.createGraphicsPipeline(.{
             .rendering_info = &.{
@@ -151,8 +170,7 @@ pub const Scene = struct {
             .rasterization_state = &.{
                 .front_face = .ccw,
 
-                // NOTE: This is done in purpose to show that depth tests WORK!
-                .cull_mode = .none,
+                .cull_mode = .back,
 
                 .depth_mode = .z_buffer,
                 .depth_bias_constant = 0.0,
@@ -171,13 +189,19 @@ pub const Scene = struct {
                 .back_front = std.mem.zeroes(mango.GraphicsPipelineCreateInfo.AlphaDepthStencilState.StencilOperationState),
             },
             .texture_sampling_state = &.{
-                .texture_enable = .{ true, false, false, false },
-
                 .texture_2_coordinates = .@"2",
                 .texture_3_coordinates = .@"2",
             },
             .lighting_state = &.{
                 .enable = true,
+                .environment = &.{
+                    .enable_distribution = .{ true, false },
+
+                    .distribution_tables = .{ phong_distribution_lut, .null },
+                    .distribution_inputs = .{ .@"N * H", undefined },
+                    .distribution_ranges = .{ .positive, undefined },
+                    .distribution_scales = .{ .@"1x", undefined },
+                },
             },
             .texture_combiner_state = &.init(&.{ .{
                 .color_src = .{ .fragment_primary_color, .fragment_secondary_color, .previous },
@@ -202,7 +226,7 @@ pub const Scene = struct {
                 .color_scale = .@"1x",
                 .alpha_scale = .@"1x",
 
-                .constant = @splat(0),
+                .constant = .{ 255, 0, 0, 255 },
             } }, &.{.previous}),
             .color_blend_state = &.{
                 .logic_op_enable = false,
@@ -288,8 +312,53 @@ pub const Scene = struct {
         device.destroySemaphore(scene.semaphore, gpa);
     }
 
-    pub fn update(scene: *Scene) !void {
+    pub fn update(scene: *Scene, pad: Hid.Pad.Entry) !void {
         scene.time += 1.0 / 60.0;
+
+        const delta: @Vector(3, f32) = @splat(1.0 / 60.0);
+
+        const circle = pad.circle.unit();
+        const abs_circle = @abs(circle);
+
+        if (abs_circle[0] >= 0.3) {
+            scene.camera_yaw += circle[0] * std.math.pi / 60.0;
+        }
+
+        if (abs_circle[1] >= 0.3) {
+            scene.camera_pitch += circle[1] * std.math.pi / 60.0;
+        }
+
+        if (scene.camera_pitch >= std.math.pi / 2.05) {
+            scene.camera_pitch = std.math.pi / 2.05;
+        } else if (scene.camera_pitch <= -std.math.pi / 2.05) {
+            scene.camera_pitch = -std.math.pi / 2.05;
+        }
+
+        const zmath = zitrus.math;
+        scene.camera_forward, _ = zmath.vec.normalize(3, f32, .{
+            @cos(scene.camera_yaw) * @cos(scene.camera_pitch),
+            @sin(scene.camera_pitch),
+            @sin(scene.camera_yaw) * @cos(scene.camera_pitch),
+        });
+        scene.camera_right, _ = zmath.vec.normalize(3, f32, zmath.vec.cross(f32, scene.camera_forward, .{ 0, 1, 0 }));
+
+        if (pad.current.up) {
+            scene.camera_position += scene.camera_forward * @as(@Vector(3, f32), @splat(scene.camera_speed)) * delta;
+        } else if (pad.current.down) {
+            scene.camera_position -= scene.camera_forward * @as(@Vector(3, f32), @splat(scene.camera_speed)) * delta;
+        }
+
+        if (pad.current.left) {
+            scene.camera_position -= scene.camera_right * @as(@Vector(3, f32), @splat(scene.camera_speed)) * delta;
+        } else if (pad.current.right) {
+            scene.camera_position += scene.camera_right * @as(@Vector(3, f32), @splat(scene.camera_speed)) * delta;
+        }
+
+        if (pad.current.x) {
+            scene.camera_position[1] += scene.camera_speed * (1.0 / 60.0);
+        } else if (pad.current.b) {
+            scene.camera_position[1] -= scene.camera_speed * (1.0 / 60.0);
+        }
     }
 
     pub fn render(scene: *Scene) !void {
@@ -324,15 +393,39 @@ pub const Scene = struct {
 
             const zmath = zitrus.math;
 
-            const sin_time = @sin(scene.time / 4);
+            const camera_view = zmath.mat.lookAt(scene.camera_position, scene.camera_forward, .{ 0, 1, 0 });
 
+            const sin_time = @sin(scene.time / 2);
+            const cos_time = @cos(scene.time / 2);
             const model_rotation_axis, _ = zmath.vec.normalize(3, f32, .{ 1, 1, 1 });
-            const model_rotation = zmath.quat.axisAngleV(f32, model_rotation_axis, std.math.pi * scene.time / 2.0);
+            const model_rotation = zmath.quat.axisAngleV(f32, model_rotation_axis, std.math.pi * scene.time / 4.0);
 
-            const model_matrix = zmath.mat.scaleRotateTranslateV(.{ 1, 1, 1 }, model_rotation, .{ 0, 0, -2.5 - (@abs(sin_time)) * 4 });
+            const model_matrix = zmath.mat.rotate(model_rotation[0], model_rotation[1], model_rotation[2], model_rotation[3]);
 
             cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(.right, std.math.degreesToRadians(90.0), 240.0 / 400.0, 0.8, 100));
-            cmd.bindFloatUniforms(.vertex, 4, &model_matrix);
+            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.mul(camera_view, model_matrix));
+
+            cmd.bindLightEnvironmentFactors(.{
+                .ambient = @splat(26),
+            });
+
+            const light_position: [4]f32 = .{ sin_time * 4, 2, cos_time * 4, 1 };
+
+            const light_vector = @as([4]f32, zmath.mat.mulVec(camera_view, light_position))[0..3].*;
+
+            cmd.bindLights(&.{.{
+                .vector = light_vector,
+                .type = .positional,
+            }});
+
+            cmd.bindLightFactors(&.{.{
+                .ambient = @splat(0),
+                .diffuse = @splat(255),
+                .specular = .{ @splat(128), @splat(0) },
+
+                .sides = .one,
+                .geometric = .none,
+            }});
 
             scene.cube_mesh.draw(cmd);
         }
@@ -361,7 +454,7 @@ pub const Scene = struct {
         try fill_queue.clearColorImage(.{
             .wait_semaphore = &.init(scene.semaphore, scene.current_timeline),
             .image = scene.top_renderbuffer.color.image,
-            .color = @splat(0x11),
+            .color = @splat(0x00),
             .subresource_range = .full,
             .signal_semaphore = &.init(scene.semaphore, scene.current_timeline + 1),
         });
@@ -707,7 +800,7 @@ pub fn main() !void {
         const bottom_image_idx = try bottom_swap.acquireNext(device);
         const top_image_idx = try top_swap.acquireNext(device);
 
-        try scene.update();
+        try scene.update(pad);
         try scene.render();
         try scene.submitPresent(device, top_swap, top_image_idx, bottom_swap, bottom_image_idx);
     }

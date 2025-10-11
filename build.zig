@@ -103,7 +103,7 @@ pub fn build(b: *Build) void {
     const docs_step = b.step("docs", "Install docs");
     docs_step.dependOn(&install_docs.step);
 
-    const tools, const tools_exe= buildTools(b, optimize, tools_target, zdap, zigimg, zitrus);
+    const tools, const tools_exe = buildTools(b, optimize, tools_target, zdap, zigimg, zitrus);
 
     const tests = b.addTest(.{ .name = "zitrus-tests", .root_module = tools });
 
@@ -136,7 +136,7 @@ const release_targets: []const std.Target.Query = &.{
 fn buildReleases(b: *Build, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) void {
     for (release_targets) |release_target| {
         _, const tools = buildTools(b, .ReleaseSafe, b.resolveTargetQuery(release_target), zdap, zigimg, zitrus);
-        
+
         tools.root_module.strip = true;
 
         const tools_output = b.addInstallArtifact(tools, .{
@@ -152,7 +152,6 @@ fn buildReleases(b: *Build, zdap: *Build.Module, zigimg: *Build.Module, zitrus: 
 }
 
 fn buildTools(b: *Build, optimize: std.builtin.OptimizeMode, mod_target: Build.ResolvedTarget, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) struct { *Build.Module, *Build.Step.Compile } {
-    
     const tools = b.createModule(.{
         .root_source_file = b.path("tools/main.zig"),
         .target = mod_target,

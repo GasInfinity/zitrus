@@ -151,6 +151,16 @@ pub const Handle = enum(u32) {
         return b_device.destroyPipeline(pipeline, allocator);
     }
 
+    pub fn createLightLookupTable(device: Handle, create_info: mango.LightLookupTableCreateInfo, allocator: std.mem.Allocator) !mango.LightLookupTable {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return b_device.createLightLookupTable(create_info, allocator);
+    }
+
+    pub fn destroyLightLookupTable(device: Handle, lut: mango.LightLookupTable, allocator: std.mem.Allocator) void {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return b_device.destroyLightLookupTable(lut, allocator);
+    }
+
     pub fn createSwapchain(device: Handle, create_info: mango.SwapchainCreateInfo, allocator: std.mem.Allocator) !mango.Swapchain {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return b_device.createSwapchain(create_info, allocator);
@@ -498,7 +508,7 @@ pub fn bindImageMemory(device: *Device, image: mango.Image, memory: mango.Device
     const b_memory: backend.DeviceMemory = .fromHandle(memory);
 
     std.debug.assert(b_image.memory_info.isUnbound());
-    // TODO: std.debug.assert(memory_offset + image.size() <= memory.size);
+    std.debug.assert(@intFromEnum(memory_offset) + b_image.info.format.scale(b_image.info.size()) <= b_memory.size());
 
     b_image.memory_info = .init(b_memory, @intFromEnum(memory_offset));
 }
@@ -554,6 +564,21 @@ pub fn destroyPipeline(device: *Device, pipeline: mango.Pipeline, allocator: std
     allocator.destroy(b_gfx_pipeline);
 }
 
+pub fn createLightLookupTable(device: *Device, create_info: mango.LightLookupTableCreateInfo, allocator: std.mem.Allocator) !mango.LightLookupTable {
+    _ = device;
+
+    const lut: *backend.LightLookupTable = try allocator.create(backend.LightLookupTable);
+    lut.* = .init(create_info);
+
+    return lut.toHandle();
+}
+
+pub fn destroyLightLookupTable(device: *Device, lut: mango.LightLookupTable, allocator: std.mem.Allocator) void {
+    _ = device;
+    const b_lut: *const backend.LightLookupTable = .fromHandleMutable(lut);
+    allocator.destroy(b_lut);
+}
+
 pub fn createSwapchain(device: *Device, create_info: mango.SwapchainCreateInfo, allocator: std.mem.Allocator) !mango.Swapchain {
     return device.presentation_engine.initSwapchain(create_info, allocator);
 }
@@ -593,13 +618,13 @@ pub fn waitSemaphore(device: *Device, wait_info: mango.SemaphoreOperation, timeo
 }
 
 pub fn waitIdle(device: *Device) !void {
-    inline for (comptime std.enums.values(Queue.Type)) |kind| {
+    for (std.enums.values(Queue.Type)) |kind| {
         const queue_status = device.queue_statuses.getPtr(kind);
 
-        switch (queue_status.load(.monotonic)) {
-            .idle => {},
+        while (true) switch (queue_status.load(.monotonic)) {
+            .idle => break,
             .waiting, .working => _ = device.arbiter.arbitrate(@ptrCast(&queue_status.raw), .{ .wait_if_less_than = @intFromEnum(QueueStatus.idle) }) catch unreachable,
-        }
+        };
     }
 }
 
@@ -609,7 +634,6 @@ pub fn driverWake(device: *Device, reason: Queue.Type) void {
     }
 }
 
-// XXX: Should this should be in the syscore? we must handle vblanks and the app may be badly programmed (no yields)...
 // FIXME: Currently if some error happens in the driver, the entire app crashes! Should we report an error condition?
 fn driverMain(ctx: ?*anyopaque) callconv(.c) noreturn {
     const device: *Device = @ptrCast(@alignCast(ctx.?));

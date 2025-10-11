@@ -57,6 +57,11 @@ pub fn deinit(fs: RomFs, gpa: std.mem.Allocator) void {
     fs.file.sendClose();
 }
 
+pub fn openHorizonSubFile(fs: RomFs, file: romfs.View.File) !Filesystem.File {
+    const stat = file.stat(fs.view);
+    return try fs.file.sendOpenSubFile(fs.data_offset + stat.offset, stat.size);
+}
+
 pub fn readPositional(fs: RomFs, file: romfs.View.File, position: u64, buffer: []u8) !usize {
     const stat = file.stat(fs.view);
     const read_buffer = if (position + buffer.len >= stat.size) buffer[0..@intCast(stat.size - position)] else buffer;

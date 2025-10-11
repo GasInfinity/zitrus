@@ -92,7 +92,7 @@ pub fn main() !void {
     // Unlike Vulkan, surfaces are fixed (currently, XXX: Explore different display modes and separate it to Display objects)
     //
     // 3 surfaces exist:
-    //  - top_240x400 -> supports stereo, set array_layers == 2 (TODO: Truly support stereo rendering, create images with multiple layers)
+    //  - top_240x400 -> supports stereo, set array_layers == 2. See `ignore_stereo` in `mango.PrensentInfo.Flags`
     //  - top_240x800
     //  - bottom_240x320
     //
@@ -226,7 +226,9 @@ pub fn main() !void {
     }, gpa);
     defer device.freeMemory(color_attachment_image_memory, gpa);
 
-    // TODO: Docs. Color attachments must be `optimal`ly tiled!
+    // Color attachments have 2 requirements:
+    //  - They must be in *DEVICE_LOCAL* memory.
+    //  - They must be OPTIMAL'ly tiled.
     const top_color_attachment_image = try device.createImage(.{
         .flags = .{},
         .type = .@"2d",
@@ -259,7 +261,7 @@ pub fn main() !void {
 
     // Create the pipeline, this is an example.
     //
-    // A lot of this state can be dynamic. TODO: Docs
+    // A lot of this state can be dynamic.
     const simple_pipeline = try device.createGraphicsPipeline(.{
         .rendering_info = &.{
             .color_attachment_format = .a8b8g8r8_unorm,
@@ -308,17 +310,14 @@ pub fn main() !void {
             .back_front = std.mem.zeroes(mango.GraphicsPipelineCreateInfo.AlphaDepthStencilState.StencilOperationState),
         },
         // (Mango specific) Texture configuration is added as a fixed function stage.
-        //
-        // The behaviour is undefined if you try to use a texture unit wihout enabling it.
         .texture_sampling_state = &.{
-            .texture_enable = .{ true, false, false, false },
-
             .texture_2_coordinates = .@"2",
             .texture_3_coordinates = .@"2",
         },
-        // (Mango specific) Fragment lighting is added as a fixed function stage. TODO: Implement this
+        // (Mango specific) Fragment lighting is added as a fixed function stage.
         .lighting_state = &.{
             .enable = false,
+            .light_environment = null,
         },
         // (Mango specific) Fragment color combiner is added as a fixed function stage.
         .texture_combiner_state = &.init(&.{.{
@@ -400,7 +399,8 @@ pub fn main() !void {
 
         // Same command recording workflow as Vulkan.
         //
-        // However, some things change. TODO: Docs
+        // However, some things change.
+        // E.g: We have `bindCombinedImageSamplers`, `bindLightEnvironmentFactors`, `bindLights`, ...
         try cmd.begin();
 
         cmd.bindIndexBuffer(index_buffer, 0, .u8);

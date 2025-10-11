@@ -113,7 +113,8 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
         }
 
         pub inline fn slice(bt: Self, index: usize, comptime len: usize) BitpackedArray(T, len) {
-            // TODO: Safety check?
+            std.debug.assert(index + len <= n);
+
             const NewBitpacked = BitpackedArray(T, len);
             const bt_int: Int = @bitCast(bt);
             const new_bt_int: NewBitpacked.Int = @truncate(bt_int >> (index * @bitSizeOf(T)));
@@ -175,4 +176,5 @@ test BitpackedArray {
     try testing.expect(bt.get(0) == .bar);
 }
 
+const builtin = @import("builtin");
 const std = @import("std");

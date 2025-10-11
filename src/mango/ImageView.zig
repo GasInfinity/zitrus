@@ -10,13 +10,14 @@ pub const Handle = enum(u64) {
 };
 
 pub const Data = packed struct(u64) {
+    valid: bool = true,
     image: mango.Image,
     packed_format: u5,
     is_cube: bool,
     base_array_layer: u3,
     base_mip_level: u3,
     levels_minus_one: u3,
-    _: u17 = 0,
+    _: u16 = 0,
 
     pub fn init(info: mango.ImageViewCreateInfo) Data {
         const b_image: *backend.Image = .fromHandleMutable(info.image);
@@ -59,25 +60,20 @@ pub const RenderingInfo = struct {
 
 data: Data,
 
-pub const RenderingAttachment = enum { color, depth_stencil };
-
-pub fn getRenderingInfo(view: ImageView, comptime attachment: RenderingAttachment) RenderingInfo {
+pub fn getRenderingInfo(view: ImageView) RenderingInfo {
     std.debug.assert(view.data.levels() == 1);
 
     const image: backend.Image = .fromHandle(view.data.image);
-    const fmt = switch (attachment) {
-        .color => view.data.format().nativeColorFormat(),
-        .depth_stencil => view.data.format().nativeDepthStencilFormat(),
-    };
+    const fmt = image.info.format;
 
-    const img_width = image.info.width();
-    const img_height = image.info.height();
+    const img_width: usize = image.info.width();
+    const img_height: usize = image.info.height();
 
     const view_width = backend.imageLevelDimension(img_width, view.data.base_mip_level);
     const view_height = backend.imageLevelDimension(img_height, view.data.base_mip_level);
 
     const unscaled_img_offset = (@as(usize, image.info.layer_size) * view.data.base_array_layer) + backend.imageLevelOffset(img_width * img_height, view_width * view_height);
-    const img_offset = fmt.bytesPerPixel() * unscaled_img_offset;
+    const img_offset = fmt.scale(unscaled_img_offset);
 
     return .{
         .width = @intCast(view_width),

@@ -1,7 +1,6 @@
 //! A PICA200 pipeline.
 //!
 //! Currently *parses* shaders and stores all non-dynamic fixed-function state.
-//!
 
 pub const Handle = enum(u32) {
     null = 0,
@@ -104,85 +103,19 @@ pub const Graphics = struct {
         };
 
         // NOTE: It doesn't make sense to set p3d.geometry_pipeline.start_draw_function to config mode always, what do you do more, pipeline changes or drawcalls bro? (silly question)
-        gfx_queue.add(p3d, &p3d.geometry_pipeline.start_draw_function, .init(.config));
-        // TODO: What to do with early depth?
+        gfx_queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
+        // TODO: Investigate early depth. Why no one is using it? It can bring lots of performance by skipping stages (unless it doesn't work like in 99% of gpus)
         gfx_queue.add(p3d, &p3d.rasterizer.early_depth_test_enable_1, .init(false));
-        gfx_queue.add(p3d, &p3d.framebuffer.early_depth_test_enable, .init(false));
+        gfx_queue.add(p3d, &p3d.output_merger.early_depth_test_enable, .init(false));
 
-        gfx_queue.add(p3d, &p3d.texturing.lighting_enable, .init(create_info.lighting_state.?.enable));
-        gfx_queue.add(p3d, &p3d.fragment_lighting.disable, .init(!create_info.lighting_state.?.enable));
-
-        // TODO: Proper lighting support
-        if (create_info.lighting_state.?.enable) {
-            // 1 light
-            gfx_queue.add(p3d, &p3d.fragment_lighting.light_permutation, .splat(.init(0)));
-            gfx_queue.add(p3d, &p3d.fragment_lighting.num_lights_min_one, .init(0));
-
-            gfx_queue.add(p3d, &p3d.fragment_lighting.ambient, .splat(0));
-
-            gfx_queue.add(p3d, &p3d.fragment_lighting.control, .{
-                .environment = .{
-                    .enable_shadow_factor = false,
-                    .fresnel = .none,
-                    .enabled_lookup_tables = .d0_rr_sp_da,
-                    .apply_shadow_attenuation_to_primary_color = false,
-                    .apply_shadow_attenuation_to_secondary_color = false,
-                    .invert_shadow_attenuation = false,
-                    .apply_shadow_attenuation_to_alpha = false,
-                    .bump_map_unit = .@"0",
-                    .shadow_map_unit = .@"0",
-                    .clamp_highlights = false,
-                    .bump_mode = .none,
-                    .recalculate_bump_vectors = false,
-                },
-                .lights = .{
-                    .light_shadows_disabled = .splat(true),
-                    .light_spot_disabled = .splat(true),
-                    .disable_d0 = false,
-                    .disable_d1 = true,
-                    .disable_fr = true,
-                    .disable_rb = true,
-                    .disable_rg = true,
-                    .disable_rr = true,
-                    .light_distance_attenuation_disabled = .init(.{false} ++ @as([7]bool, @splat(true))),
-                },
-            });
-
-            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].xy, .init(.of(-0.0), .of(0.0)));
-            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].z, .init(.of(-0.5)));
-            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].attenuation_scale, .init(.of(1.0 / 7.0)));
-            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].attenuation_bias, .init(.of(0.0)));
-
-            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].ambient, .splat(16));
-            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].diffuse, .splat(255));
-            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].specular, .{ .splat(255), .splat(0) });
-
-            gfx_queue.add(p3d, &p3d.fragment_lighting.light[0].config, .{
-                .type = .positional,
-                .diffuse_sides = .one,
-                .geometric_factor_enable = .splat(false),
-            });
-
-            gfx_queue.add(p3d, &p3d.fragment_lighting.lut_input_select, .{
-                .d0 = .@"N * H",
-            });
-
-            gfx_queue.add(p3d, &p3d.fragment_lighting.lut_input_scale, .{});
-            gfx_queue.add(p3d, &p3d.fragment_lighting.lut_input_absolute, .{
-                .disable_d0 = false,
-            });
-
-            gfx_queue.add(p3d, &p3d.fragment_lighting.lut_index, .init(.d0, 0));
-            gfx_queue.addConsecutive(p3d, &p3d.fragment_lighting.lut_data[0], &.initContext(PhongDistributionContext.init(32), true));
-
-            gfx_queue.add(p3d, &p3d.fragment_lighting.lut_index, .init(.da0, 0));
-            gfx_queue.addConsecutive(p3d, &p3d.fragment_lighting.lut_data[0], &.initContext(DistanceAttenuationContext.init(7, 1.0, 0.7, 1.8), true));
+        if (!dyn.light_environment) {
+            initLighting(&gfx_queue, dyn, create_info.lighting_state.?.*);
         }
 
         if (create_info.geometry_shader_state) |_| {
             @panic("TODO");
         } else {
-            gfx_queue.add(p3d, &p3d.geometry_pipeline.enable_geometry_shader_configuration, .init(false));
+            gfx_queue.add(p3d, &p3d.primitive_engine.enable_geometry_shader_configuration, .init(false));
 
             const vtx_info = try compileShader(create_info.vertex_shader_state.*, &p3d.vertex_shader, &gfx_queue);
 
@@ -190,9 +123,9 @@ pub const Graphics = struct {
             gfx.integer_constants = .init(.{ .vertex = vtx_info.integer_constants, .geometry = undefined });
 
             // TODO: When we support geometry shaders, this should be a separate function!
-            gfx_queue.add(p3d, &p3d.geometry_pipeline.vertex_shader_output_map_total_1, .init(vtx_info.outputs_minus_one));
-            gfx_queue.add(p3d, &p3d.geometry_pipeline.vertex_shader_output_map_total_2, .init(vtx_info.outputs_minus_one));
-            gfx_queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{
+            gfx_queue.add(p3d, &p3d.primitive_engine.vertex_shader_output_map_total_1, .init(vtx_info.outputs_minus_one));
+            gfx_queue.add(p3d, &p3d.primitive_engine.vertex_shader_output_map_total_2, .init(vtx_info.outputs_minus_one));
+            gfx_queue.addMasked(p3d, &p3d.primitive_engine.primitive_config, .{
                 .total_vertex_outputs = vtx_info.outputs_minus_one,
                 .topology = .triangle_list, // NOTE: Ignored by mask
             }, 0b0001);
@@ -243,9 +176,9 @@ pub const Graphics = struct {
             gfx.vertex_attributes_len = vtx_input_layout.buffers_len;
 
             gfx_queue.addIncremental(p3d, .{
-                &p3d.geometry_pipeline.attributes.base,
-                &p3d.geometry_pipeline.attributes.config.low,
-                &p3d.geometry_pipeline.attributes.config.high,
+                &p3d.primitive_engine.attributes.base,
+                &p3d.primitive_engine.attributes.config.low,
+                &p3d.primitive_engine.attributes.config.high,
             }, .{
                 .fromPhysical(backend.global_attribute_buffer_base),
                 vtx_input_layout.config.low,
@@ -255,10 +188,10 @@ pub const Graphics = struct {
             for (0..vtx_input_layout.buffers_len) |i| {
                 gfx.vertex_attribute_strides[i] = vtx_input_layout.buffer_config[i].high.bytes_per_vertex;
 
-                gfx_queue.add(p3d, &p3d.geometry_pipeline.attributes.vertex_buffers[i].config, vtx_input_layout.buffer_config[i]);
+                gfx_queue.add(p3d, &p3d.primitive_engine.attributes.vertex_buffers[i].config, vtx_input_layout.buffer_config[i]);
             }
             
-            gfx_queue.add(p3d, &p3d.geometry_pipeline.vertex_shader_input_attributes, .init(vtx_input_layout.config.high.attributes_end));
+            gfx_queue.add(p3d, &p3d.primitive_engine.vertex_shader_input_attributes, .init(vtx_input_layout.config.high.attributes_end));
 
             gfx_queue.add(p3d, &p3d.vertex_shader.input_buffer_config, .{
                 .num_input_attributes = (vtx_input_layout.config.high.attributes_end),
@@ -275,20 +208,20 @@ pub const Graphics = struct {
 
             gfx.misc.topology = native_topo;
 
-            gfx_queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{
+            gfx_queue.addMasked(p3d, &p3d.primitive_engine.primitive_config, .{
                 .total_vertex_outputs = 0, // NOTE: Ignored by mask
                 // NOTE: Hah, another PICA200 classic, after debugging in azahar and in hardware it seems triangle lists
                 // are drawn with a `geometry` primitive topology, totally acceptable bro. Keep it up DMP
                 .topology = native_topo.indexedTopology(),
             }, 0b0010);
 
-            gfx_queue.addMasked(p3d, &p3d.geometry_pipeline.config, .{
+            gfx_queue.addMasked(p3d, &p3d.primitive_engine.config, .{
                 .geometry_shader_usage = .disabled, // NOTE: Ignored by mask
                 .drawing_triangles = native_topo == .triangle_list,
                 .use_reserved_geometry_subdivision = false, // NOTE: Ignored by mask
             }, 0b0010);
 
-            gfx_queue.addMasked(p3d, &p3d.geometry_pipeline.config_2, .{
+            gfx_queue.addMasked(p3d, &p3d.primitive_engine.config_2, .{
                 .drawing_triangles = native_topo == .triangle_list,
             }, 0b0010);
         }
@@ -338,14 +271,11 @@ pub const Graphics = struct {
 
             if(!dyn.depth_bias_constant) {
                 const depth_map_scale = (static_viewport.min_depth - static_viewport.max_depth); 
-                const depth_map_offset = static_viewport.min_depth + create_info.rasterization_state.?.depth_bias_constant;
+                const depth_map_bias = static_viewport.min_depth + create_info.rasterization_state.?.depth_bias_constant;
 
-                gfx_queue.addIncremental(p3d, .{
-                    &p3d.rasterizer.depth_map_scale,
-                    &p3d.rasterizer.depth_map_bias,
-                }, .{
-                    .init(.of(depth_map_scale)),
-                    .init(.of(depth_map_offset)),
+                gfx_queue.add(p3d, &p3d.rasterizer.depth_map, .{
+                    .scale = .init(.of(depth_map_scale)),
+                    .bias = .init(.of(depth_map_bias)),
                 });
             }
         } else if(!dyn.depth_bias_constant) {
@@ -366,46 +296,46 @@ pub const Graphics = struct {
             const color_blend_state = create_info.color_blend_state.?;
 
             if(color_blend_state.logic_op_enable) {
-                gfx_queue.add(p3d, &p3d.framebuffer.color_operation, .{
-                    .fragment_operation = .default,
-                    .mode = .logic,
+                gfx_queue.add(p3d, &p3d.output_merger.config, .{
+                    .mode = .default,
+                    .blend = .logic,
                 });
 
                 if(!dyn.logic_op) {
-                    gfx_queue.add(p3d, &p3d.framebuffer.logic_operation, .init(color_blend_state.logic_op.native()));
+                    gfx_queue.add(p3d, &p3d.output_merger.logic_config, .init(color_blend_state.logic_op.native()));
                 }
             } else {
-                gfx_queue.add(p3d, &p3d.framebuffer.color_operation, .{
-                    .fragment_operation = .default,
-                    .mode = .blend,
+                gfx_queue.add(p3d, &p3d.output_merger.config, .{
+                    .mode = .default,
+                    .blend = .blend,
                 });
 
                 if(!dyn.blend_equation) {
-                    gfx_queue.add(p3d, &p3d.framebuffer.blend_config, color_blend_state.attachment.blend_equation.native());
+                    gfx_queue.add(p3d, &p3d.output_merger.blend_config, color_blend_state.attachment.blend_equation.native());
                 } 
 
                 if(!dyn.blend_constants) {
-                    gfx_queue.add(p3d, &p3d.framebuffer.blend_color, color_blend_state.blend_constants);
+                    gfx_queue.add(p3d, &p3d.output_merger.blend_color, color_blend_state.blend_constants);
                 }
             }
         } else {
             if(!dyn.logic_op) {
-                gfx_queue.add(p3d, &p3d.framebuffer.logic_operation, .init(create_info.color_blend_state.?.logic_op.native()));
+                gfx_queue.add(p3d, &p3d.output_merger.logic_config, .init(create_info.color_blend_state.?.logic_op.native()));
             }
 
             if(!dyn.blend_equation) {
-                gfx_queue.add(p3d, &p3d.framebuffer.blend_config, create_info.color_blend_state.?.attachment.blend_equation.native());
+                gfx_queue.add(p3d, &p3d.output_merger.blend_config, create_info.color_blend_state.?.attachment.blend_equation.native());
             } 
 
             if(!dyn.blend_constants) {
-                gfx_queue.add(p3d, &p3d.framebuffer.blend_color, create_info.color_blend_state.?.blend_constants);
+                gfx_queue.add(p3d, &p3d.output_merger.blend_color, create_info.color_blend_state.?.blend_constants);
             }
         }
 
         if(!dyn.alpha_test_enable and !dyn.alpha_test_compare_op and !dyn.alpha_test_reference) {
             const alpha_depth_stencil_state = create_info.alpha_depth_stencil_state.?;
 
-            gfx_queue.add(p3d, &p3d.framebuffer.alpha_test, .{
+            gfx_queue.add(p3d, &p3d.output_merger.alpha_test, .{
                 .enable = alpha_depth_stencil_state.alpha_test_enable,
                 .op = alpha_depth_stencil_state.alpha_test_compare_op.native(),
                 .reference = alpha_depth_stencil_state.alpha_test_reference,
@@ -422,7 +352,7 @@ pub const Graphics = struct {
             const alpha_depth_stencil_state = create_info.alpha_depth_stencil_state.?;
 
             if(!alpha_depth_stencil_state.stencil_test_enable) {
-                gfx_queue.add(p3d, &p3d.framebuffer.stencil_test, .{
+                gfx_queue.add(p3d, &p3d.output_merger.stencil_test.config, .{
                     .enable = false,
                     .op = .never,
                     .compare_mask = 0x00,
@@ -430,7 +360,7 @@ pub const Graphics = struct {
                     .write_mask = 0x00,
                 });
             } else if(!dyn.stencil_test_operation and !dyn.stencil_compare_mask and !dyn.stencil_reference and !dyn.stencil_write_mask) {
-                gfx_queue.add(p3d, &p3d.framebuffer.stencil_test, .{
+                gfx_queue.add(p3d, &p3d.output_merger.stencil_test.config, .{
                     .enable = true,
                     .op = alpha_depth_stencil_state.back_front.compare_op.native(),
                     .compare_mask = alpha_depth_stencil_state.back_front.compare_mask,
@@ -456,7 +386,7 @@ pub const Graphics = struct {
 
             gfx.misc.stencil_test_op = alpha_depth_stencil_state.back_front.compare_op.native();
 
-            gfx_queue.add(p3d, &p3d.framebuffer.stencil_operation, .{
+            gfx_queue.add(p3d, &p3d.output_merger.stencil_test.operation, .{
                 .fail_op = alpha_depth_stencil_state.back_front.fail_op.native(),
                 .depth_fail_op = alpha_depth_stencil_state.back_front.depth_fail_op.native(),
                 .pass_op = alpha_depth_stencil_state.back_front.pass_op.native(),
@@ -475,7 +405,7 @@ pub const Graphics = struct {
             gfx.misc.color_a_enable = color_blend_state.attachment.color_write_mask.a_enable;
 
             if(!alpha_depth_stencil_state.depth_test_enable) {
-                gfx_queue.add(p3d, &p3d.framebuffer.depth_color_mask, .{
+                gfx_queue.add(p3d, &p3d.output_merger.depth_color_config, .{
                     .enable_depth_test = false,
                     .depth_op = .never,
                     .r_write_enable = color_blend_state.attachment.color_write_mask.r_enable,
@@ -485,7 +415,7 @@ pub const Graphics = struct {
                     .depth_write_enable = false,
                 });
             } else if(!dyn.depth_compare_op and !dyn.depth_write_enable) {
-                gfx_queue.add(p3d, &p3d.framebuffer.depth_color_mask, .{
+                gfx_queue.add(p3d, &p3d.output_merger.depth_color_config, .{
                     .enable_depth_test = true,
                     .depth_op = alpha_depth_stencil_state.depth_compare_op.native(),
                     .r_write_enable = color_blend_state.attachment.color_write_mask.r_enable,
@@ -538,10 +468,10 @@ pub const Graphics = struct {
         if(!dyn.texture_config) {
             const texture_sampling_state = create_info.texture_sampling_state.?;
 
-            gfx_queue.add(p3d, &p3d.texturing.config, .{
-                .texture_enabled = .init(.{ texture_sampling_state.texture_enable[0], texture_sampling_state.texture_enable[1], texture_sampling_state.texture_enable[2] }),
+            gfx_queue.add(p3d, &p3d.texture_units.config, .{
+                .texture_enabled = .splat(false),
                 .texture_3_coordinates = texture_sampling_state.texture_3_coordinates.nativeTexture3(),
-                .texture_3_enabled = texture_sampling_state.texture_enable[2],
+                .texture_3_enabled = false,
                 .texture_2_coordinates = texture_sampling_state.texture_3_coordinates.nativeTexture2(),
                 .clear_texture_cache = false,
             });
@@ -550,12 +480,12 @@ pub const Graphics = struct {
         const rendering_info = create_info.rendering_info;
 
         gfx_queue.addIncremental(p3d, .{
-            &p3d.framebuffer.color_read,
-            &p3d.framebuffer.color_write,
-            &p3d.framebuffer.depth_read,
-            &p3d.framebuffer.depth_write,
-            &p3d.framebuffer.depth_format,
-            &p3d.framebuffer.color_format,
+            &p3d.output_merger.color_read,
+            &p3d.output_merger.color_write,
+            &p3d.output_merger.depth_read,
+            &p3d.output_merger.depth_write,
+            &p3d.output_merger.depth_format,
+            &p3d.output_merger.color_format,
         }, .{
             .init(if(rendering_info.color_attachment_format != .undefined) .all else .disable),
             .init(if(rendering_info.color_attachment_format != .undefined) .all else .disable),
@@ -566,8 +496,9 @@ pub const Graphics = struct {
             .init(if(rendering_info.color_attachment_format != .undefined) rendering_info.color_attachment_format.nativeColorFormat() else .abgr8888),
         });
 
-        gfx_queue.add(p3d, &p3d.framebuffer.block_size, .init(.@"8x8"));
-        gfx_queue.add(p3d, &p3d.geometry_pipeline.start_draw_function, .init(.drawing));
+        // TODO: Investigate the block size
+        gfx_queue.add(p3d, &p3d.output_merger.block_size, .init(.@"8x8"));
+        gfx_queue.add(p3d, &p3d.primitive_engine.mode, .init(.drawing));
 
         gfx.encoded_command_state = if(gpa.remap(gfx.encoded_command_state, gfx_queue.current_index)) |remapped|
             remapped
@@ -580,6 +511,106 @@ pub const Graphics = struct {
         };
 
         return gfx;
+    }
+
+    // TODO: Bump + shadow
+    fn initLighting(queue: *command.Queue, dyn: mango.GraphicsPipelineCreateInfo.DynamicState, state: mango.GraphicsPipelineCreateInfo.LightingState) void {
+        queue.add(p3d, &p3d.texture_units.lighting_enable, .init(state.enable));
+        queue.add(p3d, &p3d.fragment_lighting.disable, .init(!state.enable)); 
+
+        if(!state.enable) return;
+
+        const environment = state.environment.?;
+
+        queue.add(p3d, &p3d.fragment_lighting.control, .{
+            .environment = .{
+                .enable_shadow_factor = false,
+                .fresnel = environment.enable_fresnel.native(),
+                .enabled_lookup_tables = environment.nativeEnabledLookupTables(),
+                .apply_shadow_attenuation_to_primary_color = false,
+                .apply_shadow_attenuation_to_secondary_color = false,
+                .invert_shadow_attenuation = false,
+                .apply_shadow_attenuation_to_alpha = false,
+                .bump_map_unit = .@"0",
+                .shadow_map_unit = .@"0", // Not configurable, only unit 0 can use shadow textures...
+                .clamp_highlights = false,
+                .bump_mode = .none,
+                .disable_bump_recalculation = false,
+            },
+            .lights = .{
+                .shadows_disabled = .splat(true),
+                .spotlight_disabled = .splat(true),
+                .disable_d0 = !environment.enable_distribution[0],
+                .disable_d1 = !environment.enable_distribution[1],
+                .disable_fr = environment.enable_fresnel == .none,
+                .disable_rb = !environment.enable_reflection[2],
+                .disable_rg = !environment.enable_reflection[1],
+                .disable_rr = !environment.enable_reflection[0],
+                .distance_attenuation_disabled = .splat(true),
+            },
+        });
+
+        queue.add(p3d, &p3d.fragment_lighting.lut_input_select, .{
+            .d0 = if(environment.enable_distribution[0]) environment.distribution_inputs[0].native() else .@"N * H",
+            .d1 = if(environment.enable_distribution[1]) environment.distribution_inputs[1].native() else .@"N * H",
+            .sp = if(environment.enable_spotlight) environment.spotlight_input.native() else .@"N * H",
+            .fr = if(environment.enable_fresnel != .none) environment.fresnel_input.native() else .@"N * H",
+            .rb = if(environment.enable_reflection[2]) environment.reflection_inputs[2].native() else .@"N * H",
+            .rg = if(environment.enable_reflection[1]) environment.reflection_inputs[1].native() else .@"N * H",
+            .rr = if(environment.enable_reflection[0]) environment.reflection_inputs[0].native() else .@"N * H",
+        });
+
+        queue.add(p3d, &p3d.fragment_lighting.lut_input_absolute, .{
+            .disable_d0 = environment.enable_distribution[0] and environment.distribution_ranges[0] == .full,
+            .disable_d1 = environment.enable_distribution[1] and environment.distribution_ranges[1] == .full,
+            .disable_sp = environment.enable_spotlight and environment.spotlight_range == .full,
+            .disable_fr = environment.enable_fresnel != .none and environment.fresnel_range == .full,
+            .disable_rb = environment.enable_reflection[2] and environment.reflection_ranges[2] == .full,
+            .disable_rg = environment.enable_reflection[1] and environment.reflection_ranges[1] == .full,
+            .disable_rr = environment.enable_reflection[0] and environment.reflection_ranges[0] == .full,
+        });
+
+        if(!dyn.light_environment_scales) {
+            queue.add(p3d, &p3d.fragment_lighting.lut_input_scale, .{
+                .d0 = if(environment.enable_distribution[0]) environment.distribution_scales[0].nativeLightLookupMultiplier() else .@"1x",
+                .d1 = if(environment.enable_distribution[1]) environment.distribution_scales[1].nativeLightLookupMultiplier() else .@"1x",
+                .sp = if(environment.enable_spotlight) environment.spotlight_scale.nativeLightLookupMultiplier() else .@"1x",
+                .fr = if(environment.enable_fresnel != .none) environment.fresnel_scale.nativeLightLookupMultiplier() else .@"1x",
+                .rb = if(environment.enable_reflection[2]) environment.reflection_scales[2].nativeLightLookupMultiplier() else .@"1x",
+                .rg = if(environment.enable_reflection[1]) environment.reflection_scales[1].nativeLightLookupMultiplier() else .@"1x",
+                .rr = if(environment.enable_reflection[0]) environment.reflection_scales[0].nativeLightLookupMultiplier() else .@"1x",
+            });
+        }
+
+        const enabled: []const bool = &.{
+            environment.enable_distribution[0],
+            environment.enable_distribution[1],
+            environment.enable_reflection[0],
+            environment.enable_reflection[1],
+            environment.enable_reflection[2],
+            environment.enable_fresnel != .none,
+        };
+
+        const tables: []const mango.LightLookupTable = &.{
+            environment.distribution_tables[0],
+            environment.distribution_tables[1],
+            environment.reflection_tables[0],
+            environment.reflection_tables[1],
+            environment.reflection_tables[2],
+            environment.fresnel_table,
+        };
+
+        const selectors: []const pica.Graphics.FragmentLighting.LookupTable = &.{ .d0, .d1, .rr, .rg, .rb, .fr };
+
+        for(enabled, tables, selectors) |enable, table, table_selector| {
+            if(!enable) continue;
+            
+            std.debug.assert(table != .null);
+            const b_table: *backend.LightLookupTable = .fromHandleMutable(table);
+
+            queue.add(p3d, &p3d.fragment_lighting.lut_index, .init(table_selector, 0));
+            queue.addConsecutive(p3d, &p3d.fragment_lighting.lut_data[0], &b_table.data);
+        }
     }
 
     pub fn deinit(gfx: *Graphics, gpa: std.mem.Allocator) void {
@@ -720,7 +751,7 @@ pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, c
     queue.addConsecutive(p3d, &shader.operand_descriptors_data[0], parsed.operand_descriptors);
 
     queue.add(p3d, &shader.entrypoint, .initEntry(found_entrypoint.offset));
-    queue.add(p3d, &shader.bool_uniform, @bitCast(@as(u32, 0x7FFF0000) | @as(u16, @bitCast(found_entrypoint.boolean_constant_set.bits))));
+    queue.add(p3d, &shader.bool_uniforms, .init(@bitCast(found_entrypoint.boolean_constant_set.bits)));
 
     var int_constants: std.enums.EnumArray(pica.shader.register.Integral.Integer, [4]i8) = .initUndefined();
 
@@ -732,7 +763,7 @@ pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, c
             current_const += 1;
         }
 
-        queue.add(p3d, &shader.int_uniform, int_constants.values);
+        queue.add(p3d, &shader.int_uniforms, int_constants.values);
     }
 
     {

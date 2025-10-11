@@ -91,13 +91,7 @@ pub const Queue = struct {
                 queue.current_index += 2;
 
                 @memcpy(queue.buffer[queue.current_index..][0..(as_u32_array.len - 1)], as_u32_array[1..as_u32_array.len]);
-                queue.current_index += (as_u32_array.len - 1);
-
-                // add padding as commands must be aligned to 8 bytes
-                if (!std.mem.isAligned(as_u32_array.len - 1, 2)) {
-                    queue.buffer[queue.current_index] = 0;
-                    queue.current_index += 1;
-                }
+                queue.current_index += std.mem.alignForward(usize, as_u32_array.len - 1, 2); // commands must be aligned to 8 bytes
             },
             .lt => @compileError("commands only support writing full 32-bit values (which you can mask!)"),
         }
@@ -164,13 +158,7 @@ pub const Queue = struct {
         queue.current_index += 2;
 
         @memcpy(queue.buffer[queue.current_index..][0..(values.len - 1)], @as([*]const u32, @ptrCast(@alignCast(&values)))[1..values.len]);
-        queue.current_index += (values.len - 1);
-
-        // add padding as commands must be aligned to 8 bytes
-        if (!std.mem.isAligned(values.len - 1, 2)) {
-            queue.buffer[queue.current_index] = 0;
-            queue.current_index += 1;
-        }
+        queue.current_index += std.mem.alignForward(usize, values.len - 1, 2); // commands must be aligned to 8 bytes
     }
 
     pub fn addConsecutive(queue: *Queue, comptime base: *pica.Graphics, comptime register: anytype, values: []const std.meta.Child(@TypeOf(register))) void {
@@ -210,16 +198,8 @@ pub const Queue = struct {
             });
             queue.current_index += 2;
 
-            for (1..values.len) |i| {
-                queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&slice[i]))).*;
-                queue.current_index += 1;
-            }
-
-            // add padding as commands must be aligned to 8 bytes
-            if (!std.mem.isAligned(len - 1, 2)) {
-                queue.buffer[queue.current_index] = 0;
-                queue.current_index += 1;
-            }
+            @memcpy(queue.buffer[queue.current_index..][0..(len - 1)], @as([*]const u32, @ptrCast(@alignCast(slice)))[1..len]);
+            queue.current_index += std.mem.alignForward(usize, len - 1, 2); // commands must be aligned to 8 bytes
         }
     }
 

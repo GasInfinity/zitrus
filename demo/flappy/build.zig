@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "flappy.elf",
-            .root_module = b.createModule(.{
+        .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = b.resolveTargetQuery(zitrus.target.arm11.horizon.query),
             .optimize = optimize,

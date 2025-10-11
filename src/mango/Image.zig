@@ -44,16 +44,16 @@ pub const Info = packed struct(u64) {
         };
     }
 
-    pub fn width(info: Info) usize {
-        return @as(usize, info.width_minus_one) + 1;
+    pub fn width(info: Info) u16 {
+        return @as(u16, info.width_minus_one) + 1;
     }
 
-    pub fn height(info: Info) usize {
-        return @as(usize, info.height_minus_one) + 1;
+    pub fn height(info: Info) u16 {
+        return @as(u16, info.height_minus_one) + 1;
     }
 
     pub fn size(info: Info) usize {
-        return info.width() * info.height();
+        return info.width() * @as(usize, info.height());
     }
 
     pub fn layers(info: Info) usize {

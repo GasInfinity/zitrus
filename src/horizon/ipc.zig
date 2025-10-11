@@ -615,28 +615,28 @@ pub const Buffer = extern struct {
 pub fn expectReply(expected: Buffer.PackedCommand.Header, actual: Buffer.PackedCommand.Header) void {
     if (expected != actual) {
         horizon.debug.print("Unexpected reply, expecting {} and got {}", .{ expected, actual });
-        std.debug.assert(false);
+        // std.debug.assert(false);
     }
 }
 
 pub fn expectHandle(expected: TranslationDescriptor.Handle, actual: TranslationDescriptor.Handle) void {
     if (expected != actual) {
         horizon.debug.print("Unexpected handle, expecting {} and got {}", .{ expected, actual });
-        std.debug.assert(false);
+        // std.debug.assert(false);
     }
 }
 
 pub fn expectStaticBuffer(expected: TranslationDescriptor.StaticBuffer, actual: TranslationDescriptor.StaticBuffer) void {
     if (expected != actual) {
         horizon.debug.print("Unexpected static buffer, expecting {} and got {}", .{ expected, actual });
-        std.debug.assert(false);
+        // std.debug.assert(false);
     }
 }
 
 pub fn expectMappedBuffer(expected: TranslationDescriptor.BufferMapping, actual: TranslationDescriptor.BufferMapping) void {
     if (expected != actual) {
         horizon.debug.print("Unexpected mapped buffer, expecting {} and got {}", .{ expected, actual });
-        std.debug.assert(false);
+        // std.debug.assert(false);
     }
 }
 

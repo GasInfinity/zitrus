@@ -360,8 +360,6 @@ pub const IndexType = enum(u8) {
     }
 };
 
-// TODO: Don't @enumFromInt(@intFromEnum()), use a function.
-
 pub const CompareOperation = enum(u8) {
     never,
     always,
@@ -465,10 +463,10 @@ pub const DepthMode = enum(u8) {
     /// Precision is higher close to the near plane.
     z_buffer,
 
-    pub fn native(mode: DepthMode) pica.DepthMapMode {
+    pub fn native(mode: DepthMode) Graphics.Rasterizer.DepthMap.Mode {
         return switch (mode) {
-            .w_buffer => .w_buffer,
-            .z_buffer => .z_buffer,
+            .w_buffer => .w,
+            .z_buffer => .z,
         };
     }
 };
@@ -542,7 +540,7 @@ pub const ColorBlendEquation = extern struct {
     dst_alpha_factor: BlendFactor,
     alpha_op: BlendOperation,
 
-    pub fn native(equation: ColorBlendEquation) pica.Graphics.Framebuffer.BlendConfig {
+    pub fn native(equation: ColorBlendEquation) Graphics.OutputMerger.BlendConfig {
         return .{
             .color_op = equation.color_op.native(),
             .alpha_op = equation.alpha_op.native(),
@@ -672,16 +670,42 @@ pub const TextureCombinerOperation = enum(u8) {
     }
 };
 
+pub const Multiplier = enum(u8) {
+    // zig fmt: off
+    @"1x", @"2x", @"4x", @"8x", @"0.25x", @"0.5x",
+    // zig fmt: on
+
+    pub fn nativeTextureCombinerMultiplier(multiplier: Multiplier) pica.TextureCombinerMultiplier {
+        return switch (multiplier) {
+            .@"1x" => .@"1x",
+            .@"2x" => .@"2x",
+            .@"4x" => .@"4x",
+            else => unreachable,
+        };
+    }
+
+    pub fn nativeLightLookupMultiplier(multiplier: Multiplier) Graphics.FragmentLighting.LookupTable.Multiplier {
+        return switch (multiplier) {
+            .@"1x" => .@"1x",
+            .@"2x" => .@"2x",
+            .@"4x" => .@"4x",
+            .@"8x" => .@"8x",
+            .@"0.5x" => .@"0.5x",
+            .@"0.25x" => .@"0.25x",
+        };
+    }
+};
+
 pub const TextureCombinerScale = enum(u8) {
     @"1x",
     @"2x",
-    @"3x",
+    @"4x",
 
-    pub fn native(scale: TextureCombinerScale) pica.TextureCombinerScale {
+    pub fn native(scale: TextureCombinerScale) pica.TextureCombinerMultiplier {
         return switch (scale) {
             .@"1x" => .@"1x",
             .@"2x" => .@"2x",
-            .@"3x" => .@"3x",
+            .@"4x" => .@"4x",
         };
     }
 };
@@ -878,6 +902,7 @@ pub const SamplerCreateInfo = extern struct {
 };
 
 pub const GraphicsPipelineCreateInfo = extern struct {
+    // XXX: Is this really needed?
     pub const FormatRenderingInfo = extern struct {
         color_attachment_format: Format,
         depth_stencil_attachment_format: Format,
@@ -933,24 +958,22 @@ pub const GraphicsPipelineCreateInfo = extern struct {
     };
 
     pub const RasterizationState = extern struct {
-        front_face: FrontFace,
-        cull_mode: CullMode,
+        front_face: FrontFace = .ccw,
+        cull_mode: CullMode = .none,
 
-        depth_mode: DepthMode,
-        depth_bias_constant: f32,
+        depth_mode: DepthMode = .z_buffer,
+        depth_bias_constant: f32 = 0.0,
     };
 
     pub const TextureSamplingState = extern struct {
-        texture_enable: [4]bool,
-
         /// Only texture coordinates 2 and 1 are supported
         texture_2_coordinates: TextureCoordinateSource,
         texture_3_coordinates: TextureCoordinateSource,
     };
 
     pub const LightingState = extern struct {
-        // TODO: Proper lighting support
-        enable: bool,
+        enable: bool = false,
+        environment: ?*const LightEnvironment = null,
     };
 
     pub const TextureCombinerState = extern struct {
@@ -982,15 +1005,15 @@ pub const GraphicsPipelineCreateInfo = extern struct {
             reference: u8,
         };
 
-        alpha_test_enable: bool,
-        alpha_test_compare_op: CompareOperation,
-        alpha_test_reference: u8,
+        alpha_test_enable: bool = false,
+        alpha_test_compare_op: CompareOperation = .ge,
+        alpha_test_reference: u8 = 255,
 
-        depth_test_enable: bool,
-        depth_write_enable: bool,
-        depth_compare_op: CompareOperation,
+        depth_test_enable: bool = false,
+        depth_write_enable: bool = true,
+        depth_compare_op: CompareOperation = .lt,
 
-        stencil_test_enable: bool,
+        stencil_test_enable: bool = false,
         back_front: StencilOperationState,
     };
 
@@ -1000,8 +1023,8 @@ pub const GraphicsPipelineCreateInfo = extern struct {
             color_write_mask: ColorComponentFlags,
         };
 
-        logic_op_enable: bool,
-        logic_op: LogicOperation,
+        logic_op_enable: bool = false,
+        logic_op: LogicOperation = .clear,
 
         attachment: Attachment,
         blend_constants: [4]u8,
@@ -1043,8 +1066,12 @@ pub const GraphicsPipelineCreateInfo = extern struct {
         texture_combiner: bool = false,
         texture_config: bool = false,
 
+        // TODO: Vertex Input dynamic state
         vertex_input: bool = false,
-        _: u6 = 0,
+        // TODO: Light environment dynamic state
+        light_environment: bool = false,
+        light_environment_scales: bool = false,
+        _: u4 = 0,
     };
 
     rendering_info: *const FormatRenderingInfo,
@@ -1160,6 +1187,8 @@ pub const RenderingInfo = extern struct {
 };
 
 pub const CombinedImageSampler = extern struct {
+    pub const none: CombinedImageSampler = .{ .image = .null, .sampler = .null };
+
     image: ImageView,
     sampler: Sampler,
 };
@@ -1204,7 +1233,7 @@ pub const TextureCombinerUnit = extern struct {
 
     constant: [4]u8,
 
-    pub fn native(combiner: TextureCombinerUnit) pica.Graphics.TextureCombiners.Unit {
+    pub fn native(combiner: TextureCombinerUnit) Graphics.TextureCombiners.Unit {
         return .{
             .sources = .{
                 .color_src = .init(.{ combiner.color_src[0].native(), combiner.color_src[1].native(), combiner.color_src[2].native() }),
@@ -1328,6 +1357,235 @@ pub const SemaphoreOperation = extern struct {
     }
 };
 
+// So here's how mango somewhat *abstracts* the fragment lighting stage
+// of the PICA200:
+//
+// We divide each section into Per-Light and Per-Environment, as each light
+// has associated state which is inherently dynamic per-object or per-frame.
+
+pub const LightLookupTableCreateInfo = extern struct {
+    /// A function which maps an input value *x* to its factor.
+    ///
+    /// If `null`, context is an array of *257* `f32` factors.
+    map: ?*const fn (?*anyopaque, f32) callconv(.c) f32,
+    /// If `map` is not null, this is the context passed to it.
+    ///
+    /// Otherwise it must an array of *257* `f32` factors.
+    context: ?*anyopaque,
+    /// Whether the input domain of the lookup table is `[0.0, 1.0]`
+    /// instead of `[-1.0, 1.0]`.
+    absolute: bool,
+};
+
+pub const LightLookupRange = enum(u8) {
+    full,
+    positive,
+};
+
+pub const LightLookupInput = enum(u8) {
+    @"N * H",
+    @"V * H",
+    @"N * V",
+    @"L * N",
+    @"-L * P",
+    @"cos(phi)",
+
+    pub fn native(input: LightLookupInput) Graphics.FragmentLighting.LookupTable.Input {
+        return switch (input) {
+            .@"N * H" => .@"N * H",
+            .@"V * H" => .@"V * H",
+            .@"N * V" => .@"N * V",
+            .@"L * N" => .@"L * N",
+            .@"-L * P" => .@"-L * P",
+            .@"cos(phi)" => .@"cos(phi)",
+        };
+    }
+};
+
+pub const LightFresnelSelector = enum(u8) {
+    none,
+    primary,
+    secondary,
+    both,
+
+    pub fn native(selector: LightFresnelSelector) Graphics.FragmentLighting.FresnelSelector {
+        return switch (selector) {
+            .none => .none,
+            .primary => .primary,
+            .secondary => .secondary,
+            .both => .both,
+        };
+    }
+};
+
+pub const LightEnvironmentFactors = extern struct {
+    /// Ambient color of the entire environment.
+    ambient: [3]u8,
+};
+
+pub const LightEnvironment = extern struct {
+    // TODO: Investigate shadow state and add it here.
+
+    enable_distribution: [2]bool = @splat(false),
+    enable_reflection: [4]bool = @splat(false),
+    enable_fresnel: LightFresnelSelector = .none,
+    /// It is forbidden to bind lights with spotlight parameters
+    /// if they are disabled.
+    enable_spotlight: bool = false,
+
+    distribution_tables: [2]LightLookupTable = @splat(.null),
+    reflection_tables: [3]LightLookupTable = @splat(.null),
+    fresnel_table: LightLookupTable = .null,
+
+    distribution_inputs: [2]LightLookupInput = @splat(.@"N * H"),
+    distribution_ranges: [2]LightLookupRange = @splat(.positive),
+    distribution_scales: [2]Multiplier = @splat(.@"1x"),
+
+    reflection_inputs: [3]LightLookupInput = @splat(.@"N * H"),
+    reflection_ranges: [3]LightLookupRange = @splat(.positive),
+    reflection_scales: [3]Multiplier = @splat(.@"1x"),
+
+    fresnel_input: LightLookupInput = .@"N * H",
+    fresnel_range: LightLookupRange = .positive,
+    fresnel_scale: Multiplier = .@"1x",
+    fresnel_selector: LightFresnelSelector = .none,
+
+    spotlight_input: LightLookupInput = .@"N * H",
+    spotlight_range: LightLookupRange = .full,
+    spotlight_scale: Multiplier = .@"1x",
+
+    pub fn nativeEnabledLookupTables(environment: LightEnvironment) Graphics.FragmentLighting.LookupTable.Enabled {
+        const extended_reflection = environment.enable_reflection[1] or environment.enable_reflection[2];
+
+        // XXX: I don't really like this but this should NOT be a hot path.
+        return if (extended_reflection)
+            if (environment.enable_distribution[1] and environment.enable_fresnel != .none)
+                .all
+            else if (environment.enable_distribution[1])
+                .d0_d1_rx_sp_da
+            else
+                .d0_fr_rx_sp_da
+        else if (environment.enable_fresnel != .none)
+            if (environment.enable_distribution[0] and environment.enable_distribution[1] and !environment.enable_reflection[0] and !environment.enable_spotlight)
+                .d0_d1_fr_da
+            else if (environment.enable_distribution[0] or environment.enable_distribution[1])
+                .d0_d1_fr_rr_sp_da
+            else
+                .fr_rr_sp_da
+        else if (environment.enable_distribution[1] and !environment.enable_spotlight)
+            .d0_d1_rr_da
+        else if (environment.enable_distribution[1])
+            .d0_d1_rx_sp_da // NOTE: can use either d0_d1_rx_sp_da or d0_d1_fr_rr_sp_da
+        else
+            .d0_rr_sp_da;
+    }
+};
+
+pub const LightFactors = extern struct {
+    /// Ambient color this light contributes.
+    ambient: [3]u8,
+
+    /// Diffuse / Lambertian coefficient of this light.
+    ///
+    /// Final contribution is `f(dot(L, N)) * diffuse`
+    /// where f decides whether to apply diffuse lighting
+    /// to one or both sides of the surface, L is the light
+    /// vector and N the surface normal.
+    diffuse: [3]u8,
+
+    /// Specular / Distribution coefficients of this light.
+    ///
+    /// Final contribution is:
+    /// - 0 -> `D0 * specular[0] * G`
+    /// - 1 -> `D1 * specular[1] * G * Rx`
+    /// where *x* is a color channel.
+    specular: [2][3]u8,
+
+    /// Whether to light one or both sides of a surface.
+    sides: LightSides,
+
+    /// Whether to enable the Geometric factor
+    /// for each distribution table.
+    ///
+    /// If enabled `G = (L * N) / lengthSqr(L + N)`,
+    /// otherwise  `G = 1.0`.
+    geometric: LightGeometricFactor,
+};
+
+pub const LightType = enum(u8) {
+    /// The light has a position in space.
+    positional,
+    /// The light is infinitely far away and all
+    /// its rays follow a direction.
+    directional,
+
+    pub fn native(typ: LightType) Graphics.FragmentLighting.Light.Type {
+        return switch (typ) {
+            .positional => .positional,
+            .directional => .directional,
+        };
+    }
+};
+
+pub const LightSides = enum(u8) {
+    one,
+    both,
+
+    pub fn native(sides: LightSides) Graphics.FragmentLighting.Light.DiffuseSides {
+        return switch (sides) {
+            .one => .one,
+            .both => .both,
+        };
+    }
+};
+
+pub const LightGeometricFactor = enum(u8) {
+    none,
+    d0,
+    d1,
+    both,
+
+    pub fn native(factor: LightGeometricFactor) zitrus.hardware.BitpackedArray(bool, 2) {
+        return @bitCast(@as(u2, @intCast(@intFromEnum(factor))));
+    }
+};
+
+pub const Light = extern struct {
+    /// The position of the light if `type` is positional.
+    ///
+    /// Otherwise the direction of the light.
+    vector: [3]f32,
+    type: LightType,
+
+    /// Enable distance attenuation factor for this light.
+    ///
+    /// Ignored for directional lights.
+    enable_attenuation: bool = false,
+    /// Added to the distance after being multiplied with `attenuation_scale`.
+    attenuation_bias: f32 = 0.0,
+    /// Multiplied with the distance.
+    attenuation_scale: f32 = 0.0,
+    /// Lookup table providing coefficients with input range [0.0, 1.0].
+    /// It's input is `attenuation_scale` * distance + `attenuation_bias`.
+    ///
+    /// If the result is not in [0.0, 1.0] then the value `0.0` is used.
+    attenuation_table: LightLookupTable = .null,
+
+    /// Enable spotlight factor for this light.
+    /// *The light environment must have spotlights enabled*.
+    ///
+    /// Ignored for directional lights.
+    enable_spotlight: bool = false,
+    /// Spot direction of the light.
+    spotlight_direction: [3]f32 = @splat(0),
+    /// Lookup table providing the final spotlight factor, its input range
+    /// and input depends on `LightEnvironment`.
+    spotlight_table: LightLookupTable = .null,
+
+    /// Enables applying the shadow factor to this light.
+    enable_shadow: bool = false,
+};
+
 pub const HorizonBackedDeviceCreateInfo = struct {
     /// The GSP session the device will use to communicate with the
     /// process.
@@ -1366,6 +1624,8 @@ pub const Sampler = backend.Sampler.Handle;
 pub const Surface = backend.Surface.Handle;
 pub const Swapchain = backend.Swapchain.Handle;
 
+pub const LightLookupTable = backend.LightLookupTable.Handle;
+
 comptime {
     _ = backend;
 }
@@ -1376,6 +1636,8 @@ const backend = @import("mango/backend.zig");
 const std = @import("std");
 const zitrus = @import("zitrus");
 const pica = zitrus.hardware.pica;
+
+const Graphics = pica.Graphics;
 
 /// WARNING: Nothing, I mean NOTHING in mango should depend on this.
 /// This is only for creating Horizon backed devices!

@@ -31,6 +31,8 @@ pub const Sampler = @import("Sampler.zig");
 pub const Surface = @import("Surface.zig");
 pub const Swapchain = @import("Swapchain.zig");
 
+pub const LightLookupTable = @import("LightLookupTable.zig");
+
 pub const GraphicsState = @import("GraphicsState.zig");
 pub const RenderingState = @import("RenderingState.zig");
 

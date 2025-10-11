@@ -51,7 +51,19 @@ pub const Pad = extern struct {
         }
     };
 
-    pub const CircleState = packed struct(u32) { x: i16, y: i16 };
+    /// The range is [-0x9C, 0x9C] for both axis.
+    pub const CircleState = packed struct(u32) {
+        x: i16,
+        y: i16,
+
+        /// Converts the state to a `@Vector` whose components range is [-1.0, 1.0].
+        pub fn unit(state: CircleState) @Vector(2, f32) {
+            const x: f32 = @floatFromInt(state.x);
+            const y: f32 = @floatFromInt(state.y);
+
+            return @as(@Vector(2, f32), .{ x, y }) / @as(@Vector(2, f32), @splat(0x9C));
+        }
+    };
 
     pub const Entry = extern struct { current: State, pressed: State, released: State, circle: CircleState };
 

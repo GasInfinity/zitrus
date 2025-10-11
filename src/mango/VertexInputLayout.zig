@@ -3,9 +3,10 @@ pub const Handle = enum(u64) {
     _,
 };
 
-const GpuAttributeConfig = pica.Graphics.GeometryPipeline.Attributes.Config;
-const GpuAttributeBufferConfig = pica.Graphics.GeometryPipeline.Attributes.VertexBuffer.Config;
+const GpuAttributeConfig = pica.Graphics.PrimitiveEngine.Attribute.Config;
+const GpuAttributeBufferConfig = pica.Graphics.PrimitiveEngine.Attribute.VertexBuffer.Config;
 const GpuArrayComponent = GpuAttributeBufferConfig.ArrayComponent;
+const gpu_array_paddings: []const GpuArrayComponent = &.{ GpuArrayComponent.padding_16, GpuArrayComponent.padding_12, GpuArrayComponent.padding_8, GpuArrayComponent.padding_4 };
 const GpuAttributePermutation = pica.Graphics.Shader.AttributePermutation;
 
 config: GpuAttributeConfig,
@@ -108,7 +109,7 @@ pub fn compile(bindings: []const mango.VertexInputBindingDescription, attributes
                 } else extra_offset;
 
                 var remaining_padding = needed_padding;
-                inline for (&.{ GpuAttributeBufferConfig.ArrayComponent.padding_16, GpuAttributeBufferConfig.ArrayComponent.padding_12, GpuAttributeBufferConfig.ArrayComponent.padding_8, GpuAttributeBufferConfig.ArrayComponent.padding_4 }) |padding| {
+                for (gpu_array_paddings) |padding| {
                     appendPadAttributes(current_binding, &current_binding_attribute, &remaining_padding, padding);
                 }
             }
@@ -131,7 +132,7 @@ pub fn compile(bindings: []const mango.VertexInputBindingDescription, attributes
         std.debug.assert(std.mem.isAligned(needed_end_padding, @sizeOf(f32)));
 
         var remaining_end_padding = needed_end_padding;
-        inline for (&.{ GpuArrayComponent.padding_16, GpuArrayComponent.padding_12, GpuArrayComponent.padding_8, GpuArrayComponent.padding_4 }) |padding| {
+        for (gpu_array_paddings) |padding| {
             appendPadAttributes(current_binding, &current_binding_attribute, &remaining_end_padding, padding);
         }
 

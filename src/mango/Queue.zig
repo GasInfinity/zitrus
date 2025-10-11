@@ -57,8 +57,8 @@ pub const Handle = enum(u32) {
         const native_fmt = b_dst_image.info.format.nativeColorFormat();
         const pixel_size = native_fmt.bytesPerPixel();
 
-        const dst_width = b_dst_image.info.width();
-        const dst_height = b_dst_image.info.height();
+        const dst_width: usize = b_dst_image.info.width();
+        const dst_height: usize = b_dst_image.info.height();
 
         const dst_mip_width = backend.imageLevelDimension(dst_width, @intFromEnum(info.dst_subresource.mip_level));
         const dst_mip_height = backend.imageLevelDimension(dst_height, @intFromEnum(info.dst_subresource.mip_level));
@@ -146,14 +146,14 @@ pub const Handle = enum(u32) {
         const src_color_format = b_src_image.info.format.nativeColorFormat();
         const dst_color_format = b_dst_image.info.format.nativeColorFormat();
 
-        const src_width = b_src_image.info.width();
-        const src_height = b_src_image.info.height();
+        const src_width: usize = b_src_image.info.width();
+        const src_height: usize = b_src_image.info.height();
 
         const src_mip_width = backend.imageLevelDimension(src_width, @intFromEnum(info.src_subresource.mip_level));
         const src_mip_height = backend.imageLevelDimension(src_height, @intFromEnum(info.src_subresource.mip_level));
 
-        const dst_width = b_dst_image.info.width();
-        const dst_height = b_dst_image.info.height();
+        const dst_width: usize = b_dst_image.info.width();
+        const dst_height: usize = b_dst_image.info.height();
 
         const dst_mip_width = backend.imageLevelDimension(dst_width, @intFromEnum(info.src_subresource.mip_level));
         const dst_mip_height = backend.imageLevelDimension(dst_height, @intFromEnum(info.src_subresource.mip_level));
@@ -228,8 +228,8 @@ pub const Handle = enum(u32) {
                 },
                 .src = @alignCast(src_image_layer_virt_offset),
                 .dst = @alignCast(dst_image_layer_virt_offset),
-                .input_gap_size = .{ @intCast(b_src_image.info.width()), @intCast(b_src_image.info.height()) },
-                .output_gap_size = .{ @intCast(b_src_image.info.width()), @intCast(b_src_image.info.height()) },
+                .input_gap_size = .{ b_src_image.info.width(), b_src_image.info.height() },
+                .output_gap_size = .{ b_src_image.info.width(), b_src_image.info.height() },
             }, wait_op, signal_op);
         }
     }
@@ -321,8 +321,8 @@ pub const Handle = enum(u32) {
             }, .initSemaphoreOperation(info.wait_semaphore), .initSemaphoreOperation(info.signal_semaphore));
         }
 
-        const width = b_image.info.width();
-        const height = b_image.info.height();
+        const width: usize = b_image.info.width();
+        const height: usize = b_image.info.height();
 
         const mip_width = backend.imageLevelDimension(width, @intFromEnum(info.subresource_range.base_mip_level));
         const mip_height = backend.imageLevelDimension(height, @intFromEnum(info.subresource_range.base_mip_level));
@@ -360,9 +360,9 @@ pub const Handle = enum(u32) {
         const bound_virtual = b_image.memory_info.boundVirtualAddress();
 
         const clear_slice, const clear_value: GspGpu.GxCommand.MemoryFill.Unit.Value = switch (b_image.info.format) {
-            .d16_unorm => .{ bound_virtual[0..(b_image.info.width() * b_image.info.height() * @sizeOf(u16))], .fill16(@intFromFloat(@trunc(depth * std.math.maxInt(u16)))) },
-            .d24_unorm => .{ bound_virtual[0..(b_image.info.width() * b_image.info.height() * 3)], .fill24(@intFromFloat(@trunc(depth * std.math.maxInt(u24)))) },
-            .d24_unorm_s8_uint => .{ bound_virtual[0..(b_image.info.width() * b_image.info.height() * @sizeOf(u32))], .fill32(@as(u32, @intFromFloat(@trunc(depth * std.math.maxInt(u24)))) | (@as(u32, stencil) << 24)) },
+            .d16_unorm => .{ bound_virtual[0..(b_image.info.size() * @sizeOf(u16))], .fill16(@intFromFloat(@trunc(depth * std.math.maxInt(u16)))) },
+            .d24_unorm => .{ bound_virtual[0..(b_image.info.size() * 3)], .fill24(@intFromFloat(@trunc(depth * std.math.maxInt(u24)))) },
+            .d24_unorm_s8_uint => .{ bound_virtual[0..(b_image.info.size() * @sizeOf(u32))], .fill32(@as(u32, @intFromFloat(@trunc(depth * std.math.maxInt(u24)))) | (@as(u32, stencil) << 24)) },
             else => unreachable,
         };
 

@@ -210,7 +210,6 @@ pub const GxCommand = extern struct {
     };
 
     pub const MemoryFill = extern struct {
-        // TODO: This could be moved
         pub const Unit = struct {
             pub const Value = union(pica.PixelSize) {
                 @"16": u16,

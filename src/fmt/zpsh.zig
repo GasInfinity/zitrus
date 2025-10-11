@@ -49,7 +49,7 @@ pub const EntrypointHeader = extern struct {
         pub fn fromSet(set: std.EnumSet(BooleanRegister)) BooleanConstantMask {
             var mask: BooleanConstantMask = undefined;
 
-            inline for (comptime std.enums.values(BooleanRegister)) |b| {
+            for (std.enums.values(BooleanRegister)) |b| {
                 std.mem.writePackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(b), @intFromBool(set.contains(b)), .little);
             }
 
@@ -59,7 +59,7 @@ pub const EntrypointHeader = extern struct {
         pub fn toSet(mask: BooleanConstantMask) std.EnumSet(BooleanRegister) {
             var set: std.EnumSet(BooleanRegister) = undefined;
 
-            inline for (comptime std.enums.values(BooleanRegister)) |b| {
+            for (std.enums.values(BooleanRegister)) |b| {
                 set.setPresent(b, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(b), .little) != 0);
             }
 
@@ -77,7 +77,7 @@ pub const EntrypointHeader = extern struct {
         pub fn fromSet(set: std.EnumSet(IntegerRegister)) IntegerConstantMask {
             var mask: IntegerConstantMask = undefined;
 
-            inline for (comptime std.enums.values(IntegerRegister)) |i| {
+            for (std.enums.values(IntegerRegister)) |i| {
                 std.mem.writePackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(i), @intFromBool(set.contains(i)), .little);
             }
 
@@ -87,7 +87,7 @@ pub const EntrypointHeader = extern struct {
         pub fn toSet(mask: IntegerConstantMask) std.EnumSet(IntegerRegister) {
             var set: std.EnumSet(IntegerRegister) = undefined;
 
-            inline for (comptime std.enums.values(IntegerRegister)) |i| {
+            for (std.enums.values(IntegerRegister)) |i| {
                 set.setPresent(i, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(i), .little) != 0);
             }
 
@@ -126,7 +126,7 @@ pub const EntrypointHeader = extern struct {
         pub fn fromSet(set: std.EnumSet(FloatingRegister)) FloatingConstantMask {
             var mask: FloatingConstantMask = undefined;
 
-            inline for (comptime std.enums.values(FloatingRegister)) |f| {
+            for (std.enums.values(FloatingRegister)) |f| {
                 std.mem.writePackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(f), @intFromBool(set.contains(f)), .little);
             }
 
@@ -136,7 +136,7 @@ pub const EntrypointHeader = extern struct {
         pub fn toSet(mask: FloatingConstantMask) std.EnumSet(FloatingRegister) {
             var set: std.EnumSet(FloatingRegister) = undefined;
 
-            inline for (comptime std.enums.values(FloatingRegister)) |f| {
+            for (std.enums.values(FloatingRegister)) |f| {
                 set.setPresent(f, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(f), .little) != 0);
             }
 
@@ -154,7 +154,7 @@ pub const EntrypointHeader = extern struct {
         pub fn fromSet(set: std.EnumSet(OutputRegister)) OutputMask {
             var mask: OutputMask = undefined;
 
-            inline for (comptime std.enums.values(OutputRegister)) |o| {
+            for (std.enums.values(OutputRegister)) |o| {
                 std.mem.writePackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(o), @intFromBool(set.contains(o)), .little);
             }
 
@@ -164,7 +164,7 @@ pub const EntrypointHeader = extern struct {
         pub fn toSet(mask: OutputMask) std.EnumSet(OutputRegister) {
             var set: std.EnumSet(OutputRegister) = undefined;
 
-            inline for (comptime std.enums.values(OutputRegister)) |o| {
+            for (std.enums.values(OutputRegister)) |o| {
                 set.setPresent(o, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(o), .little) != 0);
             }
 

@@ -18,11 +18,12 @@ pub const Data = packed struct(u64) {
     min_lod: u4,
     max_lod: u4,
     lod_bias: pica.Q4_8,
+    projected: bool = false,
+    // NOTE: Don't move this, it IS like this to get the border color with just one bit shift.
     border_color_r: u8,
     border_color_g: u8,
     border_color_b: u8,
     border_color_a: u8,
-    _: u1 = 0,
 
     pub fn init(create_info: mango.SamplerCreateInfo) Data {
         return .{
@@ -39,6 +40,10 @@ pub const Data = packed struct(u64) {
             .border_color_b = create_info.border_color[2],
             .border_color_a = create_info.border_color[3],
         };
+    }
+
+    pub fn borderColor(data: Data) [4]u8 {
+        return @bitCast(@as(u32, @truncate(@as(u64, @bitCast(data)) >> 32)));
     }
 };
 

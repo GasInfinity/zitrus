@@ -1,8 +1,8 @@
 //! Definitions for MMIO `CSND` registers.
 //!
 //! Based on the documentation found in GBATEK and 3dbrew:
-//! * https://problemkaputt.de/gbatek.htm#3dssoundandmicrophone
-//! * https://www.3dbrew.org/wiki/CSND_Registers
+//! - https://problemkaputt.de/gbatek.htm#3dssoundandmicrophone
+//! - https://www.3dbrew.org/wiki/CSND_Registers
 
 pub const Volume = enum(u16) {
     pub const min: Volume = .volume(0);

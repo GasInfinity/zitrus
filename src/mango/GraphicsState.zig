@@ -6,12 +6,12 @@ pub const Dirty = packed struct(u32) {
     viewport_parameters: bool = false,
     scissor_parameters: bool = false,
     depth_test_masks: bool = false,
-    color_operation: bool = false,
+    logic_blend_mode: bool = false,
     blend_config: bool = false,
     blend_constants: bool = false,
     logic_operation: bool = false,
     alpha_test: bool = false,
-    stencil_test: bool = false,
+    stencil_config: bool = false,
     stencil_operation: bool = false,
     texture_update_buffer: bool = false,
     texture_combiners: bool = false,
@@ -43,7 +43,7 @@ pub const Misc = packed struct {
     primitive_topology: pica.PrimitiveTopology,
     cull_mode_ccw: pica.CullMode,
     is_front_ccw: bool,
-    depth_mode: pica.DepthMapMode,
+    depth_mode: Graphics.Rasterizer.DepthMap.Mode,
     is_scissor_inside: bool,
     depth_test_enable: bool,
     depth_test_op: pica.CompareOperation,
@@ -60,8 +60,6 @@ pub const Misc = packed struct {
     alpha_test_enable: bool,
     alpha_test_op: pica.CompareOperation,
     alpha_test_reference: u8,
-
-    texture_enable: hardware.BitpackedArray(bool, 4),
 
     texture_2_coordinates: pica.TextureUnitTexture2Coordinates,
     texture_3_coordinates: pica.TextureUnitTexture3Coordinates,
@@ -84,7 +82,7 @@ pub const Stencil = struct {
     reference: u8,
 };
 
-const GpuBlendConfig = pica.Graphics.Framebuffer.BlendConfig;
+const GpuBlendConfig = pica.Graphics.OutputMerger.BlendConfig;
 
 pub const empty: GraphicsState = .{
     .misc = std.mem.zeroes(Misc),
@@ -229,7 +227,7 @@ pub fn setDepthWriteEnable(state: *GraphicsState, enable: bool) void {
 
 pub fn setLogicOpEnable(state: *GraphicsState, enable: bool) void {
     state.misc.logic_op_enable = enable;
-    state.dirty.color_operation = true;
+    state.dirty.logic_blend_mode = true;
 }
 
 pub fn setLogicOp(state: *GraphicsState, logic_op: mango.LogicOperation) void {
@@ -258,7 +256,7 @@ pub fn setAlphaTestReference(state: *GraphicsState, reference: u8) void {
 
 pub fn setStencilEnable(state: *GraphicsState, enable: bool) void {
     state.stencil.state.enable = enable;
-    state.dirty.stencil_test = true;
+    state.dirty.stencil_config = true;
 }
 
 pub fn setStencilOp(state: *GraphicsState, fail_op: mango.StencilOperation, pass_op: mango.StencilOperation, depth_fail_op: mango.StencilOperation, op: mango.CompareOperation) void {
@@ -271,23 +269,23 @@ pub fn setStencilOp(state: *GraphicsState, fail_op: mango.StencilOperation, pass
     state.stencil.state.fail_op = native_fail;
     state.stencil.state.pass_op = native_pass;
     state.stencil.state.depth_fail_op = native_depth_fail;
-    state.dirty.stencil_test = true;
+    state.dirty.stencil_config = true;
     state.dirty.stencil_operation = true;
 }
 
 pub fn setStencilCompareMask(state: *GraphicsState, compare_mask: u8) void {
     state.stencil.compare_mask = compare_mask;
-    state.dirty.stencil_test = true;
+    state.dirty.stencil_config = true;
 }
 
 pub fn setStencilWriteMask(state: *GraphicsState, write_mask: u8) void {
     state.stencil.write_mask = write_mask;
-    state.dirty.stencil_test = true;
+    state.dirty.stencil_config = true;
 }
 
 pub fn setStencilReference(state: *GraphicsState, reference: u8) void {
     state.stencil.reference = reference;
-    state.dirty.stencil_test = true;
+    state.dirty.stencil_config = true;
 }
 
 // TODO: This will be removed, textures will be enabled/disabled automatically with bindCombinedImageSamplers
@@ -351,47 +349,44 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
         const depth_map_scale = (state.depth_map_parameters.min_depth - state.depth_map_parameters.max_depth);
         const depth_map_bias = state.depth_map_parameters.min_depth + state.depth_map_parameters.constant;
 
-        queue.addIncremental(p3d, .{
-            &p3d.rasterizer.depth_map_scale,
-            &p3d.rasterizer.depth_map_bias,
-        }, .{
-            .init(.of(depth_map_scale)),
-            .init(.of(depth_map_bias)),
+        queue.add(p3d, &p3d.rasterizer.depth_map, .{
+            .scale = .init(.of(depth_map_scale)),
+            .bias = .init(.of(depth_map_bias)),
         });
     }
 
     if (state.dirty.primitive_topology) {
         const primitive_topology = state.misc.primitive_topology;
 
-        queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{
+        queue.addMasked(p3d, &p3d.primitive_engine.primitive_config, .{
             .total_vertex_outputs = 0, // NOTE: Ignored by mask
             .topology = primitive_topology,
         }, 0b0010);
 
-        queue.addMasked(p3d, &p3d.geometry_pipeline.config, .{
+        queue.addMasked(p3d, &p3d.primitive_engine.config, .{
             .geometry_shader_usage = .disabled, // NOTE: Ignored by mask
             .drawing_triangles = primitive_topology == .triangle_list,
             .use_reserved_geometry_subdivision = false, // NOTE: Ignored by mask
         }, 0b0010);
 
-        queue.addMasked(p3d, &p3d.geometry_pipeline.config_2, .{
+        queue.addMasked(p3d, &p3d.primitive_engine.config_2, .{
             .drawing_triangles = primitive_topology == .triangle_list, // NOTE: Ignored by mask
         }, 0b0010);
     }
 
-    if (state.dirty.color_operation) {
-        queue.addMasked(p3d, &p3d.framebuffer.color_operation, .{
-            .fragment_operation = .default, // NOTE: Ignored by mask
-            .mode = if (state.misc.logic_op_enable) .logic else .blend,
+    if (state.dirty.logic_blend_mode) {
+        queue.addMasked(p3d, &p3d.output_merger.config, .{
+            .mode = .default, // NOTE: Ignored by mask
+            .blend = if (state.misc.logic_op_enable) .logic else .blend,
         }, 0b0010);
     }
 
     if (state.dirty.logic_operation) {
-        queue.add(p3d, &p3d.framebuffer.logic_operation, .init(state.misc.logic_op));
+        queue.add(p3d, &p3d.output_merger.logic_config, .init(state.misc.logic_op));
     }
 
     if (state.dirty.depth_test_masks) {
-        queue.add(p3d, &p3d.framebuffer.depth_color_mask, .{
+        queue.add(p3d, &p3d.output_merger.depth_color_config, .{
             .enable_depth_test = state.misc.depth_test_enable,
             .depth_op = state.misc.depth_test_op,
             .r_write_enable = state.misc.color_r_enable,
@@ -403,23 +398,23 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.blend_config) {
-        queue.add(p3d, &p3d.framebuffer.blend_config, state.blend_config);
+        queue.add(p3d, &p3d.output_merger.blend_config, state.blend_config);
     }
 
     if (state.dirty.blend_constants) {
-        queue.add(p3d, &p3d.framebuffer.blend_color, state.blend_constants);
+        queue.add(p3d, &p3d.output_merger.blend_color, state.blend_constants);
     }
 
     if (state.dirty.alpha_test) {
-        queue.add(p3d, &p3d.framebuffer.alpha_test, .{
+        queue.add(p3d, &p3d.output_merger.alpha_test, .{
             .enable = state.misc.alpha_test_enable,
             .op = state.misc.alpha_test_op,
             .reference = state.misc.alpha_test_reference,
         });
     }
 
-    if (state.dirty.stencil_test) {
-        queue.add(p3d, &p3d.framebuffer.stencil_test, .{
+    if (state.dirty.stencil_config) {
+        queue.add(p3d, &p3d.output_merger.stencil_test.config, .{
             .enable = state.stencil.state.enable,
             .op = state.stencil.state.op,
             .compare_mask = state.stencil.compare_mask,
@@ -429,7 +424,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.stencil_operation) {
-        queue.add(p3d, &p3d.framebuffer.stencil_operation, .{
+        queue.add(p3d, &p3d.output_merger.stencil_test.operation, .{
             .fail_op = state.stencil.state.fail_op,
             .depth_fail_op = state.stencil.state.depth_fail_op,
             .pass_op = state.stencil.state.pass_op,
@@ -449,13 +444,13 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.texture_config) {
-        queue.add(p3d, &p3d.texturing.config, .{
-            .texture_enabled = state.misc.texture_enable.slice(0, 3),
+        queue.addMasked(p3d, &p3d.texture_units.config, .{
+            .texture_enabled = .splat(false),
             .texture_3_coordinates = state.misc.texture_3_coordinates,
-            .texture_3_enabled = state.misc.texture_enable.get(3),
+            .texture_3_enabled = false, // TODO: Procedural texture support, should be part of gfx state, not rendering unlike normal textures!
             .texture_2_coordinates = state.misc.texture_2_coordinates,
             .clear_texture_cache = false,
-        });
+        }, 0b0010);
     }
 
     state.dirty = .{};
@@ -474,6 +469,8 @@ const zitrus = @import("zitrus");
 const hardware = zitrus.hardware;
 const mango = zitrus.mango;
 const pica = hardware.pica;
+
+const Graphics = pica.Graphics;
 
 const command = pica.command;
 

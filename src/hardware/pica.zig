@@ -7,10 +7,12 @@
 //!     - Z: [0, -W]
 //! - Framebuffer origin can be changed so `-1` in NDC could mean bottom-left (GL) or top-left (D3D, Metal, VK)
 //!
+//! WARNING: zitrus has opinionated register naming that suit better their usage!
+//!
 //! Based on the documentation found in GBATEK and 3dbrew:
-//! https://problemkaputt.de/gbatek.htm#3dsgpuinternalregisteroverview
-//! https://www.3dbrew.org/wiki/GPU/External_Registers
-//! https://www.3dbrew.org/wiki/GPU/Internal_Registers
+//! - https://problemkaputt.de/gbatek.htm#3dsgpuinternalregisteroverview
+//! - https://www.3dbrew.org/wiki/GPU/External_Registers
+//! - https://www.3dbrew.org/wiki/GPU/Internal_Registers
 
 pub const command = @import("pica/command.zig");
 pub const shader = @import("pica/shader.zig");
@@ -526,10 +528,10 @@ pub const TextureCombinerOperation = enum(u4) {
     add_multiply,
 };
 
-pub const TextureCombinerScale = enum(u2) {
+pub const TextureCombinerMultiplier = enum(u2) {
     @"1x",
     @"2x",
-    @"3x",
+    @"4x",
 };
 
 pub const TextureCombinerBufferSource = enum(u1) { previous_buffer, previous };
@@ -543,14 +545,6 @@ pub const TextureCombinerFogMode = enum(u3) {
 pub const TextureCombinerShadingDensity = enum(u1) {
     plain,
     depth,
-};
-
-pub const DepthMapMode = enum(u1) {
-    /// Precision is evenly distributed.
-    w_buffer,
-
-    /// Precision is higher close to the near plane.
-    z_buffer,
 };
 
 pub const TextureUnitFilter = enum(u1) {
@@ -739,6 +733,20 @@ pub const Graphics = extern struct {
             _unused3: u7 = 0,
         };
 
+        pub const DepthMap = extern struct {
+            pub const Mode = enum(u1) {
+                /// Precision is evenly distributed.
+                w,
+                /// Precision is higher close to the near plane.
+                z,
+            };
+
+            /// Scale to map depth from [0, -1] to [0, 1].
+            scale: LsbRegister(F7_16),
+            /// Bias to map depth from [0, -1] to [0, 1].
+            bias: LsbRegister(F7_16),
+        };
+
         cull_config: LsbRegister(CullMode),
         /// `Width / 2.0`, used for scaling vertex coordinates.
         viewport_h_scale: LsbRegister(F7_16),
@@ -752,10 +760,8 @@ pub const Graphics = extern struct {
         /// Extra user-defined clipping plane.
         extra_clipping_plane: ClippingPlane,
         _unknown1: [1]u32,
-        /// Scale to convert from [0, -1] to [0, 1] for the depth buffer.
-        depth_map_scale: LsbRegister(F7_16),
-        /// Bias to convert from [0, -1] to [0, 1] for the depth buffer.
-        depth_map_bias: LsbRegister(F7_16),
+        /// Maps depth from NDC [0, -1] to framebuffer [0, 1].
+        depth_map: DepthMap,
         shader_output_map_total: LsbRegister(u3),
         shader_output_map_output: [7]OutputMap,
         _unknown2: [3]u32,
@@ -771,7 +777,7 @@ pub const Graphics = extern struct {
         _unknown4: u32,
         early_depth_data: u32,
         _unknown5: [2]u32,
-        depth_map_mode: LsbRegister(DepthMapMode),
+        depth_map_mode: LsbRegister(DepthMap.Mode),
         /// Does not seem to have an effect but it's still documented like this
         _unused_render_buffer_dimensions: u32,
         shader_output_attribute_clock: OutputAttributeClock,
@@ -828,21 +834,22 @@ pub const Graphics = extern struct {
             _unknown0: u8 = 0,
         };
 
-        pub const Main = extern struct {
+        pub const Primary = extern struct {
             border_color: [4]u8,
             dimensions: [2]u16,
             parameters: Parameters,
             lod: LevelOfDetail,
             address: [6]AlignedPhysicalAddress(.@"8", .@"8"),
-            shadow: u32,
+            shadow: Shadow,
             _unknown0: u32,
             _unknown1: u32,
             format: LsbRegister(TextureUnitFormat),
         };
 
-        pub const Sub = extern struct {
+        pub const Secondary = extern struct {
             border_color: [4]u8,
             dimensions: [2]u16,
+            /// WARNING: Type is ignored in secondary texture units, they're always 2d according to 3dbrew.
             parameters: Parameters,
             lod: LevelOfDetail,
             address: AlignedPhysicalAddress(.@"8", .@"8"),
@@ -850,12 +857,12 @@ pub const Graphics = extern struct {
         };
 
         config: Config,
-        @"0": Main,
+        @"0": Primary,
         lighting_enable: LsbRegister(bool),
         _unknown0: u32,
-        @"1": Sub,
+        @"1": Secondary,
         _unknown1: [2]u32,
-        @"2": Sub,
+        @"2": Secondary,
     };
 
     pub const ProceduralTextureUnit = extern struct {
@@ -915,9 +922,9 @@ pub const Graphics = extern struct {
             };
 
             pub const Scales = packed struct(u32) {
-                color_scale: TextureCombinerScale,
+                color_scale: TextureCombinerMultiplier,
                 _unused0: u14 = 0,
-                alpha_scale: TextureCombinerScale,
+                alpha_scale: TextureCombinerMultiplier,
                 _unused1: u14 = 0,
             };
 
@@ -955,20 +962,22 @@ pub const Graphics = extern struct {
         buffer_color: [4]u8,
     };
 
-    pub const Framebuffer = extern struct {
-        pub const ColorOperation = packed struct(u32) {
-            pub const FragmentOperation = enum(u2) { default, gas, shadow = 3 };
-            pub const BlendMode = enum(u1) { logic, blend };
-            pub const RenderLines = enum(u1) { all, even };
+    pub const OutputMerger = extern struct {
+        pub const Blend = enum(u1) { logic, blend };
+        pub const Mode = enum(u2) { default, gas, shadow = 3 };
+        pub const Interlace = enum(u1) { disable, even };
 
-            fragment_operation: FragmentOperation,
+        pub const Config = packed struct(u32) {
+            mode: Mode,
             _unused0: u6 = 0,
 
-            mode: BlendMode,
+            blend: Blend,
             _unused1: u7 = 0,
-            _unknown0: u8 = 0,
-            render_lines: RenderLines = .all,
-            render_nothing: bool = false,
+            _unknown0: u8 = 0xE4, // (?) Not setting this doesn't have an effect visually (?)
+            /// Isn't this similar to interlace? I mean rendering each 2nd line is literally that. There should be something for odd lines maybe?
+            interlace: Interlace = .disable,
+            /// Can this be some sort of primitive discard or is literally render nothing?
+            disable_rendering: bool = false,
             _unused2: u6 = 0,
         };
 
@@ -983,7 +992,7 @@ pub const Graphics = extern struct {
             dst_alpha_factor: BlendFactor,
         };
 
-        pub const AlphaTestConfig = packed struct(u32) {
+        pub const AlphaTest = packed struct(u32) {
             enable: bool,
             _unused0: u3 = 0,
             op: CompareOperation,
@@ -992,26 +1001,31 @@ pub const Graphics = extern struct {
             _unused3: u16 = 0,
         };
 
-        pub const StencilTestConfig = packed struct(u32) {
-            enable: bool,
-            _unused0: u3 = 0,
-            op: CompareOperation,
-            _unused1: u1 = 0,
-            compare_mask: u8,
-            reference: u8,
-            write_mask: u8,
+        pub const StencilTest = extern struct {
+            pub const Config = packed struct(u32) {
+                enable: bool,
+                _unused0: u3 = 0,
+                op: CompareOperation,
+                _unused1: u1 = 0,
+                compare_mask: u8,
+                reference: u8,
+                write_mask: u8,
+            };
+
+            pub const Operation = packed struct(u32) {
+                fail_op: StencilOperation,
+                _unused0: u1 = 0,
+                depth_fail_op: StencilOperation,
+                _unused1: u1 = 0,
+                pass_op: StencilOperation,
+                _unused2: u21 = 0,
+            };
+
+            config: StencilTest.Config,
+            operation: Operation,
         };
 
-        pub const StencilOperationConfig = packed struct(u32) {
-            fail_op: StencilOperation,
-            _unused0: u1 = 0,
-            depth_fail_op: StencilOperation,
-            _unused1: u1 = 0,
-            pass_op: StencilOperation,
-            _unused2: u21 = 0,
-        };
-
-        pub const DepthColorMaskConfig = packed struct(u32) {
+        pub const DepthTestColorConfig = packed struct(u32) {
             enable_depth_test: bool,
             _unused0: u3 = 0,
             depth_op: CompareOperation,
@@ -1054,14 +1068,13 @@ pub const Graphics = extern struct {
             }
         };
 
-        color_operation: ColorOperation,
+        config: Config,
         blend_config: BlendConfig,
-        logic_operation: LsbRegister(LogicOperation),
+        logic_config: LsbRegister(LogicOperation),
         blend_color: [4]u8,
-        alpha_test: AlphaTestConfig,
-        stencil_test: StencilTestConfig,
-        stencil_operation: StencilOperationConfig,
-        depth_color_mask: DepthColorMaskConfig,
+        alpha_test: AlphaTest,
+        stencil_test: StencilTest,
+        depth_color_config: DepthTestColorConfig,
         _unknown0: [8]u32,
         invalidate: LsbRegister(Trigger),
         flush: LsbRegister(Trigger),
@@ -1150,12 +1163,16 @@ pub const Graphics = extern struct {
                 return .{ .r = r, .g = g, .b = b };
             }
 
+            pub fn initBuffer(rgb: [3]u8) Color {
+                return .init(rgb[0], rgb[1], rgb[2]);
+            }
+
             pub fn splat(v: u8) Color {
                 return .init(v, v, v);
             }
         };
 
-        pub const FresnelSelector = enum(u2) { none, primary_alpha, secondary_alpha, primary_secondary_alpha };
+        pub const FresnelSelector = enum(u2) { none, primary, secondary, both };
         pub const LookupTable = enum(u5) {
             pub const Enabled = enum(u4) {
                 d0_rr_sp_da,
@@ -1164,7 +1181,7 @@ pub const Graphics = extern struct {
                 d0_d1_fr_da,
                 d0_d1_rx_sp_da,
                 d0_fr_rx_sp_da,
-                d0_fr_rr_sp_da,
+                d0_d1_fr_rr_sp_da,
                 all = 8,
             };
 
@@ -1196,9 +1213,8 @@ pub const Graphics = extern struct {
                 _unused7: u6 = 0,
             };
 
+            pub const Input = enum(u3) { @"N * H", @"V * H", @"N * V", @"L * N", @"-L * P", @"cos(phi)" };
             pub const Select = packed struct(u32) {
-                pub const Input = enum(u3) { @"N * H", @"V * H", @"N * V", @"L * N", @"-L * P", @"cos(phi)" };
-
                 d0: Input = .@"N * H",
                 _unused0: u1 = 0,
                 d1: Input = .@"N * H",
@@ -1215,9 +1231,8 @@ pub const Graphics = extern struct {
                 _unused6: u5 = 0,
             };
 
+            pub const Multiplier = enum(u3) { @"1x", @"2x", @"4x", @"8x", @"0.25x" = 6, @"0.5x" };
             pub const Scale = packed struct(u32) {
-                pub const Multiplier = enum(u3) { @"1x", @"2x", @"4x", @"8x", @"0.25x", @"0.5x" };
-
                 d0: Multiplier = .@"1x",
                 _unused0: u1 = 0,
                 d1: Multiplier = .@"1x",
@@ -1238,6 +1253,8 @@ pub const Graphics = extern struct {
                 entry: UQ0_12,
                 next_absolute_difference: Q0_11,
                 _unused0: u8 = 0,
+
+                // TODO: initBuffer
 
                 pub fn initContext(
                     context: anytype,
@@ -1294,17 +1311,19 @@ pub const Graphics = extern struct {
                 apply_shadow_attenuation_to_alpha: bool,
                 _unused2: u2 = 0,
                 bump_map_unit: TextureUnit,
+                /// BIG BRAIN TIME, lets configure the shadow map unit........
+                /// Only unit 0 supports them?
                 shadow_map_unit: TextureUnit,
                 _unused3: u1 = 0,
                 clamp_highlights: bool,
                 bump_mode: BumpMode,
-                recalculate_bump_vectors: bool,
+                disable_bump_recalculation: bool,
                 _unknown1: u1 = 0x1,
             };
 
             pub const Lights = packed struct(u32) {
-                light_shadows_disabled: BitpackedArray(bool, 8),
-                light_spot_disabled: BitpackedArray(bool, 8),
+                shadows_disabled: BitpackedArray(bool, 8),
+                spotlight_disabled: BitpackedArray(bool, 8),
                 disable_d0: bool,
                 disable_d1: bool,
                 _unknown0: u1 = 0x1,
@@ -1312,8 +1331,8 @@ pub const Graphics = extern struct {
                 disable_rb: bool,
                 disable_rg: bool,
                 disable_rr: bool,
-                _unused0: u1 = 0x1,
-                light_distance_attenuation_disabled: BitpackedArray(bool, 8),
+                _unknown1: u1 = 0x1,
+                distance_attenuation_disabled: BitpackedArray(bool, 8),
             };
 
             environment: Environment,
@@ -1332,6 +1351,25 @@ pub const Graphics = extern struct {
             pub const Type = enum(u1) { positional, directional };
             pub const DiffuseSides = enum(u1) { one, both };
 
+            pub const Factors = extern struct {
+                specular: [2]Color,
+                diffuse: Color,
+                ambient: Color,
+            };
+
+            pub const Parameters = extern struct {
+                /// Its `xy` position if positional, otherwise its `xy` direction (unitary).
+                ///
+                /// If it is a directional light, the direction vector is Object -> Light,
+                xy: F5_10x2,
+                /// Its `z` position if positional, otherwise its `z` direction (unitary).
+                z: LsbRegister(F5_10),
+                /// Its `xy` spot (for spotlights) direction (unitary).
+                spot_xy: Q1_11x2,
+                /// Its `z` spot (for spotlights) direction (unitary).
+                spot_z: LsbRegister(Q1_11),
+            };
+
             pub const Config = packed struct(u32) {
                 type: Type,
                 diffuse_sides: DiffuseSides,
@@ -1339,28 +1377,20 @@ pub const Graphics = extern struct {
                 _unused0: u28 = 0,
             };
 
-            /// Specular0 and Specular1 colors
-            specular: [2]Color,
-            /// Diffuse color
-            diffuse: Color,
-            /// Ambient color
-            ambient: Color,
-            /// Its `xy` position if positional, otherwise its `xy` direction (unitary).
-            ///
-            /// If it is a directional light, the direction vector is Object -> Light,
-            xy: F5_10x2,
-            /// Its `z` position if positional, otherwise its `z` direction (unitary).
-            z: LsbRegister(F5_10),
-            /// Its `xy` spot (for spotlights) direction (unitary).
-            spot_xy: Q1_11x2,
-            /// Its `z` spot (for spotlights) direction (unitary).
-            spot_z: LsbRegister(Q1_11),
+            pub const Attenuation = extern struct {
+                bias: LsbRegister(F7_12),
+                scale: LsbRegister(F7_12),
+            };
+
+            /// Color factors for primary and secondary colors.
+            factors: Factors,
+            parameters: Parameters,
             _unknown0: u32,
             config: Config,
-            /// Distance attenuation bias of the light `DA(clamp(distance * scale + bias, 0.0, 1.0))`
-            attenuation_bias: LsbRegister(F7_12),
-            /// Distance attenuation scale of the light `DA(clamp(distance * scale + bias, 0.0, 1.0))`
-            attenuation_scale: LsbRegister(F7_12),
+            /// Distance attenuation coefficients for the lookup input:
+            ///
+            /// `DA(clamp(distance * scale + bias, 0.0, 1.0))`
+            attenuation: Attenuation,
         };
 
         light: [8]Light,
@@ -1383,7 +1413,9 @@ pub const Graphics = extern struct {
         light_permutation: BitpackedArray(Light.Id, 8),
     };
 
-    pub const GeometryPipeline = extern struct {
+    pub const PrimitiveEngine = extern struct {
+        pub const Mode = enum(u1) { drawing, config };
+
         pub const PrimitiveConfig = packed struct(u32) {
             total_vertex_outputs: u4,
             _unused0: u4 = 0,
@@ -1392,8 +1424,6 @@ pub const Graphics = extern struct {
             _unknown0: u1 = 0,
             _unused2: u15 = 0,
         };
-
-        pub const DrawFunction = enum(u1) { drawing, config };
 
         pub const PipelineConfig = packed struct(u32) {
             pub const GeometryUsage = enum(u2) { disabled, enabled = 2 };
@@ -1424,7 +1454,7 @@ pub const Graphics = extern struct {
             _unused1: u8 = 0,
         };
 
-        pub const Attributes = extern struct {
+        pub const Attribute = extern struct {
             pub const Config = extern struct {
                 pub const Flags = enum(u1) { array, fixed };
 
@@ -1566,7 +1596,7 @@ pub const Graphics = extern struct {
         };
 
         /// Attribute info used when issuing drawcalls via `draw` or `draw_indexed`.
-        attributes: Attributes,
+        attributes: Attribute,
         /// The amount of vertices that will be processed by a drawcall.
         draw_vertex_count: u32,
         config: PipelineConfig,
@@ -1588,7 +1618,7 @@ pub const Graphics = extern struct {
         vertex_shader_input_attributes: LsbRegister(u4),
         _unknown4: u32,
         enable_geometry_shader_configuration: LsbRegister(bool),
-        start_draw_function: LsbRegister(DrawFunction),
+        mode: LsbRegister(Mode),
         _unknown5: [4]u32,
         vertex_shader_output_map_total_2: LsbRegister(u4),
         _unknown6: [6]u32,
@@ -1665,10 +1695,14 @@ pub const Graphics = extern struct {
         pub const BooleanUniformMask = packed struct(u32) {
             mask: BitpackedArray(bool, 16),
             _unused0: u16 = 0x7FFF,
+
+            pub fn init(mask: BitpackedArray(bool, 16)) BooleanUniformMask {
+                return .{ .mask = mask };
+            }
         };
 
-        bool_uniform: BooleanUniformMask,
-        int_uniform: [4][4]i8,
+        bool_uniforms: BooleanUniformMask,
+        int_uniforms: [4][4]i8,
         _unused0: [4]u32,
         input_buffer_config: InputBufferConfig,
         entrypoint: Entry,
@@ -1690,16 +1724,16 @@ pub const Graphics = extern struct {
     _unused0: [40]u8,
     rasterizer: Rasterizer,
     _unused1: [64]u8,
-    texturing: TextureUnits,
+    texture_units: TextureUnits,
     _unused2: [36]u8,
-    texturing_procedural: ProceduralTextureUnit,
+    procedural_texture_unit: ProceduralTextureUnit,
     _unused3: [32]u8,
     texture_combiners: TextureCombiners,
     _unused4: [8]u8,
-    framebuffer: Framebuffer,
+    output_merger: OutputMerger,
     fragment_lighting: FragmentLighting,
     _unused5: [152]u8,
-    geometry_pipeline: GeometryPipeline,
+    primitive_engine: PrimitiveEngine,
     _unused6: [128]u8,
     geometry_shader: Shader,
     _unused7: [8]u8,
@@ -1708,12 +1742,12 @@ pub const Graphics = extern struct {
     comptime {
         std.debug.assert(@offsetOf(Graphics, "irq") == 0x0000);
         std.debug.assert(@offsetOf(Graphics, "rasterizer") == 0x100);
-        std.debug.assert(@offsetOf(Graphics, "texturing") == 0x200);
-        std.debug.assert(@offsetOf(Graphics, "texturing_procedural") == 0x2A0);
+        std.debug.assert(@offsetOf(Graphics, "texture_units") == 0x200);
+        std.debug.assert(@offsetOf(Graphics, "procedural_texture_unit") == 0x2A0);
         std.debug.assert(@offsetOf(Graphics, "texture_combiners") == 0x300);
-        std.debug.assert(@offsetOf(Graphics, "framebuffer") == 0x400);
+        std.debug.assert(@offsetOf(Graphics, "output_merger") == 0x400);
         std.debug.assert(@offsetOf(Graphics, "fragment_lighting") == 0x500);
-        std.debug.assert(@offsetOf(Graphics, "geometry_pipeline") == 0x800);
+        std.debug.assert(@offsetOf(Graphics, "primitive_engine") == 0x800);
         std.debug.assert(@offsetOf(Graphics, "geometry_shader") == 0xA00);
         std.debug.assert(@offsetOf(Graphics, "vertex_shader") == 0xAC0);
     }

@@ -8,7 +8,7 @@
 //!
 //! **mango** follows some assumptions about its state:
 //!
-//! * `start_draw_mode` (GPUREG_START_DRAW_FUNC0) is always in `draw`, it's only changed when binding new uniforms
+//! * `primitive_engine.mode` (GPUREG_START_DRAW_FUNC0) is always in `draw`, it's only changed when binding new uniforms
 //! OR changing pipelines. Why this design decision? You usually (and should) issue more drawcalls than you change
 //! pipelines or bind new uniforms. Can be trivially changed so its not an issue.
 //!
@@ -63,6 +63,21 @@ pub const Handle = enum(u32) {
     pub fn bindCombinedImageSamplers(cmd: Handle, first_combined: u32, combined_image_samplers: []const mango.CombinedImageSampler) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         return b_cmd.bindCombinedImageSamplers(first_combined, combined_image_samplers);
+    }
+
+    pub fn bindLightEnvironmentFactors(cmd: Handle, factors: mango.LightEnvironmentFactors) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.bindLightEnvironmentFactors(factors);
+    }
+
+    pub fn bindLights(cmd: Handle, lights: []const mango.Light) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.bindLights(lights);
+    }
+
+    pub fn bindLightFactors(cmd: Handle, light_factors: []const mango.LightFactors) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.bindLightFactors(light_factors);
     }
 
     pub fn beginRendering(cmd: Handle, rendering_info: mango.RenderingInfo) void {
@@ -282,8 +297,8 @@ pub fn end(cmd: *CommandBuffer) !void {
         return err;
     }
 
-    // XXX: Homebrew apps expect start_draw_function to start in configuration mode. Or you have a dreaded black screen of death x-x
-    cmd.queue.add(p3d, &p3d.geometry_pipeline.start_draw_function, .init(.config));
+    // XXX: Homebrew apps expect `primitive_engine.mode` to start in configuration mode. Or you have a dreaded black screen of death x-x
+    cmd.queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
     cmd.queue.finalize();
     cmd.state = .executable;
 }
@@ -338,6 +353,24 @@ pub fn bindCombinedImageSamplers(cmd: *CommandBuffer, first_combined: u32, combi
     return cmd.rnd_state.bindCombinedImageSamplers(first_combined, combined_image_samplers);
 }
 
+pub fn bindLightEnvironmentFactors(cmd: *CommandBuffer, factors: mango.LightEnvironmentFactors) void {
+    std.debug.assert(cmd.state == .recording);
+
+    return cmd.rnd_state.bindLightEnvironmentFactors(factors);
+}
+
+pub fn bindLights(cmd: *CommandBuffer, lights: []const mango.Light) void {
+    std.debug.assert(cmd.state == .recording);
+
+    return cmd.rnd_state.bindLights(lights);
+}
+
+pub fn bindLightFactors(cmd: *CommandBuffer, light_factors: []const mango.LightFactors) void {
+    std.debug.assert(cmd.state == .recording);
+
+    return cmd.rnd_state.bindLightFactors(light_factors);
+}
+
 pub fn beginRendering(cmd: *CommandBuffer, rendering_info: mango.RenderingInfo) void {
     std.debug.assert(cmd.state == .recording);
     std.debug.assert(cmd.scope == .none);
@@ -354,9 +387,11 @@ pub fn endRendering(cmd: *CommandBuffer) void {
     const queue = &cmd.queue;
 
     if (cmd.rnd_state.endRendering()) {
-        queue.add(p3d, &p3d.framebuffer.flush, .init(.trigger));
+        queue.add(p3d, &p3d.output_merger.flush, .init(.trigger));
     }
 }
+
+// TODO: beginShadowRendering, endShadowRendering for the shadow pass w/color op
 
 pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const mango.MultiDrawInfo, stride: u32) void {
     std.debug.assert(cmd.state == .recording);
@@ -376,36 +411,36 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
     const queue = &cmd.queue;
 
     switch (cmd.gfx_state.misc.primitive_topology) {
-        .triangle_list => queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{
+        .triangle_list => queue.addMasked(p3d, &p3d.primitive_engine.primitive_config, .{
             .total_vertex_outputs = 0, // NOTE: Ignored by mask
             .topology = cmd.gfx_state.misc.primitive_topology,
         }, 0b0010),
         else => {},
     }
     defer switch (cmd.gfx_state.misc.primitive_topology) {
-        .triangle_list => queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{
+        .triangle_list => queue.addMasked(p3d, &p3d.primitive_engine.primitive_config, .{
             .total_vertex_outputs = 0, // NOTE: Ignored by mask
             .topology = cmd.gfx_state.misc.primitive_topology.indexedTopology(),
         }, 0b0010),
         else => {},
     };
 
-    queue.addMasked(p3d, &p3d.geometry_pipeline.config_2, .{ .inputting_vertices_or_draw_arrays = true }, 0b0001);
-    defer queue.addMasked(p3d, &p3d.geometry_pipeline.config_2, .{ .inputting_vertices_or_draw_arrays = false }, 0b0001);
+    queue.addMasked(p3d, &p3d.primitive_engine.config_2, .{ .inputting_vertices_or_draw_arrays = true }, 0b0001);
+    defer queue.addMasked(p3d, &p3d.primitive_engine.config_2, .{ .inputting_vertices_or_draw_arrays = false }, 0b0001);
 
     const first_draw = vertex_info[0];
     queue.addIncremental(p3d, .{
-        &p3d.geometry_pipeline.attributes.index_buffer,
-        &p3d.geometry_pipeline.draw_vertex_count,
+        &p3d.primitive_engine.attributes.index_buffer,
+        &p3d.primitive_engine.draw_vertex_count,
     }, .{
         .init(0x00, .u16), // NOTE: MUST be u16 for non-indexed draws
         first_draw.vertex_count,
     });
 
-    queue.add(p3d, &p3d.geometry_pipeline.draw_first_index, first_draw.first_vertex);
-    queue.add(p3d, &p3d.geometry_pipeline.restart_primitive, .init(.trigger));
-    queue.add(p3d, &p3d.geometry_pipeline.draw, .init(.trigger));
-    queue.add(p3d, &p3d.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
+    queue.add(p3d, &p3d.primitive_engine.draw_first_index, first_draw.first_vertex);
+    queue.add(p3d, &p3d.primitive_engine.restart_primitive, .init(.trigger));
+    queue.add(p3d, &p3d.primitive_engine.draw, .init(.trigger));
+    queue.add(p3d, &p3d.primitive_engine.clear_post_vertex_cache, .init(.trigger));
 
     var last_vertex_info = first_draw;
     var current_vertex_info_ptr: *const mango.MultiDrawInfo = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(vertex_info)) + stride));
@@ -416,16 +451,16 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
         const current_vertex_info = current_vertex_info_ptr.*;
 
         if (current_vertex_info.vertex_count != last_vertex_info.vertex_count) {
-            queue.add(p3d, &p3d.geometry_pipeline.draw_vertex_count, current_vertex_info.vertex_count);
+            queue.add(p3d, &p3d.primitive_engine.draw_vertex_count, current_vertex_info.vertex_count);
         }
 
         if (current_vertex_info.first_vertex != last_vertex_info.first_vertex) {
-            queue.add(p3d, &p3d.geometry_pipeline.draw_first_index, current_vertex_info.first_vertex);
+            queue.add(p3d, &p3d.primitive_engine.draw_first_index, current_vertex_info.first_vertex);
         }
 
-        queue.add(p3d, &p3d.geometry_pipeline.restart_primitive, .init(.trigger));
-        queue.add(p3d, &p3d.geometry_pipeline.draw, .init(.trigger));
-        queue.add(p3d, &p3d.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
+        queue.add(p3d, &p3d.primitive_engine.restart_primitive, .init(.trigger));
+        queue.add(p3d, &p3d.primitive_engine.draw, .init(.trigger));
+        queue.add(p3d, &p3d.primitive_engine.clear_post_vertex_cache, .init(.trigger));
 
         last_vertex_info = current_vertex_info;
         current_vertex_info_ptr = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(current_vertex_info_ptr)) + stride));
@@ -453,8 +488,8 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
 
     const first_draw = index_info[0];
     queue.addIncremental(p3d, .{
-        &p3d.geometry_pipeline.attributes.index_buffer,
-        &p3d.geometry_pipeline.draw_vertex_count,
+        &p3d.primitive_engine.attributes.index_buffer,
+        &p3d.primitive_engine.draw_vertex_count,
     }, .{
         .init(@intCast(dynamic_rendering_state.index_buffer_offset + first_draw.first_index), dynamic_rendering_state.misc.index_format),
         first_draw.index_count,
@@ -465,19 +500,19 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
             const offset_from_bound: i32 = first_draw.vertex_offset * buf_conf.high.bytes_per_vertex;
             const new_offset: u28 = @intCast(offset + offset_from_bound);
 
-            queue.add(p3d, &p3d.geometry_pipeline.attributes.vertex_buffers[i].offset, .init(new_offset));
+            queue.add(p3d, &p3d.primitive_engine.attributes.vertex_buffers[i].offset, .init(new_offset));
         }
 
         cmd.rnd_state.dirty.vertex_buffers = true;
     }
 
-    queue.add(p3d, &p3d.geometry_pipeline.restart_primitive, .init(.trigger));
-    queue.add(p3d, &p3d.geometry_pipeline.draw_indexed, .init(.trigger));
-    queue.add(p3d, &p3d.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
+    queue.add(p3d, &p3d.primitive_engine.restart_primitive, .init(.trigger));
+    queue.add(p3d, &p3d.primitive_engine.draw_indexed, .init(.trigger));
+    queue.add(p3d, &p3d.primitive_engine.clear_post_vertex_cache, .init(.trigger));
 
     // NOTE: Seems to be needed, weird things happens if we don't write these?
-    queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
-    queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
+    queue.addMasked(p3d, &p3d.primitive_engine.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
+    queue.addMasked(p3d, &p3d.primitive_engine.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
 
     var last_index_info = first_draw;
     var current_index_info_ptr: *const mango.MultiDrawIndexedInfo = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(index_info)) + stride));
@@ -488,11 +523,11 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
         const current_index_info = current_index_info_ptr.*;
 
         if (current_index_info.index_count != last_index_info.index_count) {
-            queue.add(p3d, &p3d.geometry_pipeline.draw_vertex_count, current_index_info.index_count);
+            queue.add(p3d, &p3d.primitive_engine.draw_vertex_count, current_index_info.index_count);
         }
 
         if (current_index_info.first_index != last_index_info.first_index) {
-            queue.add(p3d, &p3d.geometry_pipeline.attributes.index_buffer, .init(@intCast(dynamic_rendering_state.index_buffer_offset + current_index_info.first_index), dynamic_rendering_state.misc.index_format));
+            queue.add(p3d, &p3d.primitive_engine.attributes.index_buffer, .init(@intCast(dynamic_rendering_state.index_buffer_offset + current_index_info.first_index), dynamic_rendering_state.misc.index_format));
         }
 
         if (current_index_info.vertex_offset != last_index_info.vertex_offset) {
@@ -500,19 +535,19 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
                 const offset_from_bound: i32 = first_draw.vertex_offset * buf_conf.high.bytes_per_vertex;
                 const new_offset: u28 = @intCast(offset + offset_from_bound);
 
-                queue.add(p3d, &p3d.geometry_pipeline.attributes.vertex_buffers[i].offset, .init(new_offset));
+                queue.add(p3d, &p3d.primitive_engine.attributes.vertex_buffers[i].offset, .init(new_offset));
             }
 
             cmd.rnd_state.dirty.vertex_buffers = true;
         }
 
-        queue.add(p3d, &p3d.geometry_pipeline.restart_primitive, .init(.trigger));
-        queue.add(p3d, &p3d.geometry_pipeline.draw_indexed, .init(.trigger));
-        queue.add(p3d, &p3d.geometry_pipeline.clear_post_vertex_cache, .init(.trigger));
+        queue.add(p3d, &p3d.primitive_engine.restart_primitive, .init(.trigger));
+        queue.add(p3d, &p3d.primitive_engine.draw_indexed, .init(.trigger));
+        queue.add(p3d, &p3d.primitive_engine.clear_post_vertex_cache, .init(.trigger));
 
         // NOTE: See above
-        queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
-        queue.addMasked(p3d, &p3d.geometry_pipeline.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
+        queue.addMasked(p3d, &p3d.primitive_engine.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
+        queue.addMasked(p3d, &p3d.primitive_engine.primitive_config, .{ .total_vertex_outputs = 0, .topology = .triangle_list }, 0b1000);
 
         last_index_info = current_index_info;
         current_index_info_ptr = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(current_index_info_ptr)) + stride));
