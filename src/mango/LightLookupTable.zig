@@ -20,7 +20,7 @@ pub fn init(create_info: mango.LightLookupTableCreateInfo) LightLookupTable {
             Data.initContext(ExternAdapterContext{
                 .map = map,
                 .ctx = create_info.context,
-            }, create_info.absolute)
+            }, create_info.range == .positive)
         else
             @panic("TODO"),
     };

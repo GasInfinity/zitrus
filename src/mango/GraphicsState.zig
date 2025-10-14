@@ -300,8 +300,17 @@ pub fn setTextureCoordinates(state: *GraphicsState, texture_2_coordinates: mango
     state.dirty.texture_config = true;
 }
 
+/// Returns the maximum amount of words the next dirty emission will take.
+///
+/// Its a safe upper bound, not the exact amount needed.
+pub fn maxEmitDirtyQueueLength(state: *GraphicsState) usize {
+    // NOTE: This must be FAST as its always checked every drawcall!
+    return (@as(usize, @intFromBool(state.dirty.texture_combiners)) * 64) + 64;
+}
+
 pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     if (state.dirty.cull_mode) {
+        // NOTE: emission takes 2 words
         const cull_mode_ccw = state.misc.cull_mode_ccw;
         const is_front_ccw = state.misc.is_front_ccw;
 
@@ -315,6 +324,8 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.viewport_parameters) {
+        // NOTE: emission takes 8 words
+
         const flt_width = @as(f32, @floatFromInt(state.viewport.width_minus_one)) + 1.0;
         const flt_height = @as(f32, @floatFromInt(state.viewport.height_minus_one)) + 1.0;
 
@@ -334,6 +345,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.scissor_parameters) {
+        // NOTE: emission takes 4 words
         queue.add(p3d, &p3d.rasterizer.scissor, .{
             .mode = .init(if (state.misc.is_scissor_inside) .inside else .outside),
             .start = .{ state.scissor.x, state.scissor.y },
@@ -342,10 +354,12 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.depth_map_mode) {
+        // NOTE: emission takes 2 words
         queue.add(p3d, &p3d.rasterizer.depth_map_mode, .init(state.misc.depth_mode));
     }
 
     if (state.dirty.depth_map_parameters) {
+        // NOTE: emission takes 4 words
         const depth_map_scale = (state.depth_map_parameters.min_depth - state.depth_map_parameters.max_depth);
         const depth_map_bias = state.depth_map_parameters.min_depth + state.depth_map_parameters.constant;
 
@@ -356,6 +370,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.primitive_topology) {
+        // NOTE: emission takes 6 words
         const primitive_topology = state.misc.primitive_topology;
 
         queue.addMasked(p3d, &p3d.primitive_engine.primitive_config, .{
@@ -375,6 +390,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.logic_blend_mode) {
+        // NOTE: emission takes 2 words
         queue.addMasked(p3d, &p3d.output_merger.config, .{
             .mode = .default, // NOTE: Ignored by mask
             .blend = if (state.misc.logic_op_enable) .logic else .blend,
@@ -382,10 +398,12 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.logic_operation) {
+        // NOTE: emission takes 2 words
         queue.add(p3d, &p3d.output_merger.logic_config, .init(state.misc.logic_op));
     }
 
     if (state.dirty.depth_test_masks) {
+        // NOTE: emission takes 2 words
         queue.add(p3d, &p3d.output_merger.depth_color_config, .{
             .enable_depth_test = state.misc.depth_test_enable,
             .depth_op = state.misc.depth_test_op,
@@ -398,14 +416,17 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.blend_config) {
+        // NOTE: emission takes 2 words
         queue.add(p3d, &p3d.output_merger.blend_config, state.blend_config);
     }
 
     if (state.dirty.blend_constants) {
+        // NOTE: emission takes 2 words
         queue.add(p3d, &p3d.output_merger.blend_color, state.blend_constants);
     }
 
     if (state.dirty.alpha_test) {
+        // NOTE: emission takes 2 words
         queue.add(p3d, &p3d.output_merger.alpha_test, .{
             .enable = state.misc.alpha_test_enable,
             .op = state.misc.alpha_test_op,
@@ -414,6 +435,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.stencil_config) {
+        // NOTE: emission takes 2 words
         queue.add(p3d, &p3d.output_merger.stencil_test.config, .{
             .enable = state.stencil.state.enable,
             .op = state.stencil.state.op,
@@ -424,6 +446,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.stencil_operation) {
+        // NOTE: emission takes 2 words
         queue.add(p3d, &p3d.output_merger.stencil_test.operation, .{
             .fail_op = state.stencil.state.fail_op,
             .depth_fail_op = state.stencil.state.depth_fail_op,
@@ -432,10 +455,12 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.texture_update_buffer) {
+        // NOTE: emission takes 2 words
         queue.add(p3d, &p3d.texture_combiners.config, state.combiners.config);
     }
 
     if (state.dirty.texture_combiners) {
+        // NOTE: emission takes 8 of words per combiner
         inline for (0..6) |i| {
             const current_combiner_unit = &@field(p3d.texture_combiners, std.fmt.comptimePrint("{}", .{i}));
 
@@ -444,6 +469,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     }
 
     if (state.dirty.texture_config) {
+        // NOTE: emission takes 2 words
         queue.addMasked(p3d, &p3d.texture_units.config, .{
             .texture_enabled = .splat(false),
             .texture_3_coordinates = state.misc.texture_3_coordinates,

@@ -38,9 +38,7 @@ pub fn main() !void {
     // and between GPU operations.
     //
     // If you've used Vulkan, this is basically a Timeline Semaphore (https://docs.vulkan.org/samples/latest/samples/extensions/timeline_semaphore/README.html)
-    const sync_semaphore = try device.createSemaphore(.{
-        .initial_value = 0,
-    }, gpa);
+    const sync_semaphore = try device.createSemaphore(.initial_zero, gpa);
     defer device.destroySemaphore(sync_semaphore, gpa);
     var sync_counter: u64 = 0;
 
@@ -317,7 +315,7 @@ pub fn main() !void {
         // (Mango specific) Fragment lighting is added as a fixed function stage.
         .lighting_state = &.{
             .enable = false,
-            .light_environment = null,
+            .environment = null,
         },
         // (Mango specific) Fragment color combiner is added as a fixed function stage.
         .texture_combiner_state = &.init(&.{.{
@@ -362,7 +360,7 @@ pub fn main() !void {
     //
     // Same as in Vulkan.
     // Currently they behave as if the 'Reset Command Buffer' flag was set (you can reset command buffers individually).
-    const command_pool = try device.createCommandPool(.{}, gpa);
+    const command_pool = try device.createCommandPool(.no_preheat, gpa);
     defer device.destroyCommandPool(command_pool, gpa);
 
     // Allocate a single `CommandBuffer`. Can be individually reset, see above.

@@ -29,17 +29,17 @@ pub const MediaType = enum(u8) {
 
 pub const PathType = enum(i32) {
     pub const SelfNcch = extern struct {
-        pub const AccessType = enum(u32) {
-            romfs_base,
-            code,
-            system_menu_data,
-            save_data,
-            romfs_all_contents,
-            romfs_patch,
-        };
+        pub const Access = extern union {
+            pub const Type = enum(u32) {
+                romfs_base,
+                code,
+                system_menu_data,
+                save_data,
+                romfs_all_contents,
+                romfs_patch,
+            };
 
-        pub const AccessData = extern union {
-            pub const empty = std.mem.zeroes(AccessData);
+            pub const empty = std.mem.zeroes(Access);
 
             pub const Path = extern struct {
                 name: [ncch.exefs.max_name_len:0]u8,
@@ -53,7 +53,7 @@ pub const PathType = enum(i32) {
             };
 
             pub const Content = extern struct {
-                pub const Index = packed struct(u32) { value: ncch.Header.Flags.ContentFlags.Type, _: u26 = 0 };
+                pub const Index = packed struct(u32) { value: ncch.Header.Flags.Content.Type, _: u26 = 0 };
 
                 content_index: Index,
                 _padding0: u32 = 0,
@@ -62,17 +62,17 @@ pub const PathType = enum(i32) {
             exefs: Path,
             romfs: Content,
 
-            pub fn path(name: []const u8) AccessData {
+            pub fn path(name: []const u8) Access {
                 return .{ .exefs = .init(name) };
             }
 
-            pub fn content(index: ncch.Header.Flags.ContentFlags.Type) AccessData {
+            pub fn content(index: ncch.Header.Flags.Content.Type) Access {
                 return .{ .romfs = .{ .content_index = .{ .value = index } } };
             }
         };
 
-        access: AccessType,
-        data: AccessData,
+        access: Access.Type,
+        data: Access,
 
         pub fn romfs_base() SelfNcch {
             return .{ .access = .romfs_base, .data = .empty };

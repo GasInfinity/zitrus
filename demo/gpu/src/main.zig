@@ -119,15 +119,13 @@ pub const Scene = struct {
     }
 
     pub fn init(device: mango.Device, gpa: std.mem.Allocator) !Scene {
-        const sema = try device.createSemaphore(.{
-            .initial_value = 0,
-        }, gpa);
+        const sema = try device.createSemaphore(.initial_zero, gpa);
         errdefer device.destroySemaphore(sema, gpa);
 
         const phong_distribution_lut = try device.createLightLookupTable(.{
             .map = &phongDistribution,
             .context = null,
-            .absolute = true,
+            .range = .positive,
         }, gpa);
         // NOTE: As we won't have a dynamic light environment, we can destroy the LUT after creating the pipeline.
         defer device.destroyLightLookupTable(phong_distribution_lut, gpa);
@@ -183,7 +181,7 @@ pub const Scene = struct {
                 // (!) Disabling depth tests also disables depth writes like in every other graphics api
                 .depth_test_enable = true,
                 .depth_write_enable = true,
-                .depth_compare_op = .lt,
+                .depth_compare_op = .ge,
 
                 .stencil_test_enable = false,
                 .back_front = std.mem.zeroes(mango.GraphicsPipelineCreateInfo.AlphaDepthStencilState.StencilOperationState),
@@ -214,7 +212,7 @@ pub const Scene = struct {
                 .color_scale = .@"1x",
                 .alpha_scale = .@"1x",
 
-                .constant = @splat(0),
+                .constant = @splat(255),
             }, .{
                 .color_src = .{ .previous, .texture_0, .previous },
                 .alpha_src = @splat(.primary_color),
@@ -252,13 +250,13 @@ pub const Scene = struct {
         }, gpa);
         errdefer device.destroyPipeline(pipeline, gpa);
 
-        const top_renderbuffer: Renderbuffer = try .init(device, gpa, 240, 400, .a8b8g8r8_unorm, .d24_unorm);
+        const top_renderbuffer: Renderbuffer = try .init(device, gpa, 480, 800, .a8b8g8r8_unorm, .d24_unorm);
         errdefer top_renderbuffer.deinit(device, gpa);
 
         const cube_mesh: Mesh = try .init(device, gpa, .u8, &cube_indices, std.mem.sliceAsBytes(&cube_vertices));
         errdefer cube_mesh.deinit(device, gpa);
 
-        const pool = try device.createCommandPool(.{}, gpa);
+        const pool = try device.createCommandPool(.no_preheat, gpa);
         errdefer device.destroyCommandPool(pool, gpa);
 
         var cmd: [1]mango.CommandBuffer = undefined;
@@ -377,12 +375,12 @@ pub const Scene = struct {
         cmd.setViewport(.{
             .rect = .{
                 .offset = .{ .x = 0, .y = 0 },
-                .extent = .{ .width = 240, .height = 400 },
+                .extent = .{ .width = 480, .height = 800 },
             },
             .min_depth = 0.0,
             .max_depth = 1.0,
         });
-        cmd.setScissor(.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 400 } }));
+        cmd.setScissor(.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 480, .height = 800 } }));
 
         {
             cmd.beginRendering(.{
@@ -397,13 +395,6 @@ pub const Scene = struct {
 
             const sin_time = @sin(scene.time / 2);
             const cos_time = @cos(scene.time / 2);
-            const model_rotation_axis, _ = zmath.vec.normalize(3, f32, .{ 1, 1, 1 });
-            const model_rotation = zmath.quat.axisAngleV(f32, model_rotation_axis, std.math.pi * scene.time / 4.0);
-
-            const model_matrix = zmath.mat.rotate(model_rotation[0], model_rotation[1], model_rotation[2], model_rotation[3]);
-
-            cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(.right, std.math.degreesToRadians(90.0), 240.0 / 400.0, 0.8, 100));
-            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.mul(camera_view, model_matrix));
 
             cmd.bindLightEnvironmentFactors(.{
                 .ambient = @splat(26),
@@ -427,6 +418,12 @@ pub const Scene = struct {
                 .geometric = .none,
             }});
 
+            cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(.right, std.math.degreesToRadians(90.0), 240.0 / 400.0, 50, 1));
+            cmd.bindFloatUniforms(.vertex, 4, &camera_view);
+            scene.cube_mesh.draw(cmd);
+
+            cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(.right, std.math.degreesToRadians(90.0), 240.0 / 400.0, 50, 1));
+            cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.mul(camera_view, zmath.mat.translate(4, 0, 1)));
             scene.cube_mesh.draw(cmd);
         }
 
@@ -463,7 +460,7 @@ pub const Scene = struct {
         try fill_queue.clearDepthStencilImage(.{
             .wait_semaphore = &.init(scene.semaphore, scene.current_timeline),
             .image = scene.top_renderbuffer.depth.image,
-            .depth = 1.0,
+            .depth = 0.0,
             .stencil = 0x00,
             // .subresource_range = .full,
             .signal_semaphore = &.init(scene.semaphore, scene.current_timeline + 1),

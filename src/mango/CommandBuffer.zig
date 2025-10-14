@@ -236,9 +236,9 @@ pub const Handle = enum(u32) {
         return b_cmd.setTextureCoordinates(texture_2_coordinates, texture_3_coordinates);
     }
 
-    pub fn reset(cmd: Handle) void {
+    pub fn reset(cmd: Handle, flags: mango.CommandBufferResetFlags) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.reset();
+        return b_cmd.reset(flags);
     }
 };
 
@@ -268,24 +268,25 @@ current_error: ?anyerror = null,
 state: State = .initial,
 scope: Scope = .none,
 
-pub fn init(pool: *backend.CommandPool, native_buffer: []align(8) u32) CommandBuffer {
+pub fn initBuffer(pool: *backend.CommandPool, buffer: []align(8) u32) CommandBuffer {
     return .{
         .pool = pool,
         .queue = .{
-            .buffer = native_buffer,
+            .buffer = buffer,
             .current_index = 0,
         },
     };
 }
 
-pub fn deinit(command_buffer: *CommandBuffer) void {
-    command_buffer.pool.freeNative(command_buffer.queue.buffer);
-    command_buffer.* = undefined;
+/// Returns the allocated native buffer
+pub fn deinit(command_buffer: *CommandBuffer) []align(8) u32 {
+    defer command_buffer.* = undefined;
+    return command_buffer.queue.buffer;
 }
 
 pub fn begin(cmd: *CommandBuffer) !void {
     std.debug.assert(cmd.state == .initial or cmd.state == .executable);
-    cmd.reset();
+    cmd.reset(.none);
     cmd.state = .recording;
 }
 
@@ -303,7 +304,12 @@ pub fn end(cmd: *CommandBuffer) !void {
     cmd.state = .executable;
 }
 
-pub fn reset(cmd: *CommandBuffer) void {
+pub fn reset(cmd: *CommandBuffer, flags: mango.CommandBufferResetFlags) void {
+    if (flags.release_resources) {
+        cmd.pool.recycleNative(cmd.queue.buffer);
+        cmd.queue.buffer = &.{};
+    }
+
     cmd.queue.current_index = 0;
     cmd.gfx_state = .empty;
     cmd.rnd_state = .empty;
@@ -404,7 +410,7 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
     std.debug.assert(stride >= @sizeOf(mango.MultiDrawInfo) and std.mem.isAligned(stride, 4));
     std.debug.assertReadable(std.mem.asBytes(&vertex_info[0]));
 
-    if (!cmd.beforeDraw()) {
+    if (!cmd.beforeDraw(draw_count)) {
         return;
     }
 
@@ -478,7 +484,7 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
     std.debug.assert(stride >= @sizeOf(mango.MultiDrawIndexedInfo) and std.mem.isAligned(stride, 4));
     std.debug.assertReadable(std.mem.asBytes(&index_info[0]));
 
-    if (!cmd.beforeDraw()) {
+    if (!cmd.beforeDraw(draw_count)) {
         return;
     }
 
@@ -676,12 +682,12 @@ pub fn setTextureCoordinates(cmd: *CommandBuffer, texture_2_coordinates: mango.T
     cmd.gfx_state.setTextureCoordinates(texture_2_coordinates, texture_3_coordinates);
 }
 
-fn beforeDraw(cmd: *CommandBuffer) bool {
+fn beforeDraw(cmd: *CommandBuffer, draw_count: usize) bool {
     if (cmd.current_error) |_| {
         return false;
     }
 
-    cmd.growIfNeeded() catch |err| {
+    cmd.growIfNeeded(draw_count) catch |err| {
         cmd.current_error = err;
         return false;
     };
@@ -702,12 +708,19 @@ fn beforeDraw(cmd: *CommandBuffer) bool {
     return true;
 }
 
-fn growIfNeeded(cmd: *CommandBuffer) !void {
-    // TODO: grow native queue from the pool, we can avoid doing this until we have more complex scenes.
+fn growIfNeeded(cmd: *CommandBuffer, draw_count: usize) !void {
+    const slice = cmd.queue.slice();
+    const unused_slice = cmd.queue.unusedCapacitySlice();
 
-    if (cmd.queue.unusedCapacitySlice().len < backend.safe_native_command_buffer_upper_bound) {
-        return error.OutOfMemory; // Don't ignore it tho!
-    }
+    const max_graphics_emission_cost = cmd.gfx_state.maxEmitDirtyQueueLength();
+    const max_rendering_emission_cost = cmd.rnd_state.maxEmitDirtyQueueLength();
+    // TODO: Make this basically zero with the native secondary command buffer!
+    const max_pipeline_emission_cost = @as(usize, @intFromBool(cmd.bound_graphics_pipeline != cmd.emitted_graphics_pipeline and cmd.bound_graphics_pipeline != null)) * 1024;
+    const max_emission_cost = max_graphics_emission_cost + max_rendering_emission_cost + (draw_count * backend.max_native_drawcall_cost) + max_pipeline_emission_cost;
+
+    if (unused_slice.len >= max_emission_cost) return;
+
+    cmd.queue.buffer = try cmd.pool.remapNative(cmd.queue.buffer, cmd.queue.current_index, slice.len + max_emission_cost);
 }
 
 pub fn notifyPending(cmd: *CommandBuffer) void {

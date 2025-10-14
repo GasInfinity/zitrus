@@ -22,7 +22,7 @@ pub const Header = extern struct {
     };
 
     pub const Flags = extern struct {
-        pub const ContentFlags = packed struct(u8) {
+        pub const Content = packed struct(u8) {
             pub const Type = enum(u6) {
                 unspecified,
                 system_update,
@@ -33,14 +33,14 @@ pub const Header = extern struct {
                 _,
             };
 
-            pub const FormType = enum(u2) {
+            pub const Form = enum(u2) {
                 not_assigned,
                 simple_content,
                 executable_without_exefs,
                 executable,
             };
 
-            form: FormType,
+            form: Form,
             type: Type,
         };
 
@@ -62,7 +62,7 @@ pub const Header = extern struct {
         _reserved0: [3]u8 = @splat(0),
         crypto_method: u8,
         platform: Platform,
-        content: ContentFlags,
+        content: Content,
         exp_unit_size: u8,
         extra: Extra,
     };

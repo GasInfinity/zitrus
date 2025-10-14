@@ -370,6 +370,16 @@ pub const CompareOperation = enum(u8) {
     gt,
     ge,
 
+    pub fn nativeEarlyDepth(op: CompareOperation) pica.EarlyDepthCompareOperation {
+        return switch (op) {
+            .ge => .ge,
+            .gt => .gt,
+            .le => .le,
+            .lt => .lt,
+            else => unreachable,
+        };
+    }
+
     pub fn native(op: CompareOperation) pica.CompareOperation {
         return switch (op) {
             .never => .never,
@@ -774,16 +784,34 @@ pub const SwapchainCreateInfo = extern struct {
 };
 
 pub const SemaphoreCreateInfo = extern struct {
-    initial_value: u64,
+    /// Create a semaphore with an initial value of `0`
+    pub const initial_zero: SemaphoreCreateInfo = .{};
+
+    /// The initial value the semaphore will have.
+    initial_value: u64 = 0,
 };
 
 pub const CommandPoolCreateInfo = extern struct {
-    // TODO: Preheat info
+    /// Create a command pool without preheating it.
+    pub const no_preheat: CommandPoolCreateInfo = .{};
+
+    /// Amount of command buffers to preallocate internally.
+    initial_command_buffers: u32 = 0,
 };
 
 pub const CommandBufferAllocateInfo = extern struct {
     pool: CommandPool,
     command_buffer_count: u32,
+};
+
+pub const CommandBufferResetFlags = packed struct(u8) {
+    pub const none: CommandBufferResetFlags = .{};
+
+    /// Release underlying native memory resources to the pool.
+    /// If not set the command buffer may hold onto resources
+    /// and reuse them after being reset.
+    release_resources: bool = false,
+    _: u7 = 0,
 };
 
 pub const BufferCreateInfo = extern struct {
@@ -1362,6 +1390,26 @@ pub const SemaphoreOperation = extern struct {
 //
 // We divide each section into Per-Light and Per-Environment, as each light
 // has associated state which is inherently dynamic per-object or per-frame.
+//
+// The environment *could* be dynamic (and it is!) to a certain extent but it
+// benefits greatly from being static if it can (maybe you don't need lighting
+// or you only need a single configuration across a frame or pipeline).
+//
+// However as you may need to scale LUT outputs, *that* is also made dynamic
+// and should be the first thing you'd use.
+//
+// Lights obviously are dynamic per-frame and like textures are inherently
+// resources.
+//
+// Light factors however *are* per-object and not per-frame, each different model
+// may have a different material and you *need* to change them.
+
+pub const LightLookupRange = enum(u8) {
+    /// `[-1.0, 1.0]`
+    full,
+    /// `[0.0,  1.0]`
+    positive,
+};
 
 pub const LightLookupTableCreateInfo = extern struct {
     /// A function which maps an input value *x* to its factor.
@@ -1373,13 +1421,8 @@ pub const LightLookupTableCreateInfo = extern struct {
     /// Otherwise it must an array of *257* `f32` factors.
     context: ?*anyopaque,
     /// Whether the input domain of the lookup table is `[0.0, 1.0]`
-    /// instead of `[-1.0, 1.0]`.
-    absolute: bool,
-};
-
-pub const LightLookupRange = enum(u8) {
-    full,
-    positive,
+    /// or `[-1.0, 1.0]`.
+    range: LightLookupRange,
 };
 
 pub const LightLookupInput = enum(u8) {

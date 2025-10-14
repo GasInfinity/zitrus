@@ -33,6 +33,10 @@ pub const Queue = struct {
         };
     }
 
+    pub fn slice(queue: Queue) []u32 {
+        return queue.buffer[0..queue.current_index];
+    }
+
     pub fn unusedCapacitySlice(queue: Queue) []u32 {
         return queue.buffer[queue.current_index..];
     }
@@ -187,9 +191,9 @@ pub const Queue = struct {
                 remaining -= len;
             }
 
-            const slice = values[current..][0..len];
+            const remaining_slice = values[current..][0..len];
 
-            queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&slice[0]))).*;
+            queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&remaining_slice[0]))).*;
             queue.buffer[queue.current_index + 1] = @bitCast(Header{
                 .id = id,
                 .mask = mask,
@@ -198,7 +202,7 @@ pub const Queue = struct {
             });
             queue.current_index += 2;
 
-            @memcpy(queue.buffer[queue.current_index..][0..(len - 1)], @as([*]const u32, @ptrCast(@alignCast(slice)))[1..len]);
+            @memcpy(queue.buffer[queue.current_index..][0..(len - 1)], @as([*]const u32, @ptrCast(@alignCast(remaining_slice)))[1..len]);
             queue.current_index += std.mem.alignForward(usize, len - 1, 2); // commands must be aligned to 8 bytes
         }
     }

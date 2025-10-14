@@ -161,6 +161,7 @@ pub const Handle = enum(u32) {
         std.debug.assert(src_mip_width >= dst_mip_width and src_mip_height >= dst_mip_height); // Output must not be bigger than input.
 
         // Only allow downscale of the X or XY axes. Otherwise sizes must match (for simplicity, the hardware allows bigger inputs than outputs, does that have an use-case?).
+        // XXX: Yes dummy, if you have a bigger input you're basically blitting subimages!
         const downscale: pica.MemoryCopy.Flags.Downscale = if (dst_mip_width < src_mip_width and dst_mip_height < src_mip_height) blk: {
             std.debug.assert(dst_mip_width == (src_mip_width >> 1) and dst_mip_height == (src_mip_height >> 1));
             break :blk .@"2x2";
@@ -223,6 +224,7 @@ pub const Handle = enum(u32) {
                             .src_fmt = src_color_format,
                             .dst_fmt = dst_color_format,
                             .downscale = downscale,
+                            .use_32x32 = false,
                         },
                     },
                 },
@@ -436,7 +438,8 @@ pub const TransferItem = struct {
                 src_fmt: pica.ColorFormat,
                 dst_fmt: pica.ColorFormat,
                 downscale: pica.MemoryCopy.Flags.Downscale,
-                _: u22 = 0,
+                use_32x32: bool = false,
+                _: u21 = 0,
             },
         },
     };

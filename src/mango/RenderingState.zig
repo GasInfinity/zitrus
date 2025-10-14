@@ -5,7 +5,7 @@ pub const UniformLocation = enum {
 };
 
 pub const Dirty = packed struct(u32) {
-    rendering_data: bool = false,
+    begin_rendering: bool = false,
     vertex_buffers: bool = false,
     uniforms: u6 = 0,
     texture_units: u3 = 0,
@@ -20,6 +20,10 @@ pub const Dirty = packed struct(u32) {
 
     pub fn isUniformsDirty(dirty: Dirty, stage: mango.ShaderStage, location: UniformLocation) bool {
         return (dirty.uniforms & (@as(u6, 1) << @intCast(@intFromEnum(stage) * std.enums.values(UniformLocation).len + @intFromEnum(location)))) != 0;
+    }
+
+    pub fn isStageUniformsDirty(dirty: Dirty, stage: mango.ShaderStage) bool {
+        return (dirty.uniforms & (@as(u6, 0b111) << @intCast(@intFromEnum(stage) * std.enums.values(UniformLocation).len))) != 0;
     }
 
     pub fn isAnyUniformsDirty(dirty: Dirty) bool {
@@ -116,15 +120,15 @@ dirty: Dirty,
 pub fn beginRendering(rnd: *RenderingState, rendering_info: mango.RenderingInfo) void {
     rnd.color_attachment = .fromHandle(rendering_info.color_attachment);
     rnd.depth_stencil_attachment = .fromHandle(rendering_info.depth_stencil_attachment);
-    rnd.dirty.rendering_data = true;
+    rnd.dirty.begin_rendering = true;
 }
 
 /// returns if any draw call has been issued between `beginRendering` and this call.
 pub fn endRendering(rnd: *RenderingState) bool {
-    defer rnd.dirty.rendering_data = false;
+    defer rnd.dirty.begin_rendering = false;
 
     // If this is not dirty then at least one draw call has been issued.
-    return !rnd.dirty.rendering_data;
+    return !rnd.dirty.begin_rendering;
 }
 
 pub fn bindVertexBuffers(rnd: *RenderingState, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
@@ -243,6 +247,39 @@ pub fn bindLightFactors(rnd: *RenderingState, light_factors: []const mango.Light
     rnd.dirty.light_factors = true;
 }
 
+/// Returns the maximum amount of words the next dirty emission will take.
+///
+/// Its a safe upper bound, not the exact amount needed.
+pub fn maxEmitDirtyQueueLength(rnd: *RenderingState) usize {
+    // NOTE: This must be FAST as its always checked every drawcall!
+    // TODO: Optimize this
+    const dirty = &rnd.dirty;
+
+    // zig fmt: off
+    var cost: usize = (@as(usize, @intFromBool(dirty.begin_rendering)) * 8)
+                    + (@as(usize, @intFromBool(dirty.light_environment_factors)) * 2)
+                    + (@as(usize, @intFromBool(dirty.light_factors or dirty.light_parameters)) * rnd.lighting_state.configured) * 30
+                    + (@as(usize, @intFromBool(dirty.vertex_buffers)) * (rnd.misc.vertex_buffers_dirty_end - rnd.misc.vertex_buffers_dirty_start)) * 6;
+    // zig fmt: on
+
+    for (std.enums.values(mango.ShaderStage)) |stage| {
+        if (dirty.isStageUniformsDirty(stage)) {
+            const bool_dirty: usize = @intFromBool(dirty.isUniformsDirty(stage, .bool));
+            const int_dirty: usize = @intFromBool(dirty.isUniformsDirty(stage, .int));
+
+            cost += (rnd.uniform_state.floating_dirty.getPtr(stage).count() * 8) + (int_dirty * 8) + (bool_dirty * 4);
+        }
+    }
+
+    if (dirty.isAnyTextureUnitDirty()) {
+        for (0..3) |i| {
+            cost += @as(usize, @intFromBool(dirty.isTextureUnitDirty(@intCast(i)))) * 10;
+        }
+    }
+
+    return cost;
+}
+
 pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
     const dirty = &rnd.dirty;
 
@@ -349,7 +386,7 @@ pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
         }
     }
 
-    if (dirty.rendering_data) {
+    if (dirty.begin_rendering) {
         const color_width: u16, const color_height: u16, const color_physical_address: PhysicalAddress = if (rnd.color_attachment.data.valid) info: {
             @branchHint(.likely);
             const color_attachment: backend.ImageView = rnd.color_attachment;
@@ -369,7 +406,7 @@ pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
             std.debug.assert(color_width == depth_stencil_width and color_height == depth_stencil_height);
         }
 
-        const width, const height = if (color_width == 0)
+        const width, const height = if (color_width != 0)
             .{ color_width, color_height }
         else
             .{ depth_stencil_width, depth_stencil_height };

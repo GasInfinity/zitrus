@@ -604,11 +604,6 @@ pub const TextureUnitTexture3Coordinates = enum(u2) {
     @"2",
 };
 
-pub const FramebufferBlockSize = enum(u1) {
-    @"8x8",
-    @"32x32",
-};
-
 pub const MemoryFill = extern struct {
     pub const Control = packed struct(u16) {
         pub const none: Control = .{ .busy = false, .width = .@"16" };
@@ -695,6 +690,7 @@ pub const Graphics = extern struct {
     };
 
     pub const Rasterizer = extern struct {
+        pub const Mode = enum(u2) { normal, interlace, wireframe, normal_2 };
         pub const ClippingPlane = extern struct {
             /// Enable the clipping plane
             enable: LsbRegister(bool),
@@ -703,9 +699,9 @@ pub const Graphics = extern struct {
         };
 
         pub const Status = extern struct {
-            num_vertices_received: u32,
-            num_triangles_received: u32,
-            num_triangles_displayed: u32,
+            vertices_received: u32,
+            triangles_received: u32,
+            triangles_displayed: u32,
         };
 
         pub const Scissor = extern struct {
@@ -747,6 +743,19 @@ pub const Graphics = extern struct {
             bias: LsbRegister(F7_16),
         };
 
+        pub const UndocumentedConfig0 = packed struct(u32) {
+            _unknown0: bool = false,
+            _unused0: u7 = 0,
+            /// Sometimes interlaces, sometimes skips pixels.
+            /// Depends on how the GPU feels that day.
+            dirty_interlace_skip: bool = false,
+            /// Weird, it "enables" some sort of wireframe in the rasterizer,
+            /// it does NOT convert triangles to lines as clipped triangles will
+            /// be correctly splitted, is purely a rasterizer thing.
+            dirty_wireframe: bool,
+            _unused1: u22 = 0,
+        };
+
         cull_config: LsbRegister(CullMode),
         /// `Width / 2.0`, used for scaling vertex coordinates.
         viewport_h_scale: LsbRegister(F7_16),
@@ -764,22 +773,31 @@ pub const Graphics = extern struct {
         depth_map: DepthMap,
         shader_output_map_total: LsbRegister(u3),
         shader_output_map_output: [7]OutputMap,
-        _unknown2: [3]u32,
+        _unknown2: u32,
+        shader_output_map_qualifiers: u32, // According to GBATEK this allows you to use the flat qualifier in output colors.
+        _unknown3: u32,
         status: Status,
-        _unknown3: [4]u32,
+        _unknown4: [3]u32,
+        config: UndocumentedConfig0,
+        /// So early depth somehow has a separate internal buffer that must be cleared.
+        /// From tests it looks like it has MUCH LESS precision and literally breaks with anything,
+        /// 32x32 is needed. Overall, is it really needed?
+        ///
+        /// I don't know what engineers were smoking but it has too many false fails, discarding lots of fragments.
+        /// XXX: No more can be said, this is vaulted until new info comes out.
         early_depth_function: LsbRegister(EarlyDepthCompareOperation),
-        early_depth_test_enable_1: LsbRegister(bool),
+        early_depth_test_enable: LsbRegister(bool),
         early_depth_clear: LsbRegister(Trigger),
         shader_output_attribute_mode: OutputAttributeMode,
         scissor: Scissor,
         /// Viewport origin, origin is bottom-left.
         viewport_xy: [2]u16,
-        _unknown4: u32,
-        early_depth_data: u32,
-        _unknown5: [2]u32,
+        _unknown8: u32,
+        early_depth_data: LsbRegister(u24),
+        _unknown9: [2]u32,
         depth_map_mode: LsbRegister(DepthMap.Mode),
         /// Does not seem to have an effect but it's still documented like this
-        _unused_render_buffer_dimensions: u32,
+        _unused_render_buffer_dimensions: u32, // XXX: Why would the rasterizer need output dimensions?
         shader_output_attribute_clock: OutputAttributeClock,
     };
 
@@ -966,6 +984,7 @@ pub const Graphics = extern struct {
         pub const Blend = enum(u1) { logic, blend };
         pub const Mode = enum(u2) { default, gas, shadow = 3 };
         pub const Interlace = enum(u1) { disable, even };
+        pub const BlockSize = enum(u1) { @"8x8", @"32x32" };
 
         pub const Config = packed struct(u32) {
             mode: Mode,
@@ -1086,7 +1105,7 @@ pub const Graphics = extern struct {
         color_format: ColorBufferFormat,
         early_depth_test_enable: LsbRegister(bool),
         _unknown1: [2]u32,
-        block_size: LsbRegister(FramebufferBlockSize),
+        block_size: LsbRegister(BlockSize),
         depth_location: AlignedPhysicalAddress(.@"64", .@"8"),
         color_location: AlignedPhysicalAddress(.@"64", .@"8"),
         dimensions: RenderBufferDimensions,

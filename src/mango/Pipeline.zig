@@ -104,8 +104,9 @@ pub const Graphics = struct {
 
         // NOTE: It doesn't make sense to set p3d.geometry_pipeline.start_draw_function to config mode always, what do you do more, pipeline changes or drawcalls bro? (silly question)
         gfx_queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
-        // TODO: Investigate early depth. Why no one is using it? It can bring lots of performance by skipping stages (unless it doesn't work like in 99% of gpus)
-        gfx_queue.add(p3d, &p3d.rasterizer.early_depth_test_enable_1, .init(false));
+        // XXX: Early depth looks borked. Either it has some major bugs or literally no precision.
+        // See comment in the rasterizer regs.
+        gfx_queue.add(p3d, &p3d.rasterizer.early_depth_test_enable, .init(false));
         gfx_queue.add(p3d, &p3d.output_merger.early_depth_test_enable, .init(false));
 
         if (!dyn.light_environment) {
@@ -415,6 +416,8 @@ pub const Graphics = struct {
                     .depth_write_enable = false,
                 });
             } else if(!dyn.depth_compare_op and !dyn.depth_write_enable) {
+                // gfx_queue.add(p3d, &p3d.rasterizer.early_depth_function, .init(alpha_depth_stencil_state.depth_compare_op.nativeEarlyDepth()));
+
                 gfx_queue.add(p3d, &p3d.output_merger.depth_color_config, .{
                     .enable_depth_test = true,
                     .depth_op = alpha_depth_stencil_state.depth_compare_op.native(),

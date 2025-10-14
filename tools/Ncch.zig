@@ -10,7 +10,7 @@ const Subcommand = enum {
 
 pub fn main(args: Ncch, arena: std.mem.Allocator) !u8 {
     return switch (args.@"-") {
-        .dump => |d| d.main(arena),
+        inline else => |s| s.main(arena),
     };
 }
 

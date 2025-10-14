@@ -13,7 +13,8 @@ pub const max_swapchain_images = 3;
 
 pub const max_present_queue_items = max_swapchain_images * max_swapchain_image_layers;
 
-pub const safe_native_command_buffer_upper_bound = 512;
+/// It is asserted that draw call emissions won't take more than this amount of words.
+pub const max_native_drawcall_cost = 20;
 
 pub const PresentationEngine = @import("PresentationEngine.zig");
 

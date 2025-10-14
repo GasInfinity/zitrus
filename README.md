@@ -167,18 +167,16 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 - 🟢 `Buffer`s
 - 🟢 `Sampler`
 - 🟢 `Image`s / ImageViews
+- 🟢 `CommandPool`s
 - 🟡 `Pipeline`s
     - 🟢 Lighting
     - 🔴 Shadows
     - 🔴 Geometry shaders
     - 🔴 Fog
     - 🔴 Gas
-- 🟡 `CommandPool`s
-    - 🟢 `CommandBuffer` recycling
-    - 🔴 Native buffer pooling/reusing
-    - 🔴 Prewarm parameters.
 - 🟡 `CommandBuffer`s
     - 🔴 Shadow Rendering
+    - 🔴 Gas Rendering
     - 🟡 Image Sampling
         - 🔴 Shadow textures
         - 🔴 Cubemaps
