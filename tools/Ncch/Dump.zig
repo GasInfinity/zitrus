@@ -15,42 +15,51 @@ const Region = enum {
 pub const descriptions = .{
     .output = "Output filename. If not specified stdout will be used.",
     .minify = "Emit the neccesary whitespace only",
+    .region = "NCCH region to dump",
 };
 
 pub const switches = .{
     .output = 'o',
     .minify = 'm',
+    .region = 'r',
 };
 
-minify: bool = false,
 output: ?[]const u8 = null,
+minify: bool = false,
+region: Region,
 
 @"--": struct {
-    ncch: []const u8,
-    region: Region,
+    pub const descriptions = .{
+        .input = "The NCCH file, if none stdin is used",
+    };
+
+    input: ?[]const u8 = null,
 },
 
 pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     const cwd = std.fs.cwd();
 
-    const ncch_file = cwd.openFile(args.@"--".ncch, .{ .mode = .read_only }) catch |err| {
-        std.debug.print("Could not open ncch '{s}': {t}\n", .{ args.@"--".ncch, err });
-        return 1;
-    };
-    defer ncch_file.close();
+    const input_file, const input_should_close = if (args.@"--".input) |in|
+        .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
+            log.err("could not open NCCH '{s}': {t}", .{ in, err });
+            return 1;
+        }, true }
+    else
+        .{ std.fs.File.stdin(), false };
+    defer if(input_should_close) input_file.close();
 
     var in_buf: [4096]u8 = undefined;
-    var ncch_reader = ncch_file.reader(&in_buf);
+    var ncch_reader = input_file.reader(&in_buf);
     const reader = &ncch_reader.interface;
 
     const header = try reader.takeStruct(ncch.Header, .little);
 
     if (!header.check()) {
-        std.debug.print("Invalid/Corrupted NCCH '{s}', header check failed\n", .{args.@"--".ncch});
+        log.err("invalid/corrupted NCCH, header check failed.", .{});
         return 1;
     }
 
-    const offset: u64, const size: u64, const hash_region_size, const hash = switch (args.@"--".region) {
+    const offset: u64, const size: u64, const hash_region_size, const hash = switch (args.region) {
         .settings => .{ @sizeOf(ncch.Header), header.extended_header_size, header.extended_header_size, &header.extended_header_hash },
         .plain => .{ @as(u64, header.plain_region_offset) * ncch.media_unit, @as(u64, header.plain_region_size) * ncch.media_unit, 0x00, &.{} },
         .logo => .{ @as(u64, header.logo_region_size) * ncch.media_unit, @as(u64, header.logo_region_size) * ncch.media_unit, @as(u64, header.logo_region_size) * ncch.media_unit, &.{} },
@@ -59,7 +68,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     };
 
     if (offset == 0x00 or size == 0x00) {
-        std.debug.print("NCCH does not contain a '{t}' region.\n", .{args.@"--".region});
+        log.err("NCCH does not contain a '{t}' region.", .{args.region});
         return 1;
     }
 
@@ -70,7 +79,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
 
     if (hash.len > 0) {
         if (hash_region_size > size) {
-            std.debug.print("Invalid NCCH hash '{t}' size {} > {}", .{ args.@"--".region, hash_region_size, size });
+            log.err("invalid NCCH hash for '{t}' size {} > {}", .{ args.region, hash_region_size, size });
             return 1;
         }
 
@@ -78,29 +87,29 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         std.crypto.hash.sha2.Sha256.hash(region_data[0..hash_region_size], &real_hash, .{});
 
         if (!std.mem.eql(u8, hash, &real_hash)) {
-            std.debug.print("NCCH '{t}' is corrupted, their hashes don't match.\n", .{args.@"--".region});
+            log.err("stored hash for '{t}' does not match the newly computed hash, contents may be corrupted", .{args.region});
             return 1;
         }
     }
 
-    const output_file, const close: bool = if (args.output) |out| .{ cwd.createFile(out, .{}) catch |err| {
-        std.debug.print("Could not open output file '{s}': {t}\n", .{ args.@"--".ncch, err });
-        return 1;
-    }, true } else .{ std.fs.File.stdout(), false };
-
-    defer if (close) output_file.close();
+    const output_file, const output_should_close = if (args.output) |out|
+        .{ cwd.createFile(out, .{}) catch |err| {
+            log.err("could not open output file '{s}': {t}", .{ out, err });
+            return 1;
+        }, true }
+    else
+        .{ std.fs.File.stdout(), false };
+    defer if (output_should_close) output_file.close();
 
     var out_buf: [4096]u8 = undefined;
     var output_writer = output_file.writer(&out_buf);
     const writer = &output_writer.interface;
 
-    switch (args.@"--".region) {
+    switch (args.region) {
         .settings => {
             const exheader: *ncch.ExtendedHeader = @alignCast(std.mem.bytesAsValue(ncch.ExtendedHeader, region_data));
 
-            if (builtin.cpu.arch.endian() != .little) {
-                std.mem.byteSwapAllFields(ncch.ExtendedHeader, exheader);
-            }
+            if (builtin.cpu.arch.endian() != .little) std.mem.byteSwapAllFields(ncch.ExtendedHeader, exheader);
 
             const access_descriptor = try reader.takeStruct(ncch.AccessDescriptor, .little);
 
@@ -158,6 +167,9 @@ comptime {
 }
 
 const Dump = @This();
+
+const log = std.log.scoped(.ncch);
+
 const Settings = @import("Settings.zig");
 
 const builtin = @import("builtin");

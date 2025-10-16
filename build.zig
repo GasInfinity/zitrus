@@ -225,7 +225,7 @@ fn buildTests(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Compil
                 },
             }),
         });
-        tests_exe.link_emit_relocs = true;
+        tests_exe.pie = true;
         tests_exe.setLinkerScript(b.path(target.arm11.horizon.linker_script));
 
         const tests_3dsx = Make3dsx.initInner(b, .{

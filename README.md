@@ -39,8 +39,8 @@ const exe = b.addExecutable(.{
     }),
 });
 
-// Needed for 3DSX's
-exe.link_emit_relocs = true;
+// 3DSX's are PIE's
+exe.pie = true;
 
 // Needed for any binary which targets the 3DS
 exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
@@ -106,13 +106,13 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 
 ## Formats (+ Tooling)
 - 🟢 Smdh (tools/Smdh): Make / Dump
-- 🟢 3dsx (tools/3dsx): Make 
+- 🟢 3dsx (tools/3dsx): Make / Dump
 - 🟢 Zpsh (tools/Pica): Make. Specific to zitrus, **Z**itrus**P**ica**SH**ader. Used in mango
 - 🟡 Firm (tools/Firm): Info
-- 🟡 Ncch (tools/Ncch): Dump (Info)
+- 🟡 Ncch (tools/Ncch): Dump (/ Info)
     - 🟡 ExeFS (tools/ExeFs): Info / Dump
-    - 🟡 RomFS (tools/RomFs): Make / Ls
-- 🟡 LZrev: Decompression
+    - 🟢 RomFS (tools/RomFs): Make / List / Dump
+- 🟡 LZrev (tools/LzRev): Decompression
 
 ## Horizon
 

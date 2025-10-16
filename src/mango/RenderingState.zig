@@ -543,17 +543,18 @@ fn emitDirtyUniforms(rnd: *RenderingState, queue: *command.Queue) void {
         for (std.enums.values(UniformLocation)) |location| if (dirty.isUniformsDirty(stage, location)) switch (location) {
             .bool => queue.add(p3d, &registers.bool_uniforms, .init(@bitCast(rnd.uniform_state.boolean_constants.get(stage).bits))),
             .int => queue.add(p3d, &registers.int_uniforms[0..4].*, rnd.uniform_state.integer_constants.get(stage).values),
-            .float => emitFloatUniforms(rnd.uniform_state.floating_dirty.get(stage), rnd.uniform_state.floating_constants.getPtr(stage), registers, queue),
+            .float => emitFloatUniforms(rnd.uniform_state.floating_dirty.getPtr(stage), rnd.uniform_state.floating_constants.getPtr(stage), registers, queue),
         };
     }
 }
 
-fn emitFloatUniforms(flt_dirty: std.EnumSet(pica.shader.register.Source.Constant), flt_constants: *std.EnumArray(pica.shader.register.Source.Constant, [4]f32), shader: *pica.Graphics.Shader, queue: *command.Queue) void {
+fn emitFloatUniforms(flt_dirty: *std.EnumSet(pica.shader.register.Source.Constant), flt_constants: *std.EnumArray(pica.shader.register.Source.Constant, [4]f32), shader: *pica.Graphics.Shader, queue: *command.Queue) void {
     var last_const: ?pica.shader.register.Source.Constant = null;
 
     var it = flt_dirty.iterator();
     while (it.next()) |f| {
-        if (last_const == null or (@intFromEnum(last_const.?) > @intFromEnum(f)) or (@intFromEnum(f) - @intFromEnum(last_const.?)) != 1) {
+        // NOTE: We iterate in index order, `last_const` will always either be null or lower than `f`
+        if (last_const == null or (@intFromEnum(f) - @intFromEnum(last_const.?)) != 1) {
             queue.add(p3d, &shader.float_uniform_index, .{
                 .index = f,
                 .mode = .f8_23,
@@ -569,6 +570,8 @@ fn emitFloatUniforms(flt_dirty: std.EnumSet(pica.shader.register.Source.Constant
         queue.add(p3d, &shader.float_uniform_data[0..4].*, @bitCast(constants.*));
         last_const = f;
     }
+
+    flt_dirty.* = .initEmpty();
 }
 
 const RenderingState = @This();

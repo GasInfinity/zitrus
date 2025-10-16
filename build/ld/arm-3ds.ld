@@ -80,4 +80,16 @@ SECTIONS
 	.tbss : {
 		*(.tbss*)
 	} : data : tls
+
+	/*
+	* We won't relocate the PIE at run-time.
+	*
+	* As relocations are applied when post-processing it at build-time, we won't load them.
+	* */
+	.dynamic : { *(.dynamic) } : NONE
+	.rel.dyn : { *(.rel.dyn) } : NONE
+	.gnu.hash : { *(.gnu.hash) } : NONE
+	.hash : { *(.hash) } : NONE
+	.dynstr : { *(.dynstr) } : NONE
+	.dynsym : { *(.dynsym) } : NONE
 }

@@ -401,9 +401,9 @@ pub const Scene = struct {
             });
 
             const light_position: [4]f32 = .{ sin_time * 4, 2, cos_time * 4, 1 };
-
             const light_vector = @as([4]f32, zmath.mat.mulVec(camera_view, light_position))[0..3].*;
 
+            // You can either do lighting in view-space or world-space.
             cmd.bindLights(&.{.{
                 .vector = light_vector,
                 .type = .positional,
@@ -418,11 +418,14 @@ pub const Scene = struct {
                 .geometric = .none,
             }});
 
+            // Projection is shared by all models.
             cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(.right, std.math.degreesToRadians(90.0), 240.0 / 400.0, 50, 1));
+
+            // Now each model will have a different modelView matrix. We don't upload the matrix as MVP as we are transforming normals.
+            // TODO: Separate normal matrix!
             cmd.bindFloatUniforms(.vertex, 4, &camera_view);
             scene.cube_mesh.draw(cmd);
 
-            cmd.bindFloatUniforms(.vertex, 0, &zmath.mat.perspRotate90Cw(.right, std.math.degreesToRadians(90.0), 240.0 / 400.0, 50, 1));
             cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.mul(camera_view, zmath.mat.translate(4, 0, 1)));
             scene.cube_mesh.draw(cmd);
         }

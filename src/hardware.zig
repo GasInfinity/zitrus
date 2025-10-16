@@ -25,11 +25,11 @@ pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, com
         pub const alignment = address_alignment;
         pub const shift = address_shift;
 
-        pub fn fromAddress(address: usize) AlignedPhysAddr {
+        pub inline fn fromAddress(address: usize) AlignedPhysAddr {
             return .fromPhysical(@as(PhysicalAddress, @enumFromInt(address)));
         }
 
-        pub fn fromPhysical(aligned_address: anytype) AlignedPhysAddr {
+        pub inline fn fromPhysical(aligned_address: anytype) AlignedPhysAddr {
             const OtherAlignedPhysAddr = @TypeOf(aligned_address);
 
             if (@typeInfo(OtherAlignedPhysAddr) != .@"enum" or !@hasDecl(OtherAlignedPhysAddr, "alignment") or !@hasDecl(OtherAlignedPhysAddr, "shift"))
@@ -62,7 +62,7 @@ pub fn LsbRegister(comptime T: type) type {
         value: T,
         _: std.meta.Int(.unsigned, @bitSizeOf(u32) - @bitSizeOf(T)) = 0,
 
-        pub fn init(value: T) Lsb {
+        pub inline fn init(value: T) Lsb {
             return .{ .value = value };
         }
     };
@@ -78,7 +78,7 @@ pub fn MsbRegister(comptime T: type) type {
         _: std.meta.Int(.unsigned, @bitSizeOf(u32) - @bitSizeOf(T)) = 0,
         value: T,
 
-        pub fn init(value: T) Msb {
+        pub inline fn init(value: T) Msb {
             return .{ .value = value };
         }
     };

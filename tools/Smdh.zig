@@ -270,18 +270,18 @@ fn processImage(comptime strategy: TilingStrategy, size: usize, dst_pixels: []Bg
 const morton = struct {
     // Basically bits are interleaved
     // 2-dimensional 8-bits example: yxyxyxyx
-    fn toDimensions(comptime T: type, comptime dimensions: usize, morton_index: T) [dimensions]std.meta.Int(.unsigned, @divExact(@bitSizeOf(T), dimensions)) {
+    fn toDimensions(comptime T: type, comptime dimensions: usize, value: T) [dimensions]std.meta.Int(.unsigned, @divExact(@bitSizeOf(T), dimensions)) {
         std.debug.assert(@typeInfo(T) == .int);
         const DecomposedInt = std.meta.Int(.unsigned, @divExact(@bitSizeOf(T), dimensions));
 
         var values: [dimensions]DecomposedInt = @splat(0);
-        var current_index = morton_index;
+        var current_value = value;
         inline for (0..@bitSizeOf(T)) |i| {
             const shift = i / dimensions;
             const set = &values[i % dimensions];
 
-            set.* |= @intCast((current_index & 0b1) << shift);
-            current_index >>= 1;
+            set.* |= @intCast((current_value & 0b1) << shift);
+            current_value >>= 1;
         }
 
         return values;

@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addAnonymousImport("ground", .{ .root_source_file = b.path("assets/ground.bgr") });
     exe.root_module.addAnonymousImport("titles", .{ .root_source_file = b.path("assets/titles.bgr") });
 
-    exe.link_emit_relocs = true;
+    exe.pie = true;
     exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
     b.installArtifact(exe);
 

@@ -40,8 +40,10 @@ pub const Header = extern struct {
     file_info: HashMetaInfo,
     file_data_offset: u32,
 
+    pub const CheckError = error{InvalidHeaderLength, InvalidDataAlignment, InvalidDirectoryAlignment, InvalidFileAlignment};
+
     /// Checks if the header is consistent/valid.
-    pub fn check(hdr: Header) !void {
+    pub fn check(hdr: Header) CheckError!void {
         if (hdr.length != @sizeOf(Header)) return error.InvalidHeaderLength;
         if (!std.mem.isAligned(hdr.file_data_offset, Header.min_data_alignment)) return error.InvalidDataAlignment;
         if (!hdr.directory_info.isAligned()) return error.InvalidDirectoryAlignment;
@@ -503,6 +505,20 @@ pub const View = struct {
                 .file => view.files.getName(@enumFromInt(@intFromEnum(entry.handle))),
             };
         }
+
+        pub fn asDirectory(entry: Entry) Directory {
+            return switch (entry.kind) {
+                .directory => @enumFromInt(@intFromEnum(entry.handle)),
+                .file => unreachable,
+            };
+        }
+
+        pub fn asFile(entry: Entry) File {
+            return switch (entry.kind) {
+                .directory => unreachable,
+                .file => @enumFromInt(@intFromEnum(entry.handle)),
+            };
+        }
     };
 
     pub const Init = struct {
@@ -510,18 +526,34 @@ pub const View = struct {
         data_offset: u32,
     };
 
+    pub const InitError = error{OverlappingRegions} || Header.CheckError || std.Io.Reader.Error || std.mem.Allocator.Error;
+
     directories: meta.DirectoryView,
     files: meta.FileView,
     directory_hashes: []const meta.DirectoryOffset,
     file_hashes: []const meta.FileOffset,
 
-    /// Reads a `View` of a RomFS from an `std.fs.File.Reader`
-    /// within its current position.
+    const OffsetPair = struct {
+        pub const Kind = enum { directories, files, directory_hashes, file_hashes };
+        
+        kind: Kind,
+        offset: u32,
+        size: u32,
+
+        pub fn init(kind: Kind, offset: u32, size: u32) OffsetPair {
+            return .{ .kind = kind, .offset = offset, .size = size };
+        }
+
+        pub fn lessThan(_: void, a: OffsetPair, b: OffsetPair) bool {
+            return a.offset < b.offset;
+        }
+    };
+
+    /// Reads a `View` of a RomFS from a `std.Io.Reader`.
     ///
-    /// Final seek offset is unaffected if no error is returned.
-    pub fn initFile(file_reader: *std.fs.File.Reader, gpa: std.mem.Allocator) !Init {
-        const initial_offset = file_reader.logicalPos();
-        const hdr = try file_reader.interface.takeStruct(Header, .little);
+    /// If successful, `reader` points to the start of file data (file_data_offset)
+    pub fn initReader(reader: *std.Io.Reader, gpa: std.mem.Allocator) InitError!Init {
+        const hdr = try reader.takeStruct(Header, .little);
 
         try hdr.check();
 
@@ -537,19 +569,32 @@ pub const View = struct {
         const file_hashes = try gpa.alloc(meta.FileOffset, @divExact(hdr.file_info.hash_table_size, @sizeOf(u32)));
         errdefer gpa.free(file_hashes);
 
-        try file_reader.seekTo(initial_offset + hdr.directory_info.hash_table_offset);
-        try file_reader.interface.readSliceEndian(meta.DirectoryOffset, directory_hashes, .little);
+        var offset_pairs: [4]OffsetPair = .{
+            .init(.directories, hdr.directory_info.meta_table_offset, hdr.directory_info.meta_table_size),
+            .init(.files, hdr.file_info.meta_table_offset, hdr.file_info.meta_table_size),
+            .init(.directory_hashes, hdr.directory_info.hash_table_offset, hdr.directory_info.hash_table_size),
+            .init(.file_hashes, hdr.file_info.hash_table_offset, hdr.file_info.hash_table_size),
+        };
 
-        try file_reader.seekTo(initial_offset + hdr.file_info.hash_table_offset);
-        try file_reader.interface.readSliceEndian(meta.FileOffset, file_hashes, .little);
+        std.mem.sort(OffsetPair, &offset_pairs, {}, OffsetPair.lessThan);
 
-        try file_reader.seekTo(initial_offset + hdr.directory_info.meta_table_offset);
-        try file_reader.interface.readSliceEndian(u32, directories, builtin.cpu.arch.endian());
+        var last: usize = @sizeOf(Header);
+        for (&offset_pairs) |pair| {
+            if(last > pair.offset) return error.OverlappingRegions;
+            if(last < pair.offset) try reader.discardAll(pair.offset - last);
 
-        try file_reader.seekTo(initial_offset + hdr.file_info.meta_table_offset);
-        try file_reader.interface.readSliceEndian(u32, files, builtin.cpu.arch.endian());
+            switch (pair.kind) {
+                .directories => try reader.readSliceEndian(u32, directories, .little),
+                .files => try reader.readSliceEndian(u32, files, .little),
+                .directory_hashes => try reader.readSliceEndian(meta.DirectoryOffset, directory_hashes, .little),
+                .file_hashes => try reader.readSliceEndian(meta.FileOffset, file_hashes, .little),
+            }
 
-        try file_reader.seekTo(initial_offset);
+            last = pair.offset + pair.size;
+        }
+
+        if(last > hdr.file_data_offset) return error.OverlappingRegions;
+        if(last < hdr.file_data_offset) try reader.discardAll(hdr.file_data_offset - last);
 
         comptime {
             if (builtin.cpu.arch.endian() != .little) @compileError("TODO: Big endian RomFS meta parsing (post-process)");
@@ -601,7 +646,7 @@ pub const View = struct {
         var it = ComponentIterator.init(path) catch {};
 
         var last_parent: Directory = if (it.root()) |_| .root else parent;
-        var last: []const u16 = (it.next() orelse return error.FileNotFound).name;
+        var last: []const u16 = (it.next() orelse (if(it.root() != null) return .initDirectory(.root) else return error.BadPathName)).name;
 
         while (it.next()) |current| {
             last_parent = if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral(".")))

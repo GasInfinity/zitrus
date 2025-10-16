@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
 
     exe.root_module.addAnonymousImport("6x8-font", .{ .root_source_file = b.path("assets/6x8-bitmap-font.gray") });
 
-    exe.link_emit_relocs = true;
+    exe.pie = true;
     exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
 
     b.installArtifact(exe);

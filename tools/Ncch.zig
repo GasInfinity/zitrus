@@ -2,10 +2,12 @@ pub const description = "Dump / Make NCCH (CXI/CFA) files";
 
 const Subcommand = enum {
     dump,
+    make,
 };
 
 @"-": union(Subcommand) {
     dump: Dump,
+    make: Make,
 },
 
 pub fn main(args: Ncch, arena: std.mem.Allocator) !u8 {
@@ -15,6 +17,7 @@ pub fn main(args: Ncch, arena: std.mem.Allocator) !u8 {
 }
 
 const Dump = @import("Ncch/Dump.zig");
+const Make = @import("Ncch/Make.zig");
 
 const Ncch = @This();
 

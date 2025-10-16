@@ -23,7 +23,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addAnonymousImport("top-screen", .{ .root_source_file = b.path("assets/top.bgr") });
     exe.root_module.addAnonymousImport("bottom-screen", .{ .root_source_file = b.path("assets/bottom.bgr") });
 
-    exe.link_emit_relocs = true;
+    exe.pie = true;
     exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
     b.installArtifact(exe);
 
