@@ -71,6 +71,7 @@ pub fn main(args: LzRev, arena: std.mem.Allocator) !u8 {
     };
 
     try output_writer.interface.writeAll(decompressed);
+    try output_writer.interface.flush();
     return 0;
 }
 

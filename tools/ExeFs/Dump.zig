@@ -105,6 +105,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
 
         try exefs_reader.seekTo(@sizeOf(exefs.Header) + file.offset);
         try exefs_reader.interface.streamExact(&new_writer.interface, file.size);
+        try new_writer.interface.flush();
     }
     return 0;
 }
