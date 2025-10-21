@@ -217,9 +217,7 @@ pub const Graphics = struct {
             }, 0b0010);
 
             gfx_queue.addMasked(p3d, &p3d.primitive_engine.config, .{
-                .geometry_shader_usage = .disabled, // NOTE: Ignored by mask
                 .drawing_triangles = native_topo == .triangle_list,
-                .use_reserved_geometry_subdivision = false, // NOTE: Ignored by mask
             }, 0b0010);
 
             gfx_queue.addMasked(p3d, &p3d.primitive_engine.config_2, .{
@@ -456,15 +454,19 @@ pub const Graphics = struct {
             const combiners = texture_combiner_state.texture_combiners[0..texture_combiner_state.texture_combiners_len];
             const combiner_buffer_sources = texture_combiner_state.texture_combiner_buffer_sources[0..texture_combiner_state.texture_combiner_buffer_sources_len];
 
-            const native_combiners: TextureCombinerState = .compile(combiners, combiner_buffer_sources);
+            const compiled: TextureCombinerState = .compile(combiners, combiner_buffer_sources);
 
             // TODO: Merge / Investigate z_flip. shading_density_source and fog mode
-            gfx_queue.add(p3d, &p3d.texture_combiners.config, native_combiners.config);
+            gfx_queue.add(p3d, &p3d.texture_combiners.config, compiled.config);
 
-            inline for (0..6) |i| {
-                const current_combiner_unit = &@field(p3d.texture_combiners, std.fmt.comptimePrint("{}", .{i}));
+            const combiner_regs = &p3d.texture_combiners;
 
-                gfx_queue.add(p3d, current_combiner_unit, native_combiners.units[i]);
+            const units: []const *pica.Graphics.TextureCombiners.Unit = &.{ &combiner_regs.@"0", &combiner_regs.@"1", &combiner_regs.@"2", &combiner_regs.@"3", &combiner_regs.@"4", &combiner_regs.@"5" };
+            const units_start: usize = units.len - compiled.configured;
+
+            var i: u8 = 0;
+            while (i < compiled.configured) : (i += 1) {
+                gfx_queue.add(p3d, units[units_start + i], compiled.units[i]);
             }
         }
 
@@ -731,7 +733,7 @@ pub const CompiledShaderInfo = struct {
 
 pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, comptime shader: *pica.Graphics.Shader, queue: *command.Queue) !CompiledShaderInfo {
     const requested_entrypoint_name = state.name[0..state.name_len];
-    const parsed: zpsh.Parsed = .initBuffer(state.code[0..state.code_len]);
+    const parsed = zpsh.Parsed.initBuffer(state.code[0..state.code_len]) catch return error.ValidationFailed;
 
     const found_entrypoint = ent: {
         var entry_it = parsed.entrypointIterator();

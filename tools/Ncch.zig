@@ -1,4 +1,4 @@
-pub const description = "Dump / Make NCCH (CXI/CFA) files";
+pub const description = "Make / Dump NCCH (CXI/CFA) files";
 
 const Subcommand = enum {
     dump,

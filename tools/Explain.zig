@@ -1,4 +1,4 @@
-pub const description = "Explain Horizon things";
+pub const description = "Explain things";
 
 const Subcommand = enum { result };
 

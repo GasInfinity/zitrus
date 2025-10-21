@@ -13,8 +13,8 @@
             .hash = "zsflt-0.0.1-_pCibQ4wAABnfZskVOk2Y14F056VNJtuqVpAEzUNBGfl",
         },
         .zdap = .{
-            .url = "git+https://github.com/GasInfinity/zdap#1b1fc477d2506d979ec38356f41a976693de3f2e",
-            .hash = "zdap-0.1.0-wEMl7vF7AADjRQP9W--Y4UTCr7mCuYmbCypTGO0HxPue",
+            .url = "git+https://github.com/GasInfinity/zdap.git#3e8e71474bba02338ee850ffe0317d6afbac3f1d",
+            .hash = "zdap-0.2.0-wEMl7t6OAACiAMLX5Tw5A2Q4gGNl3WehCKU7AWjne-sy",
         },
         .zigimg = .{
             .url = "git+https://github.com/zigimg/zigimg.git#d7717b3617d58160635623fe86d4bf86065498e0",

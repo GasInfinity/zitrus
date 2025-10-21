@@ -1,32 +1,14 @@
-pub const description = "Dump / Make / Show an ExeFS";
+pub const description = "Make / List / Dump an ExeFS";
 
 const Subcommand = enum {
-    info,
-    // make,
+    make,
+    ls,
     dump,
 };
 
-pub const Make = struct {
-    pub const description = "Make an ExeFS based on input files.";
-
-    pub const descriptions = .{
-        .output = "The output exefs file",
-    };
-
-    pub const switches = .{
-        .output = 'o',
-    };
-
-    output: []const u8,
-
-    @"--": struct {
-        @"...": []const []const u8,
-    },
-};
-
 @"-": union(Subcommand) {
-    info: Info,
-    // make: Make,
+    make: Make,
+    ls: List,
     dump: Dump,
 },
 
@@ -36,11 +18,9 @@ pub fn main(args: ExeFs, arena: std.mem.Allocator) !u8 {
     };
 }
 
-
 const ExeFs = @This();
-const Info = @import("ExeFs/Info.zig");
+const Make = @import("ExeFs/Make.zig");
+const List = @import("ExeFs/List.zig");
 const Dump = @import("ExeFs/Dump.zig");
 
 const std = @import("std");
-const zitrus = @import("zitrus");
-const exefs = zitrus.horizon.fmt.ncch.exefs;

@@ -8,12 +8,12 @@
 //!
 //! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/ExeFS
 
-pub const max_name_len = 7;
+pub const max_name_len = 8;
 pub const max_files = 10;
 
 pub const Header = extern struct {
     pub const File = extern struct {
-        name: [max_name_len:0]u8,
+        name: [max_name_len]u8,
         /// Offset in bytes from the start of the data.
         offset: u32,
         /// Size in bytes.
@@ -44,7 +44,7 @@ pub const Header = extern struct {
 
     pub const Iterator = struct {
         pub const File = struct {
-            name: [:0]const u8,
+            name: []const u8,
             /// A SHA256 hash calculated over the file contents.
             hash: *const [0x20]u8,
             /// Offset in bytes from the start of the data.
@@ -71,11 +71,18 @@ pub const Header = extern struct {
             }
 
             const file = &it.header.files[it.current];
-            const name = std.mem.span((&file.name).ptr);
 
-            if (name.len == 0 or name.len >= file.name.len) {
-                return null;
-            }
+            const name = blk: {
+                var i: u8 = 0;
+
+                while (i < 8 and file.name[i] != 0) {
+                    i += 1;
+                }
+
+                break :blk file.name[0..i];
+            };
+
+            if (name.len == 0) return null;
 
             defer it.current += 1;
 
@@ -97,11 +104,15 @@ pub const File = struct {
     name: []const u8,
     data: []const u8,
 
-    pub fn fillHeaderName(file: File) [8]u8 {
-        std.debug.assert(file.name < 8);
+    pub fn init(name: []const u8, data: []const u8) File {
+        return .{ .name = name, .data = data };
+    }
+
+    pub fn fillNameBuffer(name: []const u8) [8]u8 {
+        std.debug.assert(name.len <= 8);
         var buf: [8]u8 = undefined;
-        @memcpy(buf[0..file.name.len], file.name);
-        buf[file.name.len] = 0;
+        @memcpy(buf[0..name.len], name);
+        @memset(buf[name.len..], 0);
         return buf;
     }
 };
@@ -111,8 +122,8 @@ pub const File = struct {
 /// Asserts that the amount of files is less than `Header.max_files`,
 /// its file size fits in an `u32` and the accumulated size of all files
 /// is less or equal than `std.math.maxInt(u32)`.
-pub fn write(writer: *std.Io.Writer, files: []const File) void {
-    std.debug.assert(files.len <= Header.max_files);
+pub fn write(writer: *std.Io.Writer, files: []const File) std.Io.Writer.Error!void {
+    std.debug.assert(files.len <= max_files);
 
     var header: Header = std.mem.zeroes(Header);
     var accumulated_offset: u32 = 0;
@@ -121,12 +132,12 @@ pub fn write(writer: *std.Io.Writer, files: []const File) void {
         defer accumulated_offset += @intCast(file.data.len);
 
         header.files[i] = .{
-            .name = file.name,
+            .name = File.fillNameBuffer(file.name),
             .offset = accumulated_offset,
             .size = @intCast(file.data.len),
         };
 
-        std.crypto.hash.sha2.Sha256.hash(file.data, &header.file_hashes[Header.max_files - 1 - i], .{});
+        std.crypto.hash.sha2.Sha256.hash(file.data, &header.file_hashes[max_files - 1 - i], .{});
     }
 
     try writer.writeStruct(header, .little);

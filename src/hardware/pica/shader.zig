@@ -12,16 +12,41 @@ pub const Type = enum(u1) {
     geometry,
 };
 
-pub const GeometryMode = union(Kind) {
+pub const Geometry = union(Kind) {
     pub const Kind = enum {
         point,
-        variable_primitive,
-        fixed_primitive,
+        variable,
+        fixed,
     };
 
-    point: u8,
-    variable_primitive, // TODO
-    fixed_primitive, // TODO
+    pub const Point = struct {
+        inputs: u5,
+    };
+
+    pub const Variable = struct {
+        full_vertices: u5,
+    };
+
+    pub const Fixed = struct {
+        vertices: u5,
+        uniform_start: register.Source.Constant,
+    };
+
+    point: Point,
+    variable: Variable,
+    fixed: Fixed,
+
+    pub fn initPoint(inputs: u5) Geometry {
+        return .{ .point = .{ .inputs = inputs } };
+    }
+
+    pub fn initVariable(full_vertices: u5) Geometry {
+        return .{ .variable = .{ .full_vertices = full_vertices } };
+    }
+
+    pub fn initFixed(vertices: u5, uniform_start: register.Source.Constant) Geometry {
+        return .{ .fixed = .{ .vertices = vertices, .uniform_start = uniform_start } };
+    }
 };
 
 pub const as = @import("shader/as.zig");
@@ -34,10 +59,12 @@ pub const spirv = @import("shader/spirv.zig");
 
 comptime {
     _ = as;
-    _ = Encoder;
+    std.testing.refAllDecls(Encoder);
 
     _ = register;
     _ = encoding;
 
     // _ = spirv;
 }
+
+const std = @import("std");

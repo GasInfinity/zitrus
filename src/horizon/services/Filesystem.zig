@@ -29,6 +29,9 @@ pub const MediaType = enum(u8) {
 
 pub const PathType = enum(i32) {
     pub const SelfNcch = extern struct {
+        pub const romfs_base: SelfNcch = .{ .access = .romfs_base, .data = .empty };
+        pub const romfs_patch: SelfNcch = .{ .access = .romfs_patch, .data = .empty };
+
         pub const Access = extern union {
             pub const Type = enum(u32) {
                 romfs_base,
@@ -42,13 +45,10 @@ pub const PathType = enum(i32) {
             pub const empty = std.mem.zeroes(Access);
 
             pub const Path = extern struct {
-                name: [ncch.exefs.max_name_len:0]u8,
+                name: [ncch.exefs.max_name_len]u8,
 
                 pub fn init(name: []const u8) Path {
-                    var exefs_name: Path = undefined;
-                    @memcpy(&exefs_name.name[0..name.len], name);
-                    exefs_name.name[name.len] = 0;
-                    return exefs_name;
+                    return .{ .name = ncch.exefs.File.fillNameBuffer(name) };
                 }
             };
 
@@ -74,13 +74,7 @@ pub const PathType = enum(i32) {
         access: Access.Type,
         data: Access,
 
-        pub fn romfs_base() SelfNcch {
-            return .{ .access = .romfs_base, .data = .empty };
-        }
-
-        pub fn romfs_patch() SelfNcch {
-            return .{ .access = .romfs_patch, .data = .empty };
-        }
+        comptime { std.debug.assert(@sizeOf(SelfNcch) == 0x0C); }
     };
 
     @"error" = -1,

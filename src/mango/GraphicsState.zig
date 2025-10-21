@@ -13,8 +13,8 @@ pub const Dirty = packed struct(u32) {
     alpha_test: bool = false,
     stencil_config: bool = false,
     stencil_operation: bool = false,
-    texture_update_buffer: bool = false,
-    texture_combiners: bool = false,
+    combiners_config: bool = false,
+    combiners: bool = false,
     texture_config: bool = false,
     _: u15 = 0,
 };
@@ -184,8 +184,8 @@ pub fn setScissor(state: *GraphicsState, scissor: mango.Scissor) void {
 
 pub fn setTextureCombiners(state: *GraphicsState, combiners: []const mango.TextureCombinerUnit, combiner_buffer_sources: []const mango.TextureCombinerUnit.BufferSources) void {
     state.combiners = .compile(combiners, combiner_buffer_sources);
-    state.dirty.texture_update_buffer = true;
-    state.dirty.texture_combiners = true;
+    state.dirty.combiners_config = true;
+    state.dirty.combiners = true;
 }
 
 pub fn setBlendEquation(state: *GraphicsState, blend_equation: mango.ColorBlendEquation) void {
@@ -305,7 +305,7 @@ pub fn setTextureCoordinates(state: *GraphicsState, texture_2_coordinates: mango
 /// Its a safe upper bound, not the exact amount needed.
 pub fn maxEmitDirtyQueueLength(state: *GraphicsState) usize {
     // NOTE: This must be FAST as its always checked every drawcall!
-    return (@as(usize, @intFromBool(state.dirty.texture_combiners)) * 64) + 64;
+    return (@as(usize, @intFromBool(state.dirty.combiners)) * 64) + 64;
 }
 
 pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
@@ -379,13 +379,11 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
         }, 0b0010);
 
         queue.addMasked(p3d, &p3d.primitive_engine.config, .{
-            .geometry_shader_usage = .disabled, // NOTE: Ignored by mask
             .drawing_triangles = primitive_topology == .triangle_list,
-            .use_reserved_geometry_subdivision = false, // NOTE: Ignored by mask
         }, 0b0010);
 
         queue.addMasked(p3d, &p3d.primitive_engine.config_2, .{
-            .drawing_triangles = primitive_topology == .triangle_list, // NOTE: Ignored by mask
+            .drawing_triangles = primitive_topology == .triangle_list,
         }, 0b0010);
     }
 
@@ -454,17 +452,20 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
         });
     }
 
-    if (state.dirty.texture_update_buffer) {
+    if (state.dirty.combiners_config) {
         // NOTE: emission takes 2 words
         queue.add(p3d, &p3d.texture_combiners.config, state.combiners.config);
     }
 
-    if (state.dirty.texture_combiners) {
+    if (state.dirty.combiners) {
         // NOTE: emission takes 8 of words per combiner
-        inline for (0..6) |i| {
-            const current_combiner_unit = &@field(p3d.texture_combiners, std.fmt.comptimePrint("{}", .{i}));
+        const combiner_regs = &p3d.texture_combiners;
+        const units: []const *Graphics.TextureCombiners.Unit = &.{ &combiner_regs.@"0", &combiner_regs.@"1", &combiner_regs.@"2", &combiner_regs.@"3", &combiner_regs.@"4", &combiner_regs.@"5" };
+        const units_start: usize = units.len - state.combiners.configured;
 
-            queue.add(p3d, current_combiner_unit, state.combiners.units[i]);
+        var i: u8 = 0;
+        while (i < state.combiners.configured) : (i += 1) {
+            queue.add(p3d, units[units_start + i], state.combiners.units[i]);
         }
     }
 

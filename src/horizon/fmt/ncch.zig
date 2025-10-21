@@ -275,22 +275,22 @@ pub const ExtendedHeader = extern struct {
         };
 
         pub const Arm9AccessControl = extern struct {
-            pub const Descriptor = enum(u8) {
-                mount_nand,
-                mount_nand_ro,
-                mount_twln,
-                mount_wnand,
-                mount_card_spi,
-                use_sdif3,
-                create_seed,
-                use_card_spi,
-                sd_application,
-                mount_sdmc_write,
-                end = 0xFF,
-                _,
+            pub const Filesystem = packed struct(u32) {
+                mount_nand: bool,
+                mount_nand_ro: bool,
+                mount_twln: bool,
+                mount_wnand: bool,
+                mount_card_spi: bool,
+                use_sdif3: bool,
+                create_seed: bool,
+                use_card_spi: bool,
+                sd_application: bool,
+                mount_sdmc_write: bool,
+                _: u22 = 0,
             };
 
-            descriptors: [15]Descriptor,
+            filesystem: Filesystem,
+            _reserved: [11]u8 = @splat(0xFF),
             version: u8 = 2,
 
             comptime {

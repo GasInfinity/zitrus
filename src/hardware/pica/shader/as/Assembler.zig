@@ -5,18 +5,7 @@ pub const TokenList = std.MultiArrayList(struct {
     start: u32,
 });
 
-pub const EntryInfo = union(pica.shader.Type) {
-    vertex,
-    geometry: pica.shader.GeometryMode,
-};
-
-const Entrypoint = struct {
-    info: EntryInfo,
-    tok_i: u32,
-};
-
 pub const LabelMap = std.StringArrayHashMapUnmanaged(u12);
-pub const EntrypointMap = std.StringArrayHashMapUnmanaged(Entrypoint);
 pub const Outputs = std.EnumMap(register.Destination.Output, pica.OutputMap);
 
 pub const FloatingConstants = std.EnumMap(register.Source.Constant, pica.F7_16x4);
@@ -24,26 +13,41 @@ pub const IntegerConstants = std.EnumMap(register.Integral.Integer, [4]i8);
 pub const BooleanConstants = std.EnumSet(register.Integral.Boolean);
 
 pub const Assembled = struct {
-    pub const ProcessedEntrypoint = struct {
-        pub const Map = std.StringArrayHashMapUnmanaged(ProcessedEntrypoint);
-        info: EntryInfo,
+    pub const Entrypoint = struct {
+        pub const Map = std.StringArrayHashMapUnmanaged(Assembled.Entrypoint);
+        pub const Info = union(pica.shader.Type) {
+            vertex,
+            geometry: pica.shader.Geometry,
+        };
+
+        pub const Constants = struct {
+            pub const empty: Constants = .{
+                .float = .init(.{}),
+                .int = .init(.{}),
+                .bool = .init(.{}),
+            };
+
+            float: FloatingConstants,
+            int: IntegerConstants,
+            bool: BooleanConstants,
+        };
+
+        info: Info,
+        constants: Constants,
+        outputs: Outputs,
         offset: u16,
     };
 
     source: [:0]const u8,
     tokens: TokenList.Slice,
-    entries: ProcessedEntrypoint.Map,
-    outputs: Outputs,
-    flt_const: FloatingConstants,
-    int_const: IntegerConstants,
-    bool_const: BooleanConstants,
+    entrypoints: Assembled.Entrypoint.Map,
     encoded: Encoder,
 
     errors: []const Error,
 
     pub fn deinit(assembled: *Assembled, gpa: std.mem.Allocator) void {
         assembled.tokens.deinit(gpa);
-        assembled.entries.deinit(gpa);
+        assembled.entrypoints.deinit(gpa);
         assembled.encoded.deinit(gpa);
         gpa.free(assembled.errors);
         assembled.* = undefined;
@@ -105,10 +109,6 @@ pub const Assembled = struct {
             .encoder = .init,
             .labels = .empty,
             .entrypoints = .empty,
-            .outputs = .init(.{}),
-            .flt_const = .init(.{}),
-            .int_const = .init(.{}),
-            .bool_const = .initEmpty(),
             .tok_i = 0,
             .inst_i = 0,
         };
@@ -119,7 +119,7 @@ pub const Assembled = struct {
             else => return e,
         };
 
-        var entrypoints: ProcessedEntrypoint.Map = .empty;
+        var entrypoints: Assembled.Entrypoint.Map = .empty;
         errdefer entrypoints.deinit(gpa);
 
         if (assembler.errors.items.len == 0) assemble: {
@@ -140,7 +140,9 @@ pub const Assembled = struct {
                 };
 
                 try entrypoints.put(gpa, entry.key_ptr.*, .{
-                    .info = entry.value_ptr.*.info,
+                    .info = entry.value_ptr.info,
+                    .constants = entry.value_ptr.constants,
+                    .outputs = entry.value_ptr.outputs,
                     .offset = label_offset,
                 });
             }
@@ -150,11 +152,7 @@ pub const Assembled = struct {
             .source = assembler.source,
             .tokens = assembler.tokens,
             .encoded = assembler.encoder.move(),
-            .entries = entrypoints,
-            .outputs = assembler.outputs,
-            .flt_const = assembler.flt_const,
-            .int_const = assembler.int_const,
-            .bool_const = assembler.bool_const,
+            .entrypoints = entrypoints,
             .errors = try assembler.errors.toOwnedSlice(gpa),
         };
     }
@@ -179,6 +177,7 @@ pub const Error = struct {
         expected_dst_register,
         expected_bool_register,
         expected_int_register,
+        expected_float_register,
         expected_output_register,
         expected_uniform_register,
 
@@ -188,6 +187,7 @@ pub const Error = struct {
         cannot_swizzle,
 
         expected_number,
+        number_too_small,
         number_too_big,
 
         expected_semantic,
@@ -200,20 +200,31 @@ pub const Error = struct {
         expected_condition,
         expected_boolean,
         expected_shader_type,
+        expected_geometry_kind,
 
         redefined_label,
         undefined_label,
         label_range_too_big,
 
         redefined_entry,
+        undefined_entry,
 
         expected_directive_or_label_or_mnemonic,
         expected_token,
     };
 };
 
+const Entrypoint = struct {
+    pub const Map = std.StringArrayHashMapUnmanaged(Entrypoint);
+
+    info: Assembled.Entrypoint.Info,
+    constants: Assembled.Entrypoint.Constants,
+    outputs: Outputs,
+    tok_i: u32,
+};
+
 const Directive = enum {
-    /// .entry <label> (TODO: add [gsh/vsh] if gsh <point/variable/fixed> <arg>)
+    /// .entry <label> <vertex/geometry> [point/variable/fixed] [inputs/full_vertices/vertices uniform_start(fX)]
     entry,
     /// .out oX[.mask] <semantic>[.swizzle]
     out,
@@ -233,6 +244,7 @@ const Mnemonic = enum {
         comparison,
         setemit,
         mad,
+        pseudo_binary,
     };
 
     add,
@@ -270,6 +282,8 @@ const Mnemonic = enum {
     cmp,
     mad,
 
+    sub,
+
     pub fn kind(mnemonic: Mnemonic) Kind {
         return switch (mnemonic) {
             .@"break", .nop, .emit, .end => .unparametized,
@@ -280,10 +294,12 @@ const Mnemonic = enum {
             .cmp => .comparison,
             .setemit => .setemit,
             .mad => .mad,
+
+            .sub => .pseudo_binary,
         };
     }
 
-    pub fn toOpcode(mnemonic: Mnemonic) encoding.Instruction.Opcode {
+    pub fn toOpcode(mnemonic: Mnemonic) ?encoding.Instruction.Opcode {
         return switch (mnemonic) {
             .add => .add,
             .dp3 => .dp3,
@@ -317,8 +333,10 @@ const Mnemonic = enum {
             .setemit => .setemit,
             .jmpc => .jmpc,
             .jmpu => .jmpu,
-            .cmp => .cmp,
-            .mad => .mad,
+            .cmp => .cmp0,
+            .mad => .mad0,
+
+            .sub => null,
         };
     }
 
@@ -358,6 +376,8 @@ const Mnemonic = enum {
             .mnemonic_jmpu => .jmpu,
             .mnemonic_cmp => .cmp,
             .mnemonic_mad => .mad,
+
+            .mnemonic_sub => .sub,
             else => unreachable,
         };
     }
@@ -476,11 +496,7 @@ source: [:0]const u8,
 tokens: TokenList.Slice,
 encoder: Encoder,
 labels: LabelMap,
-entrypoints: EntrypointMap,
-outputs: Outputs,
-flt_const: FloatingConstants,
-int_const: IntegerConstants,
-bool_const: BooleanConstants,
+entrypoints: Entrypoint.Map,
 tok_i: u32,
 inst_i: u12,
 
@@ -546,7 +562,7 @@ pub fn passRoot(a: *Assembler) !void {
             };
             continue :root a.tokenTag(a.tok_i);
         },
-        .mnemonic_add, .mnemonic_dp3, .mnemonic_dp4, .mnemonic_dph, .mnemonic_dst, .mnemonic_ex2, .mnemonic_lg2, .mnemonic_litp, .mnemonic_mul, .mnemonic_sge, .mnemonic_slt, .mnemonic_flr, .mnemonic_max, .mnemonic_min, .mnemonic_rcp, .mnemonic_rsq, .mnemonic_mova, .mnemonic_mov, .mnemonic_break, .mnemonic_nop, .mnemonic_end, .mnemonic_breakc, .mnemonic_call, .mnemonic_callc, .mnemonic_callu, .mnemonic_ifu, .mnemonic_ifc, .mnemonic_loop, .mnemonic_emit, .mnemonic_setemit, .mnemonic_jmpc, .mnemonic_jmpu, .mnemonic_cmp, .mnemonic_mad => {
+        .mnemonic_add, .mnemonic_dp3, .mnemonic_dp4, .mnemonic_dph, .mnemonic_dst, .mnemonic_ex2, .mnemonic_lg2, .mnemonic_litp, .mnemonic_mul, .mnemonic_sge, .mnemonic_slt, .mnemonic_flr, .mnemonic_max, .mnemonic_min, .mnemonic_rcp, .mnemonic_rsq, .mnemonic_mova, .mnemonic_mov, .mnemonic_break, .mnemonic_nop, .mnemonic_end, .mnemonic_breakc, .mnemonic_call, .mnemonic_callc, .mnemonic_callu, .mnemonic_ifu, .mnemonic_ifc, .mnemonic_loop, .mnemonic_emit, .mnemonic_setemit, .mnemonic_jmpc, .mnemonic_jmpu, .mnemonic_cmp, .mnemonic_mad, .mnemonic_sub => {
             a.inst_i += 1;
             a.eatUntil(.newline);
             continue :root a.tokenTag(a.tok_i);
@@ -609,6 +625,7 @@ pub fn passAssemble(a: *Assembler) !void {
         .mnemonic_jmpu,
         .mnemonic_cmp,
         .mnemonic_mad,
+        .mnemonic_sub,
         => |mne_tok| {
             defer a.inst_i += 1;
             _ = a.nextToken();
@@ -630,11 +647,12 @@ pub fn passAssemble(a: *Assembler) !void {
 // TODO: relative component handling
 fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
     const opcode = mnemonic.toOpcode();
+    const mnemonic_kind = mnemonic.kind();
 
-    switch (mnemonic.kind()) {
-        .unparametized => try a.encoder.unparametized(a.gpa, opcode),
+    switch (mnemonic_kind) {
+        .unparametized => try a.encoder.unparametized(a.gpa, opcode.?),
         .unary => {
-            const dest: register.Destination, const dst_mask: Component.Mask, const src1_neg: Encoder.Negate, const src1: register.Source, const src1_selector: Component.Selector, const src_rel: register.RelativeComponent = switch (opcode) {
+            const dest: register.Destination, const dst_mask: Component.Mask, const src1_neg: Negation, const src1: register.Source, const src1_selector: Component.Selector, const src_rel: register.AddressComponent = switch (opcode.?) {
                 .mova => mova: {
                     const address_reg = try a.parseMaskedIdentifier();
                     const address_slice = a.tokenSlice(address_reg.identifier_tok_i);
@@ -662,19 +680,26 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
                 },
             };
 
-            try a.encoder.unary(a.gpa, opcode, dest, dst_mask, src1_neg, src1, src1_selector, src_rel);
+            try a.encoder.unary(a.gpa, opcode.?, dest, dst_mask, src1_neg, src1, src1_selector, src_rel);
         },
-        .binary => {
+        .binary, .pseudo_binary => {
             const dst_info = try a.parseDestinationRegister();
             _ = try a.expectToken(.comma);
             const src1_info = try a.parseSourceRegister();
             _ = try a.expectToken(.comma);
             const src2_info = try a.parseSourceRegister();
 
-            try a.encoder.binary(a.gpa, opcode, dst_info.dst, dst_info.mask, src1_info.negated, src1_info.src, src1_info.swizzle, src2_info.negated, src2_info.src, src2_info.swizzle, .none);
+            switch (mnemonic_kind) {
+                .binary => try a.encoder.binary(a.gpa, opcode.?, dst_info.dst, dst_info.mask, src1_info.negated, src1_info.src, src1_info.swizzle, src2_info.negated, src2_info.src, src2_info.swizzle, .none),
+                .pseudo_binary => switch (mnemonic) {
+                    .sub => try a.encoder.binary(a.gpa, .add, dst_info.dst, dst_info.mask, src1_info.negated, src1_info.src, src1_info.swizzle, src2_info.negated.negate(), src2_info.src, src2_info.swizzle, .none),
+                    else => unreachable,
+                },
+                else => unreachable,
+            }
         },
         .flow_conditional => {
-            const num: u8, const dest: u12, const condition: encoding.Condition, const x: bool, const y: bool = values: switch (opcode) {
+            const num: u8, const dest: u12, const condition: encoding.Condition, const x: bool, const y: bool = values: switch (opcode.?) {
                 .breakc => {
                     const condition = try a.parseEnum(encoding.Condition, .expected_condition);
                     _ = try a.expectToken(.comma);
@@ -712,16 +737,16 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
                 },
             };
 
-            try a.encoder.flow(a.gpa, opcode, num, dest, condition, x, y);
+            try a.encoder.flow(a.gpa, opcode.?, num, dest, condition, x, y);
         },
         .flow_uniform => {
-            const i_reg: register.Integral, const num: u8, const dest: u12 = values: switch (opcode) {
+            const i_reg: register.Integral, const num: u8, const dest: u12 = values: switch (opcode.?) {
                 .loop => {
                     const int_info = try a.parseIntegerRegister();
                     _ = try a.expectToken(.comma);
                     const end = try a.parseLabel();
 
-                    break :values .{ .{ .int = .{ .used = int_info.int } }, 0, end.offset - 1 };
+                    break :values .{ .{ .int = .{ .used = int_info.int } }, 0, (end.offset - @sizeOf(encoding.Instruction)) };
                 },
                 .jmpu => {
                     const b_info = try a.parseBooleanRegister();
@@ -741,18 +766,18 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
                 },
             };
 
-            try a.encoder.flowConstant(a.gpa, opcode, num, dest, i_reg);
+            try a.encoder.flowConstant(a.gpa, opcode.?, num, dest, i_reg);
         },
         .comparison => {
             const src1_info = try a.parseSourceRegister();
             _ = try a.expectToken(.comma);
-            const src2_info = try a.parseSourceRegister();
-            _ = try a.expectToken(.comma);
             const x = try a.parseEnum(encoding.ComparisonOperation, .expected_comparison);
             _ = try a.expectToken(.comma);
             const y = try a.parseEnum(encoding.ComparisonOperation, .expected_comparison);
+            _ = try a.expectToken(.comma);
+            const src2_info = try a.parseSourceRegister();
 
-            try a.encoder.cmp(a.gpa, src1_info.negated, src1_info.src, src1_info.swizzle, src2_info.negated, src2_info.src, src2_info.swizzle, .none, x, y);
+            try a.encoder.cmp(a.gpa, src1_info.negated, src1_info.src, src1_info.swizzle, x, y, src2_info.negated, src2_info.src, src2_info.swizzle, .none);
         },
         .setemit => {
             const vtx_id = try a.parseInt(u2, 2);
@@ -806,23 +831,46 @@ fn processDirective(a: *Assembler) !void {
                 const entry_label_tok_i = try a.expectToken(.identifier);
                 const entry_label = a.tokenSlice(entry_label_tok_i);
 
-                if (a.entrypoints.get(entry_label) != null) {
+                const entry_type = try a.parseEnum(shader.Type, .expected_shader_type);
+
+                const info: Assembled.Entrypoint.Info = switch (entry_type) {
+                    .vertex => .vertex,
+                    .geometry => .{ .geometry = blk: {
+                        const kind = try a.parseEnum(shader.Geometry.Kind, .expected_geometry_kind);
+
+                        break :blk switch (kind) {
+                            .point => .initPoint(try a.parseIntBounded(u5, 1, 16)),
+                            .variable => .initVariable(try a.parseIntBounded(u5, 0, std.math.maxInt(u5))),
+                            .fixed => .initFixed(try a.parseIntBounded(u5, 1, 16), try a.parseEnum(register.Source.Constant, .expected_float_register)),
+                        };
+                    } },
+                };
+
+                const gop = try a.entrypoints.getOrPut(a.gpa, entry_label);
+
+                if (gop.found_existing) {
                     return a.failMsg(.{
                         .tag = .redefined_entry,
                         .tok_i = entry_label_tok_i,
                     });
                 }
 
-                const entry_type = try a.parseEnum(shader.Type, .expected_shader_type);
-
-                if (entry_type == .geometry) @panic("TODO: Geometry shaders");
-
-                try a.entrypoints.put(a.gpa, entry_label, .{
-                    .info = .vertex,
+                gop.value_ptr.* = .{
+                    .info = info,
+                    .constants = .empty,
+                    .outputs = .init(.{}),
                     .tok_i = entry_label_tok_i,
-                });
+                };
             },
             .out => {
+                const entry_label_tok_i = try a.expectToken(.identifier);
+                const entry_label = a.tokenSlice(entry_label_tok_i);
+
+                const entry = a.entrypoints.getPtr(entry_label) orelse return a.failMsg(.{
+                    .tag = .undefined_entry,
+                    .tok_i = entry_label_tok_i,
+                });
+
                 const output_masked = try a.parseMaskedIdentifier();
                 const output_slice = a.tokenSlice(output_masked.identifier_tok_i);
 
@@ -832,7 +880,6 @@ fn processDirective(a: *Assembler) !void {
                 });
 
                 const semantic_swizzled = try a.parseSwizzledIdentifier();
-
                 const semantic_slice = a.tokenSlice(semantic_swizzled.identifier_tok_i);
 
                 const semantic = std.meta.stringToEnum(Semantic, semantic_slice) orelse return a.failMsg(.{
@@ -851,7 +898,7 @@ fn processDirective(a: *Assembler) !void {
                     break :sw sw;
                 };
 
-                var current_output_map: pica.OutputMap = a.outputs.get(output_reg) orelse .{
+                var current_output_map: pica.OutputMap = entry.outputs.get(output_reg) orelse .{
                     .x = .unused,
                     .y = .unused,
                     .z = .unused,
@@ -886,9 +933,17 @@ fn processDirective(a: *Assembler) !void {
                     }
                 }
 
-                a.outputs.put(output_reg, current_output_map);
+                entry.outputs.put(output_reg, current_output_map);
             },
             .set => {
+                const entry_label_tok_i = try a.expectToken(.identifier);
+                const entry_label = a.tokenSlice(entry_label_tok_i);
+
+                const entry = a.entrypoints.getPtr(entry_label) orelse return a.warnMsg(.{
+                    .tag = .undefined_entry,
+                    .tok_i = entry_label_tok_i,
+                });
+
                 const uniform_reg = try a.parseEnum(UniformRegister, .expected_uniform_register);
 
                 switch (@intFromEnum(uniform_reg)) {
@@ -904,7 +959,7 @@ fn processDirective(a: *Assembler) !void {
                         _ = try a.expectToken(.r_paren);
 
                         const f_reg: register.Source.Constant = @enumFromInt(@intFromEnum(uniform_reg) - @intFromEnum(UniformRegister.f0));
-                        a.flt_const.put(f_reg, .pack(.of(x), .of(y), .of(z), .of(w)));
+                        entry.constants.float.put(f_reg, .pack(.of(x), .of(y), .of(z), .of(w)));
                     },
                     @intFromEnum(UniformRegister.i0)...@intFromEnum(UniformRegister.i3) => {
                         _ = try a.expectToken(.l_paren);
@@ -918,13 +973,13 @@ fn processDirective(a: *Assembler) !void {
                         _ = try a.expectToken(.r_paren);
 
                         const i_reg: register.Integral.Integer = @enumFromInt(@intFromEnum(uniform_reg) - @intFromEnum(UniformRegister.i0));
-                        a.int_const.put(i_reg, .{ x, y, z, w });
+                        entry.constants.int.put(i_reg, .{ x, y, z, w });
                     },
                     @intFromEnum(UniformRegister.b0)...@intFromEnum(UniformRegister.b15) => {
                         const b_reg: register.Integral.Boolean = @enumFromInt(@intFromEnum(uniform_reg) - @intFromEnum(UniformRegister.b0));
                         const b_value = try a.parseBoolean();
 
-                        a.bool_const.setPresent(b_reg, b_value);
+                        entry.constants.bool.setPresent(b_reg, b_value);
                     },
                     else => unreachable,
                 }
@@ -972,13 +1027,13 @@ fn processDirective(a: *Assembler) !void {
 const SourceRegisterInfo = struct {
     register_tok_i: u32,
 
-    negated: Encoder.Negate,
+    negated: Negation,
     src: register.Source,
     swizzle: Component.Selector,
 };
 
 fn parseSourceRegister(a: *Assembler) !SourceRegisterInfo {
-    const negated: Encoder.Negate = if (a.tokenTag(a.tok_i) == .minus) negated: {
+    const negated: Negation = if (a.tokenTag(a.tok_i) == .minus) negated: {
         _ = a.nextToken();
         break :negated .@"-";
     } else .@"+";
@@ -1177,7 +1232,7 @@ fn parseLabelRange(a: *Assembler) !LabelRangeInfo {
     };
 }
 
-fn parseInt(a: *Assembler, comptime T: type, max_value: T) !T {
+fn parseIntBounded(a: *Assembler, comptime T: type, min_value: T, max_value: T) !T {
     const negate: i2 = if (a.tokenTag(a.tok_i) == .minus) neg: {
         if (@typeInfo(T).int.signedness == .unsigned) return a.fail(.expected_number);
 
@@ -1201,9 +1256,18 @@ fn parseInt(a: *Assembler, comptime T: type, max_value: T) !T {
             .tag = .number_too_big,
             .tok_i = number_literal_tok,
         });
+    } else if(int < min_value) {
+        return a.failMsg(.{
+            .tag = .number_too_small,
+            .tok_i = number_literal_tok,
+        });
     }
 
     return @intCast(int * negate);
+}
+
+fn parseInt(a: *Assembler, comptime T: type, max_value: T) !T {
+    return a.parseIntBounded(T, std.math.minInt(T), max_value);
 }
 
 fn parseFloat(a: *Assembler) !f32 {
@@ -1336,6 +1400,7 @@ const pica = zitrus.hardware.pica;
 const shader = pica.shader;
 
 const encoding = shader.encoding;
+const Negation = encoding.OperandDescriptor.Negation;
 const Component = encoding.Component;
 
 const register = shader.register;

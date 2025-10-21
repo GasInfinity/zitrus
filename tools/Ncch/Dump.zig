@@ -46,7 +46,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         }, true }
     else
         .{ std.fs.File.stdin(), false };
-    defer if(input_should_close) input_file.close();
+    defer if (input_should_close) input_file.close();
 
     var in_buf: [4096]u8 = undefined;
     var ncch_reader = input_file.reader(&in_buf);

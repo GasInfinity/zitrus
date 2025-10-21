@@ -58,26 +58,16 @@ const Titles = struct {
 };
 
 const Rating = union(enum) {
-    pub const inactive: Rating = .{ .unrestricted = .{ .kind = .inactive } };
-    pub const pending: Rating = .{ .unrestricted = .{ .kind = .pending } };
-    pub const no_restriction: Rating = .{ .unrestricted = .{ .kind = .unrestricted } };
+    pub const Restricted = struct { age: u5 };
 
-    pub const Unrestricted = struct {
-        pub const Kind = enum { inactive, pending, unrestricted };
-
-        kind: Kind,
-    };
-
-    pub const Restricted = struct {
-        age: u5,
-    };
-
-    unrestricted: Unrestricted,
+    unrestricted,
+    inactive,
+    pending,
     restricted: Restricted,
 
     pub fn initSmdh(rating: smdh.Rating) Rating {
         return if (rating.no_age_restriction)
-            .no_restriction
+            .unrestricted
         else if (rating.rating_pending)
             .pending
         else if (!rating.active)
@@ -88,12 +78,10 @@ const Rating = union(enum) {
 
     pub fn toSmdh(rating: Rating) smdh.Rating {
         return switch (rating) {
-            .unrestricted => |unrestricted| switch (unrestricted.kind) {
-                .inactive => smdh.Rating.inactive,
-                .pending => smdh.Rating.pending,
-                .unrestricted => smdh.Rating.unrestricted,
-            },
-            .restricted => |restricted| smdh.Rating.restricted(restricted.age),
+            .unrestricted => .unrestricted,
+            .pending => .pending,
+            .inactive => .inactive,
+            .restricted => |restricted| .restricted(restricted.age),
         };
     }
 };

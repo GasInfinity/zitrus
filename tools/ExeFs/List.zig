@@ -21,7 +21,7 @@ check_hash: bool = false,
     input: ?[]const u8,
 },
 
-pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
+pub fn main(args: List, arena: std.mem.Allocator) !u8 {
     const cwd = std.fs.cwd();
     const input_file, const input_should_close = if (args.@"--".input) |in|
         .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
@@ -30,15 +30,15 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
         }, true }
     else
         .{ std.fs.File.stdin(), false };
-    defer if(input_should_close) input_file.close();
+    defer if (input_should_close) input_file.close();
 
-    if(!input_should_close and args.check_hash) {
+    if (!input_should_close and args.check_hash) {
         log.err("cannot check hashes while piping", .{}); // XXX: arbitrary, we could obviously support that by allocating the piped ExeFS contents.
         return 1;
     }
 
     var buf: [4096]u8 = undefined;
-    var input_reader = input_file.reader(&buf);
+    var input_reader = input_file.readerStreaming(&buf); // XXX: Hangs on positional mode with discardAll
     const reader = &input_reader.interface;
 
     var stdout_buf: [4096]u8 = undefined;
@@ -84,7 +84,7 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
     return 0;
 }
 
-const Info = @This();
+const List = @This();
 
 const log = std.log.scoped(.exefs);
 

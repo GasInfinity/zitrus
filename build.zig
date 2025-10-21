@@ -105,11 +105,25 @@ pub fn build(b: *Build) void {
 
     const tools, const tools_exe = buildTools(b, optimize, tools_target, zdap, zigimg, zitrus);
 
-    const tests = b.addTest(.{ .name = "zitrus-tests", .root_module = tools });
+    const mod_tests = b.addTest(.{
+        .name = "zitrus-mod-tests",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/zitrus.zig"),
+            .target = b.resolveTargetQuery(.{}),
+            .imports = &.{
+                .{ .name = "zalloc", .module = zalloc },
+                .{ .name = "zsflt", .module = zsflt },
+            },
+        }),
+    });
+    mod_tests.root_module.addImport("zitrus", mod_tests.root_module);
+    const exe_tests = b.addTest(.{ .name = "zitrus-exe-tests", .root_module = tools });
 
-    const run_tests = b.addRunArtifact(tests);
+    const run_mod_tests = b.addRunArtifact(mod_tests);
+    const run_exe_tests = b.addRunArtifact(exe_tests);
     const run_tests_step = b.step("test", "Runs zitrus tests");
-    run_tests_step.dependOn(&run_tests.step);
+    run_tests_step.dependOn(&run_mod_tests.step);
+    run_tests_step.dependOn(&run_exe_tests.step);
 
     b.installArtifact(tools_exe);
 

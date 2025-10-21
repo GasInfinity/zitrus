@@ -33,7 +33,7 @@ pub fn main(args: List, arena: std.mem.Allocator) !u8 {
         }, true }
     else
         .{ std.fs.File.stdin(), false };
-    defer if(input_should_close) input_file.close();
+    defer if (input_should_close) input_file.close();
 
     var input_buffer: [4096]u8 = undefined;
     var input_reader = input_file.reader(&input_buffer);

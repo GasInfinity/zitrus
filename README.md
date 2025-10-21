@@ -107,10 +107,12 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 ## Formats (+ Tooling)
 - 🟢 Smdh (tools/Smdh): Make / Dump
 - 🟢 3dsx (tools/3dsx): Make / Dump
-- 🟢 Zpsh (tools/Pica): Make. Specific to zitrus, **Z**itrus**P**ica**SH**ader. Used in mango
+- 🟢 Pica (tools/Pica): Assemble / Disassemble
+    - 🟢 Assemble: Only **Z**itrus**P**ica**Sh**aders are implemented as an output format.
+    - 🟢 Disassemble: Outputs **Z**itrus**P**ica**A**sse**m**bly, only ZPSH's can be disassembled currently.
 - 🟡 Firm (tools/Firm): Info
 - 🟡 Ncch (tools/Ncch): Dump (/ Info)
-    - 🟡 ExeFS (tools/ExeFs): Info / Dump
+    - 🟢 ExeFS (tools/ExeFs): Make / List / Dump
     - 🟢 RomFS (tools/RomFs): Make / List / Dump
 - 🟡 LZrev (tools/LzRev): Decompression
 
@@ -183,10 +185,13 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 
 ## Hardware
 
+Whether register bits are present and/or relevant tooling (assemblers, disassemblers, etc...)
+
 - 🟢 CSND
 - 🟢 PXI
 - 🟢 LGY
 - 🟢 HID
+- 🟢 I2C 
 - 🟡 DSP
 - 🟡 PICA200: Missing typing of some documented registers, mostly done.
 

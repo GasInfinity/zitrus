@@ -1,15 +1,21 @@
-pub const empty: TextureCombinerState = .{ .units = undefined, .config = std.mem.zeroes(pica.Graphics.TextureCombiners.Config) };
+pub const empty: TextureCombinerState = .{
+    .config = std.mem.zeroes(pica.Graphics.TextureCombiners.Config),
+    .units = undefined,
+    .configured = 0,
+};
 
-config: pica.Graphics.TextureCombiners.Config,
-units: [6]pica.Graphics.TextureCombiners.Unit,
+config: PicaCombiners.Config,
+units: [6]PicaCombiners.Unit,
+configured: u8,
 
 pub fn compile(combiners: []const mango.TextureCombinerUnit, combiner_buffer_sources: []const mango.TextureCombinerUnit.BufferSources) TextureCombinerState {
     std.debug.assert(combiners.len > 0 and combiners.len <= 6);
     std.debug.assert((combiner_buffer_sources.len == 0 and combiners.len == 1) or (combiner_buffer_sources.len == 4 and combiners.len > 4) or combiner_buffer_sources.len == (combiners.len - 1));
 
     var combiner_state: TextureCombinerState = .{
-        .config = std.mem.zeroes(pica.Graphics.TextureCombiners.Config),
+        .config = std.mem.zeroes(PicaCombiners.Config),
         .units = undefined,
+        .configured = @intCast(combiners.len),
     };
 
     for (combiner_buffer_sources, 0..) |buffer_sources, index| {
@@ -34,3 +40,5 @@ const std = @import("std");
 const zitrus = @import("zitrus");
 const mango = zitrus.mango;
 const pica = zitrus.hardware.pica;
+
+const PicaCombiners = pica.Graphics.TextureCombiners;

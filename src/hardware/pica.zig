@@ -29,6 +29,7 @@ pub const F3_12 = zsflt.Float(3, 12);
 pub const F7_12 = zsflt.Float(7, 12);
 pub const F7_16 = zsflt.Float(7, 16);
 pub const F7_23 = zsflt.Float(7, 23);
+pub const F8_23 = zsflt.Float(8, 23);
 
 pub const Q1_11x2 = packed struct(u32) {
     x: Q1_11,
@@ -66,6 +67,40 @@ pub const F7_16x4 = extern struct {
         std.mem.swap(u32, &vec.data[0], &vec.data[2]);
 
         return vec;
+    }
+
+    pub fn unpack(value: F7_16x4) [4]F7_16 {
+        var unpacked: [3]u32 = value.data;
+        std.mem.swap(u32, &unpacked[0], &unpacked[2]);
+
+        return .{
+            @bitCast(std.mem.readPackedInt(u24, @ptrCast(&unpacked), 0, .little)),
+            @bitCast(std.mem.readPackedInt(u24, @ptrCast(&unpacked), @bitSizeOf(F7_16), .little)),
+            @bitCast(std.mem.readPackedInt(u24, @ptrCast(&unpacked), @bitSizeOf(F7_16) * 2, .little)),
+            @bitCast(std.mem.readPackedInt(u24, @ptrCast(&unpacked), @bitSizeOf(F7_16) * 3, .little)),
+        };
+    }
+};
+
+pub const morton = struct {
+    /// Returns the morton/z-order coordinates for `value`
+    pub fn toDimensions(comptime T: type, comptime dimensions: usize, value: T) [dimensions]std.meta.Int(.unsigned, @divExact(@bitSizeOf(T), dimensions)) {
+        std.debug.assert(@typeInfo(T) == .int);
+        const DecomposedInt = std.meta.Int(.unsigned, @divExact(@bitSizeOf(T), dimensions));
+
+        // Basically bits are interleaved
+        // 2-dimensional 8-bits example: yxyxyxyx
+        var values: [dimensions]DecomposedInt = @splat(0);
+        var current_value = value;
+        inline for (0..@bitSizeOf(T)) |i| {
+            const shift = i / dimensions;
+            const set = &values[i % dimensions];
+
+            set.* |= @intCast((current_value & 0b1) << shift);
+            current_value >>= 1;
+        }
+
+        return values;
     }
 };
 
@@ -468,85 +503,6 @@ pub const IndexFormat = enum(u1) {
     u16,
 };
 
-pub const TextureCombinerSource = enum(u4) {
-    primary_color,
-    fragment_primary_color,
-    fragment_secondary_color,
-    texture_0,
-    texture_1,
-    texture_2,
-    texture_3,
-    previous_buffer = 0xD,
-    constant,
-    previous,
-};
-
-pub const TextureCombinerColorFactor = enum(u4) {
-    src_color,
-    one_minus_src_color,
-    src_alpha,
-    one_minus_src_alpha,
-    src_red,
-    one_minus_src_red,
-    src_green = 8,
-    one_minus_src_green,
-    src_blue = 12,
-    one_minus_src_blue,
-};
-
-pub const TextureCombinerAlphaFactor = enum(u3) {
-    src_alpha,
-    one_minus_src_alpha,
-    src_red,
-    one_minus_src_red,
-    src_green,
-    one_minus_src_green,
-    src_blue,
-    one_minus_src_blue,
-};
-
-pub const TextureCombinerOperation = enum(u4) {
-    /// `src0`
-    replace,
-    /// `src0 * src1`
-    modulate,
-    /// `src0 + src1`
-    add,
-    /// `src0 + src1 - 0.5`
-    add_signed,
-    /// `src0 * src2 + src1 * (1 - src2)`
-    interpolate,
-    /// `src0 - src1`
-    subtract,
-    /// `4 * ((src0r − 0.5) * (src1r − 0.5) + (src0g − 0.5) * (src1g − 0.5) + (src0b − 0.5) * (src1b − 0.5))`
-    dot3_rgb,
-    /// `4 * ((src0r − 0.5) * (src1r − 0.5) + (src0g − 0.5) * (src1g − 0.5) + (src0b − 0.5) * (src1b − 0.5))`
-    dot3_rgba,
-    /// `src0 * src1 + src2` (?)
-    multiply_add,
-    /// `src0 + src1 * src2` (?)
-    add_multiply,
-};
-
-pub const TextureCombinerMultiplier = enum(u2) {
-    @"1x",
-    @"2x",
-    @"4x",
-};
-
-pub const TextureCombinerBufferSource = enum(u1) { previous_buffer, previous };
-
-pub const TextureCombinerFogMode = enum(u3) {
-    disabled,
-    fog = 5,
-    gas = 7,
-};
-
-pub const TextureCombinerShadingDensity = enum(u1) {
-    plain,
-    depth,
-};
-
 pub const TextureUnitFilter = enum(u1) {
     nearest,
     linear,
@@ -896,53 +852,117 @@ pub const Graphics = extern struct {
     };
 
     pub const TextureCombiners = extern struct {
+        pub const FogMode = enum(u3) { disabled, fog = 5, gas = 7 };
+        pub const ShadingDensity = enum(u1) { plain, depth };
+        pub const BufferSource = enum(u1) { previous_buffer, previous };
+        pub const Multiplier = enum(u2) { @"1x", @"2x", @"4x" };
+        pub const Source = enum(u4) {
+            primary_color,
+            fragment_primary_color,
+            fragment_secondary_color,
+            texture_0,
+            texture_1,
+            texture_2,
+            texture_3,
+            previous_buffer = 0xD,
+            constant,
+            previous,
+        };
+
+        pub const ColorFactor = enum(u4) {
+            src_color,
+            one_minus_src_color,
+            src_alpha,
+            one_minus_src_alpha,
+            src_red,
+            one_minus_src_red,
+            src_green = 8,
+            one_minus_src_green,
+            src_blue = 12,
+            one_minus_src_blue,
+        };
+
+        pub const AlphaFactor = enum(u3) {
+            src_alpha,
+            one_minus_src_alpha,
+            src_red,
+            one_minus_src_red,
+            src_green,
+            one_minus_src_green,
+            src_blue,
+            one_minus_src_blue,
+        };
+
+        pub const Operation = enum(u4) {
+            /// `src0`
+            replace,
+            /// `src0 * src1`
+            modulate,
+            /// `src0 + src1`
+            add,
+            /// `src0 + src1 - 0.5`
+            add_signed,
+            /// `src0 * src2 + src1 * (1 - src2)`
+            interpolate,
+            /// `src0 - src1`
+            subtract,
+            /// `4 * ((src0r − 0.5) * (src1r − 0.5) + (src0g − 0.5) * (src1g − 0.5) + (src0b − 0.5) * (src1b − 0.5))`
+            dot3_rgb,
+            /// `4 * ((src0r − 0.5) * (src1r − 0.5) + (src0g − 0.5) * (src1g − 0.5) + (src0b − 0.5) * (src1b − 0.5))`
+            dot3_rgba,
+            /// `src0 * src1 + src2` (?)
+            multiply_add,
+            /// `src0 + src1 * src2` (?)
+            add_multiply,
+        };
+
         pub const Config = packed struct(u32) {
-            fog_mode: TextureCombinerFogMode,
-            shading_density_source: TextureCombinerShadingDensity,
+            fog_mode: FogMode,
+            shading_density_source: ShadingDensity,
             _unused0: u4 = 0,
-            combiner_color_buffer_src: BitpackedArray(TextureCombinerBufferSource, 4),
-            combiner_alpha_buffer_src: BitpackedArray(TextureCombinerBufferSource, 4),
+            combiner_color_buffer_src: BitpackedArray(BufferSource, 4),
+            combiner_alpha_buffer_src: BitpackedArray(BufferSource, 4),
             z_flip: bool,
             _unused1: u7 = 0,
             _unknown0: u2 = 0,
             _unused2: u6 = 0,
 
-            pub const TextureCombinerBufferIndex = enum(u3) { @"1", @"2", @"3", @"4" };
+            pub const BufferIndex = enum(u3) { @"1", @"2", @"3", @"4" };
 
-            pub fn setColorBufferSource(update_buffer: *Config, index: TextureCombinerBufferIndex, buffer_src: TextureCombinerBufferSource) void {
+            pub fn setColorBufferSource(update_buffer: *Config, index: BufferIndex, buffer_src: BufferSource) void {
                 std.mem.writePackedIntNative(u1, std.mem.asBytes(update_buffer), @as(usize, @bitOffsetOf(Config, "combiner_color_buffer_src")) + @intFromEnum(index), @intFromEnum(buffer_src));
             }
 
-            pub fn setAlphaBufferSource(update_buffer: *Config, index: TextureCombinerBufferIndex, buffer_src: TextureCombinerBufferSource) void {
+            pub fn setAlphaBufferSource(update_buffer: *Config, index: BufferIndex, buffer_src: BufferSource) void {
                 std.mem.writePackedIntNative(u1, std.mem.asBytes(update_buffer), @as(usize, @bitOffsetOf(Config, "combiner_alpha_buffer_src")) + @intFromEnum(index), @intFromEnum(buffer_src));
             }
         };
 
         pub const Unit = extern struct {
             pub const Sources = packed struct(u32) {
-                color_src: BitpackedArray(TextureCombinerSource, 3),
+                color_src: BitpackedArray(Source, 3),
                 _unused0: u4 = 0,
-                alpha_src: BitpackedArray(TextureCombinerSource, 3),
+                alpha_src: BitpackedArray(Source, 3),
                 _unused1: u4 = 0,
             };
 
             pub const Factors = packed struct(u32) {
-                color_factor: BitpackedArray(TextureCombinerColorFactor, 3),
-                alpha_factor: BitpackedArray(TextureCombinerAlphaFactor, 3),
+                color_factor: BitpackedArray(ColorFactor, 3),
+                alpha_factor: BitpackedArray(AlphaFactor, 3),
                 _unused0: u11 = 0,
             };
 
             pub const Operations = packed struct(u32) {
-                color_op: TextureCombinerOperation,
+                color_op: Operation,
                 _unused0: u12 = 0,
-                alpha_op: TextureCombinerOperation,
+                alpha_op: Operation,
                 _unused1: u12 = 0,
             };
 
             pub const Scales = packed struct(u32) {
-                color_scale: TextureCombinerMultiplier,
+                color_scale: Multiplier,
                 _unused0: u14 = 0,
-                alpha_scale: TextureCombinerMultiplier,
+                alpha_scale: Multiplier,
                 _unused1: u14 = 0,
             };
 
@@ -1454,7 +1474,7 @@ pub const Graphics = extern struct {
             _unused1: u6 = 0,
             _unknown1: u4 = 0,
             _unused2: u11 = 0,
-            use_reserved_geometry_subdivision: bool = false,
+            variable_geometry: bool = false,
         };
 
         pub const PipelineConfig2 = packed struct(u32) {
@@ -1464,13 +1484,16 @@ pub const Graphics = extern struct {
             _unused1: u23 = 0,
         };
 
-        pub const GeometryShaderConfig = packed struct(u32) {
-            mode: u2,
+        pub const GeometryShader = packed struct(u32) {
+            pub const Mode = enum(u2) { point, variable, fixed };
+
+            mode: GeometryShader.Mode,
             _unused0: u6 = 0,
             fixed_vertices_minus_one: u4,
-            stride_minus_one: u4,
-            fixed_vertices_start: u8,
-            _unused1: u8 = 0,
+            vertices_minus_one: u4,
+            uniform_start: u8,
+            flag: bool,
+            _unused1: u7 = 0,
         };
 
         pub const Attribute = extern struct {
@@ -1622,7 +1645,7 @@ pub const Graphics = extern struct {
         /// The first index used by drawcalls. Only used in `draw`, ignored by `draw_indexed`.
         draw_first_index: u32,
         _unknown0: [2]u32,
-        post_vertex_cache_num: LsbRegister(u8),
+        post_vertex_cache: LsbRegister(u8),
         /// Triggers a non-indexed drawcall, will begin reading from `draw_first_index`
         /// until `draw_vertex_count` vertices are processed.
         draw: LsbRegister(Trigger),
@@ -1642,9 +1665,9 @@ pub const Graphics = extern struct {
         vertex_shader_output_map_total_2: LsbRegister(u4),
         _unknown6: [6]u32,
         vertex_shader_output_map_total_1: LsbRegister(u4),
-        geometry_shader_misc0: GeometryShaderConfig,
+        geometry_shader: GeometryShader,
         config_2: PipelineConfig2,
-        geometry_shader_misc1: u32,
+        geometry_shader_full_vertices_minus_one: LsbRegister(u5),
         _unknown7: u32,
         _unknown8: [8]u32,
         primitive_config: PrimitiveConfig,

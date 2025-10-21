@@ -1,6 +1,5 @@
 //! Type-safe PICA200 shader ISA encoder
 
-pub const Negate = enum(u1) { @"+", @"-" };
 pub const OperandDescriptorAllocationError = error{OutOfDescriptors};
 pub const InstructionEncodingError = error{InvalidSourceRegisterCombination};
 
@@ -26,6 +25,14 @@ pub fn move(encoder: *Encoder) Encoder {
 pub fn deinit(encoder: *Encoder, allocator: Allocator) void {
     encoder.instructions.deinit(allocator);
     encoder.* = undefined;
+}
+
+pub fn constDescriptorSlice(encoder: *const Encoder) []const OperandDescriptor {
+    return encoder.descriptors[0..encoder.allocated_descriptors];
+}
+
+pub fn descriptorSlice(encoder: *Encoder) []OperandDescriptor {
+    return encoder.descriptors[0..encoder.allocated_descriptors];
 }
 
 pub fn getOrAllocateOperandDescriptor(encoder: *Encoder, comptime T: type, comptime descriptor_mask: OperandDescriptor.Mask, operand_descriptor: OperandDescriptor) OperandDescriptorAllocationError!T {
@@ -69,10 +76,10 @@ pub fn unparametized(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Op
     return encoder.addInstruction(alloc, .{ .unparametized = .{ .opcode = opcode } });
 }
 
-pub fn unary(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn unary(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
     const descriptor_id = try encoder.getOrAllocateOperandDescriptor(u7, .unary, .{
-        .destination_mask = dst_mask,
-        .src1_neg = src1_neg == .@"-",
+        .dst_mask = dst_mask,
+        .src1_neg = src1_neg,
         .src1_selector = src1_selector,
     });
 
@@ -80,13 +87,13 @@ pub fn unary(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, de
         .operand_descriptor_id = descriptor_id,
         .src1 = src1,
         .src2 = .v0,
-        .address_index = src_rel,
+        .address_component = src_rel,
         .dst = dest,
         .opcode = opcode,
     } });
 }
 
-pub fn binary(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn binary(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
     if (!src1.isLimited() and !src2.isLimited()) {
         return error.InvalidSourceRegisterCombination;
     }
@@ -94,23 +101,41 @@ pub fn binary(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, d
     if (src1.isLimited() != src2.isLimited() and !src2.isLimited()) {
         if (!opcode.isCommutative()) {
             if (opcode.invert()) |opcode_i| {
-                const descriptor_id = try encoder.getOrAllocateOperandDescriptor(u7, .binary, .{ .destination_mask = dst_mask, .src1_neg = src1_neg == .@"-", .src1_selector = src1_selector, .src2_neg = src2_neg == .@"-", .src2_selector = src2_selector });
+                const descriptor_id = try encoder.getOrAllocateOperandDescriptor(u7, .binary, .{
+                    .dst_mask = dst_mask,
+                    .src1_neg = src1_neg,
+                    .src1_selector = src1_selector,
+                    .src2_neg = src2_neg,
+                    .src2_selector = src2_selector,
+                });
 
-                return encoder.addInstruction(alloc, .{ .register_inverted = .{ .operand_descriptor_id = descriptor_id, .src2 = src2, .src1 = src1.toLimited().?, .address_index = src_rel, .dst = dest, .opcode = opcode_i } });
+                return encoder.addInstruction(alloc, .{ .register_inverted = .{ .operand_descriptor_id = descriptor_id, .src2 = src2, .src1 = src1.toLimited().?, .address_component = src_rel, .dst = dest, .opcode = opcode_i } });
             }
 
             return error.InvalidSourceRegisterCombination;
         }
 
-        const descriptor_id = try encoder.getOrAllocateOperandDescriptor(u7, .binary, .{ .destination_mask = dst_mask, .src1_neg = src2_neg == .@"-", .src1_selector = src2_selector, .src2_neg = src1_neg == .@"-", .src2_selector = src1_selector });
+        const descriptor_id = try encoder.getOrAllocateOperandDescriptor(u7, .binary, .{
+            .dst_mask = dst_mask,
+            .src1_neg = src2_neg,
+            .src1_selector = src2_selector,
+            .src2_neg = src1_neg,
+            .src2_selector = src1_selector,
+        });
 
-        return encoder.addInstruction(alloc, .{ .register = .{ .operand_descriptor_id = descriptor_id, .src2 = src1.toLimited().?, .src1 = src2, .address_index = src_rel, .dst = dest, .opcode = opcode } });
+        return encoder.addInstruction(alloc, .{ .register = .{ .operand_descriptor_id = descriptor_id, .src2 = src1.toLimited().?, .src1 = src2, .address_component = src_rel, .dst = dest, .opcode = opcode } });
     }
 
     // TODO: If commutative we could search and reuse an operand descriptor with swapped src1 <=> src2
-    const descriptor_id = try encoder.getOrAllocateOperandDescriptor(u7, .binary, .{ .destination_mask = dst_mask, .src1_neg = src1_neg == .@"-", .src1_selector = src1_selector, .src2_neg = src2_neg == .@"-", .src2_selector = src2_selector });
+    const descriptor_id = try encoder.getOrAllocateOperandDescriptor(u7, .binary, .{
+        .dst_mask = dst_mask,
+        .src1_neg = src1_neg,
+        .src1_selector = src1_selector,
+        .src2_neg = src2_neg,
+        .src2_selector = src2_selector,
+    });
 
-    return encoder.addInstruction(alloc, .{ .register = .{ .operand_descriptor_id = descriptor_id, .src2 = src2.toLimited().?, .src1 = src1, .address_index = src_rel, .dst = dest, .opcode = opcode } });
+    return encoder.addInstruction(alloc, .{ .register = .{ .operand_descriptor_id = descriptor_id, .src2 = src2.toLimited().?, .src1 = src1, .address_component = src_rel, .dst = dest, .opcode = opcode } });
 }
 
 pub fn flow(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opcode, num: u8, dest: u12, condition: Condition, x: bool, y: bool) !void {
@@ -128,80 +153,80 @@ pub fn flowConstant(encoder: *Encoder, alloc: Allocator, opcode: Instruction.Opc
     return encoder.addInstruction(alloc, .{ .constant_control_flow = .{
         .num = num,
         .dst = dest,
-        .constant_id = constant,
+        .src = constant,
         .opcode = opcode,
     } });
 }
 
-pub fn add(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn add(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.binary(alloc, .add, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
 }
 
-pub fn dp3(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn dp3(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.binary(alloc, .dp3, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
 }
 
-pub fn dp4(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn dp4(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.binary(alloc, .dp4, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
 }
 
-pub fn dph(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn dph(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.binary(alloc, .dph, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
 }
 
-pub fn dst(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn dst(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.binary(alloc, .dst, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
 }
 
-pub fn ex2(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn ex2(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.unary(alloc, .ex2, dest, dst_mask, src1_neg, src1, src1_selector, src_rel);
 }
 
-pub fn lg2(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn lg2(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.unary(alloc, .lg2, dest, dst_mask, src1_neg, src1, src1_selector, src_rel);
 }
 
-pub fn litp(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn litp(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.unary(alloc, .litp, dest, dst_mask, src1_neg, src1, src1_selector, src_rel);
 }
 
-pub fn mul(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn mul(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.binary(alloc, .mul, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
 }
 
-pub fn sge(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn sge(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.binary(alloc, .sge, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
 }
 
-pub fn slt(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn slt(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.binary(alloc, .slt, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
 }
 
-pub fn flr(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn flr(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.unary(alloc, .flr, dest, dst_mask, src1_neg, src1, src1_selector, src_rel);
 }
 
-pub fn max(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn max(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.binary(alloc, .max, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
 }
 
-pub fn min(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn min(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.binary(alloc, .min, dest, dst_mask, src1_neg, src1, src1_selector, src2_neg, src2, src2_selector, src_rel);
 }
 
-pub fn rcp(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn rcp(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.unary(alloc, .rcp, dest, dst_mask, src1_neg, src1, src1_selector, src_rel);
 }
 
-pub fn rsq(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn rsq(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.unary(alloc, .rsq, dest, dst_mask, src1_neg, src1, src1_selector, src_rel);
 }
 
-pub fn mova(encoder: *Encoder, alloc: Allocator, a_mask: register.RelativeComponent.Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn mova(encoder: *Encoder, alloc: Allocator, a_mask: register.AddressComponent.Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.unary(alloc, .mova, .o0, .{ .enable_x = a_mask.enable_x, .enable_y = a_mask.enable_y }, src1_neg, src1, src1_selector, src_rel);
 }
 
-pub fn mov(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn mov(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, src_rel: RelativeComponent) !void {
     return encoder.unary(alloc, .mov, dest, dst_mask, src1_neg, src1, src1_selector, src_rel);
 }
 
@@ -226,11 +251,11 @@ pub fn breakc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool
     return encoder.flow(alloc, .breakc, 0, 0, condition, x, y);
 }
 
-pub fn call(encoder: *Encoder, alloc: Allocator, dest: i12, num: u8) !void {
+pub fn call(encoder: *Encoder, alloc: Allocator, dest: u12, num: u8) !void {
     return encoder.flow(alloc, .call, num, dest, .@"and", false, false);
 }
 
-pub fn callc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool, y: bool, dest: i12, num: u8) !void {
+pub fn callc(encoder: *Encoder, alloc: Allocator, condition: Condition, x: bool, y: bool, dest: u12, num: u8) !void {
     return encoder.flow(alloc, .callc, num, dest, condition, x, y);
 }
 
@@ -271,41 +296,51 @@ pub fn jmpu(encoder: *Encoder, alloc: Allocator, b: BooleanRegister, if_true: bo
     return encoder.flowConstant(alloc, .jmpu, @intFromBool(!if_true), dest, .{ .bool = b });
 }
 
-pub fn cmp(encoder: *Encoder, alloc: Allocator, src1_neg: Negate, src1: SourceRegister, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent, x: Comparison, y: Comparison) !void {
+pub fn cmp(encoder: *Encoder, alloc: Allocator, src1_neg: Negation, src1: SourceRegister, src1_selector: Selector, x: Comparison, y: Comparison, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src_rel: RelativeComponent) !void {
     if (!src1.isLimited() and !src2.isLimited()) {
         return error.InvalidSourceRegisterCombination;
     }
 
     const descriptor_id, const i_src1, const i_src2, const x_cmp, const y_cmp = if (!src2.isLimited())
-        .{ try encoder.getOrAllocateOperandDescriptor(u7, .comparison, .{ .src1_neg = src2_neg == .@"-", .src1_selector = src2_selector, .src2_neg = src1_neg == .@"-", .src2_selector = src1_selector }), src2, src1.toLimited().?, x.invert(), y.invert() }
+        .{ try encoder.getOrAllocateOperandDescriptor(u7, .comparison, .{
+            .src1_neg = src2_neg,
+            .src1_selector = src2_selector,
+            .src2_neg = src1_neg,
+            .src2_selector = src1_selector,
+        }), src2, src1.toLimited().?, x.invert(), y.invert() }
     else
-        .{ try encoder.getOrAllocateOperandDescriptor(u7, .comparison, .{ .src1_neg = src1_neg == .@"-", .src1_selector = src1_selector, .src2_neg = src2_neg == .@"-", .src2_selector = src2_selector }), src1, src2.toLimited().?, x, y };
+        .{ try encoder.getOrAllocateOperandDescriptor(u7, .comparison, .{
+            .src1_neg = src1_neg,
+            .src1_selector = src1_selector,
+            .src2_neg = src2_neg,
+            .src2_selector = src2_selector,
+        }), src1, src2.toLimited().?, x, y };
 
     return encoder.addInstruction(alloc, .{ .comparison = .{
         .operand_descriptor_id = descriptor_id,
         .src2 = i_src2,
         .src1 = i_src1,
-        .address_index = src_rel,
+        .address_component = src_rel,
         .x_operation = x_cmp,
         .y_operation = y_cmp,
-        .opcode = Instruction.Opcode.cmp.toComparison().?,
+        .opcode = Instruction.Opcode.cmp0.toComparison().?,
     } });
 }
 
 // madi handled by mad
 
-pub fn mad(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negate, src1: SourceRegister.Limited, src1_selector: Selector, src2_neg: Negate, src2: SourceRegister, src2_selector: Selector, src3_neg: Negate, src3: SourceRegister, src3_selector: Selector, src_rel: RelativeComponent) !void {
+pub fn mad(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_mask: Mask, src1_neg: Negation, src1: SourceRegister.Limited, src1_selector: Selector, src2_neg: Negation, src2: SourceRegister, src2_selector: Selector, src3_neg: Negation, src3: SourceRegister, src3_selector: Selector, src_rel: RelativeComponent) !void {
     if (!src2.isLimited() and !src3.isLimited()) {
         return error.InvalidSourceRegisterCombination;
     }
 
     const descriptor_id = try encoder.getOrAllocateOperandDescriptor(u5, .full, .{
-        .destination_mask = dst_mask,
-        .src1_neg = src1_neg == .@"-",
+        .dst_mask = dst_mask,
+        .src1_neg = src1_neg,
         .src1_selector = src1_selector,
-        .src2_neg = src2_neg == .@"-",
+        .src2_neg = src2_neg,
         .src2_selector = src2_selector,
-        .src3_neg = src3_neg == .@"-",
+        .src3_neg = src3_neg,
         .src3_selector = src3_selector,
     });
 
@@ -315,9 +350,9 @@ pub fn mad(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_m
             .src1 = src1,
             .src2 = src2.toLimited().?,
             .src3 = src3,
-            .address_index = src_rel,
+            .address_component = src_rel,
             .dst = dest,
-            .opcode = Instruction.Opcode.madi.toMad().?,
+            .opcode = Instruction.Opcode.madi0.toMad().?,
         } });
     }
 
@@ -326,13 +361,13 @@ pub fn mad(encoder: *Encoder, alloc: Allocator, dest: DestinationRegister, dst_m
         .src1 = src1,
         .src2 = src2,
         .src3 = src3.toLimited().?,
-        .address_index = src_rel,
+        .address_component = src_rel,
         .dst = dest,
-        .opcode = Instruction.Opcode.mad.toMad().?,
+        .opcode = Instruction.Opcode.mad0.toMad().?,
     } });
 }
 
-test Encoder {
+test "test?" {
     var fixed: [256]u8 = undefined;
     var fba: std.heap.FixedBufferAllocator = .init(&fixed);
     const alloc = fba.allocator();
@@ -356,8 +391,8 @@ test Encoder {
 
     // FIXME: Regression, cannot use this on the 3DS test runner.
     // try testing.expectEqualSlices(u32, expected_output, std.mem.bytesAsSlice(u32, std.mem.sliceAsBytes(encoder.instructions.items)));
-    for (expected_output, std.mem.bytesAsSlice(u32, std.mem.sliceAsBytes(encoder.instructions.items))) |output, expected| {
-        try testing.expect(expected == output);
+    for (expected_output, encoder.instructions.items) |expected, output| {
+        try testing.expect(expected == @as(u32, @bitCast(output)));
     }
 }
 
@@ -374,6 +409,7 @@ const shader = zitrus.hardware.pica.shader;
 const encoding = shader.encoding;
 const Instruction = encoding.Instruction;
 const OperandDescriptor = encoding.OperandDescriptor;
+const Negation = OperandDescriptor.Negation;
 const Condition = encoding.Condition;
 const Comparison = encoding.ComparisonOperation;
 const Winding = encoding.Winding;
@@ -383,7 +419,7 @@ const Mask = encoding.Component.Mask;
 const Selector = encoding.Component.Selector;
 
 const register = shader.register;
-const RelativeComponent = register.RelativeComponent;
+const RelativeComponent = register.AddressComponent;
 const SourceRegister = register.Source;
 const DestinationRegister = register.Destination;
 

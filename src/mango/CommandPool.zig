@@ -21,6 +21,17 @@ const native_min_class = std.math.log2(native_min_size);
 const native_max_class = std.math.log2(native_max_size);
 const native_size_classes = (native_max_class - native_min_class);
 
+pub const Node = struct {
+    /// Initializes a new node with an undefined `CommandBuffer`
+    pub const init_undefined: Node = .{
+        .node = .{},
+        .cmd_buffer = undefined,
+    };
+
+    node: std.DoublyLinkedList.Node,
+    cmd_buffer: CommandBuffer,
+};
+
 gpa: std.mem.Allocator,
 native_gpa: std.mem.Allocator,
 
@@ -51,20 +62,20 @@ pub fn init(create_info: mango.CommandPoolCreateInfo, gpa: std.mem.Allocator) !C
 }
 
 pub fn deinit(pool: *CommandPool, gpa: std.mem.Allocator) void {
-    _ = gpa;
+    std.debug.assert(pool.gpa.vtable == gpa.vtable); // At least ensure the same VTable is used as we cannot compare the pointers
+
     {
         var maybe_current_allocated = pool.allocated_command_buffers.first;
         while (maybe_current_allocated) |current| {
             maybe_current_allocated = current.next;
 
-            const command_buffer: *CommandBuffer = @alignCast(@fieldParentPtr("node", current));
-            _ = command_buffer.deinit();
+            const pool_node: *Node = @alignCast(@fieldParentPtr("node", current));
 
-            pool.gpa.destroy(command_buffer);
+            pool.native_gpa.free(pool_node.cmd_buffer.deinit());
+            pool.gpa.destroy(pool_node);
         }
 
-        pool.allocated_command_buffers.first = null;
-        pool.allocated_command_buffers.last = null;
+        pool.allocated_command_buffers = .{};
     }
 
     pool.trim();
@@ -104,11 +115,21 @@ pub fn trim(pool: *CommandPool) void {
     while (maybe_current) |current| {
         maybe_current = current.next;
 
-        const cmd_buffer: *CommandBuffer = @alignCast(@fieldParentPtr("node", current));
-        const native = cmd_buffer.deinit();
+        const pool_node: *Node = @alignCast(@fieldParentPtr("node", current));
 
-        pool.native_gpa.free(native);
-        pool.gpa.destroy(cmd_buffer);
+        pool.gpa.destroy(pool_node); // NOTE: Freed command buffers don't have a native buffer.
+    }
+
+    for (0..native_size_classes) |class| {
+        var ptr = pool.free_native_buffers[class];
+
+        while (ptr != 0) {
+            const buffer: [*]align(8) u32 = @ptrFromInt(ptr);
+            ptr = buffer[0];
+
+            const slice = buffer[0..(@as(usize, 1) << @intCast(class + native_min_class))];
+            pool.native_gpa.free(slice);
+        }
     }
 
     pool.free_command_buffers = .{
@@ -154,6 +175,8 @@ pub fn remapNative(pool: *CommandPool, buffer: []align(8) u32, used: usize, new_
 }
 
 pub fn recycleNative(pool: *CommandPool, buffer: []align(8) u32) void {
+    if (buffer.len == 0) return;
+
     const buffer_class = nativeClassIndex(buffer.len);
 
     if (buffer_class >= native_size_classes) {
@@ -170,24 +193,30 @@ fn nativeClassIndex(size: usize) usize {
 }
 
 fn create(pool: *CommandPool) !*CommandBuffer {
-    const new_cmd_buffer = pool.free_command_buffers.popFirst() orelse blk: {
+    const allocated_node = pool.free_command_buffers.popFirst() orelse blk: {
         const gpa = pool.gpa;
-        const cmd_buffer = try gpa.create(CommandBuffer);
-        const native = try pool.allocateNative(null);
+        const pool_node = try gpa.create(Node);
+        pool_node.* = .init_undefined;
 
-        cmd_buffer.* = .initBuffer(pool, native);
-        break :blk &cmd_buffer.node;
+        break :blk &pool_node.node;
     };
-    pool.allocated_command_buffers.append(new_cmd_buffer);
-    return @alignCast(@fieldParentPtr("node", new_cmd_buffer));
+
+    const pool_node: *Node = @alignCast(@fieldParentPtr("node", allocated_node));
+    errdefer pool.free_command_buffers.append(allocated_node); // Ensure we won't leak memory!
+
+    pool_node.cmd_buffer = .initBuffer(pool, try pool.allocateNative(null));
+    errdefer @compileError("If we return an error, this pool will have wrong state!");
+
+    pool.allocated_command_buffers.append(allocated_node);
+    return &pool_node.cmd_buffer;
 }
 
 fn recycle(pool: *CommandPool, cmd_buffer: *CommandBuffer) void {
-    const native = cmd_buffer.deinit();
+    const pool_node: *Node = @alignCast(@fieldParentPtr("cmd_buffer", cmd_buffer));
 
-    pool.recycleNative(native);
-    pool.allocated_command_buffers.remove(&cmd_buffer.node);
-    pool.free_command_buffers.append(&cmd_buffer.node);
+    pool.recycleNative(cmd_buffer.deinit());
+    pool.allocated_command_buffers.remove(&pool_node.node);
+    pool.free_command_buffers.append(&pool_node.node);
 }
 
 pub fn toHandle(image: *CommandPool) Handle {

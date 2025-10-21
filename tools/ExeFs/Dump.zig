@@ -30,9 +30,9 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         }, true }
     else
         .{ std.fs.File.stdin(), false };
-    defer if(input_should_close) input_file.close();
+    defer if (input_should_close) input_file.close();
 
-    var buf: [4096]u8 = undefined; 
+    var buf: [4096]u8 = undefined;
     var exefs_reader = input_file.readerStreaming(&buf);
     const reader = &exefs_reader.interface;
 
@@ -47,7 +47,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
             return 1;
         };
 
-        try exefs_reader.seekBy(file.offset);
+        try exefs_reader.interface.discardAll(file.offset); // XXX: seekBy does not work well!
         const contents = try reader.readAlloc(arena, file.size);
         defer arena.free(contents);
 
@@ -76,15 +76,15 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         _ = try reader.discardRemaining();
         return 0;
     }
-    
-    if(args.output == null) {
+
+    if (args.output == null) {
         log.err("output path is required when dumping all ExeFS contents", .{});
         return 1;
     }
 
     const output_path = args.output.?;
     var output_directory = cwd.makeOpenPath(output_path, .{}) catch |err| {
-        log.err("could not make path '{s}': {t}", .{output_path, err});
+        log.err("could not make path '{s}': {t}", .{ output_path, err });
         return 1;
     };
     defer output_directory.close();
@@ -95,7 +95,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         const new_file = output_directory.createFile(file.name, .{
             .exclusive = true,
         }) catch |err| {
-            log.err("error dumping '{s}' into '{s}': {t}", .{file.name, output_path, err});
+            log.err("error dumping '{s}' into '{s}': {t}", .{ file.name, output_path, err });
             continue;
         };
         defer new_file.close();

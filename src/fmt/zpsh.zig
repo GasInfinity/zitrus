@@ -5,39 +5,81 @@
 //!
 //! Even if things are tightly packed, all sections are aligned to 32-bits.
 
+pub const magic = "ZPSH";
+
 pub const Header = extern struct {
-    pub const magic_value = "ZPSH";
+    pub const Shader = packed struct(u32) {
+        instructions_minus_one: u12,
+        descriptors: u8,
+        entrypoints: u12,
 
-    pub const ShaderSize = packed struct(u16) {
-        code_minus_one: u9,
-        operands_minus_one: u7,
-
-        pub fn init(code_size: usize, operands_size: usize) ShaderSize {
+        pub fn init(entrypoints: usize, instructions_size: usize, descriptors: usize) Shader {
             return .{
-                .code_minus_one = @intCast(code_size - 1),
-                .operands_minus_one = @intCast(operands_size - 1),
+                .instructions_minus_one = @intCast(instructions_size - 1),
+                .descriptors= @intCast(descriptors),
+                .entrypoints = @intCast(entrypoints),
             };
         }
 
-        pub fn codeSize(size: ShaderSize) usize {
-            return @as(usize, size.code_minus_one) + 1;
-        }
-
-        pub fn operandsSize(size: ShaderSize) usize {
-            return @as(usize, size.operands_minus_one) + 1;
+        pub fn instructions(size: Shader) usize {
+            return @as(usize, size.instructions_minus_one) + 1;
         }
     };
 
-    magic: [magic_value.len]u8 = magic_value.*,
-    shader_size: ShaderSize,
-    entrypoints: u16,
+    magic: [magic.len]u8 = magic.*,
+    shader: Shader,
     string_table_size: u32,
+
+    pub const CheckError = error{NotZpsh};
+
+    pub fn check(hdr: Header) CheckError!void {
+        if (!std.mem.eql(u8, &hdr.magic, magic)) return error.NotZpsh;
+    }
 };
 
 pub const EntrypointHeader = extern struct {
     pub const ShaderInfo = packed struct(u16) {
-        type: shader.Type,
-        _unused0: u15 = 0,
+        pub const vertex: ShaderInfo = .{ .type = .vertex };
+        pub const Type = enum(u2) { vertex, geometry_point, geometry_variable, geometry_fixed };
+
+        pub const Geometry = packed union {
+            pub const empty: Geometry = .{ .point = std.mem.zeroes(Geometry.Point) };
+
+            pub const Point = packed struct(u14) {
+                inputs_minus_one: u4,
+                _: u10 = 0,
+            };
+
+            pub const Variable = packed struct(u14) {
+                full_vertices: u5,
+                _: u9 = 0,
+            };
+
+            pub const Fixed = packed struct(u14) {
+                vertices_minus_one: u4,
+                uniform_start: FloatingRegister,
+                _: u3 = 0,
+            };
+
+            point: Point,
+            fixed: Fixed,
+            variable: Variable,
+
+            pub fn initPoint(inputs: u5) Geometry {
+                return .{ .point = .{ .inputs_minus_one = @intCast(inputs - 1) } };
+            }
+
+            pub fn initVariable(full_vertices: u5) Geometry {
+                return .{ .variable = .{ .full_vertices= full_vertices } };
+            }
+
+            pub fn initFixed(vertices: u5, uniform_start: FloatingRegister) Geometry {
+                return .{ .fixed = .{ .vertices_minus_one = @intCast(vertices - 1), .uniform_start = uniform_start } };
+            }
+        };
+
+        type: Type,
+        geometry: Geometry = .empty,
     };
 
     pub const BooleanConstantMask = packed struct(u16) {
@@ -47,7 +89,7 @@ pub const EntrypointHeader = extern struct {
         // zig fmt: on
 
         pub fn fromSet(set: std.EnumSet(BooleanRegister)) BooleanConstantMask {
-            var mask: BooleanConstantMask = undefined;
+            var mask: BooleanConstantMask = std.mem.zeroes(BooleanConstantMask);
 
             for (std.enums.values(BooleanRegister)) |b| {
                 std.mem.writePackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(b), @intFromBool(set.contains(b)), .little);
@@ -57,7 +99,7 @@ pub const EntrypointHeader = extern struct {
         }
 
         pub fn toSet(mask: BooleanConstantMask) std.EnumSet(BooleanRegister) {
-            var set: std.EnumSet(BooleanRegister) = undefined;
+            var set: std.EnumSet(BooleanRegister) = .initEmpty();
 
             for (std.enums.values(BooleanRegister)) |b| {
                 set.setPresent(b, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(b), .little) != 0);
@@ -75,7 +117,7 @@ pub const EntrypointHeader = extern struct {
         _: u12,
 
         pub fn fromSet(set: std.EnumSet(IntegerRegister)) IntegerConstantMask {
-            var mask: IntegerConstantMask = undefined;
+            var mask: IntegerConstantMask = std.mem.zeroes(IntegerConstantMask);
 
             for (std.enums.values(IntegerRegister)) |i| {
                 std.mem.writePackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(i), @intFromBool(set.contains(i)), .little);
@@ -85,7 +127,7 @@ pub const EntrypointHeader = extern struct {
         }
 
         pub fn toSet(mask: IntegerConstantMask) std.EnumSet(IntegerRegister) {
-            var set: std.EnumSet(IntegerRegister) = undefined;
+            var set: std.EnumSet(IntegerRegister) = .initEmpty();
 
             for (std.enums.values(IntegerRegister)) |i| {
                 set.setPresent(i, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(i), .little) != 0);
@@ -124,7 +166,7 @@ pub const EntrypointHeader = extern struct {
         high: High,
 
         pub fn fromSet(set: std.EnumSet(FloatingRegister)) FloatingConstantMask {
-            var mask: FloatingConstantMask = undefined;
+            var mask: FloatingConstantMask = std.mem.zeroes(FloatingConstantMask);
 
             for (std.enums.values(FloatingRegister)) |f| {
                 std.mem.writePackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(f), @intFromBool(set.contains(f)), .little);
@@ -134,7 +176,7 @@ pub const EntrypointHeader = extern struct {
         }
 
         pub fn toSet(mask: FloatingConstantMask) std.EnumSet(FloatingRegister) {
-            var set: std.EnumSet(FloatingRegister) = undefined;
+            var set: std.EnumSet(FloatingRegister) = .initEmpty();
 
             for (std.enums.values(FloatingRegister)) |f| {
                 set.setPresent(f, std.mem.readPackedInt(u1, std.mem.asBytes(&mask), @intFromEnum(f), .little) != 0);
@@ -188,24 +230,24 @@ pub const Parsed = struct {
     operand_descriptors: []const shader.encoding.OperandDescriptor,
     string_table: []const u8,
     entrypoint_data: []const u8,
-    entrypoints: u16,
+    entrypoints: u12,
 
-    pub fn initBuffer(buffer: []const u8) Parsed {
+    pub fn initBuffer(buffer: []const u8) Header.CheckError!Parsed {
         var hdr = std.mem.bytesAsValue(Header, buffer).*;
 
-        if (builtin.cpu.arch.endian() != .little) {
-            std.mem.byteSwapAllFields(Header, &hdr);
-        }
+        if (builtin.cpu.arch.endian() != .little) std.mem.byteSwapAllFields(Header, &hdr);
 
-        const byte_code_size = @sizeOf(shader.encoding.Instruction) * hdr.shader_size.codeSize();
-        const byte_operands_size = @sizeOf(shader.encoding.OperandDescriptor) * hdr.shader_size.operandsSize();
+        try hdr.check();
+
+        const byte_code_size = @sizeOf(shader.encoding.Instruction) * hdr.shader.instructions();
+        const byte_operands_size = @sizeOf(shader.encoding.OperandDescriptor) * @as(usize, hdr.shader.descriptors);
 
         return .{
             .instructions = @alignCast(std.mem.bytesAsSlice(pica.shader.encoding.Instruction, buffer[@sizeOf(Header)..][0..byte_code_size])),
             .operand_descriptors = @alignCast(std.mem.bytesAsSlice(pica.shader.encoding.OperandDescriptor, buffer[(@sizeOf(Header) + byte_code_size)..][0..byte_operands_size])),
             .string_table = buffer[(@sizeOf(Header) + byte_code_size + byte_operands_size)..][0..hdr.string_table_size],
             .entrypoint_data = buffer[(@sizeOf(Header) + byte_code_size + byte_operands_size + hdr.string_table_size)..],
-            .entrypoints = hdr.entrypoints,
+            .entrypoints = hdr.shader.entrypoints,
         };
     }
 
@@ -217,10 +259,11 @@ pub const Parsed = struct {
         };
     }
 
+    // TODO: This assumes a proper ZPSH (as we're the only ones who currently use them we're allowed to not care :p)
     pub const EntrypointIterator = struct {
         pub const Entry = struct {
             info: EntrypointHeader.ShaderInfo,
-            offset: u16,
+            offset: u12,
 
             name: [:0]const u8,
             boolean_constant_set: std.enums.EnumSet(BooleanRegister),
@@ -235,7 +278,7 @@ pub const Parsed = struct {
 
         parsed: *const Parsed,
         byte_offset: u32,
-        current_entry: u16,
+        current_entry: u12,
 
         pub fn next(it: *EntrypointIterator) ?Entry {
             if (it.current_entry == it.parsed.entrypoints) return null;
@@ -253,9 +296,9 @@ pub const Parsed = struct {
             const floating_constant_set: std.EnumSet(FloatingRegister) = hdr.floating_constant_mask.toSet();
             const output_map_set: std.EnumSet(OutputRegister) = hdr.output_mask.toSet();
 
-            const integer_constants_byte_size = integer_constant_set.count() * @sizeOf([4]i8);
-            const floating_constants_byte_size = floating_constant_set.count() * @sizeOf(pica.F7_16x4);
-            const output_map_byte_size = output_map_set.count() * @sizeOf(pica.OutputMap);
+            const integer_constants_byte_size: u32 = @intCast(integer_constant_set.count() * @sizeOf([4]i8));
+            const floating_constants_byte_size: u32 = @intCast(floating_constant_set.count() * @sizeOf(pica.F7_16x4));
+            const output_map_byte_size: u32 = @intCast(output_map_set.count() * @sizeOf(pica.OutputMap));
 
             defer {
                 it.current_entry += 1;
@@ -264,7 +307,7 @@ pub const Parsed = struct {
 
             return .{
                 .info = hdr.info,
-                .offset = hdr.code_offset,
+                .offset = @intCast(hdr.code_offset),
 
                 .name = std.mem.span(@as([*:0]const u8, @ptrCast(it.parsed.string_table[hdr.name_string_offset..].ptr))),
                 .boolean_constant_set = hdr.boolean_constant_mask.toSet(),

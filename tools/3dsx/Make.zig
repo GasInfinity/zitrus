@@ -120,7 +120,7 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
         }
 
         log.info("{} total relocations found.", .{processed.relocations.items.len});
-        
+
         for (processed.relocations.items) |address| {
             it = processed.segments.iterator();
 
@@ -128,14 +128,14 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
                 const seg = s.key;
                 const data = s.value;
 
-                if(address < data.address or address > data.address + data.file_size) {
-                    if(s.key == .data) log.info("relocation at 0x{X:0>8} is unmapped", .{address});
+                if (address < data.address or address > data.address + data.file_size) {
+                    if (s.key == .data) log.info("relocation at 0x{X:0>8} is unmapped", .{address});
                     continue;
                 }
 
                 try elf_reader.seekTo(s.value.file_offset + (address - data.address));
                 const value = try elf_reader.interface.takeInt(u32, .little);
-                log.info("relocation [{t:<6}] at 0x{X:0>8}: 0x{X:0>8} (0x{X:0>8})", .{seg, address, value, (value - text.address)});
+                log.info("relocation [{t:<6}] at 0x{X:0>8}: 0x{X:0>8} (0x{X:0>8})", .{ seg, address, value, (value - text.address) });
                 break;
             }
         }

@@ -5,8 +5,8 @@ const Applets = union(enum) {
     romfs: @import("RomFs.zig"),
     ncch: @import("Ncch.zig"),
     @"3dsx": @import("3dsx.zig"),
-    pica: @import("Pica.zig"),
     firm: @import("Firm.zig"),
+    pica: @import("Pica.zig"),
     compress: @import("Compress.zig"),
 };
 
@@ -39,15 +39,16 @@ pub fn main() !u8 {
     const args = try std.process.argsAlloc(arena);
     defer std.process.argsFree(arena, args);
 
-    const arguments = zdap.parse(args, "zitrus", Arguments, .{});
+    const arguments = zdap.Parser.parse(Arguments, "zitrus", args, .{});
 
     if (arguments.version) {
-        std.debug.print("0.0.0-pre\n", .{}); // Don't even try to change this until the first release.
+        var stdout_writer = std.fs.File.stdout().writerStreaming(&.{});
+        try stdout_writer.interface.writeAll("0.0.0-pre\n"); // Don't even try to change this until the first release.
         return 0;
     }
 
     if (arguments.@"-" == null) {
-        std.debug.print("access the help menu with 'zitrus' -h'\n", .{});
+        std.log.info("access the help menu with 'zitrus' -h'\n", .{});
         return 0;
     }
 
@@ -56,9 +57,8 @@ pub fn main() !u8 {
     };
 }
 
-test {
+comptime {
     _ = Applets;
-    _ = zitrus;
 }
 
 const std = @import("std");

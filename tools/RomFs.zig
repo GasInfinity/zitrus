@@ -1,4 +1,4 @@
-pub const description = "Dump / Make / Show a RomFS";
+pub const description = "Make / List / Dump a RomFS";
 
 const Subcommand = enum {
     make,

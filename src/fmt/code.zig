@@ -3,7 +3,7 @@
 //! Processes `Segment`s and extracts information from them.
 //! Only one `Segment` type per executable is supported.
 //!
-//! Optionally and if the executable supports it, 
+//! Optionally and if the executable supports it,
 //! extracts all relocation information.
 
 pub const Segment = enum {
@@ -128,7 +128,7 @@ pub fn extractStaticElfAlloc(reader: *std.fs.File.Reader, gpa: std.mem.Allocator
     const maybe_rel_shdr: ?elf.Elf32_Shdr = rel_hdr: for (0..hdr.e_shnum) |_| {
         const shdr = try reader.interface.takeStruct(elf.Elf32_Shdr, .little);
 
-        if (shdr.sh_type == elf.SHT_REL) break :rel_hdr shdr;
+        if (shdr.sh_type == elf.SHT_REL and (shdr.sh_flags & elf.SHF_ALLOC) != 0) break :rel_hdr shdr;
     } else null;
 
     const relocations: std.ArrayList(u32) = if (maybe_rel_shdr) |rel_shdr| relocs: {

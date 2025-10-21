@@ -37,8 +37,6 @@ pub fn initInner(b: *Build, config: Config, options: Options) MakeSmdh {
     make.setName(b.fmt("make smdh ({s})", .{name}));
     make.addArgs(&.{ "smdh", "make" });
 
-    const out = make.addOutputFileArg(options.name);
-
     make.addFileArg(options.settings);
 
     if (options.icon) |icon| {
@@ -54,6 +52,9 @@ pub fn initInner(b: *Build, config: Config, options: Options) MakeSmdh {
 
         make.addFileArg(config.default_icon);
     }
+
+    make.addArg("--output");
+    const out = make.addOutputFileArg(options.name);
 
     return .{
         .name = name,

@@ -763,7 +763,7 @@ pub fn main() !void {
     // var gpa_state: std.heap.DebugAllocator(.{}) = .init;
     // defer _ = gpa_state.deinit();
 
-    const gpa = horizon.heap.page_allocator; // gpa_state.allocator();
+    const gpa = horizon.heap.page_allocator; //gpa_state.allocator();
 
     var app: horizon.application.Accelerated = try .init(.default, gpa);
     defer app.deinit(gpa);

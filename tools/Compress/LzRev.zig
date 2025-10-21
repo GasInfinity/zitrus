@@ -26,7 +26,7 @@ verbose: bool,
 pub fn main(args: LzRev, arena: std.mem.Allocator) !u8 {
     const cwd = std.fs.cwd();
 
-    if(!args.decompress) @panic("TODO: Compress :(");
+    if (!args.decompress) @panic("TODO: Compress :(");
 
     const input_file, const input_should_close = if (args.@"--".input) |in|
         .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
@@ -35,7 +35,7 @@ pub fn main(args: LzRev, arena: std.mem.Allocator) !u8 {
         }, true }
     else
         .{ std.fs.File.stdin(), false };
-    defer if(input_should_close) input_file.close();
+    defer if (input_should_close) input_file.close();
 
     // Unfortunately, this algorithm cannot be streamed, we must read the entire file/reach to the end to decompress it.
     const output_file, const should_close = if (args.output) |out|
@@ -46,21 +46,21 @@ pub fn main(args: LzRev, arena: std.mem.Allocator) !u8 {
     else
         .{ std.fs.File.stdout(), false };
     defer if (should_close) output_file.close();
-    
+
     var input_reader = input_file.readerStreaming(&.{});
     var output_writer = output_file.writerStreaming(&.{});
 
     const compressed = try input_reader.interface.allocRemaining(arena, .unlimited);
     defer arena.free(compressed);
 
-    if(compressed.len <= 8) {
+    if (compressed.len <= 8) {
         log.err("compressed data is too short", .{});
         return 1;
     }
 
     const decompressed_len = zitrus.compress.lzrev.len(compressed);
 
-    if(args.verbose) log.info("lzrev compressed {} vs decompressed {}", .{compressed.len, decompressed_len});
+    if (args.verbose) log.info("lzrev compressed {} vs decompressed {}", .{ compressed.len, decompressed_len });
 
     const decompressed = try arena.alloc(u8, decompressed_len);
     defer arena.free(decompressed);

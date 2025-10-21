@@ -6,6 +6,7 @@ pub const pxi = @import("hardware/pxi.zig");
 pub const dsp = @import("hardware/dsp.zig");
 pub const hid = @import("hardware/hid.zig");
 pub const lgy = @import("hardware/lgy.zig");
+pub const i2c = @import("hardware/i2c.zig");
 
 /// Represents a register which is triggered by writing a value to it.
 pub const Trigger = enum(u1) { trigger = 1 };
@@ -153,6 +154,7 @@ comptime {
     _ = pxi;
     _ = dsp;
     _ = lgy;
+    _ = i2c;
 }
 
 const testing = std.testing;

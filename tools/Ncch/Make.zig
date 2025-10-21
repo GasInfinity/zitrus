@@ -1,5 +1,5 @@
 // TODO: Split into ncch make cxi / ncch make cfa
-pub const description = "Make a NCCH CXI/CFA";
+pub const description = "Make a NCCH CXI/CFA (TODO)";
 
 pub const descriptions = .{
     .exe = "ELF executable to use as code",
@@ -18,7 +18,7 @@ settings: ?[]const u8 = null,
 output: []const u8,
 
 pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
-    if(true) @panic("TODO");
+    if (true) @panic("TODO");
 
     const cwd = std.fs.cwd();
 

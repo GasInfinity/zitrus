@@ -15,13 +15,13 @@ pub const Header = extern struct {
     data_segment_size: u32,
     bss_segment_size: u32,
 
-    pub const CheckError = error{Not3dsx, UnrecognizedHeaderSize, UnrecognizedVersion, InvalidTextSegment, InvalidDataSegment};
+    pub const CheckError = error{ Not3dsx, UnrecognizedHeaderSize, UnrecognizedVersion, InvalidTextSegment, InvalidDataSegment };
     pub fn check(hdr: Header) CheckError!void {
-        if(!std.mem.eql(u8, &hdr.magic, magic)) return error.Not3dsx;
-        if(hdr.header_size != @sizeOf(Header) and hdr.header_size != @sizeOf(Header) + @sizeOf(ExtendedHeader)) return error.UnrecognizedHeaderSize;
-        if(hdr.version != 0) return error.UnrecognizedVersion;
-        if(hdr.text_segment_size == 0) return error.InvalidTextSegment;
-        if(hdr.bss_segment_size > hdr.data_segment_size) return error.InvalidDataSegment;
+        if (!std.mem.eql(u8, &hdr.magic, magic)) return error.Not3dsx;
+        if (hdr.header_size != @sizeOf(Header) and hdr.header_size != @sizeOf(Header) + @sizeOf(ExtendedHeader)) return error.UnrecognizedHeaderSize;
+        if (hdr.version != 0) return error.UnrecognizedVersion;
+        if (hdr.text_segment_size == 0) return error.InvalidTextSegment;
+        if (hdr.bss_segment_size > hdr.data_segment_size) return error.InvalidDataSegment;
     }
 };
 

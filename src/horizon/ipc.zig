@@ -148,7 +148,7 @@ pub fn calculateParameters(comptime T: type) Buffer.PackedCommand.Header.Paramet
     const t_info = @typeInfo(T).@"struct";
 
     if (t_info.layout != .auto) {
-        return .{ .normal = (@sizeOf(T) + (@sizeOf(u32) - 1)) / @sizeOf(u32), .translate = 0 };
+        return .{ .normal = ((@sizeOf(T) + (@sizeOf(u32) - 1)) / @sizeOf(u32)), .translate = 0 };
     }
 
     const fields = t_info.fields;

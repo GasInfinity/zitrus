@@ -1,8 +1,9 @@
-pub const RelativeComponent = enum(u2) {
+pub const AddressComponent = enum(u2) {
     pub const Mask = packed struct(u2) {
         pub const x: Mask = .{ .enable_x = true };
         pub const y: Mask = .{ .enable_y = true };
         pub const xy: Mask = .{ .enable_x = true, .enable_y = true };
+
         enable_x: bool = false,
         enable_y: bool = false,
     };
@@ -11,6 +12,13 @@ pub const RelativeComponent = enum(u2) {
     x,
     y,
     l,
+
+    pub fn format(addr: AddressComponent, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        return switch (addr) {
+            .none => {},
+            .x, .y, .l => try writer.print("[a.{t}]", .{addr}),
+        };
+    }
 };
 
 pub const Temporary = enum(u4) { r0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15 };
@@ -218,12 +226,12 @@ pub const Integral = packed union {
     // See ziglang/zig#19754
     int: packed struct(u4) {
         used: Integer,
-        _unused0: u2 = undefined,
+        _: u2 = 0,
     },
 };
 
 comptime {
-    std.debug.assert(@typeInfo(RelativeComponent).@"enum".is_exhaustive);
+    std.debug.assert(@typeInfo(AddressComponent).@"enum".is_exhaustive);
     std.debug.assert(@typeInfo(Source).@"enum".is_exhaustive);
     std.debug.assert(@typeInfo(Destination).@"enum".is_exhaustive);
     std.debug.assert(@typeInfo(Integral.Boolean).@"enum".is_exhaustive);

@@ -1,4 +1,4 @@
-pub const description = "Dump / Make / Show 3DS firmware files.";
+pub const description = "Make / Show / Dump 3DS firmware files.";
 
 const Subcommand = enum { info };
 

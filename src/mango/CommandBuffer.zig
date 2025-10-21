@@ -256,8 +256,8 @@ pub const Scope = enum {
     immediate_draw,
 };
 
+// NOTE: `CommandPool` must be as self-contained as possible, it only depends on the pool to grow its native buffer, no more!
 pool: *backend.CommandPool,
-node: std.DoublyLinkedList.Node = .{},
 
 queue: command.Queue,
 gfx_state: GraphicsState = .empty,
@@ -278,10 +278,9 @@ pub fn initBuffer(pool: *backend.CommandPool, buffer: []align(8) u32) CommandBuf
     };
 }
 
-/// Returns the allocated native buffer
-pub fn deinit(command_buffer: *CommandBuffer) []align(8) u32 {
-    defer command_buffer.* = undefined;
-    return command_buffer.queue.buffer;
+pub fn deinit(cmd: *CommandBuffer) []align(8) u32 {
+    defer cmd.* = undefined;
+    return cmd.queue.buffer;
 }
 
 pub fn begin(cmd: *CommandBuffer) !void {

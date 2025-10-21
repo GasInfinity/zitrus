@@ -30,7 +30,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         }, true }
     else
         .{ std.fs.File.stdin(), false };
-    defer if(input_should_close) input_file.close();
+    defer if (input_should_close) input_file.close();
 
     var input_buffer: [4096]u8 = undefined;
     var input_reader = input_file.reader(&input_buffer);
@@ -46,27 +46,27 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     defer arena.free(utf16_path);
 
     const opened = view.openAny(.root, utf16_path) catch |err| {
-        log.err("could not open file '{s}' in RomFS: {t}", .{real_path, err});
+        log.err("could not open file '{s}' in RomFS: {t}", .{ real_path, err });
         return 1;
     };
-    
+
     switch (opened.kind) {
-        .directory => if(args.output) |out| {
-            if(!input_should_close) {
+        .directory => if (args.output) |out| {
+            if (!input_should_close) {
                 // XXX: arbitrary limitation, we could technically read the full RomFS
-                log.err("cannot dump full directory contents while piping", .{}); 
+                log.err("cannot dump full directory contents while piping", .{});
                 return 1;
             }
 
             const romfs_dir = opened.asDirectory();
 
             var output_directory = cwd.makeOpenPath(out, .{}) catch |err| {
-                log.err("could not make path '{s}': {t}", .{out, err});
+                log.err("could not make path '{s}': {t}", .{ out, err });
                 return 1;
             };
             defer output_directory.close();
-            
-            try dumpDirectory(&input_reader, init.data_offset, view, romfs_dir, output_directory);     
+
+            try dumpDirectory(&input_reader, init.data_offset, view, romfs_dir, output_directory);
         } else {
             log.err("directory outputs must be specified", .{});
             return 1;
@@ -79,7 +79,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
                 }, true }
             else
                 .{ std.fs.File.stdout(), false };
-            defer if (output_should_close) output_file.close(); 
+            defer if (output_should_close) output_file.close();
 
             const file = opened.asFile();
             const stat = file.stat(view);
@@ -112,7 +112,7 @@ fn dumpDirectory(reader: *std.fs.File.Reader, data_offset: usize, view: romfs.Vi
                 const stat = file.stat(view);
 
                 const output_file = dir.createFile(name, .{}) catch |err| {
-                    log.err("could not create file '{s}': {t}", .{name, err});
+                    log.err("could not create file '{s}': {t}", .{ name, err });
                     continue;
                 };
                 defer output_file.close();
@@ -128,7 +128,7 @@ fn dumpDirectory(reader: *std.fs.File.Reader, data_offset: usize, view: romfs.Vi
                 const directory = entry.asDirectory();
 
                 var output_directory = dir.makeOpenPath(name, .{}) catch |err| {
-                    log.err("could not make dir '{s}': {t}", .{name, err});
+                    log.err("could not make dir '{s}': {t}", .{ name, err });
                     continue;
                 };
                 defer output_directory.close();

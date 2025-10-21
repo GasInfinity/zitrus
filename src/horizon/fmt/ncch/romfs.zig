@@ -40,7 +40,7 @@ pub const Header = extern struct {
     file_info: HashMetaInfo,
     file_data_offset: u32,
 
-    pub const CheckError = error{InvalidHeaderLength, InvalidDataAlignment, InvalidDirectoryAlignment, InvalidFileAlignment};
+    pub const CheckError = error{ InvalidHeaderLength, InvalidDataAlignment, InvalidDirectoryAlignment, InvalidFileAlignment };
 
     /// Checks if the header is consistent/valid.
     pub fn check(hdr: Header) CheckError!void {
@@ -535,7 +535,7 @@ pub const View = struct {
 
     const OffsetPair = struct {
         pub const Kind = enum { directories, files, directory_hashes, file_hashes };
-        
+
         kind: Kind,
         offset: u32,
         size: u32,
@@ -580,8 +580,8 @@ pub const View = struct {
 
         var last: usize = @sizeOf(Header);
         for (&offset_pairs) |pair| {
-            if(last > pair.offset) return error.OverlappingRegions;
-            if(last < pair.offset) try reader.discardAll(pair.offset - last);
+            if (last > pair.offset) return error.OverlappingRegions;
+            if (last < pair.offset) try reader.discardAll(pair.offset - last);
 
             switch (pair.kind) {
                 .directories => try reader.readSliceEndian(u32, directories, .little),
@@ -593,8 +593,8 @@ pub const View = struct {
             last = pair.offset + pair.size;
         }
 
-        if(last > hdr.file_data_offset) return error.OverlappingRegions;
-        if(last < hdr.file_data_offset) try reader.discardAll(hdr.file_data_offset - last);
+        if (last > hdr.file_data_offset) return error.OverlappingRegions;
+        if (last < hdr.file_data_offset) try reader.discardAll(hdr.file_data_offset - last);
 
         comptime {
             if (builtin.cpu.arch.endian() != .little) @compileError("TODO: Big endian RomFS meta parsing (post-process)");
@@ -646,7 +646,7 @@ pub const View = struct {
         var it = ComponentIterator.init(path) catch {};
 
         var last_parent: Directory = if (it.root()) |_| .root else parent;
-        var last: []const u16 = (it.next() orelse (if(it.root() != null) return .initDirectory(.root) else return error.BadPathName)).name;
+        var last: []const u16 = (it.next() orelse (if (it.root() != null) return .initDirectory(.root) else return error.BadPathName)).name;
 
         while (it.next()) |current| {
             last_parent = if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral(".")))

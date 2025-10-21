@@ -79,7 +79,7 @@ pub fn openFile(fs: RomFs, parent: romfs.View.Directory, path: [:0]const u16) !r
 
 /// Initializes a RomFS from the base RomFS of the current NCCH.
 pub fn initSelfBase(fs: Filesystem, gpa: std.mem.Allocator) !RomFs {
-    return .initFile(try fs.sendOpenFileDirectly(0, .self_ncch, .empty, &.{0}, .binary, @ptrCast(&Filesystem.PathType.SelfNcch.romfs_base()), .r, .{}), gpa);
+    return .initFile(try fs.sendOpenFileDirectly(0, .self_ncch, .empty, &.{0}, .binary, @ptrCast(&Filesystem.PathType.SelfNcch.romfs_base), .r, .{}), gpa);
 }
 
 fn initSelf3dsx(fs: Filesystem, gpa: std.mem.Allocator) !RomFs {

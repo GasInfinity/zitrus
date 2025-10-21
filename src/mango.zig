@@ -574,7 +574,7 @@ pub const TextureCombinerSource = enum(u8) {
     constant,
     previous,
 
-    pub fn native(src: TextureCombinerSource) pica.TextureCombinerSource {
+    pub fn native(src: TextureCombinerSource) pica.Graphics.TextureCombiners.Source {
         return switch (src) {
             .primary_color => .primary_color,
             .fragment_primary_color => .fragment_primary_color,
@@ -602,7 +602,7 @@ pub const TextureCombinerColorFactor = enum(u8) {
     src_blue = 12,
     one_minus_src_blue,
 
-    pub fn native(factor: TextureCombinerColorFactor) pica.TextureCombinerColorFactor {
+    pub fn native(factor: TextureCombinerColorFactor) pica.Graphics.TextureCombiners.ColorFactor {
         return switch (factor) {
             .src_color => .src_color,
             .one_minus_src_color => .one_minus_src_color,
@@ -628,7 +628,7 @@ pub const TextureCombinerAlphaFactor = enum(u8) {
     src_blue,
     one_minus_src_blue,
 
-    pub fn native(factor: TextureCombinerAlphaFactor) pica.TextureCombinerAlphaFactor {
+    pub fn native(factor: TextureCombinerAlphaFactor) pica.Graphics.TextureCombiners.AlphaFactor {
         return switch (factor) {
             .src_alpha => .src_alpha,
             .one_minus_src_alpha => .one_minus_src_alpha,
@@ -664,7 +664,7 @@ pub const TextureCombinerOperation = enum(u8) {
     /// `src0 + src1 * src2` (?)
     add_multiply,
 
-    pub fn native(op: TextureCombinerOperation) pica.TextureCombinerOperation {
+    pub fn native(op: TextureCombinerOperation) pica.Graphics.TextureCombiners.Operation {
         return switch (op) {
             .replace => .replace,
             .modulate => .modulate,
@@ -685,7 +685,7 @@ pub const Multiplier = enum(u8) {
     @"1x", @"2x", @"4x", @"8x", @"0.25x", @"0.5x",
     // zig fmt: on
 
-    pub fn nativeTextureCombinerMultiplier(multiplier: Multiplier) pica.TextureCombinerMultiplier {
+    pub fn nativeTextureCombinerMultiplier(multiplier: Multiplier) pica.Graphics.TextureCombiners.Multiplier {
         return switch (multiplier) {
             .@"1x" => .@"1x",
             .@"2x" => .@"2x",
@@ -706,27 +706,13 @@ pub const Multiplier = enum(u8) {
     }
 };
 
-pub const TextureCombinerScale = enum(u8) {
-    @"1x",
-    @"2x",
-    @"4x",
-
-    pub fn native(scale: TextureCombinerScale) pica.TextureCombinerMultiplier {
-        return switch (scale) {
-            .@"1x" => .@"1x",
-            .@"2x" => .@"2x",
-            .@"4x" => .@"4x",
-        };
-    }
-};
-
 pub const TextureCombinerBufferSource = enum(u8) {
     /// Use previous combiner buffer output as this combiner's buffer input
     previous_buffer,
     /// Use previous combiner output as this combiner's buffer input
     previous,
 
-    pub fn native(buffer_source: TextureCombinerBufferSource) pica.TextureCombinerBufferSource {
+    pub fn native(buffer_source: TextureCombinerBufferSource) pica.Graphics.TextureCombiners.BufferSource {
         return switch (buffer_source) {
             .previous_buffer => .previous_buffer,
             .previous => .previous,
@@ -1256,8 +1242,10 @@ pub const TextureCombinerUnit = extern struct {
     color_op: TextureCombinerOperation,
     alpha_op: TextureCombinerOperation,
 
-    color_scale: TextureCombinerScale,
-    alpha_scale: TextureCombinerScale,
+    /// Only 1x, 2x and 4x multipliers supported.
+    color_scale: Multiplier,
+    /// Only 1x, 2x and 4x multipliers supported.
+    alpha_scale: Multiplier,
 
     constant: [4]u8,
 
@@ -1277,8 +1265,8 @@ pub const TextureCombinerUnit = extern struct {
             },
             .color = combiner.constant,
             .scales = .{
-                .color_scale = combiner.color_scale.native(),
-                .alpha_scale = combiner.alpha_scale.native(),
+                .color_scale = combiner.color_scale.nativeTextureCombinerMultiplier(),
+                .alpha_scale = combiner.alpha_scale.nativeTextureCombinerMultiplier(),
             },
         };
     }

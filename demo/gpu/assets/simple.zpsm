@@ -1,9 +1,3 @@
-.out o0 position 
-.out o1 view
-.out o2 normal_quaternion
-.out o3.xy texture_coordinate_0.xy
-
-.set f95 (1, 0, 0.5, 0)
 .alias cOrthoQuat f95.xyyy
 .alias cOne f95.xxxx
 .alias cZero f95.yyyy
@@ -31,6 +25,13 @@
 .alias uModelM3 f7
 
 .entry main vertex
+
+.out main o0 position 
+.out main o1 view
+.out main o2 normal_quaternion
+.out main o3.xy texture_coordinate_0.xy
+
+.set main f95 (1, 0, 0.5, 0)
 
 main:
     ; tmp_ModelxiPos = uModel * iPos;
@@ -61,7 +62,7 @@ main:
     ; Cross product will give us (-y, x, 0) while dot product will give us only z
     mov r0, cOrthoQuat
 
-    cmp r1.zz, -f95.xx, eq, eq
+    cmp r1.zz, eq, eq, -f95.xx
     jmpc x, true, false, degen
 
     mov r0.x, -r1.yx

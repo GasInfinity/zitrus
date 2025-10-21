@@ -36,11 +36,19 @@ There's one TODO left, relative `Floating constant` source addressing with the a
 
 `.entry <label> <shader> [parameters]`
 
-`.out <oX>[.mask] <semantic>[.swizzle]`
+Declare an entrypoint.
+
+`.out <entry> <oX>[.mask] <semantic>[.swizzle]`
+
+Declare an output linked to an entrypoint.
+
+`.set <entry> <f/i/b>X <scalar/vector>`
+
+Declare a constant within an entrypoint.
 
 `.alias <name> <dX>[.swizzle]`
 
-`.set <f/i/b>X <scalar/vector>`
+Declare a global alias.
 
 ### Instructions
 
@@ -57,7 +65,7 @@ No pseudo-instructions are implemented nor planned currently. All known PICA200 
     - flow_uniform: `bX, start_label, end_label`
         - loop: `iX, end_exclusive_label`
         - jmpu: `bX, <true/false>, start_label`
-    - comparison: `[-]src1[.swizzle], [-]src2[.swizzle], comparison, comparison`
+    - comparison: `[-]src1[.swizzle], x_comparison, y_comparison, [-]src2[.swizzle]`
         - no, at least from what I (GasInfinity) tested in my o2DS, cmp does NOT use the destination mask, so cc[.mask] would be always cc.xy.
     - setemit: `0-2, <none/emmiting>, <cw/ccw>`
     - mad: `dst[.mask], [-]src_limited1[.swizzle], [-]src2[.swizzle], [-]src3[.swizzle]`, where two src must be a `Limited source register`.
