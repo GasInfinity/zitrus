@@ -74,7 +74,9 @@ pub const PathType = enum(i32) {
         access: Access.Type,
         data: Access,
 
-        comptime { std.debug.assert(@sizeOf(SelfNcch) == 0x0C); }
+        comptime {
+            std.debug.assert(@sizeOf(SelfNcch) == 0x0C);
+        }
     };
 
     @"error" = -1,

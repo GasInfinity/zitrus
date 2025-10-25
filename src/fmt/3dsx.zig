@@ -4,6 +4,21 @@
 
 pub const magic = "3DSX";
 
+const Segment = enum {
+    text,
+    rodata,
+    data,
+
+    pub fn fromCodeSegment(seg: code.Segment.Kind) Segment {
+        return switch (seg) {
+            .text => .text,
+            .rodata => .rodata,
+            .data => .data,
+            else => unreachable,
+        };
+    }
+};
+
 pub const Header = extern struct {
     magic: [magic.len]u8 = magic.*,
     header_size: u16,
@@ -47,13 +62,25 @@ pub const MakeOptions = struct {
 /// Asserts that the `text` segment address is the base address and entrypoint, the segments are sequential,
 /// and that the only segment with differing file/memory sizes is `data`.
 pub fn make(writer: *std.Io.Writer, reader: *std.fs.File.Reader, info: code.Info, gpa: std.mem.Allocator, options: MakeOptions) !void {
-    std.debug.assert(info.findNonSequentialSegment() == null);
-    std.debug.assert(info.findNonDataSegmentWithBss() == null);
+    std.debug.assert(info.findNonSequentialPhysicalSegment(.fromByteUnits(zitrus.horizon.heap.page_size)) == null);
 
-    // They may be sorted already but we never know...
-    std.mem.sort(u32, info.relocations.items, {}, comptime std.sort.asc(u32));
+    const segments = info.segments;
+    const header_size: u16 = if (options.smdh != null or options.romfs != null) @sizeOf(Header) + @sizeOf(ExtendedHeader) else @sizeOf(Header);
 
-    var processed_relocations = try processRelocations(info, gpa);
+    const base_address = segments[0].virtual_address;
+    const text_size = segments[0].memory_size;
+    const rodata_size, const data_size, const bss_size = switch (segments.len) {
+        1 => .{ 0, 0, 0 },
+        2 => switch (segments[1].kind) {
+            .rodata => .{ segments[1].file_size, 0, 0 },
+            .data => .{ 0, segments[1].memory_size, segments[1].memory_size - segments[1].file_size },
+            else => unreachable,
+        },
+        3 => .{ segments[1].file_size, segments[2].memory_size, segments[2].memory_size - segments[2].file_size },
+        else => unreachable, // NOTE: Cannot happen
+    };
+
+    var processed_relocations = try processRelocations(info, rodata_size, (data_size - bss_size), gpa);
     defer {
         var it = processed_relocations.iterator();
 
@@ -61,13 +88,6 @@ pub fn make(writer: *std.Io.Writer, reader: *std.fs.File.Reader, info: code.Info
             relocs.value.deinit(gpa);
         }
     }
-
-    const header_size: u16 = if (options.smdh != null or options.romfs != null) @sizeOf(Header) + @sizeOf(ExtendedHeader) else @sizeOf(Header);
-
-    const base_address = info.segments.get(.text).?.address;
-    const text_size = info.segments.get(.text).?.memory_size;
-    const rodata_size = if (info.segments.get(.rodata)) |rodata| rodata.memory_size else 0;
-    const data_size, const bss_size = if (info.segments.get(.data)) |data| .{ data.memory_size, data.memory_size - data.file_size } else .{ 0, 0 };
 
     try writer.writeStruct(Header{
         .header_size = header_size,
@@ -84,7 +104,7 @@ pub fn make(writer: *std.Io.Writer, reader: *std.fs.File.Reader, info: code.Info
         const executable_end: u32 = @sizeOf(Header) + @sizeOf(ExtendedHeader) + (3 * @sizeOf(RelocationHeader)) + text_size + rodata_size + (data_size - bss_size) + (tot_reloc: {
             var total: u32 = 0;
 
-            for (std.enums.values(code.Segment)) |segment| {
+            for (std.enums.values(Segment)) |segment| {
                 total += @intCast(@sizeOf(Relocation) * processed_relocations.get(segment).items.len);
             }
 
@@ -102,21 +122,19 @@ pub fn make(writer: *std.Io.Writer, reader: *std.fs.File.Reader, info: code.Info
         }, .little);
     }
 
-    for (std.enums.values(code.Segment)) |segment| {
+    for (std.enums.values(Segment)) |segment| {
         try writer.writeStruct(RelocationHeader{
             .absolute_relocations = @intCast(processed_relocations.get(segment).items.len),
             .relative_relocations = 0,
         }, .little);
     }
 
-    var info_rw = info;
-    var segment_it = info_rw.segments.iterator();
-    while (segment_it.next()) |seg| {
-        const segment_relocs = processed_relocations.get(seg.key);
+    for (segments) |seg| {
+        const segment_relocs = processed_relocations.get(.fromCodeSegment(seg.kind));
 
         var patched: usize = 0;
 
-        try reader.seekTo(seg.value.file_offset);
+        try reader.seekTo(seg.file_offset);
         for (segment_relocs.items) |rc| {
             try reader.interface.streamExact(writer, rc.words_to_skip * @sizeOf(u32));
 
@@ -129,10 +147,10 @@ pub fn make(writer: *std.Io.Writer, reader: *std.fs.File.Reader, info: code.Info
             patched += (rc.words_to_skip + @as(usize, rc.words_to_patch)) * @sizeOf(u32);
         }
 
-        try reader.interface.streamExact(writer, (seg.value.file_size - patched));
+        try reader.interface.streamExact(writer, (seg.file_size - patched));
     }
 
-    for (std.enums.values(code.Segment)) |segment| {
+    for (std.enums.values(Segment)) |segment| {
         for (processed_relocations.get(segment).items) |reloc| {
             try writer.writeStruct(reloc, .little);
         }
@@ -147,8 +165,8 @@ pub fn make(writer: *std.Io.Writer, reader: *std.fs.File.Reader, info: code.Info
     }
 }
 
-fn processRelocations(info: code.Info, gpa: std.mem.Allocator) !std.EnumArray(code.Segment, std.ArrayList(Relocation)) {
-    var processed: std.EnumArray(code.Segment, std.ArrayList(Relocation)) = .initFill(.empty);
+fn processRelocations(info: code.Info, rodata_file_size: u32, data_file_size: u32, gpa: std.mem.Allocator) !std.EnumArray(Segment, std.ArrayList(Relocation)) {
+    var processed: std.EnumArray(Segment, std.ArrayList(Relocation)) = .initFill(.empty);
     errdefer {
         var it = processed.iterator();
         while (it.next()) |relocs| {
@@ -156,17 +174,17 @@ fn processRelocations(info: code.Info, gpa: std.mem.Allocator) !std.EnumArray(co
         }
     }
 
-    const text, const text_size = .{ info.segments.get(.text).?.address, info.segments.get(.text).?.memory_size };
-    const rodata, const rodata_size = if (info.segments.get(.rodata)) |rodata| .{ rodata.address, rodata.memory_size } else .{ text + text_size, 0 };
-    const data, const data_size = if (info.segments.get(.data)) |data| .{ data.address, data.memory_size } else .{ rodata + rodata_size, 0 };
-    const top = data + data_size;
+    const text, const text_size = .{ info.segments[0].virtual_address, info.segments[0].memory_size };
+    const rodata = std.mem.alignForward(u32, text + text_size, zitrus.horizon.heap.page_size);
+    const data = std.mem.alignForward(u32, rodata + rodata_file_size, zitrus.horizon.heap.page_size);
+    const top = std.mem.alignForward(u32, data + data_file_size, zitrus.horizon.heap.page_size);
 
     const base_addresses: []const u32 = &.{ text, rodata, data, top };
 
     var last_relocation_address: u32 = text;
     var current_base: u8 = 0;
 
-    const relocs = info.relocations.items;
+    const relocs = info.relocations;
 
     // NOTE: relocations are already sorted
     var current_absolute: usize = 0;

@@ -36,7 +36,7 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
     var elf_reader_buf: [4096]u8 = undefined;
     var elf_reader = elf_file.reader(&elf_reader_buf);
 
-    var processed = code.extractStaticElfAlloc(&elf_reader, arena) catch |err| switch (err) {
+    var processed = code.Info.extractStaticElfAlloc(&elf_reader, arena) catch |err| switch (err) {
         error.NotElf,
         error.NotArm,
         error.NotLittleEndian,
@@ -53,25 +53,51 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
     };
     defer processed.deinit(arena);
 
-    if (processed.segments.get(.text) == null) {
-        log.err("no .text segment", .{});
+    const segments = processed.segments;
+
+    if (segments.len == 0 or segments[0].kind != .text) {
+        log.err("no base .text segment", .{});
         return 1;
     }
 
-    if (processed.findNonSequentialSegment()) |first_non_sequential| {
-        log.err("segment {t} is not sequential [text->rodata->data] in memory!", .{first_non_sequential});
+    if (segments.len > 3) {
+        log.err("too many segments, at most 3 [text->rodata->data] are supported.", .{});
         return 1;
     }
 
-    if (processed.findNonDataSegmentWithBss()) |first_bss| {
-        log.err("non-data segment {t} has bss", .{first_bss});
+    if (processed.findNonSequentialPhysicalSegment(.fromByteUnits(zitrus.horizon.heap.page_size))) |first_non_sequential| {
+        log.err("segment {} is not sequential [text->rodata->data] in memory!", .{first_non_sequential});
         return 1;
     }
 
-    const text = processed.segments.get(.text).?;
+    for (segments[1..], 1..) |s, i| switch (i) {
+        1 => switch (s.kind) {
+            .rodata => {},
+            .data => if (segments.len == 3) {
+                log.err("segments must follow [text->rodata->data], found .data segment instead of .rodata at position 1", .{});
+                return 1;
+            },
+            else => {
+                log.err("segments must follow [text->rodata->data], found {t} segment at position {}", .{ s.kind, i });
+                return 1;
+            },
+        },
+        2 => if (s.kind != .data) {
+            log.err("segments must follow [text->rodata->data], found {t} segment at position {}", .{ s.kind, i });
+            return 1;
+        },
+        else => unreachable,
+    };
 
-    if (processed.entrypoint != text.address) {
-        log.err("entrypoint 0x{X:0>8} is not the base of the executable 0x{X:0>8}", .{ processed.entrypoint, text.address });
+    if (processed.findSegmentWithBss()) |first_bss| if (segments[first_bss].kind != .data) {
+        log.err("non-data segment {} has bss", .{first_bss});
+        return 1;
+    };
+
+    const text = segments[0];
+
+    if (processed.entrypoint != text.virtual_address) {
+        log.err("entrypoint 0x{X:0>8} is not the base of the executable 0x{X:0>8}", .{ processed.entrypoint, text.virtual_address });
         return 1;
     }
 
@@ -107,39 +133,31 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
 
         break :data smdh_data;
     } else null;
+
     if (args.verbose) {
         log.info("ELF Segments: ", .{});
 
-        var it = processed.segments.iterator();
-
-        while (it.next()) |e| {
-            const seg = e.key;
-            const info = e.value;
-
-            log.info("[{t:<6}] Base: 0x{X:0>8} | Size in disk: 0x{X:0>8} | Size in memory: 0x{X:0>8}", .{ seg, info.address, info.file_size, info.memory_size });
+        for (processed.segments) |s| {
+            log.info("[{t:<6}] Base: 0x{X:0>8} | Size in disk: 0x{X:0>8} | Size in memory: 0x{X:0>8}", .{ s.kind, s.virtual_address, s.file_size, s.memory_size });
         }
 
-        log.info("{} total relocations found.", .{processed.relocations.items.len});
+        log.info("{} total relocations found.", .{processed.relocations.len});
 
-        for (processed.relocations.items) |address| {
-            it = processed.segments.iterator();
-
-            while (it.next()) |s| {
-                const seg = s.key;
-                const data = s.value;
-
-                if (address < data.address or address > data.address + data.file_size) {
-                    if (s.key == .data) log.info("relocation at 0x{X:0>8} is unmapped", .{address});
+        for (processed.relocations) |address| {
+            for (processed.segments, 0..) |s, i| {
+                if (address < s.virtual_address or address > s.virtual_address + s.file_size) {
+                    if (i -| 1 == processed.segments.len) log.info("relocation at 0x{X:0>8} is unmapped", .{address});
                     continue;
                 }
 
-                try elf_reader.seekTo(s.value.file_offset + (address - data.address));
+                try elf_reader.seekTo(s.file_offset + (address - s.virtual_address));
                 const value = try elf_reader.interface.takeInt(u32, .little);
-                log.info("relocation [{t:<6}] at 0x{X:0>8}: 0x{X:0>8} (0x{X:0>8})", .{ seg, address, value, (value - text.address) });
+                log.info("relocation [{t:<6}] at 0x{X:0>8}: 0x{X:0>8} (0x{X:0>8})", .{ s.kind, address, value, (value - text.virtual_address) });
                 break;
             }
         }
 
+        if (smdh_data) |_| log.info("{} SMDH bytes", .{@sizeOf(fmt.smdh.Smdh)});
         if (romfs_reader) |*romfs| log.info("{} RomFS bytes", .{try romfs.getSize()});
     }
 

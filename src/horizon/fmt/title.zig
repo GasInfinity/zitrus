@@ -1,6 +1,6 @@
 //! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/Titles
 
-pub const Platform = enum(u16) { @"3ds" = 4 };
+pub const Platform = enum(u16) { @"3ds" = 4, _ };
 
 pub const Category = packed struct(u16) {
     pub const normal: Category = .{};

@@ -3,11 +3,11 @@ pub const description = "Assemble a zitrus PICA200 shader assembly (ZPSM) file";
 pub const OutputFormat = enum {
     pub const descriptions = .{
         .zpsh = "Simpler shader format which is currently specific to zitrus",
-        .shbin = "Shader format used in official and homebrew 3DS titles",
+        .dvl = "Shader format used in official and homebrew 3DS titles",
     };
 
     zpsh,
-    shbin,
+    dvl,
 };
 
 pub const descriptions = .{
@@ -89,7 +89,7 @@ pub fn main(args: Assemble, arena: std.mem.Allocator) !u8 {
     const out = &output_writer.interface;
 
     switch (args.ofmt) {
-        .shbin => @panic("TODO"),
+        .dvl => @panic("TODO"),
         .zpsh => {
             if (assembled.encoded.instructions.items.len > std.math.maxInt(u12)) {
                 log.err("cannot output zpsh, encoded shader has too many instructions ({})", .{assembled.encoded.instructions.items.len});
@@ -103,13 +103,13 @@ pub fn main(args: Assemble, arena: std.mem.Allocator) !u8 {
 
             const encoded = &assembled.encoded;
 
-            var padded_strings_size: u32 = 0;
+            var padded_strings_size: usize = 0;
             var entry_it = assembled.entrypoints.iterator();
             while (entry_it.next()) |entrypoint| {
-                padded_strings_size += @intCast(entrypoint.key_ptr.*.len + 1);
+                padded_strings_size += entrypoint.key_ptr.*.len + 1;
             }
 
-            padded_strings_size = std.mem.alignForward(u32, padded_strings_size, @sizeOf(u32));
+            padded_strings_size = std.mem.alignForward(usize, padded_strings_size, @sizeOf(u32));
 
             var string_table: std.ArrayList(u8) = try .initCapacity(arena, padded_strings_size);
             defer string_table.deinit(arena);
@@ -125,7 +125,7 @@ pub fn main(args: Assemble, arena: std.mem.Allocator) !u8 {
 
             try out.writeStruct(zpsh.Header{
                 .shader = .init(assembled.entrypoints.count(), encoded.instructions.items.len, encoded.allocated_descriptors),
-                .string_table_size = padded_strings_size,
+                .entry_string_table_size = @intCast(@divExact(padded_strings_size, @sizeOf(u32))),
             }, .little);
 
             try out.writeAll(std.mem.sliceAsBytes(encoded.instructions.items));
@@ -140,7 +140,7 @@ pub fn main(args: Assemble, arena: std.mem.Allocator) !u8 {
 
                 try out.writeStruct(zpsh.EntrypointHeader{
                     .name_string_offset = @intCast(current_string_offset),
-                    .code_offset = processed_info.offset,
+                    .instruction_offset = processed_info.offset,
                     .info = switch (processed_info.info) {
                         .vertex => .vertex,
                         .geometry => |g| switch (g) {
@@ -169,7 +169,7 @@ pub fn main(args: Assemble, arena: std.mem.Allocator) !u8 {
 
                 var int_it = processed_info.constants.int.iterator();
                 while (int_it.next()) |entry| {
-                    try out.writeAll(std.mem.asBytes(entry.value));
+                    try out.writeAll(entry.value);
                 }
 
                 var flt_it = processed_info.constants.float.iterator();
@@ -199,6 +199,9 @@ const Diagnostic = struct {
     const invalid_register: Diagnostic = .init("invalid register");
     const expected_address_register: Diagnostic = .init("expected address register (a)");
     const invalid_address_register_mask: Diagnostic = .init("invalid address register mask (xy)");
+    const expected_address_component: Diagnostic = .init("expected valid address component (a.x, a.y, a.l)");
+    const cannot_address_relative: Diagnostic = .init("register cannot be addressed at runtime");
+
     const expected_condition_register: Diagnostic = .init("expected condition register (cc)");
     const invalid_condition_register_mask: Diagnostic = .init("invalid condition register mask (xy)");
 
@@ -320,6 +323,8 @@ const Diagnostic = struct {
             .invalid_register => invalid_register.withLocation(loc),
             .expected_address_register => expected_address_register.withLocation(loc),
             .invalid_address_register_mask => invalid_address_register_mask.withLocation(loc),
+            .expected_address_component => expected_address_component.withLocation(loc),
+            .cannot_address_relative => cannot_address_relative.withLocation(loc),
             .expected_condition_register => expected_condition_register.withLocation(loc),
             .invalid_condition_register_mask => invalid_condition_register_mask.withLocation(loc),
             .expected_src_register => expected_src_register.withLocation(loc),

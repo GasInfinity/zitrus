@@ -70,14 +70,14 @@ pub const Header = extern struct {
     signature: [0x100]u8,
     magic: [4]u8 = magic.*,
     content_size: u32,
-    partition_id: u64,
+    partition_id: TitleId,
     maker_code: u16,
     version: Header.Version,
     hash: [4]u8,
-    title_id: horizon.fmt.title.Id,
+    title_id: TitleId,
     _reserved0: [0x10]u8 = @splat(0),
     logo_region_hash: [0x20]u8,
-    product_code: [15:0]u8,
+    product_code: [16]u8,
     /// SHA-256 of the `ExtendedHeader`
     extended_header_hash: [0x20]u8,
     /// Size of the `ExtendedHeader` in bytes.
@@ -111,9 +111,10 @@ pub const Header = extern struct {
     /// RomFS superblock SHA-256 hash spanning from the start of the RomFS to `romfs_hash_region_size`.
     romfs_superblock_hash: [0x20]u8,
 
-    /// Checks whether the Header is valid by
-    pub fn check(hdr: Header) bool {
-        return std.mem.eql(u8, &hdr.magic, magic);
+    pub const CheckError = error{NotNcch};
+    /// Checks whether the Header is valid
+    pub fn check(hdr: Header) CheckError!void {
+        if (!std.mem.eql(u8, &hdr.magic, magic)) return error.NotNcch;
     }
 
     comptime {
@@ -137,13 +138,11 @@ pub const ExtendedHeader = extern struct {
 
         pub const SystemInfo = extern struct {
             save_data_size: u64,
-            // XXX: Is this where home menu will jump after opening the app?
-            // It's the same as program_id always.
-            jump_id: u64,
+            jump_id: TitleId,
             _reserved0: [0x30]u8 = @splat(0),
         };
 
-        application_title: [7:0]u8,
+        application_title: [8]u8,
         _reserved0: [5]u8 = @splat(0),
         flags: Flags,
         remaster_version: u16,
@@ -220,7 +219,7 @@ pub const ExtendedHeader = extern struct {
                     core: bool,
                     nand_ro: bool,
                     nand_rw: bool,
-                    nand_wo: bool,
+                    nand_ro_rw: bool,
                     system_settings: bool,
                     cardboard: bool,
                     export_import_ivs: bool,
@@ -248,7 +247,7 @@ pub const ExtendedHeader = extern struct {
                 attributes: Attributes,
             };
 
-            program_id: u64,
+            title_id: TitleId,
             core_version: u32,
             new_speedup: NewSpeedupConfig,
             new_execution: NewExecutionConfig,
@@ -257,7 +256,7 @@ pub const ExtendedHeader = extern struct {
             resource_limits: [16]u16,
             storage: Storage,
             service_access_control: [34][8]u8,
-            _reserved0: [15]u8,
+            _reserved0: [15]u8 = @splat(0),
             resource_limit_category: ResourceLimitCategory,
 
             comptime {
@@ -275,7 +274,7 @@ pub const ExtendedHeader = extern struct {
         };
 
         pub const Arm9AccessControl = extern struct {
-            pub const Filesystem = packed struct(u32) {
+            pub const StorageAccess = packed struct(u32) {
                 mount_nand: bool,
                 mount_nand_ro: bool,
                 mount_twln: bool,
@@ -289,7 +288,7 @@ pub const ExtendedHeader = extern struct {
                 _: u22 = 0,
             };
 
-            filesystem: Filesystem,
+            storage_access: StorageAccess,
             _reserved: [11]u8 = @splat(0xFF),
             version: u8 = 2,
 
@@ -336,3 +335,6 @@ comptime {
 const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
+const TitleId = horizon.fmt.title.Id;
+
+const code = zitrus.fmt.code;

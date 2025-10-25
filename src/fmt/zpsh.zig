@@ -9,15 +9,15 @@ pub const magic = "ZPSH";
 
 pub const Header = extern struct {
     pub const Shader = packed struct(u32) {
+        entrypoints: u12,
         instructions_minus_one: u12,
         descriptors: u8,
-        entrypoints: u12,
 
         pub fn init(entrypoints: usize, instructions_size: usize, descriptors: usize) Shader {
             return .{
-                .instructions_minus_one = @intCast(instructions_size - 1),
-                .descriptors= @intCast(descriptors),
                 .entrypoints = @intCast(entrypoints),
+                .instructions_minus_one = @intCast(instructions_size - 1),
+                .descriptors = @intCast(descriptors),
             };
         }
 
@@ -26,9 +26,15 @@ pub const Header = extern struct {
         }
     };
 
+    pub const Flags = packed struct(u8) { _: u8 = 0 };
+
     magic: [magic.len]u8 = magic.*,
     shader: Shader,
-    string_table_size: u32,
+    /// In `u32`s
+    entry_string_table_size: u16,
+    flags: Flags = .{},
+    /// In `u32`s
+    header_size: u8 = @divExact(@sizeOf(Header), @sizeOf(u32)),
 
     pub const CheckError = error{NotZpsh};
 
@@ -70,7 +76,7 @@ pub const EntrypointHeader = extern struct {
             }
 
             pub fn initVariable(full_vertices: u5) Geometry {
-                return .{ .variable = .{ .full_vertices= full_vertices } };
+                return .{ .variable = .{ .full_vertices = full_vertices } };
             }
 
             pub fn initFixed(vertices: u5, uniform_start: FloatingRegister) Geometry {
@@ -215,7 +221,7 @@ pub const EntrypointHeader = extern struct {
     };
 
     name_string_offset: u32,
-    code_offset: u16,
+    instruction_offset: u16,
     info: ShaderInfo,
 
     // NOTE: Constants are sorted, that is, e.g: f0 = true, f1 = false, f2 = true then in memory there will be two floating constant entries that correspond to f0 and f2. Same for integers and same for outputs.
@@ -233,20 +239,22 @@ pub const Parsed = struct {
     entrypoints: u12,
 
     pub fn initBuffer(buffer: []const u8) Header.CheckError!Parsed {
-        var hdr = std.mem.bytesAsValue(Header, buffer).*;
+        var hdr: Header = std.mem.bytesAsValue(Header, buffer).*;
 
         if (builtin.cpu.arch.endian() != .little) std.mem.byteSwapAllFields(Header, &hdr);
 
         try hdr.check();
 
+        const header_size = @as(usize, hdr.header_size) * @sizeOf(u32);
         const byte_code_size = @sizeOf(shader.encoding.Instruction) * hdr.shader.instructions();
         const byte_operands_size = @sizeOf(shader.encoding.OperandDescriptor) * @as(usize, hdr.shader.descriptors);
+        const string_table_size = @as(usize, hdr.entry_string_table_size) * @sizeOf(u32);
 
         return .{
-            .instructions = @alignCast(std.mem.bytesAsSlice(pica.shader.encoding.Instruction, buffer[@sizeOf(Header)..][0..byte_code_size])),
-            .operand_descriptors = @alignCast(std.mem.bytesAsSlice(pica.shader.encoding.OperandDescriptor, buffer[(@sizeOf(Header) + byte_code_size)..][0..byte_operands_size])),
-            .string_table = buffer[(@sizeOf(Header) + byte_code_size + byte_operands_size)..][0..hdr.string_table_size],
-            .entrypoint_data = buffer[(@sizeOf(Header) + byte_code_size + byte_operands_size + hdr.string_table_size)..],
+            .instructions = @alignCast(std.mem.bytesAsSlice(pica.shader.encoding.Instruction, buffer[header_size..][0..byte_code_size])),
+            .operand_descriptors = @alignCast(std.mem.bytesAsSlice(pica.shader.encoding.OperandDescriptor, buffer[(header_size + byte_code_size)..][0..byte_operands_size])),
+            .string_table = buffer[(header_size + byte_code_size + byte_operands_size)..][0..string_table_size],
+            .entrypoint_data = buffer[(header_size + byte_code_size + byte_operands_size + string_table_size)..],
             .entrypoints = hdr.shader.entrypoints,
         };
     }
@@ -271,7 +279,7 @@ pub const Parsed = struct {
             floating_constant_set: std.enums.EnumSet(FloatingRegister),
             output_set: std.enums.EnumSet(OutputRegister),
 
-            integer_constants: []const [4]i8,
+            integer_constants: []const [4]u8,
             floating_constants: []const pica.F7_16x4,
             output_map: []const pica.OutputMap,
         };
@@ -296,7 +304,7 @@ pub const Parsed = struct {
             const floating_constant_set: std.EnumSet(FloatingRegister) = hdr.floating_constant_mask.toSet();
             const output_map_set: std.EnumSet(OutputRegister) = hdr.output_mask.toSet();
 
-            const integer_constants_byte_size: u32 = @intCast(integer_constant_set.count() * @sizeOf([4]i8));
+            const integer_constants_byte_size: u32 = @intCast(integer_constant_set.count() * @sizeOf([4]u8));
             const floating_constants_byte_size: u32 = @intCast(floating_constant_set.count() * @sizeOf(pica.F7_16x4));
             const output_map_byte_size: u32 = @intCast(output_map_set.count() * @sizeOf(pica.OutputMap));
 
@@ -307,7 +315,7 @@ pub const Parsed = struct {
 
             return .{
                 .info = hdr.info,
-                .offset = @intCast(hdr.code_offset),
+                .offset = @intCast(hdr.instruction_offset),
 
                 .name = std.mem.span(@as([*:0]const u8, @ptrCast(it.parsed.string_table[hdr.name_string_offset..].ptr))),
                 .boolean_constant_set = hdr.boolean_constant_mask.toSet(),
@@ -315,7 +323,7 @@ pub const Parsed = struct {
                 .floating_constant_set = floating_constant_set,
                 .output_set = output_map_set,
 
-                .integer_constants = @alignCast(std.mem.bytesAsSlice([4]i8, entry_start[@sizeOf(EntrypointHeader)..][0..integer_constants_byte_size])),
+                .integer_constants = @alignCast(std.mem.bytesAsSlice([4]u8, entry_start[@sizeOf(EntrypointHeader)..][0..integer_constants_byte_size])),
                 .floating_constants = @alignCast(std.mem.bytesAsSlice(pica.F7_16x4, entry_start[(@sizeOf(EntrypointHeader) + integer_constants_byte_size)..][0..floating_constants_byte_size])),
                 .output_map = @alignCast(std.mem.bytesAsSlice(pica.OutputMap, entry_start[(@sizeOf(EntrypointHeader) + integer_constants_byte_size + floating_constants_byte_size)..][0..output_map_byte_size])),
             };

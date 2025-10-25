@@ -46,7 +46,6 @@ pub const Token = struct {
         .{ "jmpu", .mnemonic_jmpu },
         .{ "cmp", .mnemonic_cmp },
         .{ "mad", .mnemonic_mad },
-        .{ "sub", .mnemonic_sub },
         .{ "true", .true },
         .{ "false", .false },
     });
@@ -106,7 +105,6 @@ pub const Token = struct {
         mnemonic_jmpu,
         mnemonic_cmp,
         mnemonic_mad,
-        mnemonic_sub,
 
         pub fn lexeme(tag: Tag) ?[:0]const u8 {
             return switch (tag) {

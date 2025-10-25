@@ -808,8 +808,9 @@ pub const Instruction = packed union {
                     if (binary.operand_descriptor_id < descriptors.len) {
                         const desc = descriptors[binary.operand_descriptor_id];
 
-                        try writer.print("{t} {t}.{f}, {f}{t}.{f}, {f}{t}{f}.{f}", .{ binary.opcode, binary.dst, desc.dst_mask, desc.src1_neg, binary.src1, desc.src1_selector, desc.src2_neg, binary.src2, binary.address_component, desc.src2_selector });
-                    } else try writer.print("{t} {t}.????, ?{t}.????, ?{t}{f}.????", .{ binary.opcode, binary.dst, binary.src1, binary.src2, binary.address_component });
+                        // NOTE: @tagName because we want to remove the `i` suffix.
+                        try writer.print("{s} {t}.{f}, {f}{t}.{f}, {f}{t}{f}.{f}", .{ @tagName(binary.opcode)[0..3], binary.dst, desc.dst_mask, desc.src1_neg, binary.src1, desc.src1_selector, desc.src2_neg, binary.src2, binary.address_component, desc.src2_selector });
+                    } else try writer.print("{s} {t}.????, ?{t}.????, ?{t}{f}.????", .{ @tagName(binary.opcode)[0..3], binary.dst, binary.src1, binary.src2, binary.address_component });
                 },
                 @intFromEnum(Opcode.ex2),
                 @intFromEnum(Opcode.lg2),

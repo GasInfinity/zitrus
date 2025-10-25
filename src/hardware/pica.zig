@@ -1744,7 +1744,7 @@ pub const Graphics = extern struct {
         };
 
         bool_uniforms: BooleanUniformMask,
-        int_uniforms: [4][4]i8,
+        int_uniforms: [4][4]u8,
         _unused0: [4]u32,
         input_buffer_config: InputBufferConfig,
         entrypoint: Entry,

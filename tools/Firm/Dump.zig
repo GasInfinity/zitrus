@@ -1,22 +1,17 @@
-pub const description = "Dump the contents of an ExeFS.";
+pub const description = "Dump sections of a 3DS firmware file.";
 
-pub const descriptions = .{
-    .file = "Dump a specific file instead of the entire ExeFS",
-    .output = "Output directory / file. Directory outputs must be specified, if none stdout is used",
-};
+pub const descriptions = .{ .section = "Section to dump, if none all sections are dumped", .output = "Output directory / file. Directory outputs must be specified, if none stdout is used" };
 
 pub const switches = .{
-    .file = 'f',
+    .section = 's',
     .output = 'o',
 };
 
-file: ?[]const u8 = null,
-output: ?[]const u8 = null,
+section: ?u2,
+output: ?[]const u8,
 
 @"--": struct {
-    pub const descriptions = .{
-        .input = "The ExeFS file, if none stdin is used",
-    };
+    pub const descriptions = .{ .input = "Input file, if none stdin is used" };
 
     input: ?[]const u8,
 },
@@ -25,7 +20,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     const cwd = std.fs.cwd();
     const input_file, const input_should_close = if (args.@"--".input) |in|
         .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
-            log.err("could not open input file '{s}': {t}", .{ in, err });
+            log.err("could not open FIRM '{s}': {t}", .{ in, err });
             return 1;
         }, true }
     else
@@ -33,26 +28,29 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     defer if (input_should_close) input_file.close();
 
     var buf: [4096]u8 = undefined;
-    var exefs_reader = input_file.readerStreaming(&buf);
-    const reader = &exefs_reader.interface;
+    var input_reader = input_file.reader(&buf);
+    const reader = &input_reader.interface;
 
-    const header = reader.takeStruct(exefs.Header, .little) catch |err| {
-        log.err("could not read ExeFS header: {t}", .{err});
+    const header = reader.takeStruct(firm.Header, .little) catch |err| {
+        log.err("could not read FIRM header: {t}", .{err});
         return 1;
     };
 
-    if (args.file) |file_name| {
-        const file = header.find(file_name) orelse {
-            log.err("could not find file '{s}' in ExeFS", .{file_name});
-            return 1;
-        };
+    if (args.section) |section_index| {
+        const section = header.sections[section_index];
 
-        try exefs_reader.interface.discardAll(file.offset); // XXX: seekBy does not work well!
-        const contents = try reader.readAlloc(arena, file.size);
+        if (section.size == 0) {
+            log.err("section {} is empty", .{section_index});
+            return 1;
+        }
+
+        try reader.discardAll(section.offset - @sizeOf(firm.Header));
+
+        const contents = try reader.readAlloc(arena, section.size);
         defer arena.free(contents);
 
-        if (!file.check(contents)) {
-            log.err("stored hash for '{s}' does not match the newly computed hash, contents may be corrupted", .{file_name});
+        if (!section.check(contents)) {
+            log.err("stored hash for section {} does not match the newly computed hash, contents may be corrupted", .{section});
             return 1;
         }
 
@@ -78,7 +76,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     }
 
     if (args.output == null) {
-        log.err("output path is required when dumping all ExeFS contents", .{});
+        log.err("output path is required when dumping all FIRM sections", .{});
         return 1;
     }
 
@@ -89,13 +87,15 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     };
     defer output_directory.close();
 
-    var it = header.iterator();
+    var section_name_buf: [128]u8 = undefined;
+    for (&header.sections, 0..) |section, i| {
+        if (section.size == 0) continue;
 
-    while (it.next()) |file| {
-        const new_file = output_directory.createFile(file.name, .{
+        const section_name = try std.fmt.bufPrint(&section_name_buf, "{}-{X}", .{ i, section.hash });
+        const new_file = output_directory.createFile(section_name, .{
             .exclusive = true,
         }) catch |err| {
-            log.err("error dumping '{s}' into '{s}': {t}", .{ file.name, output_path, err });
+            log.err("error dumping section {}, '{s}' into '{s}': {t}", .{ i, section_name, output_path, err });
             continue;
         };
         defer new_file.close();
@@ -103,18 +103,17 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         var new_writer_buffer: [512]u8 = undefined;
         var new_writer = new_file.writerStreaming(&new_writer_buffer);
 
-        try exefs_reader.seekTo(@sizeOf(exefs.Header) + file.offset);
-        try exefs_reader.interface.streamExact(&new_writer.interface, file.size);
+        try input_reader.seekTo(section.offset);
+        try reader.streamExact(&new_writer.interface, section.size);
         try new_writer.interface.flush();
     }
-
     return 0;
 }
 
 const Dump = @This();
 
-const log = std.log.scoped(.exefs);
+const log = std.log.scoped(.firm);
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const exefs = zitrus.horizon.fmt.ncch.exefs;
+const firm = zitrus.fmt.firm;

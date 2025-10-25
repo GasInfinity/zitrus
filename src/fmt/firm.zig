@@ -1,6 +1,11 @@
 //! 3DS Firmware
 //!
+//! Firm sections are expected to be aligned to `512` bytes.
+//! Not documented explicitly, thanks folf20 from the Godmode9 discord server.
+//!
 //! Contains both ARM9 and ARM11 `freestanding` binaries and possibly more data (e.g: sysmodules in official firmware)
+//!
+//! Based on the documentation found in 3dbrew: https://3dbrew.org/wiki/FIRM
 
 pub const magic_value = "FIRM";
 
@@ -17,7 +22,8 @@ pub const Header = extern struct {
 };
 
 pub const Section = extern struct {
-    pub const CopyMethod = enum(u32) { ndma, xdma, memcpy };
+    pub const min_alignment = 512;
+    pub const CopyMethod = enum(u32) { ndma, xdma, memcpy, _ };
 
     /// File offset of the section.
     offset: u32,

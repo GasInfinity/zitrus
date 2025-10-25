@@ -54,10 +54,10 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
 
     const header = try reader.takeStruct(ncch.Header, .little);
 
-    if (!header.check()) {
-        log.err("invalid/corrupted NCCH, header check failed.", .{});
+    header.check() catch |err| {
+        log.err("could not read NCCH: {t}", .{err});
         return 1;
-    }
+    };
 
     const offset: u64, const size: u64, const hash_region_size, const hash = switch (args.region) {
         .settings => .{ @sizeOf(ncch.Header), header.extended_header_size, header.extended_header_size, &header.extended_header_hash },

@@ -95,7 +95,7 @@ pub const Storage = struct {
         core: bool,
         nand_ro: bool,
         nand_rw: bool,
-        nand_wo: bool,
+        nand_ro_rw: bool,
         system_settings: bool,
         cardboard: bool,
         export_import_ivs: bool,
@@ -129,22 +129,22 @@ save_data_size: u64 = 0,
 access_control: AccessControl,
 dependencies: []const u64 = &.{},
 
-pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.ExtendedHeader, gpa: std.mem.Allocator) !Settings {
+pub fn initNcch(hdr: *const ncch.Header, ex_hdr: *const ncch.ExtendedHeader, gpa: std.mem.Allocator) !Settings {
     return .{
-        .title = std.mem.span((&extended_header.system_control.application_title).ptr),
-        .product_code = std.mem.span((&header.product_code).ptr),
-        .remaster_version = extended_header.system_control.remaster_version,
+        .title = ex_hdr.system_control.application_title[0 .. std.mem.indexOfScalar(u8, &ex_hdr.system_control.application_title, 0) orelse ex_hdr.system_control.application_title.len],
+        .product_code = hdr.product_code[0 .. std.mem.indexOfScalar(u8, &hdr.product_code, 0) orelse hdr.product_code.len],
+        .remaster_version = ex_hdr.system_control.remaster_version,
         .title_id = .{
-            .variation = header.title_id.variation,
-            .unique = header.title_id.unique,
-            .category = @bitCast(header.title_id.category),
+            .variation = hdr.title_id.variation,
+            .unique = hdr.title_id.unique,
+            .category = @bitCast(hdr.title_id.category),
         },
         .flags = .{
-            .compress = extended_header.system_control.flags.compressed_code,
-            .allow_sd_usage = extended_header.system_control.flags.allow_sd_usage,
+            .compress = ex_hdr.system_control.flags.compressed_code,
+            .allow_sd_usage = ex_hdr.system_control.flags.allow_sd_usage,
         },
-        .stack_size = extended_header.system_control.stack_size,
-        .save_data_size = extended_header.system_control.system_info.save_data_size,
+        .stack_size = ex_hdr.system_control.stack_size,
+        .save_data_size = ex_hdr.system_control.system_info.save_data_size,
         .access_control = .{
             .kernel = blk: {
                 const Descriptor = horizon.Process.CapabilityDescriptor;
@@ -154,8 +154,8 @@ pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.Extende
 
                 var used_syscalls: std.ArrayListUnmanaged(u16) = .empty;
 
-                while (i < extended_header.access_control.kernel_capabilities.descriptors.len) {
-                    const descriptor = extended_header.access_control.kernel_capabilities.descriptors[i];
+                while (i < ex_hdr.access_control.kernel_capabilities.descriptors.len) {
+                    const descriptor = ex_hdr.access_control.kernel_capabilities.descriptors[i];
 
                     // NOTE: We cannot use a switch as the header is not fixed-size.
                     // XXX: ^ This is ugly as hell still.
@@ -205,52 +205,52 @@ pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.Extende
                 break :blk capabilities;
             },
             .new_speedup = .{
-                .enable_l2_cache = extended_header.access_control.user_capabilities.new_speedup.enable_l2_cache,
-                .cpu_speed = @enumFromInt(@intFromEnum(extended_header.access_control.user_capabilities.new_speedup.cpu_speed)),
+                .enable_l2_cache = ex_hdr.access_control.user_capabilities.new_speedup.enable_l2_cache,
+                .cpu_speed = @enumFromInt(@intFromEnum(ex_hdr.access_control.user_capabilities.new_speedup.cpu_speed)),
             },
             .new_execution = .{
-                .mode = @enumFromInt(@intFromEnum(extended_header.access_control.user_capabilities.new_execution.mode)),
+                .mode = @enumFromInt(@intFromEnum(ex_hdr.access_control.user_capabilities.new_execution.mode)),
             },
             .execution = .{
-                .ideal_processor = extended_header.access_control.user_capabilities.execution.ideal_processor,
-                .affinity_mask = extended_header.access_control.user_capabilities.execution.affinity_mask,
-                .mode = @enumFromInt(@intFromEnum(extended_header.access_control.user_capabilities.execution.mode)),
-                .priority = extended_header.access_control.user_capabilities.priority,
+                .ideal_processor = ex_hdr.access_control.user_capabilities.execution.ideal_processor,
+                .affinity_mask = ex_hdr.access_control.user_capabilities.execution.affinity_mask,
+                .mode = @enumFromInt(@intFromEnum(ex_hdr.access_control.user_capabilities.execution.mode)),
+                .priority = ex_hdr.access_control.user_capabilities.priority,
             },
             .storage = .{
-                .extended_save_data_id = extended_header.access_control.user_capabilities.storage.extended_save_data_id,
-                .save_data_id = extended_header.access_control.user_capabilities.storage.system_save_data_id,
-                .storage_uuid = extended_header.access_control.user_capabilities.storage.storage_accessible_uuid,
+                .extended_save_data_id = ex_hdr.access_control.user_capabilities.storage.extended_save_data_id,
+                .save_data_id = ex_hdr.access_control.user_capabilities.storage.system_save_data_id,
+                .storage_uuid = ex_hdr.access_control.user_capabilities.storage.storage_accessible_uuid,
                 .access = .{
-                    .system_application = extended_header.access_control.user_capabilities.storage.access.system_application,
-                    .hardware_check = extended_header.access_control.user_capabilities.storage.access.hardware_check,
-                    .filesystem_tool = extended_header.access_control.user_capabilities.storage.access.filesystem_tool,
-                    .debug = extended_header.access_control.user_capabilities.storage.access.debug,
-                    .twl_card_backup = extended_header.access_control.user_capabilities.storage.access.twl_card_backup,
-                    .twl_nand_data = extended_header.access_control.user_capabilities.storage.access.twl_nand_data,
-                    .boss = extended_header.access_control.user_capabilities.storage.access.boss,
-                    .sdmc = extended_header.access_control.user_capabilities.storage.access.sdmc,
-                    .core = extended_header.access_control.user_capabilities.storage.access.core,
-                    .nand_ro = extended_header.access_control.user_capabilities.storage.access.nand_ro,
-                    .nand_rw = extended_header.access_control.user_capabilities.storage.access.nand_rw,
-                    .nand_wo = extended_header.access_control.user_capabilities.storage.access.nand_wo,
-                    .system_settings = extended_header.access_control.user_capabilities.storage.access.system_settings,
-                    .cardboard = extended_header.access_control.user_capabilities.storage.access.cardboard,
-                    .export_import_ivs = extended_header.access_control.user_capabilities.storage.access.export_import_ivs,
-                    .sdmc_wo = extended_header.access_control.user_capabilities.storage.access.sdmc_wo,
-                    .switch_cleanup = extended_header.access_control.user_capabilities.storage.access.switch_cleanup,
-                    .save_data_move = extended_header.access_control.user_capabilities.storage.access.save_data_move,
-                    .shop = extended_header.access_control.user_capabilities.storage.access.shop,
-                    .shell = extended_header.access_control.user_capabilities.storage.access.shell,
-                    .home_menu = extended_header.access_control.user_capabilities.storage.access.home_menu,
-                    .seed_db = extended_header.access_control.user_capabilities.storage.access.seed_db,
+                    .system_application = ex_hdr.access_control.user_capabilities.storage.access.system_application,
+                    .hardware_check = ex_hdr.access_control.user_capabilities.storage.access.hardware_check,
+                    .filesystem_tool = ex_hdr.access_control.user_capabilities.storage.access.filesystem_tool,
+                    .debug = ex_hdr.access_control.user_capabilities.storage.access.debug,
+                    .twl_card_backup = ex_hdr.access_control.user_capabilities.storage.access.twl_card_backup,
+                    .twl_nand_data = ex_hdr.access_control.user_capabilities.storage.access.twl_nand_data,
+                    .boss = ex_hdr.access_control.user_capabilities.storage.access.boss,
+                    .sdmc = ex_hdr.access_control.user_capabilities.storage.access.sdmc,
+                    .core = ex_hdr.access_control.user_capabilities.storage.access.core,
+                    .nand_ro = ex_hdr.access_control.user_capabilities.storage.access.nand_ro,
+                    .nand_rw = ex_hdr.access_control.user_capabilities.storage.access.nand_rw,
+                    .nand_ro_rw = ex_hdr.access_control.user_capabilities.storage.access.nand_ro_rw,
+                    .system_settings = ex_hdr.access_control.user_capabilities.storage.access.system_settings,
+                    .cardboard = ex_hdr.access_control.user_capabilities.storage.access.cardboard,
+                    .export_import_ivs = ex_hdr.access_control.user_capabilities.storage.access.export_import_ivs,
+                    .sdmc_wo = ex_hdr.access_control.user_capabilities.storage.access.sdmc_wo,
+                    .switch_cleanup = ex_hdr.access_control.user_capabilities.storage.access.switch_cleanup,
+                    .save_data_move = ex_hdr.access_control.user_capabilities.storage.access.save_data_move,
+                    .shop = ex_hdr.access_control.user_capabilities.storage.access.shop,
+                    .shell = ex_hdr.access_control.user_capabilities.storage.access.shell,
+                    .home_menu = ex_hdr.access_control.user_capabilities.storage.access.home_menu,
+                    .seed_db = ex_hdr.access_control.user_capabilities.storage.access.seed_db,
                 },
-                .attributes = .{ .enable_extended_save_data = extended_header.access_control.user_capabilities.storage.attributes.enable_extended_save_data },
+                .attributes = .{ .enable_extended_save_data = ex_hdr.access_control.user_capabilities.storage.attributes.enable_extended_save_data },
             },
             .service_access = blk: {
                 var accessed_service_count: usize = 0;
 
-                for (extended_header.access_control.user_capabilities.service_access_control) |service| {
+                for (ex_hdr.access_control.user_capabilities.service_access_control) |service| {
                     const len = std.mem.indexOfScalar(u8, &service, 0) orelse service.len;
                     if (len == 0) break;
                     accessed_service_count += 1;
@@ -258,7 +258,7 @@ pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.Extende
 
                 const accessed_services = try gpa.alloc([]const u8, accessed_service_count);
                 for (accessed_services, 0..) |*accessed, i| {
-                    const service = &extended_header.access_control.user_capabilities.service_access_control[i];
+                    const service = &ex_hdr.access_control.user_capabilities.service_access_control[i];
                     const len = std.mem.indexOfScalar(u8, service, 0) orelse service.len;
 
                     accessed.* = service[0..len];
@@ -266,12 +266,12 @@ pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.Extende
 
                 break :blk accessed_services;
             },
-            .category = @enumFromInt(@intFromEnum(extended_header.access_control.user_capabilities.resource_limit_category)),
+            .category = @enumFromInt(@intFromEnum(ex_hdr.access_control.user_capabilities.resource_limit_category)),
         },
         .dependencies = blk: {
             var last: usize = 0;
 
-            for (extended_header.system_control.dependency_titles) |title| {
+            for (ex_hdr.system_control.dependency_titles) |title| {
                 if (title == 0) {
                     break;
                 }
@@ -279,7 +279,7 @@ pub fn initNcch(header: *const ncch.Header, extended_header: *const ncch.Extende
                 last += 1;
             }
 
-            break :blk extended_header.system_control.dependency_titles[0..last];
+            break :blk ex_hdr.system_control.dependency_titles[0..last];
         },
     };
 }

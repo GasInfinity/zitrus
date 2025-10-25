@@ -15,23 +15,26 @@ check_hash: bool = false,
 
 @"--": struct {
     pub const descriptions = .{
-        .firm = "The firm to list from",
+        .input = "Input file, if none stdin is used",
     };
 
-    firm: []const u8,
+    input: ?[]const u8,
 },
 
 pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
     const cwd = std.fs.cwd();
-    const firm_file = cwd.openFile(args.@"--".firm, .{ .mode = .read_only }) catch |err| {
-        log.err("could not open firm '{s}': {t}\n", .{ args.@"--".firm, err });
-        return 1;
-    };
-    defer firm_file.close();
+    const input_file, const input_should_close = if (args.@"--".input) |in|
+        .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
+            log.err("could not open NCCH '{s}': {t}", .{ in, err });
+            return 1;
+        }, true }
+    else
+        .{ std.fs.File.stdin(), false };
+    defer if (input_should_close) input_file.close();
 
     var buf: [@sizeOf(firm.Header)]u8 = undefined;
-    var exefs_reader = firm_file.reader(&buf);
-    const reader = &exefs_reader.interface;
+    var input_reader = input_file.reader(&buf);
+    const reader = &input_reader.interface;
 
     const firm_hdr = try reader.takeStruct(firm.Header, .little);
 
@@ -52,14 +55,24 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
     try firm_info.field("arm11_entry", firm_hdr.arm11_entry, .{});
     var sections_info = try firm_info.beginTupleField("sections", .{});
     for (&firm_hdr.sections) |section| {
+        if (section.size == 0) continue;
+
         var section_info = try sections_info.beginStructField(.{});
         try section_info.field("address", section.address, .{});
         try section_info.field("offset", section.offset, .{});
         try section_info.field("size", section.size, .{});
-        try section_info.field("copy_method", section.copy_method, .{});
+
+        // Don't panic!
+        switch (section.copy_method) {
+            .ndma, .xdma, .memcpy => {
+                try section_info.fieldPrefix("copy_method");
+                try serializer.ident(@tagName(section.copy_method));
+            },
+            _ => try section_info.field("copy_method", @intFromEnum(section.copy_method), .{}),
+        }
 
         if (args.check_hash) {
-            try exefs_reader.seekTo(section.offset);
+            try input_reader.seekTo(section.offset);
 
             const data = try reader.readAlloc(arena, section.size);
             defer arena.free(data);

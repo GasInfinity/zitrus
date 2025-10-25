@@ -44,7 +44,7 @@ pub const Graphics = struct {
     stencil_reference: u8,
     stencil_write_mask: u8,
     boolean_constants: std.EnumArray(mango.ShaderStage, std.EnumSet(pica.shader.register.Integral.Boolean)),
-    integer_constants: std.EnumArray(mango.ShaderStage, std.EnumArray(pica.shader.register.Integral.Integer, [4]i8)),
+    integer_constants: std.EnumArray(mango.ShaderStage, std.EnumArray(pica.shader.register.Integral.Integer, [4]u8)),
 
     // TODO: Instead of allocating from the heap and copying it to the linear heap, why
     // don't we try using the command buffer registers? We could save a LOT of memory if we can
@@ -728,7 +728,7 @@ pub const CompiledShaderInfo = struct {
     outputs_minus_one: u4,
 
     boolean_constants: std.EnumSet(pica.shader.register.Integral.Boolean),
-    integer_constants: std.EnumArray(pica.shader.register.Integral.Integer, [4]i8),
+    integer_constants: std.EnumArray(pica.shader.register.Integral.Integer, [4]u8),
 };
 
 pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, comptime shader: *pica.Graphics.Shader, queue: *command.Queue) !CompiledShaderInfo {
@@ -758,7 +758,7 @@ pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, c
     queue.add(p3d, &shader.entrypoint, .initEntry(found_entrypoint.offset));
     queue.add(p3d, &shader.bool_uniforms, .init(@bitCast(found_entrypoint.boolean_constant_set.bits)));
 
-    var int_constants: std.enums.EnumArray(pica.shader.register.Integral.Integer, [4]i8) = .initUndefined();
+    var int_constants: std.enums.EnumArray(pica.shader.register.Integral.Integer, [4]u8) = .initUndefined();
 
     {
         var current_const: usize = 0;

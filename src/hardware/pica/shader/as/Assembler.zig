@@ -1,5 +1,7 @@
 //! Zitrus PICA200 shader assembler.
 
+// TODO: Last one, we're missing a proper diagnostic for using two floating constant registers (one must be limited) but that is easy!
+
 pub const TokenList = std.MultiArrayList(struct {
     tag: Token.Tag,
     start: u32,
@@ -9,7 +11,7 @@ pub const LabelMap = std.StringArrayHashMapUnmanaged(u12);
 pub const Outputs = std.EnumMap(register.Destination.Output, pica.OutputMap);
 
 pub const FloatingConstants = std.EnumMap(register.Source.Constant, pica.F7_16x4);
-pub const IntegerConstants = std.EnumMap(register.Integral.Integer, [4]i8);
+pub const IntegerConstants = std.EnumMap(register.Integral.Integer, [4]u8);
 pub const BooleanConstants = std.EnumSet(register.Integral.Boolean);
 
 pub const Assembled = struct {
@@ -168,6 +170,8 @@ pub const Error = struct {
         invalid_register,
         expected_address_register,
         invalid_address_register_mask,
+        expected_address_component,
+        cannot_address_relative,
 
         expected_condition_register,
         invalid_condition_register_mask,
@@ -244,7 +248,6 @@ const Mnemonic = enum {
         comparison,
         setemit,
         mad,
-        pseudo_binary,
     };
 
     add,
@@ -282,8 +285,6 @@ const Mnemonic = enum {
     cmp,
     mad,
 
-    sub,
-
     pub fn kind(mnemonic: Mnemonic) Kind {
         return switch (mnemonic) {
             .@"break", .nop, .emit, .end => .unparametized,
@@ -294,8 +295,6 @@ const Mnemonic = enum {
             .cmp => .comparison,
             .setemit => .setemit,
             .mad => .mad,
-
-            .sub => .pseudo_binary,
         };
     }
 
@@ -335,8 +334,6 @@ const Mnemonic = enum {
             .jmpu => .jmpu,
             .cmp => .cmp0,
             .mad => .mad0,
-
-            .sub => null,
         };
     }
 
@@ -376,8 +373,6 @@ const Mnemonic = enum {
             .mnemonic_jmpu => .jmpu,
             .mnemonic_cmp => .cmp,
             .mnemonic_mad => .mad,
-
-            .mnemonic_sub => .sub,
             else => unreachable,
         };
     }
@@ -562,7 +557,41 @@ pub fn passRoot(a: *Assembler) !void {
             };
             continue :root a.tokenTag(a.tok_i);
         },
-        .mnemonic_add, .mnemonic_dp3, .mnemonic_dp4, .mnemonic_dph, .mnemonic_dst, .mnemonic_ex2, .mnemonic_lg2, .mnemonic_litp, .mnemonic_mul, .mnemonic_sge, .mnemonic_slt, .mnemonic_flr, .mnemonic_max, .mnemonic_min, .mnemonic_rcp, .mnemonic_rsq, .mnemonic_mova, .mnemonic_mov, .mnemonic_break, .mnemonic_nop, .mnemonic_end, .mnemonic_breakc, .mnemonic_call, .mnemonic_callc, .mnemonic_callu, .mnemonic_ifu, .mnemonic_ifc, .mnemonic_loop, .mnemonic_emit, .mnemonic_setemit, .mnemonic_jmpc, .mnemonic_jmpu, .mnemonic_cmp, .mnemonic_mad, .mnemonic_sub => {
+        .mnemonic_add,
+        .mnemonic_dp3,
+        .mnemonic_dp4,
+        .mnemonic_dph,
+        .mnemonic_dst,
+        .mnemonic_ex2,
+        .mnemonic_lg2,
+        .mnemonic_litp,
+        .mnemonic_mul,
+        .mnemonic_sge,
+        .mnemonic_slt,
+        .mnemonic_flr,
+        .mnemonic_max,
+        .mnemonic_min,
+        .mnemonic_rcp,
+        .mnemonic_rsq,
+        .mnemonic_mova,
+        .mnemonic_mov,
+        .mnemonic_break,
+        .mnemonic_nop,
+        .mnemonic_end,
+        .mnemonic_breakc,
+        .mnemonic_call,
+        .mnemonic_callc,
+        .mnemonic_callu,
+        .mnemonic_ifu,
+        .mnemonic_ifc,
+        .mnemonic_loop,
+        .mnemonic_emit,
+        .mnemonic_setemit,
+        .mnemonic_jmpc,
+        .mnemonic_jmpu,
+        .mnemonic_cmp,
+        .mnemonic_mad,
+        => {
             a.inst_i += 1;
             a.eatUntil(.newline);
             continue :root a.tokenTag(a.tok_i);
@@ -625,7 +654,6 @@ pub fn passAssemble(a: *Assembler) !void {
         .mnemonic_jmpu,
         .mnemonic_cmp,
         .mnemonic_mad,
-        .mnemonic_sub,
         => |mne_tok| {
             defer a.inst_i += 1;
             _ = a.nextToken();
@@ -669,34 +697,27 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
 
                     const src_info = try a.parseSourceRegister();
 
-                    break :mova .{ .o0, address_reg.mask, src_info.negated, src_info.src, src_info.swizzle, .none };
+                    break :mova .{ .o0, address_reg.mask, src_info.negated, src_info.src, src_info.swizzle, src_info.address orelse .none };
                 },
                 else => unary: {
                     const dst_info = try a.parseDestinationRegister();
                     _ = try a.expectToken(.comma);
                     const src_info = try a.parseSourceRegister();
 
-                    break :unary .{ dst_info.dst, dst_info.mask, src_info.negated, src_info.src, src_info.swizzle, .none };
+                    break :unary .{ dst_info.dst, dst_info.mask, src_info.negated, src_info.src, src_info.swizzle, src_info.address orelse .none };
                 },
             };
 
             try a.encoder.unary(a.gpa, opcode.?, dest, dst_mask, src1_neg, src1, src1_selector, src_rel);
         },
-        .binary, .pseudo_binary => {
+        .binary => {
             const dst_info = try a.parseDestinationRegister();
             _ = try a.expectToken(.comma);
             const src1_info = try a.parseSourceRegister();
             _ = try a.expectToken(.comma);
             const src2_info = try a.parseSourceRegister();
 
-            switch (mnemonic_kind) {
-                .binary => try a.encoder.binary(a.gpa, opcode.?, dst_info.dst, dst_info.mask, src1_info.negated, src1_info.src, src1_info.swizzle, src2_info.negated, src2_info.src, src2_info.swizzle, .none),
-                .pseudo_binary => switch (mnemonic) {
-                    .sub => try a.encoder.binary(a.gpa, .add, dst_info.dst, dst_info.mask, src1_info.negated, src1_info.src, src1_info.swizzle, src2_info.negated.negate(), src2_info.src, src2_info.swizzle, .none),
-                    else => unreachable,
-                },
-                else => unreachable,
-            }
+            try a.encoder.binary(a.gpa, opcode.?, dst_info.dst, dst_info.mask, src1_info.negated, src1_info.src, src1_info.swizzle, src2_info.negated, src2_info.src, src2_info.swizzle, src1_info.address orelse src2_info.address orelse .none);
         },
         .flow_conditional => {
             const num: u8, const dest: u12, const condition: encoding.Condition, const x: bool, const y: bool = values: switch (opcode.?) {
@@ -777,7 +798,7 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
             _ = try a.expectToken(.comma);
             const src2_info = try a.parseSourceRegister();
 
-            try a.encoder.cmp(a.gpa, src1_info.negated, src1_info.src, src1_info.swizzle, x, y, src2_info.negated, src2_info.src, src2_info.swizzle, .none);
+            try a.encoder.cmp(a.gpa, src1_info.negated, src1_info.src, src1_info.swizzle, x, y, src2_info.negated, src2_info.src, src2_info.swizzle, src1_info.address orelse src2_info.address orelse .none);
         },
         .setemit => {
             const vtx_id = try a.parseInt(u2, 2);
@@ -802,7 +823,7 @@ fn assembleMnemonic(a: *Assembler, mnemonic: Mnemonic) !void {
             else
                 return a.failMsg(.{ .tag = .expected_limited_src_register, .tok_i = src1_info.register_tok_i });
 
-            try a.encoder.mad(a.gpa, dst_info.dst, dst_info.mask, src1_info.negated, src1_limited, src1_info.swizzle, src2_info.negated, src2_info.src, src2_info.swizzle, src3_info.negated, src3_info.src, src3_info.swizzle, .none);
+            try a.encoder.mad(a.gpa, dst_info.dst, dst_info.mask, src1_info.negated, src1_limited, src1_info.swizzle, src2_info.negated, src2_info.src, src2_info.swizzle, src3_info.negated, src3_info.src, src3_info.swizzle, src1_info.address orelse src2_info.address orelse src3_info.address orelse .none);
         },
     }
 }
@@ -879,7 +900,7 @@ fn processDirective(a: *Assembler) !void {
                     .tok_i = output_masked.identifier_tok_i,
                 });
 
-                const semantic_swizzled = try a.parseSwizzledIdentifier();
+                const semantic_swizzled = try a.parseSwizzledAddressedIdentifier();
                 const semantic_slice = a.tokenSlice(semantic_swizzled.identifier_tok_i);
 
                 const semantic = std.meta.stringToEnum(Semantic, semantic_slice) orelse return a.failMsg(.{
@@ -963,13 +984,13 @@ fn processDirective(a: *Assembler) !void {
                     },
                     @intFromEnum(UniformRegister.i0)...@intFromEnum(UniformRegister.i3) => {
                         _ = try a.expectToken(.l_paren);
-                        const x = try a.parseInt(i8, 127);
+                        const x = try a.parseInt(u8, std.math.maxInt(u8));
                         _ = try a.expectToken(.comma);
-                        const y = try a.parseInt(i8, 127);
+                        const y = try a.parseInt(u8, std.math.maxInt(u8));
                         _ = try a.expectToken(.comma);
-                        const z = try a.parseInt(i8, 127);
+                        const z = try a.parseInt(u8, std.math.maxInt(u8));
                         _ = try a.expectToken(.comma);
-                        const w = try a.parseInt(i8, 127);
+                        const w = try a.parseInt(u8, std.math.maxInt(u8));
                         _ = try a.expectToken(.r_paren);
 
                         const i_reg: register.Integral.Integer = @enumFromInt(@intFromEnum(uniform_reg) - @intFromEnum(UniformRegister.i0));
@@ -988,7 +1009,7 @@ fn processDirective(a: *Assembler) !void {
                 const alias_identifier_tok_i = try a.expectToken(.identifier);
                 const alias_slice = a.tokenSlice(alias_identifier_tok_i);
 
-                const swizzled_identifier = try a.parseSwizzledIdentifier();
+                const swizzled_identifier = try a.parseSwizzledAddressedIdentifier();
                 const aliased_slice = a.tokenSlice(swizzled_identifier.identifier_tok_i);
 
                 const aliased_reg: Alias.Register = std.meta.stringToEnum(Alias.Register, aliased_slice) orelse {
@@ -1030,6 +1051,7 @@ const SourceRegisterInfo = struct {
     negated: Negation,
     src: register.Source,
     swizzle: Component.Selector,
+    address: ?register.AddressComponent,
 };
 
 fn parseSourceRegister(a: *Assembler) !SourceRegisterInfo {
@@ -1038,7 +1060,7 @@ fn parseSourceRegister(a: *Assembler) !SourceRegisterInfo {
         break :negated .@"-";
     } else .@"+";
 
-    const parsed_src = try a.parseSwizzledIdentifier();
+    const parsed_src = try a.parseSwizzledAddressedIdentifier();
     const src_slice = a.tokenSlice(parsed_src.identifier_tok_i);
 
     const src: register.Source, const initial_swizzle: Component.Selector = if (a.aliases.get(src_slice)) |alias| aliased: {
@@ -1047,12 +1069,46 @@ fn parseSourceRegister(a: *Assembler) !SourceRegisterInfo {
         } else return a.failMsg(.{ .tag = .expected_src_register, .tok_i = parsed_src.identifier_tok_i });
     } else .{ register.Source.parse(src_slice) catch return a.failMsg(.{ .tag = .expected_src_register, .tok_i = parsed_src.identifier_tok_i }), .xyzw };
 
+    if (src.kind() != .constant and parsed_src.address != null) return a.failMsg(.{
+        .tok_i = parsed_src.identifier_tok_i,
+        .tag = .cannot_address_relative,
+    });
+
     return .{
         .register_tok_i = parsed_src.identifier_tok_i,
         .negated = negated,
         .src = src,
         .swizzle = initial_swizzle.swizzle(parsed_src.swizzle),
+        .address = parsed_src.address,
     };
+}
+
+fn parseRelativeAddressing(a: *Assembler) !?register.AddressComponent {
+    if (a.tokenTag(a.tok_i) != .l_square) return null;
+
+    _ = a.nextToken();
+    const address_reg_tok_i = try a.expectToken(.identifier);
+    const address_reg_iden = a.tokenSlice(address_reg_tok_i);
+
+    if (!std.mem.eql(u8, address_reg_iden, "a")) return a.failMsg(.{
+        .tok_i = address_reg_tok_i,
+        .tag = .expected_address_component,
+    });
+
+    _ = try a.expectToken(.dot);
+
+    const address_component_tok_i = try a.expectToken(.identifier);
+    const address_component_iden = a.tokenSlice(address_component_tok_i);
+
+    if (!std.mem.eql(u8, address_component_iden, "x") and !std.mem.eql(u8, address_component_iden, "y") and !std.mem.eql(u8, address_component_iden, "l")) return a.failMsg(.{
+        .tok_i = address_component_tok_i,
+        .tag = .expected_address_component,
+    });
+
+    const component = std.meta.stringToEnum(register.AddressComponent, address_component_iden) orelse unreachable;
+
+    _ = try a.expectToken(.r_square);
+    return component;
 }
 
 const DestinationRegisterInfo = struct {
@@ -1156,11 +1212,14 @@ fn parseMaskedIdentifier(a: *Assembler) !MaskedIdentifier {
 const SwizzledIdentifier = struct {
     identifier_tok_i: u32,
     swizzle: Component.Selector,
+    address: ?register.AddressComponent,
 };
 
-fn parseSwizzledIdentifier(a: *Assembler) !SwizzledIdentifier {
+fn parseSwizzledAddressedIdentifier(a: *Assembler) !SwizzledIdentifier {
     const idenfier_tok_i = try a.expectToken(.identifier);
     var swizzle: Component.Selector = .xyzw;
+
+    const address_component = try a.parseRelativeAddressing();
 
     while (a.tokenTag(a.tok_i) == .dot) {
         _ = a.nextToken();
@@ -1182,6 +1241,7 @@ fn parseSwizzledIdentifier(a: *Assembler) !SwizzledIdentifier {
     return .{
         .identifier_tok_i = idenfier_tok_i,
         .swizzle = swizzle,
+        .address = address_component,
     };
 }
 
@@ -1256,7 +1316,7 @@ fn parseIntBounded(a: *Assembler, comptime T: type, min_value: T, max_value: T) 
             .tag = .number_too_big,
             .tok_i = number_literal_tok,
         });
-    } else if(int < min_value) {
+    } else if (int < min_value) {
         return a.failMsg(.{
             .tag = .number_too_small,
             .tok_i = number_literal_tok,

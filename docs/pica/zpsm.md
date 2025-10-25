@@ -23,14 +23,14 @@ A `Limited source register` or `src_limited` refers to an `Input` or `Temporary`
  
 A `Destination register` or `dst` refers to an `Output` or `Temporary` register.
 
+A `Floating constant` register may be addressed at runtime starting at a base register fX, in that case you may use `a.x`, `a.y` or `a.l` to do so. E.g: `fX[a.x]`
+
 ## Basic Syntax
 
 Each basic unit is a line, operands must be in the same line as the mnemonic/directive, 
 one exception to this rule is an instruction preceded by a label, as it is perfectly valid. 
   
 Comments start with ';', only single line comments are supported.
-
-There's one TODO left, relative `Floating constant` source addressing with the address register.
 
 ### Directives
 

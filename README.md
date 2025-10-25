@@ -80,6 +80,10 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 - [flappy](demo/flappy) is a simple fully functional flappy bird clone written entirely with software blitting.
 - [gpu](demo/gpu/) is a playground for [mango](src/mango.zig), bleeding edge features are tested there. Not really an example per-se.
 
+--- 
+
+You can (and are encouraged) to look at the `tools` directory as it is a good example of how to use the API's `zitrus` provides outside (and inside!) of a 3DS environment. Almost all tools are self-contained and span 50-300 LOC.
+
 # Coverage
 
 ### Legend
@@ -109,8 +113,9 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 - 🟢 3dsx (tools/3dsx): Make / Dump
 - 🟢 Pica (tools/Pica): Assemble / Disassemble
     - 🟢 Assemble: Only **Z**itrus**P**ica**Sh**aders are implemented as an output format.
-    - 🟢 Disassemble: Outputs **Z**itrus**P**ica**A**sse**m**bly, only ZPSH's can be disassembled currently.
-- 🟡 Firm (tools/Firm): Info
+    - 🟢 Disassemble: Outputs **Z**itrus**P**ica**A**sse**m**bly. Either RAW instructions, ZPSH's or DVL's (.shbin) can be disassembled.
+- 🟢 Firm (tools/Firm): Make / Info / Dump
+    - 🟢 Make: Confirmed to build (and boot!) Luma3DS from source, however needs more testing as the firm is not 1:1.
 - 🟡 Ncch (tools/Ncch): Dump (/ Info)
     - 🟢 ExeFS (tools/ExeFs): Make / List / Dump
     - 🟢 RomFS (tools/RomFs): Make / List / Dump
@@ -197,7 +202,7 @@ Whether register bits are present and/or relevant tooling (assemblers, disassemb
 
 ## Why?
 I wanted to learn arm and always wanted to develop 3DS homebrew, also I searched and I haven't found any kind of zig package that doesn't use libctru, so I just started reading a lot and doing things. Furthermore, using only zig has a lot of advantages:
-- Really simplified and easy development. You don't need complex toolchains, you just need the `zig` executable, that's it! (However, obviously it is recommended that you use devkitPRO's tools as I'm sure you'll need them. You want to use gdb, don't you?)
+- Really simplified and easy development. You don't need complex toolchains, you just need the `zig` executable, that's it. The tools `zitrus` provides also have no dependencies, they'll work on any platform that zig supports! You can still use devkitPRO's binutils if you need.
 - Safety in `Debug` and `ReleaseSafe` modes. Zitrus currently uses the `ErrDisp` port to report panics and returned errors. The only missing thing is reporting return traces with debugging symbols (Currently only addresses are logged)
 - Really useful and simple build-system (as you've seen the example `build.zig` is really small and makefiles are really arcane)
 
