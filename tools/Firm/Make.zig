@@ -164,7 +164,8 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
             return 1;
         }
 
-        const safe_size: u32 = std.mem.alignForward(u32, @intCast(size), 512);
+        const safe_size: u32 = @intCast(size);
+        const aligned_size: u32 = std.mem.alignForward(u32, safe_size, 512);
         const file_offset = current_offset;
 
         current_offset = std.math.add(u32, current_offset, safe_size) catch {
@@ -172,15 +173,17 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
             return 1;
         };
 
-        const data = try arena.alloc(u8, size);
+        const data = try arena.alloc(u8, aligned_size);
         file_data.appendAssumeCapacity(data);
 
-        try reader.interface.readSliceAll(data);
+        @memset(data[safe_size..], undefined);
+        try reader.interface.readSliceAll(data[0..safe_size]);
+
 
         hdr.sections[i] = .{
             .offset = file_offset,
             .address = section.address,
-            .size = safe_size,
+            .size = aligned_size,
             .copy_method = section.method,
             .hash = undefined,
         };

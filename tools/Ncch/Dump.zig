@@ -59,12 +59,12 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         return 1;
     };
 
-    const offset: u64, const size: u64, const hash_region_size, const hash = switch (args.region) {
+    const offset: u64, const size: usize, const hash_region_size, const hash = switch (args.region) {
         .settings => .{ @sizeOf(ncch.Header), header.extended_header_size, header.extended_header_size, &header.extended_header_hash },
-        .plain => .{ @as(u64, header.plain_region_offset) * ncch.media_unit, @as(u64, header.plain_region_size) * ncch.media_unit, 0x00, &.{} },
-        .logo => .{ @as(u64, header.logo_region_size) * ncch.media_unit, @as(u64, header.logo_region_size) * ncch.media_unit, @as(u64, header.logo_region_size) * ncch.media_unit, &.{} },
-        .exefs => .{ @as(u64, header.exefs_offset) * ncch.media_unit, @as(u64, header.exefs_size) * ncch.media_unit, @as(u64, header.exefs_hash_region_size) * ncch.media_unit, &header.exefs_superblock_hash },
-        .romfs => .{ @as(u64, header.romfs_offset) * ncch.media_unit, @as(u64, header.romfs_size) * ncch.media_unit, @as(u64, header.romfs_hash_region_size) * ncch.media_unit, &header.romfs_superblock_hash },
+        .plain => .{ @as(u64, header.plain_region_offset) * ncch.media_unit, @as(usize, header.plain_region_size) * ncch.media_unit, 0x00, &.{} },
+        .logo => .{ @as(u64, header.logo_region_size) * ncch.media_unit, @as(usize, header.logo_region_size) * ncch.media_unit, @as(usize, header.logo_region_size) * ncch.media_unit, &.{} },
+        .exefs => .{ @as(u64, header.exefs_offset) * ncch.media_unit, @as(usize, header.exefs_size) * ncch.media_unit, @as(usize, header.exefs_hash_region_size) * ncch.media_unit, &header.exefs_superblock_hash },
+        .romfs => .{ @as(u64, header.romfs_offset) * ncch.media_unit, @as(usize, header.romfs_size) * ncch.media_unit, @as(usize, header.romfs_hash_region_size) * ncch.media_unit, &header.romfs_superblock_hash },
     };
 
     if (offset == 0x00 or size == 0x00) {
@@ -139,7 +139,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
 
             // TODO: Verify data within ivfc
             const romfs_start = std.mem.alignForward(usize, std.mem.alignForward(usize, @sizeOf(ncch.romfs.IvfcHeader), 0x20) + ivfc.master_hash_size, (@as(usize, 1) << @intCast(ivfc.levels[2].block_size)));
-            const romfs = region_data[romfs_start..][0..ivfc.levels[2].hash_data_size];
+            const romfs = region_data[romfs_start..][0..@intCast(ivfc.levels[2].hash_data_size)];
             try writer.writeAll(romfs);
         },
         .logo, .exefs => try writer.writeAll(region_data),

@@ -88,7 +88,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
             var output_writer = output_file.writerStreaming(&out_buf);
             const writer = &output_writer.interface;
 
-            try input_reader.interface.discardAll(stat.offset);
+            try input_reader.interface.discardAll64(stat.offset);
             try input_reader.interface.streamExact64(writer, stat.size);
             _ = try input_reader.interface.discardRemaining();
             try writer.flush();

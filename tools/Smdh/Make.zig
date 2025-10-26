@@ -34,7 +34,13 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
         var buffer: [4096]u8 = undefined;
         var file_reader = file.reader(&buffer);
         const file_size = try file_reader.getSize();
-        const code = try arena.allocWithOptions(u8, file_size, null, 0);
+
+        if(file_size > std.math.maxInt(u31)) {
+            log.err("settings size is too big!", .{});
+            return 1;
+        }
+
+        const code = try arena.allocWithOptions(u8, @intCast(file_size), null, 0);
         try file_reader.interface.readSliceAll(code);
 
         break :code code;

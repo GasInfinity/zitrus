@@ -43,7 +43,7 @@ pub fn main() !u8 {
 
     if (arguments.version) {
         var stdout_writer = std.fs.File.stdout().writerStreaming(&.{});
-        try stdout_writer.interface.writeAll("0.0.0-pre\n"); // Don't even try to change this until the first release.
+        try stdout_writer.interface.writeAll(config.version ++ "\n");
         return 0;
     }
 
@@ -65,3 +65,4 @@ const std = @import("std");
 const zdap = @import("zdap");
 
 const zitrus = @import("zitrus");
+const config = @import("zitrus-config");

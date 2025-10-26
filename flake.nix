@@ -1,5 +1,5 @@
 {
-  description = "A Nix-flake-based Zig development environment";
+  description = "A fully featured zig-based Nintendo 3DS SDK";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -31,5 +31,15 @@
           ];
         };
       });
+      packages = builtins.mapAttrs (system: zigPkgs: {
+        default = zigPkgs.default.makePackage {
+          pname = "zitrus";
+          version = "0.0.0-pre1";
+          src = ./.;
+          zigReleaseMode = "safe";
+          depsHash = "sha256-e+YWRW6LS4OztpcxhISsFRDfQ6/KTFjaFC+KNI0nPaY=";
+        };
+      })
+      zig.packages;
     };
 }

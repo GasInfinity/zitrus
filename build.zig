@@ -1,3 +1,5 @@
+pub const version = "0.0.0-pre1";
+
 pub const Make3dsx = @import("build/Make3dsx.zig");
 pub const MakeSmdh = @import("build/MakeSmdh.zig");
 pub const MakeRomFs = @import("build/MakeRomFs.zig");
@@ -62,6 +64,11 @@ pub fn build(b: *Build) void {
     const zigimg_dep = b.dependency("zigimg", .{});
     const zigimg = zigimg_dep.module("zigimg");
 
+    const config = b.addOptions();
+
+    // TODO: Add commit hash if not a release
+    config.addOption([]const u8, "version", version);
+
     const zitrus = b.addModule("zitrus", .{
         .root_source_file = b.path("src/zitrus.zig"),
         .imports = &.{
@@ -73,7 +80,7 @@ pub fn build(b: *Build) void {
     zitrus.addImport("zitrus", zitrus);
 
     if (release) {
-        buildReleases(b, zdap, zigimg, zitrus);
+        buildReleases(b, config, zdap, zigimg, zitrus);
         return;
     }
 
@@ -103,7 +110,7 @@ pub fn build(b: *Build) void {
     const docs_step = b.step("docs", "Install docs");
     docs_step.dependOn(&install_docs.step);
 
-    const tools, const tools_exe = buildTools(b, optimize, tools_target, zdap, zigimg, zitrus);
+    const tools, const tools_exe = buildTools(b, config, optimize, tools_target, zdap, zigimg, zitrus);
 
     const mod_tests = b.addTest(.{
         .name = "zitrus-mod-tests",
@@ -140,16 +147,22 @@ pub fn build(b: *Build) void {
 }
 
 const release_targets: []const std.Target.Query = &.{
+    .{ .cpu_arch = .x86, .os_tag = .linux },
+    .{ .cpu_arch = .x86, .os_tag = .windows },
     .{ .cpu_arch = .x86_64, .os_tag = .linux },
     .{ .cpu_arch = .x86_64, .os_tag = .windows },
+    .{ .cpu_arch = .x86_64, .os_tag = .macos },
+    .{ .cpu_arch = .x86_64, .os_tag = .freebsd },
     .{ .cpu_arch = .aarch64, .os_tag = .linux },
     .{ .cpu_arch = .aarch64, .os_tag = .windows },
     .{ .cpu_arch = .aarch64, .os_tag = .macos },
+    .{ .cpu_arch = .aarch64, .os_tag = .freebsd },
+    .{ .cpu_arch = .riscv64, .os_tag = .linux },
 };
 
-fn buildReleases(b: *Build, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) void {
+fn buildReleases(b: *Build, config: *Build.Step.Options, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) void {
     for (release_targets) |release_target| {
-        _, const tools = buildTools(b, .ReleaseSafe, b.resolveTargetQuery(release_target), zdap, zigimg, zitrus);
+        _, const tools = buildTools(b, config, .ReleaseSafe, b.resolveTargetQuery(release_target), zdap, zigimg, zitrus);
 
         tools.root_module.strip = true;
 
@@ -165,7 +178,7 @@ fn buildReleases(b: *Build, zdap: *Build.Module, zigimg: *Build.Module, zitrus: 
     }
 }
 
-fn buildTools(b: *Build, optimize: std.builtin.OptimizeMode, mod_target: Build.ResolvedTarget, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) struct { *Build.Module, *Build.Step.Compile } {
+fn buildTools(b: *Build, config: *Build.Step.Options, optimize: std.builtin.OptimizeMode, mod_target: Build.ResolvedTarget, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) struct { *Build.Module, *Build.Step.Compile } {
     const tools = b.createModule(.{
         .root_source_file = b.path("tools/main.zig"),
         .target = mod_target,
@@ -176,6 +189,8 @@ fn buildTools(b: *Build, optimize: std.builtin.OptimizeMode, mod_target: Build.R
             .{ .name = "zigimg", .module = zigimg },
         },
     });
+
+    tools.addOptions("zitrus-config", config);
 
     return .{ tools, b.addExecutable(.{
         .name = "zitrus",
