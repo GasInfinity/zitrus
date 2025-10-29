@@ -56,8 +56,8 @@ pub fn sendGetHandles(rst: IrRst) !Handles {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(rst.session, command.GetIPCHandles, .{}, .{})).cases()) {
         .success => |s| .{
-            .shm = @bitCast(@intFromEnum(s.value.response.handles[0])),
-            .ev = @bitCast(@intFromEnum(s.value.response.handles[1])),
+            .shm = @bitCast(@intFromEnum(s.value.handles[0])),
+            .ev = @bitCast(@intFromEnum(s.value.handles[1])),
         },
         .failure => |code| horizon.unexpectedResult(code),
     };

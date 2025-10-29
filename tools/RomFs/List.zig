@@ -36,7 +36,7 @@ pub fn main(args: List, arena: std.mem.Allocator) !u8 {
     defer if (input_should_close) input_file.close();
 
     var input_buffer: [4096]u8 = undefined;
-    var input_reader = input_file.reader(&input_buffer);
+    var input_reader = input_file.readerStreaming(&input_buffer); // XXX: positional reader hangs in discardRemaining
 
     const init = try romfs.View.initReader(&input_reader.interface, arena);
     const view = init.view;

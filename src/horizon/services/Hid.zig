@@ -143,16 +143,15 @@ pub fn close(hid: Hid) void {
 
 pub const Handles = struct {
     shm: MemoryBlock,
-    pad_0: Event,
-    pad_1: Event,
+    pad: [2]Event,
     accelerometer: Event,
     gyroscope: Event,
     debug_pad: Event,
 
     pub fn close(handles: Handles) void {
         handles.shm.close();
-        handles.pad_0.close();
-        handles.pad_1.close();
+        handles.pad[0].close();
+        handles.pad[1].close();
         handles.accelerometer.close();
         handles.gyroscope.close();
         handles.debug_pad.close();
@@ -162,20 +161,13 @@ pub const Handles = struct {
 pub fn sendGetHandles(hid: Hid) !Handles {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(hid.session, command.GetHandles, .{}, .{})).cases()) {
-        .success => |s| .{
-            .shm = @bitCast(@intFromEnum(s.value.response.handles[0])),
-            .pad_0 = @bitCast(@intFromEnum(s.value.response.handles[1])),
-            .pad_1 = @bitCast(@intFromEnum(s.value.response.handles[2])),
-            .accelerometer = @bitCast(@intFromEnum(s.value.response.handles[3])),
-            .gyroscope = @bitCast(@intFromEnum(s.value.response.handles[4])),
-            .debug_pad = @bitCast(@intFromEnum(s.value.response.handles[5])),
-        },
+        .success => |s| s.value.handles.wrapped,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub const command = struct {
-    pub const GetHandles = ipc.Command(Id, .get_handles, struct {}, struct { handles: [6]horizon.Object });
+    pub const GetHandles = ipc.Command(Id, .get_handles, struct {}, struct { handles: ipc.HandleArray(Handles) });
 
     pub const Id = enum(u16) {
         calibrate_touch_screen = 0x0001,

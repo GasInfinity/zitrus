@@ -19,7 +19,8 @@ pub const command = struct {
     pub const RegisterProgram = ipc.Command(Id, .register_program, struct { base: Filesystem.ProgramInfo, update: Filesystem.ProgramInfo }, struct { program: Program });
     pub const UnregisterProgram = ipc.Command(Id, .unregister_program, struct { program: Program }, struct {});
     pub const GetProgramInfo = ipc.Command(Id, .get_program_info, struct {
-        pub const static_buffers = 1;
+        pub const StaticOutput = struct { extended_header: *horizon.fmt.ncch.ExtendedHeader };
+
         program: Program,
     }, struct {});
 

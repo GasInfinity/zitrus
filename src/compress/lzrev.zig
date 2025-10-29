@@ -15,7 +15,7 @@
 //!
 //! Based on the documentation found in GBATEK: https://problemkaputt.de/gbatek-lz-decompression-functions.htm
 
-const minimum_encoded_range_value = 3;
+const min_match_len = 3;
 
 pub const EncodedDeltaBounds = packed struct(u32) {
     /// Subtract this to get the end of the compressed data.
@@ -41,41 +41,11 @@ pub const PreviousRange = packed struct(u16) {
     len_minus_three: u4,
 
     pub fn offset(range: PreviousRange) usize {
-        return @as(usize, range.offset_minus_three) + minimum_encoded_range_value;
+        return @as(usize, range.offset_minus_three) + min_match_len;
     }
 
     pub fn len(range: PreviousRange) usize {
-        return @as(usize, range.len_minus_three) + minimum_encoded_range_value;
-    }
-};
-
-pub const SlidingWindow = struct {
-    pub const max_len = 0x1000;
-
-    pub const empty: SlidingWindow = .{
-        .window = undefined,
-        .position = 0,
-        .len = 0,
-    };
-
-    window: [max_len]u8,
-    position: u16,
-    len: u16,
-
-    /// Adds a new byte to the sliding window, overwrites any previous bytes if needed.
-    pub fn slide(sliding: *SlidingWindow, byte: u8) void {
-        if (sliding.len < max_len) {
-            sliding.window[sliding.len] = byte;
-            sliding.len += 1;
-            return;
-        }
-
-        sliding.window[sliding.position] = byte;
-        sliding.position += 1;
-    }
-
-    pub fn findAvailable(sliding: *SlidingWindow) void {
-        return sliding.len > 3;
+        return @as(usize, range.len_minus_three) + min_match_len;
     }
 };
 
@@ -152,22 +122,6 @@ pub fn bufDecompress(decompressed: []u8, compressed: []const u8) DecompressionEr
 }
 
 // TODO: compression, try not to bruteforce it pls
-
-test SlidingWindow {
-    var sliding: SlidingWindow = .empty;
-
-    for (0..SlidingWindow.max_len) |i| {
-        sliding.slide(@truncate(i));
-    }
-
-    try testing.expect(sliding.position == 0);
-    try testing.expect(sliding.len == SlidingWindow.max_len);
-
-    sliding.slide(69);
-
-    try testing.expect(sliding.position == 1);
-    try testing.expect(sliding.window[0] == 69);
-}
 
 test len {
     _ = len;

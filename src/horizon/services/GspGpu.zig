@@ -4,8 +4,6 @@ pub const service = "gsp::Gpu";
 
 pub const Graphics = @import("GspGpu/Graphics.zig");
 
-pub const Error = ClientSession.RequestError;
-
 pub const Shared = extern struct {
     interrupt_queue: [4]Interrupt.Queue,
     _unknown0: [0x100]u8,
@@ -508,7 +506,7 @@ pub fn close(gsp: GspGpu) void {
     gsp.session.close();
 }
 
-pub fn writeHwRegs(gsp: GspGpu, address: *anyopaque, buffer: []const u8) Error!void {
+pub fn writeHwRegs(gsp: GspGpu, address: *anyopaque, buffer: []const u8) !void {
     const offset = @intFromPtr(address) - 0x1EB00000;
     var buffer_offset: usize = 0;
     while (buffer_offset < buffer.len) : (buffer_offset += 0x80) {
@@ -518,7 +516,7 @@ pub fn writeHwRegs(gsp: GspGpu, address: *anyopaque, buffer: []const u8) Error!v
     }
 }
 
-pub fn writeHwRegsWithMask(gsp: GspGpu, address: *anyopaque, buffer: []const u8, mask: []const u8) Error!void {
+pub fn writeHwRegsWithMask(gsp: GspGpu, address: *anyopaque, buffer: []const u8, mask: []const u8) !void {
     std.debug.assert(buffer.len == mask.len);
 
     const offset = @intFromPtr(address) - 0x1EB00000;
@@ -530,7 +528,7 @@ pub fn writeHwRegsWithMask(gsp: GspGpu, address: *anyopaque, buffer: []const u8,
     }
 }
 
-pub fn readHwRegs(gsp: GspGpu, address: *anyopaque, buffer: []u8) Error!void {
+pub fn readHwRegs(gsp: GspGpu, address: *anyopaque, buffer: []u8) !void {
     const offset = @intFromPtr(address) - 0x1EB00000;
     var buffer_offset: usize = 0;
     while (buffer_offset < buffer.len) : (buffer_offset += 0x80) {
@@ -546,38 +544,38 @@ const InterruptRelayQueueResult = struct {
     shared_memory: MemoryBlock,
 };
 
-pub fn sendWriteHwRegs(gsp: GspGpu, offset: usize, buffer: []const u8) Error!void {
+pub fn sendWriteHwRegs(gsp: GspGpu, offset: usize, buffer: []const u8) !void {
     std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
 
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegs, .{ .offset = offset, .size = buffer.len, .data = .init(buffer) }, .{})).cases()) {
+    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegs, .{ .offset = offset, .size = buffer.len, .data = .static(buffer) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendWriteHwRegsWithMask(gsp: GspGpu, offset: usize, buffer: []const u8, mask: []const u8) Error!void {
+pub fn sendWriteHwRegsWithMask(gsp: GspGpu, offset: usize, buffer: []const u8, mask: []const u8) !void {
     std.debug.assert(buffer.len == mask.len);
     std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
 
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegsWithMask, .{ .offset = offset, .size = buffer.len, .data = .init(buffer), .mask = .init(mask) }, .{})).cases()) {
+    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegsWithMask, .{ .offset = offset, .size = buffer.len, .data = .static(buffer), .mask = .static(mask) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendWriteHwRegRepeat(gsp: GspGpu, offset: usize, buffer: []const u8) Error!void {
+pub fn sendWriteHwRegRepeat(gsp: GspGpu, offset: usize, buffer: []const u8) !void {
     std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
 
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegRepeat, .{ .offset = offset, .size = buffer.len, .data = .init(buffer) }, .{})).cases()) {
+    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegRepeat, .{ .offset = offset, .size = buffer.len, .data = .static(buffer) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendReadHwRegs(gsp: GspGpu, offset: usize, buffer: []u8) Error!void {
+pub fn sendReadHwRegs(gsp: GspGpu, offset: usize, buffer: []u8) !void {
     std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
 
     const data = tls.get();
@@ -587,7 +585,7 @@ pub fn sendReadHwRegs(gsp: GspGpu, offset: usize, buffer: []u8) Error!void {
     };
 }
 
-pub fn sendSetBufferSwap(gsp: GspGpu, screen: Screen, info: FramebufferInfo) Error!void {
+pub fn sendSetBufferSwap(gsp: GspGpu, screen: Screen, info: FramebufferInfo) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SetBufferSwap, .{ .screen = screen, .info = info }, .{})).cases()) {
         .success => {},
@@ -595,7 +593,7 @@ pub fn sendSetBufferSwap(gsp: GspGpu, screen: Screen, info: FramebufferInfo) Err
     };
 }
 
-pub fn sendFlushDataCache(gsp: GspGpu, buffer: []u8) Error!void {
+pub fn sendFlushDataCache(gsp: GspGpu, buffer: []u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.FlushDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})).cases()) {
         .success => {},
@@ -603,7 +601,7 @@ pub fn sendFlushDataCache(gsp: GspGpu, buffer: []u8) Error!void {
     };
 }
 
-pub fn sendInvalidateDataCache(gsp: GspGpu, buffer: []u8) Error!void {
+pub fn sendInvalidateDataCache(gsp: GspGpu, buffer: []u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.InvalidateDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})).cases()) {
         .success => {},
@@ -611,7 +609,7 @@ pub fn sendInvalidateDataCache(gsp: GspGpu, buffer: []u8) Error!void {
     };
 }
 
-pub fn sendSetLcdForceBlack(gsp: GspGpu, fill: bool) Error!void {
+pub fn sendSetLcdForceBlack(gsp: GspGpu, fill: bool) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SetLcdForceBlack, .{ .fill = fill }, .{})).cases()) {
         .success => {},
@@ -619,7 +617,7 @@ pub fn sendSetLcdForceBlack(gsp: GspGpu, fill: bool) Error!void {
     };
 }
 
-pub fn sendTriggerCmdReqQueue(gsp: GspGpu) Error!void {
+pub fn sendTriggerCmdReqQueue(gsp: GspGpu) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.TriggerCmdReqQueue, .{}, .{})).cases()) {
         .success => {},
@@ -627,7 +625,7 @@ pub fn sendTriggerCmdReqQueue(gsp: GspGpu) Error!void {
     };
 }
 
-pub fn sendSetAxiConfigQosMode(gsp: GspGpu, qos: u32) Error!void {
+pub fn sendSetAxiConfigQosMode(gsp: GspGpu, qos: u32) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SetAxiConfigQosMode, .{ .qos = qos }, .{})).cases()) {
         .success => {},
@@ -635,7 +633,7 @@ pub fn sendSetAxiConfigQosMode(gsp: GspGpu, qos: u32) Error!void {
     };
 }
 
-pub fn sendSetPerfLogMode(gsp: GspGpu, enabled: bool) Error!void {
+pub fn sendSetPerfLogMode(gsp: GspGpu, enabled: bool) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SetPerfLogMode, .{ .enabled = enabled }, .{})).cases()) {
         .success => {},
@@ -643,10 +641,10 @@ pub fn sendSetPerfLogMode(gsp: GspGpu, enabled: bool) Error!void {
     };
 }
 
-pub fn sendGetPerfLog(gsp: GspGpu) Error!PerfLogInfo {
+pub fn sendGetPerfLog(gsp: GspGpu) !PerfLogInfo {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.GetPerfLog, .{}, .{})).cases()) {
-        .success => |s| s.value.response.info,
+        .success => |s| s.value.info,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -656,18 +654,18 @@ pub const RegisterInterruptRelayQueueResponse = struct {
     response: command.RegisterInterruptRelayQueue.Response,
 };
 
-pub fn sendRegisterInterruptRelayQueue(gsp: GspGpu, unknown_flags: u8, event: Event) Error!RegisterInterruptRelayQueueResponse {
+pub fn sendRegisterInterruptRelayQueue(gsp: GspGpu, unknown_flags: u8, event: Event) !RegisterInterruptRelayQueueResponse {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.RegisterInterruptRelayQueue, .{ .flags = unknown_flags, .ev = event }, .{})).cases()) {
         .success => |s| .{
             .first_initialization = s.code.description == @as(horizon.result.Description, @enumFromInt(0x207)),
-            .response = s.value.response,
+            .response = s.value,
         },
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendUnregisterInterruptRelayQueue(gsp: GspGpu) Error!void {
+pub fn sendUnregisterInterruptRelayQueue(gsp: GspGpu) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.UnregisterInterruptRelayQueue, .{}, .{})).cases()) {
         .success => {},
@@ -675,7 +673,7 @@ pub fn sendUnregisterInterruptRelayQueue(gsp: GspGpu) Error!void {
     };
 }
 
-pub fn sendTryAcquireRight(gsp: GspGpu, init_hw: u8) Error!bool {
+pub fn sendTryAcquireRight(gsp: GspGpu, init_hw: u8) !bool {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.TryAcquireRight, .{ .init_hw = init_hw, .process = .current }, .{})).cases()) {
         .success => true,
@@ -683,7 +681,7 @@ pub fn sendTryAcquireRight(gsp: GspGpu, init_hw: u8) Error!bool {
     };
 }
 
-pub fn sendAcquireRight(gsp: GspGpu, init_hw: u8) Error!void {
+pub fn sendAcquireRight(gsp: GspGpu, init_hw: u8) !void {
     const data = tls.get();
 
     return switch ((try data.ipc.sendRequest(gsp.session, command.AcquireRight, .{ .init_hw = init_hw, .process = .current }, .{})).cases()) {
@@ -692,7 +690,7 @@ pub fn sendAcquireRight(gsp: GspGpu, init_hw: u8) Error!void {
     };
 }
 
-pub fn sendReleaseRight(gsp: GspGpu) Error!void {
+pub fn sendReleaseRight(gsp: GspGpu) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.ReleaseRight, .{}, .{})).cases()) {
         .success => {},
@@ -700,15 +698,15 @@ pub fn sendReleaseRight(gsp: GspGpu) Error!void {
     };
 }
 
-pub fn sendImportDisplayCaptureInfo(gsp: GspGpu) Error!ScreenCapture {
+pub fn sendImportDisplayCaptureInfo(gsp: GspGpu) !ScreenCapture {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.ImportDisplayCaptureInfo, .{}, .{})).cases()) {
-        .success => |s| s.value.response.capture,
+        .success => |s| s.value.capture,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSaveVRAMSysArea(gsp: GspGpu) Error!void {
+pub fn sendSaveVRAMSysArea(gsp: GspGpu) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SaveVRamSysArea, .{}, .{})).cases()) {
         .success => {},
@@ -716,7 +714,7 @@ pub fn sendSaveVRAMSysArea(gsp: GspGpu) Error!void {
     };
 }
 
-pub fn sendRestoreVRAMSysArea(gsp: GspGpu) Error!void {
+pub fn sendRestoreVRAMSysArea(gsp: GspGpu) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.RestoreVRamSysArea, .{}, .{})).cases()) {
         .success => {},
@@ -724,7 +722,7 @@ pub fn sendRestoreVRAMSysArea(gsp: GspGpu) Error!void {
     };
 }
 
-pub fn sendResetGpuCore(gsp: GspGpu) Error!void {
+pub fn sendResetGpuCore(gsp: GspGpu) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.ResetGpuCore, .{}, .{})).cases()) {
         .success => {},
@@ -732,7 +730,7 @@ pub fn sendResetGpuCore(gsp: GspGpu) Error!void {
     };
 }
 
-pub fn sendSetLedForceOff(gsp: GspGpu, disable: bool) Error!void {
+pub fn sendSetLedForceOff(gsp: GspGpu, disable: bool) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SetLedForceOff, .{ .disable = disable }, .{})).cases()) {
         .success => {},
@@ -740,7 +738,7 @@ pub fn sendSetLedForceOff(gsp: GspGpu, disable: bool) Error!void {
     };
 }
 
-pub fn sendSetInternalPriorities(gsp: GspGpu, session_thread: u6, command_queue: u6) Error!void {
+pub fn sendSetInternalPriorities(gsp: GspGpu, session_thread: u6, command_queue: u6) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SetInternalPriorities, .{ .session_thread = session_thread, .command_queue = command_queue }, .{})).cases()) {
         .success => {},
@@ -748,7 +746,7 @@ pub fn sendSetInternalPriorities(gsp: GspGpu, session_thread: u6, command_queue:
     };
 }
 
-pub fn sendStoreDataCache(gsp: GspGpu, buffer: []u8) Error!void {
+pub fn sendStoreDataCache(gsp: GspGpu, buffer: []u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.StoreDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})).cases()) {
         .success => {},
@@ -760,25 +758,25 @@ pub const command = struct {
     pub const WriteHwRegs = ipc.Command(Id, .write_hw_regs, struct {
         offset: usize,
         size: usize,
-        data: ipc.StaticSlice(0),
+        data: ipc.Static(0),
     }, struct {});
     pub const WriteHwRegsWithMask = ipc.Command(Id, .write_hw_regs_with_mask, struct {
         offset: usize,
         size: usize,
-        data: ipc.StaticSlice(0),
-        mask: ipc.StaticSlice(1),
+        data: ipc.Static(0),
+        mask: ipc.Static(1),
     }, struct {});
     pub const WriteHwRegRepeat = ipc.Command(Id, .write_hw_reg_repeat, struct {
         offset: usize,
         size: usize,
-        data: ipc.StaticSlice(0),
+        data: ipc.Static(0),
     }, struct {});
     pub const ReadHwRegs = ipc.Command(Id, .read_hw_regs, struct {
         pub const static_buffers = 1;
         offset: usize,
         size: usize,
     }, struct {
-        output: ipc.StaticSlice(0),
+        output: ipc.Static(0),
     });
     pub const SetBufferSwap = ipc.Command(Id, .set_buffer_swap, struct { screen: Screen, info: FramebufferInfo }, struct {});
     // SetCommandList stubbed

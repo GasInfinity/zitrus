@@ -10,7 +10,7 @@ comptime {
 }
 
 // XXX: We're doing this as literally the program metadata is embedded in the start of the binary
-fn _start() linksection(".startup.before") callconv(.naked) noreturn {
+fn _start() linksection(".text.base") callconv(.naked) noreturn {
     @setRuntimeSafety(false);
     asm volatile ("b %[startup]"
         :
@@ -22,7 +22,7 @@ fn _start() linksection(".startup.before") callconv(.naked) noreturn {
 const stack_size: u32 = if (@hasDecl(root, "zitrus_options") and @FieldType(root, "zitrus_options") != zitrus.ZitrusOptions) root.zitrus_options.stack_size else 32768;
 var allocated_stack: [stack_size]u8 align(8) linksection(".bss.allocated_stack") = undefined;
 
-fn startup() linksection(".startup.after") callconv(.naked) noreturn {
+fn startup() callconv(.naked) noreturn {
     @setRuntimeSafety(false);
     // TODO: Add .cantunwind: https://github.com/llvm/llvm-project/issues/115891
     asm volatile (

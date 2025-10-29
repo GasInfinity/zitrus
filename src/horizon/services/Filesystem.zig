@@ -173,23 +173,23 @@ pub const File = packed struct(u32) {
     pub fn sendOpenSubFile(file: File, offset: u64, size: u64) !File {
         const data = tls.get();
         return switch ((try data.ipc.sendRequest(file.session, File.command.OpenSubFile, .{ .offset = offset, .size = size }, .{})).cases()) {
-            .success => |s| s.value.response.file,
+            .success => |s| s.value.file,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
 
     pub fn sendRead(file: File, offset: u64, buffer: []u8) !usize {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(file.session, File.command.Read, .{ .offset = offset, .size = buffer.len, .buffer = .init(buffer) }, .{})).cases()) {
-            .success => |s| s.value.response.actual_read,
+        return switch ((try data.ipc.sendRequest(file.session, File.command.Read, .{ .offset = offset, .size = buffer.len, .buffer = .mapped(buffer) }, .{})).cases()) {
+            .success => |s| s.value.actual_read,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
 
     pub fn sendWrite(file: File, offset: u64, buffer: []const u8, options: WriteOptions) !usize {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(file.session, File.command.Write, .{ .offset = offset, .size = buffer.len, .options = options, .buffer = .init(buffer) }, .{})).cases()) {
-            .success => |s| s.value.response.actual_written,
+        return switch ((try data.ipc.sendRequest(file.session, File.command.Write, .{ .offset = offset, .size = buffer.len, .options = options, .buffer = .mapped(buffer) }, .{})).cases()) {
+            .success => |s| s.value.actual_written,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
@@ -197,7 +197,7 @@ pub const File = packed struct(u32) {
     pub fn sendGetSize(file: File) !u64 {
         const data = tls.get();
         return switch ((try data.ipc.sendRequest(file.session, File.command.GetSize, .{}, .{})).cases()) {
-            .success => |s| s.value.response.size,
+            .success => |s| s.value.size,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
@@ -213,7 +213,7 @@ pub const File = packed struct(u32) {
     pub fn sendGetAttributes(file: File) !Attributes {
         const data = tls.get();
         return switch ((try data.ipc.sendRequest(file.session, File.command.GetAttributes, .{}, .{})).cases()) {
-            .success => |s| s.value.response.attributes,
+            .success => |s| s.value.attributes,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
@@ -245,7 +245,7 @@ pub const File = packed struct(u32) {
     pub fn sendGetPriority(file: File) !u32 {
         const data = tls.get();
         return switch ((try data.ipc.sendRequest(file.session, File.command.GetPriority, .{}, .{})).cases()) {
-            .success => |s| s.value.response.priority,
+            .success => |s| s.value.priority,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
@@ -261,7 +261,7 @@ pub const File = packed struct(u32) {
     pub fn sendOpenLinkFile(file: File) !File {
         const data = tls.get();
         return switch ((try data.ipc.sendRequest(file.session, File.command.OpenLinkFile, .{}, .{})).cases()) {
-            .success => |s| s.value.response.clone,
+            .success => |s| s.value.clone,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
@@ -269,15 +269,15 @@ pub const File = packed struct(u32) {
     pub fn sendGetAvailable(file: File, offset: u64, size: u64) !u64 {
         const data = tls.get();
         return switch ((try data.ipc.sendRequest(file.session, File.command.GetAvailable, .{ .offset = offset, .size = size }, .{})).cases()) {
-            .success => |s| s.value.response.available,
+            .success => |s| s.value.available,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
 
     pub const command = struct {
         pub const OpenSubFile = ipc.Command(Id, .open_sub_file, struct { offset: u64, size: u64 }, struct { file: File });
-        pub const Read = ipc.Command(Id, .read, struct { offset: u64, size: usize, buffer: ipc.MappedSlice(.write) }, struct { actual_read: usize, buffer: ipc.MappedSlice(.write) });
-        pub const Write = ipc.Command(Id, .write, struct { offset: u64, size: usize, options: WriteOptions, buffer: ipc.MappedSlice(.read) }, struct { actual_written: usize, buffer: ipc.MappedSlice(.read) });
+        pub const Read = ipc.Command(Id, .read, struct { offset: u64, size: usize, buffer: ipc.Mapped(.w) }, struct { actual_read: usize, buffer: ipc.Mapped(.w) });
+        pub const Write = ipc.Command(Id, .write, struct { offset: u64, size: usize, options: WriteOptions, buffer: ipc.Mapped(.r) }, struct { actual_written: usize, buffer: ipc.Mapped(.r) });
         pub const GetSize = ipc.Command(Id, .get_size, struct {}, struct { size: u64 });
         pub const SetSize = ipc.Command(Id, .set_size, struct { size: u64 }, struct {});
         pub const GetAttributes = ipc.Command(Id, .get_attributes, struct {}, struct { attributes: Attributes });
@@ -324,8 +324,8 @@ pub const Directory = packed struct(u32) {
 
     pub fn sendRead(dir: Directory, entries: []Entry) !usize {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(dir.session, Directory.command.Read, .{ .count = entries.len, .buffer = .init(std.mem.asBytes(entries)) }, .{})).cases()) {
-            .success => |s| s.value.response.actual_entries,
+        return switch ((try data.ipc.sendRequest(dir.session, Directory.command.Read, .{ .count = entries.len, .buffer = .mapped(std.mem.asBytes(entries)) }, .{})).cases()) {
+            .success => |s| s.value.actual_entries,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
@@ -341,7 +341,7 @@ pub const Directory = packed struct(u32) {
     pub fn sendGetPriority(dir: Directory) !u32 {
         const data = tls.get();
         return switch ((try data.ipc.sendRequest(dir.session, Directory.command.GetPriority, .{}, .{})).cases()) {
-            .success => |s| s.value.response.priority,
+            .success => |s| s.value.priority,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
@@ -355,7 +355,7 @@ pub const Directory = packed struct(u32) {
     }
 
     pub const command = struct {
-        pub const Read = ipc.Command(Id, .read, struct { count: usize, entries_bytes: ipc.MappedSlice(.write) }, struct { actual_entries: usize });
+        pub const Read = ipc.Command(Id, .read, struct { count: usize, entries_bytes: ipc.Mapped(.w) }, struct { actual_entries: usize });
         pub const Close = ipc.Command(Id, .close, struct {}, struct {});
         pub const SetPriority = ipc.Command(Id, .set_priority, struct { priority: u32 }, struct {});
         pub const GetPriority = ipc.Command(Id, .get_priority, struct {}, struct { priority: u32 });
@@ -398,9 +398,9 @@ pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_t
         .path_size = (path.len + 1),
         .flags = flags,
         .attributes = attributes,
-        .path = .init(path.ptr[0 .. path.len + 1]),
+        .path = .static(path.ptr[0 .. path.len + 1]),
     }, .{})).cases()) {
-        .success => |s| s.value.response.file.handle,
+        .success => |s| s.value.file.wrapped,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -416,10 +416,10 @@ pub fn sendOpenFileDirectly(fs: Filesystem, transaction: usize, archive_id: Arch
         .file_path_size = file_path.len,
         .flags = flags,
         .attributes = attributes,
-        .archive_path = .init(archive_path),
-        .file_path = .init(file_path),
+        .archive_path = .static(archive_path),
+        .file_path = .static(file_path),
     }, .{})).cases()) {
-        .success => |s| s.value.response.file.handle,
+        .success => |s| s.value.file.wrapped,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -431,7 +431,7 @@ pub fn sendDeleteFile(fs: Filesystem, transaction: usize, archive: Archive, path
         .archive = archive,
         .path_type = path_type,
         .path_size = (path.len + 1),
-        .path = .init(path.ptr[0..(path.len + 1)]),
+        .path = .static(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -448,8 +448,8 @@ pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, 
         .destination_archive = dst_archive,
         .destination_path_type = dst_path_type,
         .destination_path_size = (dst_path.len + 1),
-        .source_path = .init(src_path.ptr[0..(src_path.len + 1)]),
-        .destination_path = .init(dst_path.ptr[0..(dst_path.len + 1)]),
+        .source_path = .static(src_path.ptr[0..(src_path.len + 1)]),
+        .destination_path = .static(dst_path.ptr[0..(dst_path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -463,7 +463,7 @@ pub fn sendDeleteDirectory(fs: Filesystem, transaction: usize, archive: Archive,
         .archive = archive,
         .path_type = path_type,
         .path_size = (path.len + 1),
-        .path = .init(path.ptr[0..(path.len + 1)]),
+        .path = .static(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -477,7 +477,7 @@ pub fn sendDeleteDirectoryRecursively(fs: Filesystem, transaction: usize, archiv
         .archive = archive,
         .path_type = path_type,
         .path_size = (path.len + 1),
-        .path = .init(path.ptr[0..(path.len + 1)]),
+        .path = .static(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -493,7 +493,7 @@ pub fn sendCreateFile(fs: Filesystem, transaction: usize, archive: Archive, path
         .path_size = (path.len + 1),
         .attributes = attributes,
         .file_size = size,
-        .path = .init(path.ptr[0..(path.len + 1)]),
+        .path = .static(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -508,7 +508,7 @@ pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive,
         .path_type = path_type,
         .path_size = (path.len + 1),
         .attributes = attributes,
-        .path = .init(path.ptr[0..(path.len + 1)]),
+        .path = .static(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -525,8 +525,8 @@ pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Arch
         .destination_archive = dst_archive,
         .destination_path_type = dst_path_type,
         .destination_path_size = (dst_path.len + 1),
-        .source_path = .init(src_path.ptr[0..(src_path.len + 1)]),
-        .destination_path = .init(dst_path.ptr[0..(dst_path.len + 1)]),
+        .source_path = .static(src_path.ptr[0..(src_path.len + 1)]),
+        .destination_path = .static(dst_path.ptr[0..(dst_path.len + 1)]),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -540,9 +540,9 @@ pub fn sendOpenDirectory(fs: Filesystem, transaction: usize, archive: Archive, p
         .archive = archive,
         .path_type = path_type,
         .path_size = (path.len + 1),
-        .path = .init(path.ptr[0..(path.len + 1)]),
+        .path = .static(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
-        .success => |s| s.value.response.directory,
+        .success => |s| s.value.directory,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -553,9 +553,9 @@ pub fn sendOpenArchive(fs: Filesystem, archive_id: ArchiveId, path_type: PathTyp
         .archive_id = archive_id,
         .path_type = path_type,
         .path_size = (path.len + 1),
-        .path = .init(path.ptr[0..(path.len + 1)]),
+        .path = .static(path.ptr[0..(path.len + 1)]),
     }, .{})).cases()) {
-        .success => |s| s.value.response.archive,
+        .success => |s| s.value.archive,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -567,8 +567,8 @@ pub fn sendControlArchive(fs: Filesystem, archive: Archive, action: ControlArchi
         .action = action,
         .input_size = input.len,
         .output_size = output.len,
-        .input = .init(input),
-        .output = .init(output),
+        .input = .static(input),
+        .output = .static(output),
     }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
@@ -594,8 +594,8 @@ pub const command = struct {
         path_size: usize,
         flags: OpenFlags,
         attributes: Attributes,
-        path: ipc.StaticSlice(0),
-    }, struct { file: ipc.MoveHandle(File) });
+        path: ipc.Static(0),
+    }, struct { file: ipc.MoveHandles(File) });
     pub const OpenFileDirectly = ipc.Command(Id, .open_file_directly, struct {
         transaction: usize,
         archive_id: ArchiveId,
@@ -605,15 +605,15 @@ pub const command = struct {
         file_path_size: usize,
         flags: OpenFlags,
         attributes: Attributes,
-        archive_path: ipc.StaticSlice(2),
-        file_path: ipc.StaticSlice(0),
-    }, struct { file: ipc.MoveHandle(File) });
+        archive_path: ipc.Static(2),
+        file_path: ipc.Static(0),
+    }, struct { file: ipc.MoveHandles(File) });
     pub const DeleteFile = ipc.Command(Id, .delete_file, struct {
         transaction: usize,
         archive: Archive,
         path_type: PathType,
         path_size: usize,
-        path: ipc.StaticSlice(0),
+        path: ipc.Static(0),
     }, struct {});
     pub const RenameFile = ipc.Command(Id, .rename_file, struct {
         transaction: usize,
@@ -623,22 +623,22 @@ pub const command = struct {
         destination_archive: Archive,
         destination_path_type: PathType,
         destination_path_size: usize,
-        source_path: ipc.StaticSlice(1),
-        destination_path: ipc.StaticSlice(2),
+        source_path: ipc.Static(1),
+        destination_path: ipc.Static(2),
     }, struct {});
     pub const DeleteDirectory = ipc.Command(Id, .delete_directory, struct {
         transaction: usize,
         archive: Archive,
         path_type: PathType,
         path_size: usize,
-        path: ipc.StaticSlice(0),
+        path: ipc.Static(0),
     }, struct {});
     pub const DeleteDirectoryRecursively = ipc.Command(Id, .delete_directory_recursively, struct {
         transaction: usize,
         archive: Archive,
         path_type: PathType,
         path_size: usize,
-        path: ipc.StaticSlice(0),
+        path: ipc.Static(0),
     }, struct {});
     pub const CreateFile = ipc.Command(Id, .create_file, struct {
         transaction: usize,
@@ -647,7 +647,7 @@ pub const command = struct {
         path_size: usize,
         attributes: Attributes,
         file_size: u64,
-        path: ipc.StaticSlice(0),
+        path: ipc.Static(0),
     }, struct {});
     pub const CreateDirectory = ipc.Command(Id, .create_directory, struct {
         transaction: usize,
@@ -655,7 +655,7 @@ pub const command = struct {
         path_type: PathType,
         path_size: usize,
         attributes: Attributes,
-        path: ipc.StaticSlice(0),
+        path: ipc.Static(0),
     }, struct {});
     pub const RenameDirectory = ipc.Command(Id, .rename_directory, struct {
         transaction: usize,
@@ -665,29 +665,29 @@ pub const command = struct {
         destination_archive: Archive,
         destination_path_type: PathType,
         destination_path_size: usize,
-        source_path: ipc.StaticSlice(1),
-        destination_path: ipc.StaticSlice(2),
+        source_path: ipc.Static(1),
+        destination_path: ipc.Static(2),
     }, struct {});
     pub const OpenDirectory = ipc.Command(Id, .open_directory, struct {
         transaction: usize,
         archive: Archive,
         path_type: PathType,
         path_size: usize,
-        path: ipc.StaticSlice(0),
-    }, struct { directory: ipc.MoveHandle(Directory) });
+        path: ipc.Static(0),
+    }, struct { directory: ipc.MoveHandles(Directory) });
     pub const OpenArchive = ipc.Command(Id, .open_archive, struct {
         archive_id: ArchiveId,
         path_type: PathType,
         path_size: usize,
-        path: ipc.StaticSlice(0),
+        path: ipc.Static(0),
     }, struct { archive: Archive });
     pub const ControlArchive = ipc.Command(Id, .control_archive, struct {
         archive: Archive,
         action: ControlArchiveAction,
         input_size: usize,
         output_size: usize,
-        input: ipc.MappedSlice(.read),
-        output: ipc.MappedSlice(.write),
+        input: ipc.Mapped(.r),
+        output: ipc.Mapped(.w),
     }, struct {});
     pub const CloseArchive = ipc.Command(Id, .close_archive, struct {
         archive: Archive,
@@ -704,12 +704,12 @@ pub const command = struct {
     pub const GetSmdcFatFsError = ipc.Command(Id, .get_smdc_fatfs_error, struct {}, struct { fatfs_error: u32 });
     pub const IsSmdcDetected = ipc.Command(Id, .is_smdc_detected, struct {}, struct { detected: bool });
     pub const IsSmdcWritable = ipc.Command(Id, .is_smdc_writable, struct {}, struct { writable: bool });
-    pub const GetSmdcCid = ipc.Command(Id, .get_smdc_cid, struct { buffer_size: usize, buffer: ipc.MappedSlice(.write) }, struct {});
-    pub const GetNandCid = ipc.Command(Id, .get_smdc_cid, struct { buffer_size: usize, buffer: ipc.MappedSlice(.write) }, struct {});
+    pub const GetSmdcCid = ipc.Command(Id, .get_smdc_cid, struct { buffer_size: usize, buffer: ipc.Mapped(.w) }, struct {});
+    pub const GetNandCid = ipc.Command(Id, .get_smdc_cid, struct { buffer_size: usize, buffer: ipc.Mapped(.w) }, struct {});
     pub const GetSmdcSpeedInfo = ipc.Command(Id, .get_smdc_speed_info, struct {}, struct { speed_info: u32 });
     pub const GetNandSpeedInfo = ipc.Command(Id, .get_nand_speed_info, struct {}, struct { speed_info: u32 });
-    pub const GetSmdcLog = ipc.Command(Id, .get_smdc_log, struct { buffer_size: usize, buffer: ipc.MappedSlice(.write) }, struct {});
-    pub const GetNandLog = ipc.Command(Id, .get_nand_log, struct { buffer_size: usize, buffer: ipc.MappedSlice(.write) }, struct {});
+    pub const GetSmdcLog = ipc.Command(Id, .get_smdc_log, struct { buffer_size: usize, buffer: ipc.Mapped(.w) }, struct {});
+    pub const GetNandLog = ipc.Command(Id, .get_nand_log, struct { buffer_size: usize, buffer: ipc.Mapped(.w) }, struct {});
     pub const ClearSmdcLog = ipc.Command(Id, .clear_smdc_log, struct {}, struct {});
     pub const ClearNandLog = ipc.Command(Id, .clear_smdc_log, struct {}, struct {});
     pub const CardSlotIsInserted = ipc.Command(Id, .card_slot_is_inserted, struct {}, struct { inserted: bool });

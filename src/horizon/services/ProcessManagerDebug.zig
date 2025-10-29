@@ -18,7 +18,7 @@ pub fn sendLaunchAppDebug(pmd: PmDbg, program_info: Filesystem.ProgramInfo, laun
         .program_info = program_info,
         .launch_flags = launch_flags,
     }, .{})).cases()) {
-        .success => |s| s.value.response.app_debug,
+        .success => |s| s.value.app_debug,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }

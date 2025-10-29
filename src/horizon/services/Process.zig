@@ -20,18 +20,18 @@ pub const command = struct {
     pub const SignRsaSha256 = ipc.Command(Id, .sign_rsa_sha256, struct {
         sha256: [32]u8,
         size: u32,
-        rsa_context: ipc.StaticSlice(0),
-        signature: ipc.MappedSlice(.write),
+        rsa_context: ipc.Static(0),
+        signature: ipc.Mapped(.w),
     }, struct {
-        signature: ipc.MappedSlice(.write),
+        signature: ipc.Mapped(.w),
     });
     pub const VerifyRsaSha256 = ipc.Command(Id, .verify_rsa_sha256, struct {
         sha256: [32]u8,
         size: u32,
-        rsa_context: ipc.StaticSlice(0),
-        signature: ipc.MappedSlice(.read),
+        rsa_context: ipc.Static(0),
+        signature: ipc.Mapped(.r),
     }, struct {
-        signature: ipc.MappedSlice(.read),
+        signature: ipc.Mapped(.r),
     });
     pub const AesOperation = ipc.Command(Id, .aes_operation, aes.Input, aes.Output);
     pub const AesCcmOperation = ipc.Command(Id, .aes_ccm_operation, aes.CcmInput, struct {});
@@ -43,7 +43,7 @@ pub const command = struct {
     pub const GetLocalFriendSeed = ipc.Command(Id, .get_local_friend_seed, struct {}, struct { seed: u64 });
     pub const GetDeviceId = ipc.Command(Id, .get_device_id, struct {}, struct { id: u32 });
     pub const SeedRandom = ipc.Command(Id, .seed_random, struct {}, struct {});
-    pub const NextRandomBytes = ipc.Command(Id, .next_random_bytes, struct { size: u32, output: ipc.MappedSlice(.write) }, struct { output: ipc.MappedSlice(.write) });
+    pub const NextRandomBytes = ipc.Command(Id, .next_random_bytes, struct { size: u32, output: ipc.Mapped(.w) }, struct { output: ipc.Mapped(.w) });
 
     pub const Id = enum(u16) {
         sign_rsa_sha256 = 0x0001,

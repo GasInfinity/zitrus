@@ -30,7 +30,7 @@ pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, com
             return .fromPhysical(@as(PhysicalAddress, @enumFromInt(address)));
         }
 
-        pub inline fn fromPhysical(aligned_address: anytype) AlignedPhysAddr {
+        pub fn fromPhysical(aligned_address: anytype) AlignedPhysAddr {
             const OtherAlignedPhysAddr = @TypeOf(aligned_address);
 
             if (@typeInfo(OtherAlignedPhysAddr) != .@"enum" or !@hasDecl(OtherAlignedPhysAddr, "alignment") or !@hasDecl(OtherAlignedPhysAddr, "shift"))

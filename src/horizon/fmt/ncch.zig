@@ -9,11 +9,16 @@
 pub const exefs = @import("ncch/exefs.zig");
 pub const romfs = @import("ncch/romfs.zig");
 
-pub const media_unit = 0x200;
 pub const magic = "NCCH";
 
 // TODO: Docs, Docs and Docs
+/// A `0x100` RSA signature precedes this
 pub const Header = extern struct {
+    pub const WithSignature = extern struct {
+        signature: [0x100]u8,
+        header: Header,
+    };
+
     pub const Version = enum(u16) {
         cfa,
         cxi_proto,
@@ -63,11 +68,10 @@ pub const Header = extern struct {
         crypto_method: u8,
         platform: Platform,
         content: Content,
-        exp_unit_size: u8,
+        extra_unit_exponent: u8,
         extra: Extra,
     };
 
-    signature: [0x100]u8,
     magic: [4]u8 = magic.*,
     content_size: u32,
     partition_id: TitleId,
@@ -118,7 +122,7 @@ pub const Header = extern struct {
     }
 
     comptime {
-        std.debug.assert(@sizeOf(Header) == 0x200);
+        std.debug.assert(@sizeOf(Header) == 0x100);
     }
 };
 

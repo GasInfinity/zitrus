@@ -4,8 +4,6 @@
 
 const service_names = [_][]const u8{ "cfg:i", "cfg:s", "cfg:u" };
 
-pub const Error = ClientSession.RequestError;
-
 pub const Service = enum(u2) {
     user,
     system,
@@ -392,7 +390,7 @@ pub const Block = enum(u32) {
 
 session: ClientSession,
 
-pub fn open(service: Service, srv: ServiceManager) Error!Config {
+pub fn open(service: Service, srv: ServiceManager) !Config {
     return .{ .session = try srv.getService(service.name(), .wait) };
 }
 
@@ -400,64 +398,64 @@ pub fn close(config: Config) void {
     config.session.close();
 }
 
-pub fn getConfigUser(cfg: Config, comptime block: Block) Error!block.Data() {
+pub fn getConfigUser(cfg: Config, comptime block: Block) !block.Data() {
     var value: block.Data() = undefined;
     try cfg.sendGetConfigUser(block, std.mem.asBytes(&value));
     return value;
 }
 
-pub fn sendGetConfigUser(cfg: Config, block: Block, output: []u8) Error!void {
+pub fn sendGetConfigUser(cfg: Config, block: Block, output: []u8) !void {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(cfg.session, command.GetConfigUser, .{ .size = output.len, .blk = block, .output = .init(output) }, .{})).cases()) {
+    return switch ((try data.ipc.sendRequest(cfg.session, command.GetConfigUser, .{ .size = output.len, .blk = block, .output = .mapped(output) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendGetRegion(cfg: Config) Error!Region {
+pub fn sendGetRegion(cfg: Config) !Region {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(cfg.session, command.GetRegion, .{}, .{})).cases()) {
-        .success => |s| s.value.response.region,
+        .success => |s| s.value.region,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendIsCoppacsSupported(cfg: Config) Error!bool {
+pub fn sendIsCoppacsSupported(cfg: Config) !bool {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(cfg.session, command.IsCoppacsSupported, .{}, .{})).cases()) {
-        .success => |s| s.value.response.supported,
+        .success => |s| s.value.supported,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendGetSystemModel(cfg: Config) Error!SystemModel {
+pub fn sendGetSystemModel(cfg: Config) !SystemModel {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(cfg.session, command.GetSystemModel, .{}, .{})).cases()) {
-        .success => |s| s.value.response.model,
+        .success => |s| s.value.model,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendIsModelNintendo2ds(cfg: Config) Error!bool {
+pub fn sendIsModelNintendo2ds(cfg: Config) !bool {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(cfg.session, command.IsModelNintendo2ds, .{}, .{})).cases()) {
-        .success => |s| s.value.response.value,
+        .success => |s| s.value.value,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendGetCountryCodeString(cfg: Config, id: Country) Error![2]u8 {
+pub fn sendGetCountryCodeString(cfg: Config, id: Country) ![2]u8 {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(cfg.session, command.GetCountryCodeString, .{ .id = id }, .{})).cases()) {
-        .success => |s| s.value.response.str,
+        .success => |s| s.value.str,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendGetCountryCodeId(cfg: Config, string: [2]u8) Error!Country {
+pub fn sendGetCountryCodeId(cfg: Config, string: [2]u8) !Country {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(cfg.session, command.GetCountryCodeId, .{ .str = string }, .{})).cases()) {
-        .success => |s| s.value.response.id,
+        .success => |s| s.value.id,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -466,8 +464,8 @@ pub const command = struct {
     pub const GetConfigUser = ipc.Command(Id, .get_config_user, struct {
         size: usize,
         blk: Block,
-        output: ipc.MappedSlice(.write),
-    }, struct { output: ipc.MappedSlice(.write) });
+        output: ipc.Mapped(.w),
+    }, struct { output: ipc.Mapped(.w) });
     pub const GetRegion = ipc.Command(Id, .get_region, struct {}, struct { region: Region });
     pub const GetTransferableId = ipc.Command(Id, .get_transferable_id, struct { salt: u20 }, struct { hash: u64 });
     pub const IsCoppacsSupported = ipc.Command(Id, .is_coppacs_supported, struct {}, struct { supported: bool });

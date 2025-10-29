@@ -107,7 +107,7 @@ pub fn sendRegisterClient(srv: ServiceManager) !void {
 pub fn sendEnableNotification(srv: ServiceManager) !Semaphore {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.EnableNotification, .{}, .{})).cases()) {
-        .success => |s| s.value.response.notification_received,
+        .success => |s| s.value.notification_received,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -124,7 +124,7 @@ pub fn sendRegisterService(srv: ServiceManager, name: []const u8, max_sessions: 
 
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.RegisterService, req, .{})).cases()) {
-        .success => |s| s.value.response.server,
+        .success => |s| s.value.server,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -160,7 +160,7 @@ pub fn sendGetServiceHandle(srv: ServiceManager, name: []const u8, flags: comman
 
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.GetServiceHandle, req, .{})).cases()) {
-        .success => |s| s.value.response.service.handle,
+        .success => |s| s.value.service.wrapped,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -177,7 +177,7 @@ pub fn sendRegisterPort(srv: ServiceManager, name: []const u8, registering_port:
 
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.RegisterPort, req, .{})).cases()) {
-        .success => |s| s.value.response.server,
+        .success => |s| s.value.server,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -210,7 +210,7 @@ pub fn sendGetPort(srv: ServiceManager, name: []const u8, wait_until_found: bool
 
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.GetPort, req, .{})).cases()) {
-        .success => |s| s.value.response.service,
+        .success => |s| s.value.service,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -234,7 +234,7 @@ pub fn sendUnsubscribe(srv: ServiceManager, notification: Notification) !void {
 pub fn sendReceiveNotification(srv: ServiceManager) !Notification {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.ReceiveNotification, .{}, .{})).cases()) {
-        .success => |s| s.value.response.notification,
+        .success => |s| s.value.notification,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -250,7 +250,7 @@ pub fn sendPublishToSubscriber(srv: ServiceManager, notification: Notification, 
 pub fn sendPublishAndGetSubscriber(srv: ServiceManager, notification: Notification) !command.PublishAndGetSubscriber.Response {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.PublishAndGetSubscriber, .{ .notification = notification }, .{})).cases()) {
-        .success => |s| s.value.response,
+        .success => |s| s.value,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -267,7 +267,7 @@ pub fn sendIsServiceRegistered(srv: ServiceManager, name: []const u8) !bool {
 
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.IsServiceRegistered, req, .{})).cases()) {
-        .success => |s| s.value.response.registered,
+        .success => |s| s.value.registered,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -295,7 +295,7 @@ pub const command = struct {
         name: [8]u8,
         name_len: usize,
         flags: Flags,
-    }, struct { service: ipc.MoveHandle(ClientSession) });
+    }, struct { service: ipc.MoveHandles(ClientSession) });
     pub const RegisterPort = ipc.Command(Id, .register_port, struct {
         name: [8]u8,
         name_len: usize,

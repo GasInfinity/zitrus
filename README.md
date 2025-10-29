@@ -120,6 +120,9 @@ You can (and are encouraged) to look at the `tools` directory as it is a good ex
     - 🟢 ExeFS (tools/ExeFs): Make / List / Dump
     - 🟢 RomFS (tools/RomFs): Make / List / Dump
 - 🟡 LZrev (tools/LzRev): Decompression
+- 🔴 Cro0 / Crr0
+- 🔴 Arc / Bcma / SArc / Etc
+- 🔴 Cia
 
 ## Horizon
 

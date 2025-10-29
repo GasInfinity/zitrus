@@ -42,13 +42,13 @@ pub const command = struct {
         socket: u32,
         addrlen: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        sockaddr: ipc.StaticSlice(0),
+        sockaddr: ipc.Static(0),
     }, struct { posix_return: u32 });
     pub const Connect = ipc.Command(Id, .connect, struct {
         socket: u32,
         addrlen: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        sockaddr: ipc.StaticSlice(0),
+        sockaddr: ipc.Static(0),
     }, struct { posix_return: u32 });
     pub const RecvFromOther = ipc.Command(Id, .recvfrom_other, struct {
         pub const static_buffers = 1;
@@ -57,7 +57,7 @@ pub const command = struct {
         flags: u32,
         addrlen: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        output: ipc.MappedSlice(.write),
+        output: ipc.Mapped(.w),
     }, struct { posix_return: u32 });
     pub const RecvFrom = ipc.Command(Id, .recvfrom, struct {
         pub const static_buffers = 2;
@@ -73,8 +73,8 @@ pub const command = struct {
         flags: u32,
         addrlen: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        dest_addr: ipc.StaticSlice(1),
-        input: ipc.MappedSlice(.read),
+        dest_addr: ipc.Static(1),
+        input: ipc.Mapped(.r),
     }, struct { posix_return: u32 });
     pub const SendTo = ipc.Command(Id, .sendto, struct {
         socket: u32,
@@ -82,8 +82,8 @@ pub const command = struct {
         flags: u32,
         addrlen: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        input: ipc.StaticSlice(2),
-        dest_addr: ipc.StaticSlice(1),
+        input: ipc.Static(2),
+        dest_addr: ipc.Static(1),
     }, struct { posix_return: u32 });
     pub const Close = ipc.Command(Id, .close, struct {
         socket: u32,
@@ -98,14 +98,14 @@ pub const command = struct {
         pub const static_buffers = 1;
         hostname_len: u32,
         output_len: u32,
-        hostname: ipc.StaticSlice(3),
+        hostname: ipc.Static(3),
     }, struct { posix_return: u32 });
     pub const GetHostByAddr = ipc.Command(Id, .gethostbyaddr, struct {
         pub const static_buffers = 1;
         input_len: u32,
         type: u32,
         output_len: u32,
-        input: ipc.StaticSlice(4),
+        input: ipc.Static(4),
     }, struct { posix_return: u32 });
     pub const GetAddrInfo = ipc.Command(Id, .getaddrinfo, struct {
         pub const static_buffers = 1;
@@ -113,9 +113,9 @@ pub const command = struct {
         service_len: u32,
         hints_len: u32,
         info_len: u32,
-        node: ipc.StaticSlice(5),
-        service: ipc.StaticSlice(6),
-        hints: ipc.StaticSlice(7),
+        node: ipc.Static(5),
+        service: ipc.Static(6),
+        hints: ipc.Static(7),
     }, struct { posix_return: u32, count: u32 });
     pub const GetNameInfo = ipc.Command(Id, .getnameinfo, struct {
         pub const static_buffers = 2;
@@ -123,7 +123,7 @@ pub const command = struct {
         host_len: u32,
         serv_len: u32,
         flags: u32,
-        sockaddr: ipc.StaticSlice(8),
+        sockaddr: ipc.Static(8),
     }, struct { posix_return: u32 });
     pub const GetSockOpt = ipc.Command(Id, .getsockopt, struct {
         pub const static_buffers = 1;
@@ -139,7 +139,7 @@ pub const command = struct {
         opt_name: u32,
         opt_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        opt: ipc.StaticSlice(9),
+        opt: ipc.Static(9),
     }, struct { posix_return: u32 });
     pub const Fnctl = ipc.Command(Id, .fnctl, struct {
         socket: u32,
@@ -152,7 +152,7 @@ pub const command = struct {
         nfds: u32,
         timeout: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        input: ipc.StaticSlice(10),
+        input: ipc.Static(10),
     }, struct { posix_return: u32 });
     pub const SockAtMark = ipc.Command(Id, .sockatmark, struct {
         socket: u32,

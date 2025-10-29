@@ -64,7 +64,7 @@ pub fn close(errdisp: ErrDispManager) void {
 
 pub fn sendSetUserString(errdisp: ErrDispManager, str: []const u8) !void {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(errdisp.session, command.SetUserString, .{ .str_size = str.len, .str = .init(str) }, .{})).cases()) {
+    return switch ((try data.ipc.sendRequest(errdisp.session, command.SetUserString, .{ .str_size = str.len, .str = .static(str) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -85,13 +85,13 @@ pub const command = struct {
     };
 
     pub const Throw = ipc.Command(Id, .throw, FatalErrorInfo, struct {});
-    pub const SetUserString = ipc.Command(Id, .set_user_string, struct { str_size: usize, str: ipc.StaticSlice(0) }, struct {});
+    pub const SetUserString = ipc.Command(Id, .set_user_string, struct { str_size: usize, str: ipc.Static(0) }, struct {});
 
     comptime {
-        std.debug.assert(std.meta.eql(Throw.request, .{ .normal = 32, .translate = 0 }));
-        std.debug.assert(std.meta.eql(Throw.response, .{ .normal = 1, .translate = 0 }));
-        std.debug.assert(std.meta.eql(SetUserString.request, .{ .normal = 1, .translate = 2 }));
-        std.debug.assert(std.meta.eql(SetUserString.response, .{ .normal = 1, .translate = 0 }));
+        std.debug.assert(std.meta.eql(Throw.request_parameters, .parameters(32, 0)));
+        std.debug.assert(std.meta.eql(Throw.response_parameters, .parameters(0, 0)));
+        std.debug.assert(std.meta.eql(SetUserString.request_parameters, .parameters(1, 2)));
+        std.debug.assert(std.meta.eql(SetUserString.response_parameters, .parameters(0, 0)));
     }
 };
 

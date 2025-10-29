@@ -1,5 +1,7 @@
 //! Different `Horizon`-related formats.
 
+pub const media_unit = 0x200;
+
 pub const title = @import("fmt/title.zig");
 
 pub const ivfc = @import("fmt/ivfc.zig");

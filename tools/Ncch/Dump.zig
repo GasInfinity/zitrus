@@ -52,19 +52,22 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     var ncch_reader = input_file.reader(&in_buf);
     const reader = &ncch_reader.interface;
 
-    const header = try reader.takeStruct(ncch.Header, .little);
+    const full = try reader.takeStruct(ncch.Header.WithSignature, .little);
+    const header = full.header;
 
     header.check() catch |err| {
         log.err("could not read NCCH: {t}", .{err});
         return 1;
     };
 
-    const offset: u64, const size: usize, const hash_region_size, const hash = switch (args.region) {
+    const media_unit = hfmt.media_unit * (@as(u64, 1) << @truncate(header.flags.extra_unit_exponent));
+
+    const offset: u64, const size: u64, const hash_region_size, const hash = switch (args.region) {
         .settings => .{ @sizeOf(ncch.Header), header.extended_header_size, header.extended_header_size, &header.extended_header_hash },
-        .plain => .{ @as(u64, header.plain_region_offset) * ncch.media_unit, @as(usize, header.plain_region_size) * ncch.media_unit, 0x00, &.{} },
-        .logo => .{ @as(u64, header.logo_region_size) * ncch.media_unit, @as(usize, header.logo_region_size) * ncch.media_unit, @as(usize, header.logo_region_size) * ncch.media_unit, &.{} },
-        .exefs => .{ @as(u64, header.exefs_offset) * ncch.media_unit, @as(usize, header.exefs_size) * ncch.media_unit, @as(usize, header.exefs_hash_region_size) * ncch.media_unit, &header.exefs_superblock_hash },
-        .romfs => .{ @as(u64, header.romfs_offset) * ncch.media_unit, @as(usize, header.romfs_size) * ncch.media_unit, @as(usize, header.romfs_hash_region_size) * ncch.media_unit, &header.romfs_superblock_hash },
+        .plain => .{ @as(u64, header.plain_region_offset) * media_unit, @as(usize, header.plain_region_size) * media_unit, 0x00, &.{} },
+        .logo => .{ @as(u64, header.logo_region_size) * media_unit, @as(usize, header.logo_region_size) * media_unit, @as(usize, header.logo_region_size) * media_unit, &.{} },
+        .exefs => .{ @as(u64, header.exefs_offset) * media_unit, @as(usize, header.exefs_size) * media_unit, @as(usize, header.exefs_hash_region_size) * media_unit, &header.exefs_superblock_hash },
+        .romfs => .{ @as(u64, header.romfs_offset) * media_unit, @as(usize, header.romfs_size) * media_unit, @as(usize, header.romfs_hash_region_size) * media_unit, &header.romfs_superblock_hash },
     };
 
     if (offset == 0x00 or size == 0x00) {
@@ -175,4 +178,6 @@ const Settings = @import("Settings.zig");
 const builtin = @import("builtin");
 const std = @import("std");
 const zitrus = @import("zitrus");
-const ncch = zitrus.horizon.fmt.ncch;
+
+const hfmt = zitrus.horizon.fmt;
+const ncch = hfmt.ncch;

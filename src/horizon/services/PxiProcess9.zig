@@ -32,14 +32,14 @@ pub const aes = struct {
         iv_ctr: [16]u8,
         algorithm: Algorithm,
         key: Key,
-        source: ipc.MappedSlice(.read),
-        destination: ipc.StaticSlice(.write),
+        source: ipc.Mapped(.r),
+        destination: ipc.Static(.w),
     };
 
     pub const Output = struct {
         feedback_iv_ctr: [16]u8,
-        source: ipc.MappedSlice(.read),
-        destination: ipc.StaticSlice(.write),
+        source: ipc.Mapped(.r),
+        destination: ipc.Static(.w),
     };
 
     pub const CcmInput = struct {
@@ -51,8 +51,8 @@ pub const aes = struct {
         nonce: [12]u8,
         algorithm: Algorithm,
         key: Key,
-        source: ipc.MappedSlice(.read),
-        destination: ipc.StaticSlice(.write),
+        source: ipc.Mapped(.r),
+        destination: ipc.Static(.w),
     };
 };
 
@@ -77,8 +77,8 @@ pub const command = struct {
     pub const GetLocalFriendSeed = ipc.Command(Id, .get_local_friend_seed, struct {}, struct { seed: u64 });
     pub const GetDeviceId = ipc.Command(Id, .get_device_id, struct {}, struct { id: u32 });
     // XXX: The translate parameter is arbitrary, I don't know if its a mapped or a static one but it makes more sense that it is a static one
-    pub const SeedRandom = ipc.Command(Id, .seed_random, struct { size: u32, source: ipc.StaticSlice(0) }, struct { source: ipc.StaticSlice(0) });
-    pub const NextRandomBytes = ipc.Command(Id, .next_random_bytes, struct { size: u32, output: ipc.MappedSlice(.write) }, struct { output: ipc.MappedSlice(.write) });
+    pub const SeedRandom = ipc.Command(Id, .seed_random, struct { size: u32, source: ipc.Static(0) }, struct { source: ipc.Static(0) });
+    pub const NextRandomBytes = ipc.Command(Id, .next_random_bytes, struct { size: u32, output: ipc.Mapped(.w) }, struct { output: ipc.Mapped(.w) });
 
     pub const Id = enum(u16) {
         encrypt_rsa = 0x0001,
