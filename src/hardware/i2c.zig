@@ -41,3 +41,5 @@ pub const Bus = extern struct {
     control_extended: ControlExtended,
     clock: Clock,
 };
+
+const std = @import("std");

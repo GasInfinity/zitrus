@@ -50,7 +50,7 @@ pub const Card = extern struct {
         device: Device,
         platform: Platform,
         type: Type,
-        extra_unit_exponent: u8, 
+        extra_unit_exponent: u8,
         old_device: Device,
     };
 
@@ -79,7 +79,7 @@ pub const Card = extern struct {
 
     extended_header_hash: [0x20]u8,
     additional_header_size: u32,
-    sector_zero_offset: u32, 
+    sector_zero_offset: u32,
     flags: Flags,
     partition_id: [max_partitions]u64,
     _reserved0: [0x20]u8 = @splat(0),

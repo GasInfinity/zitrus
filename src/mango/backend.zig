@@ -1,5 +1,5 @@
 /// All index / vertex buffers provided to the gpu are relative to this address
-pub const global_attribute_buffer_base: zitrus.hardware.PhysicalAddress = .fromAddress(zitrus.memory.arm11.vram_begin);
+pub const global_attribute_buffer_base: zitrus.hardware.PhysicalAddress = .fromAddress(zitrus.memory.vram_begin);
 
 /// At most, this amount of commands can be buffered simultaneously by the driver.
 /// OutOfMemory will be returned if the driver can not queue more.

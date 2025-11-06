@@ -1,5 +1,6 @@
 //! Definitions for 3DS hardware
 
+pub const cpu = @import("hardware/cpu.zig");
 pub const pica = @import("hardware/pica.zig");
 pub const csnd = @import("hardware/csnd.zig");
 pub const pxi = @import("hardware/pxi.zig");

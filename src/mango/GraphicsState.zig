@@ -460,7 +460,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     if (state.dirty.combiners) {
         // NOTE: emission takes 8 of words per combiner
         const combiner_regs = &p3d.texture_combiners;
-        const units: []const *Graphics.TextureCombiners.Unit = &.{ &combiner_regs.@"0", &combiner_regs.@"1", &combiner_regs.@"2", &combiner_regs.@"3", &combiner_regs.@"4", &combiner_regs.@"5" };
+        const units: []const *volatile Graphics.TextureCombiners.Unit = &.{ &combiner_regs.@"0", &combiner_regs.@"1", &combiner_regs.@"2", &combiner_regs.@"3", &combiner_regs.@"4", &combiner_regs.@"5" };
         const units_start: usize = units.len - state.combiners.configured;
 
         var i: u8 = 0;

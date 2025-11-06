@@ -25,7 +25,7 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
     const cwd = std.fs.cwd();
     const input_file, const input_should_close = if (args.@"--".input) |in|
         .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
-            log.err("could not open NCCH '{s}': {t}", .{ in, err });
+            log.err("could not open FIRM '{s}': {t}", .{ in, err });
             return 1;
         }, true }
     else
@@ -36,7 +36,18 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
     var input_reader = input_file.reader(&buf);
     const reader = &input_reader.interface;
 
-    const firm_hdr = try reader.takeStruct(firm.Header, .little);
+    const firm_hdr = reader.takeStruct(firm.Header, .little) catch |err| {
+        log.err("could not read FIRM header: {t}", .{err});
+        return 1;
+    };
+
+    firm_hdr.check() catch |err| switch (err) {
+        error.UnalignedSectionOffset => log.warn("a section in the FIRM is not aligned!", .{}),
+        else => {
+            log.err("could not open FIRM: {t}", .{err});
+            return 1;
+        },
+    };
 
     var stdout_buf: [4096]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);

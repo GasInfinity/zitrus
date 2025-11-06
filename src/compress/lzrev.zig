@@ -17,7 +17,7 @@
 
 const min_match_len = 3;
 
-pub const EncodedDeltaBounds = packed struct(u32) {
+pub const CompressedBounds = packed struct(u32) {
     /// Subtract this to get the end of the compressed data.
     compressed_len: u24,
 
@@ -51,7 +51,7 @@ pub const PreviousRange = packed struct(u16) {
 
 pub const DecompressionError = error{
     InvalidLzrevBounds,
-    InvalidLzrevDictionaryRange,
+    InvalidMatch,
 };
 
 pub fn len(compressed: []const u8) usize {
@@ -66,7 +66,7 @@ pub fn len(compressed: []const u8) usize {
 /// Asserts that decompressed is at least `len(compressed)`.
 pub fn bufDecompress(decompressed: []u8, compressed: []const u8) DecompressionError!void {
     const delta = std.mem.readInt(u32, compressed[(compressed.len - @sizeOf(u32))..][0..4], .little);
-    const delta_bounds: EncodedDeltaBounds = @bitCast(std.mem.readInt(u32, compressed[(compressed.len - (2 * @sizeOf(u32)))..][0..4], .little));
+    const delta_bounds: CompressedBounds = @bitCast(std.mem.readInt(u32, compressed[(compressed.len - (2 * @sizeOf(u32)))..][0..4], .little));
     const real_decompressed_len = compressed.len +% delta;
 
     std.debug.assert(decompressed.len >= real_decompressed_len);
@@ -102,7 +102,7 @@ pub fn bufDecompress(decompressed: []u8, compressed: []const u8) DecompressionEr
                     const offset = range.offset();
 
                     if ((current_decompressed_index + offset) >= real_decompressed_len or range.len() > (current_decompressed_index + 1)) {
-                        return error.InvalidLzrevDictionaryRange;
+                        return error.InvalidMatch;
                     }
 
                     for (0..range.len()) |_| {

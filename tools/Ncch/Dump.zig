@@ -22,11 +22,13 @@ pub const switches = .{
     .output = 'o',
     .minify = 'm',
     .region = 'r',
+    .verbose = 'v',
 };
 
 output: ?[]const u8 = null,
 minify: bool = false,
 region: Region,
+verbose: bool,
 
 @"--": struct {
     pub const descriptions = .{
@@ -62,8 +64,8 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
 
     const media_unit = hfmt.media_unit * (@as(u64, 1) << @truncate(header.flags.extra_unit_exponent));
 
-    const offset: u64, const size: u64, const hash_region_size, const hash = switch (args.region) {
-        .settings => .{ @sizeOf(ncch.Header), header.extended_header_size, header.extended_header_size, &header.extended_header_hash },
+    const offset: u64, const size: u64, const hash_region_size: u64, const hash = switch (args.region) {
+        .settings => .{ @sizeOf(ncch.Header.WithSignature), header.extended_header_size, header.extended_header_size, &header.extended_header_hash },
         .plain => .{ @as(u64, header.plain_region_offset) * media_unit, @as(usize, header.plain_region_size) * media_unit, 0x00, &.{} },
         .logo => .{ @as(u64, header.logo_region_size) * media_unit, @as(usize, header.logo_region_size) * media_unit, @as(usize, header.logo_region_size) * media_unit, &.{} },
         .exefs => .{ @as(u64, header.exefs_offset) * media_unit, @as(usize, header.exefs_size) * media_unit, @as(usize, header.exefs_hash_region_size) * media_unit, &header.exefs_superblock_hash },
@@ -75,25 +77,45 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         return 1;
     }
 
+    if (args.verbose) {
+        log.info("Platform: {t}", .{header.flags.platform});
+        log.info("Type: {t} | Form: {t}", .{ header.flags.content.form, header.flags.content.type });
+        log.info("Media unit size: 0x{X:0>8}", .{media_unit});
+        log.info("Offset (B):      0x{X:0>16}", .{offset});
+        log.info("Size (B):        0x{X:0>16}", .{size});
+        log.info("Hashed size (B): 0x{X:0>16}", .{hash_region_size});
+    }
+
     try ncch_reader.seekTo(offset);
 
-    const region_data = try reader.readAlloc(arena, size);
-    defer arena.free(region_data);
+    if (hash_region_size > std.math.maxInt(usize)) {
+        log.err("cannot read NCCH region to hash, it's bigger than '{}' (usize)", .{std.math.maxInt(usize)});
+        return 1;
+    }
 
-    if (hash.len > 0) {
-        if (hash_region_size > size) {
-            log.err("invalid NCCH hash for '{t}' size {} > {}", .{ args.region, hash_region_size, size });
-            return 1;
-        }
+    if (hash_region_size > size) {
+        log.err("invalid NCCH hash for '{t}', hashed region is bigger than the region size {}: > {}", .{ args.region, hash_region_size, size });
+        return 1;
+    }
+
+    const safe_hash_region_size: usize = @intCast(hash_region_size);
+
+    const hashed_region_data: []u8 = if (hash.len > 0 and safe_hash_region_size > 0) blk: {
+        const hashed: []u8 = try reader.readAlloc(arena, safe_hash_region_size);
+        errdefer arena.free(hashed);
 
         var real_hash: [32]u8 = undefined;
-        std.crypto.hash.sha2.Sha256.hash(region_data[0..hash_region_size], &real_hash, .{});
+        std.crypto.hash.sha2.Sha256.hash(hashed, &real_hash, .{});
 
         if (!std.mem.eql(u8, hash, &real_hash)) {
+            arena.free(hashed);
             log.err("stored hash for '{t}' does not match the newly computed hash, contents may be corrupted", .{args.region});
             return 1;
         }
-    }
+
+        break :blk hashed;
+    } else &.{};
+    defer arena.free(hashed_region_data);
 
     const output_file, const output_should_close = if (args.output) |out|
         .{ cwd.createFile(out, .{}) catch |err| {
@@ -110,8 +132,8 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
 
     switch (args.region) {
         .settings => {
-            const exheader: *ncch.ExtendedHeader = @alignCast(std.mem.bytesAsValue(ncch.ExtendedHeader, region_data));
-
+            // NOTE: It is guaranteed that the hashed region data will be equal to the exheader.
+            const exheader: *ncch.ExtendedHeader = @alignCast(std.mem.bytesAsValue(ncch.ExtendedHeader, hashed_region_data));
             if (builtin.cpu.arch.endian() != .little) std.mem.byteSwapAllFields(ncch.ExtendedHeader, exheader);
 
             const access_descriptor = try reader.takeStruct(ncch.AccessDescriptor, .little);
@@ -119,33 +141,63 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
             try dumpSettings(args, arena, writer, header, exheader.*, access_descriptor);
         },
         .plain => {
-            var plain_it = std.mem.splitScalar(u8, region_data, 0);
+            // NOTE: It is guaranteed that the plain region doesn't have a hash so we haven't allocated a buffer :p
+            var remaining = size;
+            while (remaining > 0) {
+                var text = reader.takeDelimiterExclusive(0) catch |err| switch (err) {
+                    error.ReadFailed => return err,
+                    error.EndOfStream => break,
+                    error.StreamTooLong => {
+                        log.err("a string in the plain region is bigger than {} bytes, streaming instead of pretty printing", .{reader.buffer.len});
+                        try reader.streamExact64(writer, remaining);
+                        break;
+                    },
+                };
 
-            while (plain_it.next()) |text| {
+                // Could happen if the string was not null terminated and we've read stale data
+                if (text.len + 1 > remaining) {
+                    text.len = @intCast(remaining);
+                    remaining = 0;
+                } else remaining -= text.len + 1;
+
                 const trimmed = std.mem.trim(u8, text, " \t\n");
-
                 if (trimmed.len == 0) continue;
 
                 try writer.print("{s}\n", .{trimmed});
             }
         },
         .romfs => {
-            const ivfc = blk: {
-                var ivfc = std.mem.bytesToValue(ncch.romfs.IvfcHeader, region_data[0..@sizeOf(ncch.romfs.IvfcHeader)]);
+            var ivfc_header: ncch.romfs.IvfcHeader = undefined;
 
-                if (builtin.cpu.arch.endian() != .little) {
-                    std.mem.byteSwapAllFields(ncch.romfs.IvfcHeader, &ivfc);
-                }
+            if (hashed_region_data.len < @sizeOf(ncch.romfs.IvfcHeader)) {
+                const as_u8: []u8 = @ptrCast(&ivfc_header);
+                @memcpy(as_u8[0..hashed_region_data.len], hashed_region_data);
+            } else @memcpy(@as([]u8, @ptrCast(&ivfc_header)), hashed_region_data[0..@sizeOf(ncch.romfs.IvfcHeader)]);
 
-                break :blk ivfc;
-            };
+            if (builtin.cpu.arch.endian() != .little) std.mem.byteSwapAllFields(ncch.romfs.IvfcHeader, &ivfc_header);
 
-            // TODO: Verify data within ivfc
-            const romfs_start = std.mem.alignForward(usize, std.mem.alignForward(usize, @sizeOf(ncch.romfs.IvfcHeader), 0x20) + ivfc.master_hash_size, (@as(usize, 1) << @intCast(ivfc.levels[2].block_size)));
-            const romfs = region_data[romfs_start..][0..@intCast(ivfc.levels[2].hash_data_size)];
-            try writer.writeAll(romfs);
+            // TODO: Verify data within ivfc / proper IVFC parsing
+            if (ivfc_header.levels[2].block_size > @bitSizeOf(u64)) {
+                log.err("RomFS block size is bigger than an `u64`", .{});
+                return 1;
+            }
+
+            const block_size = @as(u64, 1) << @intCast(ivfc_header.levels[2].block_size);
+            const romfs_start = std.mem.alignForward(u64, std.mem.alignForward(usize, @sizeOf(ncch.romfs.IvfcHeader), 0x20) + @as(u64, ivfc_header.master_hash_size), block_size);
+            const romfs_size = ivfc_header.levels[2].hash_data_size;
+
+            if (romfs_start < hashed_region_data.len) {
+                try writer.writeAll(hashed_region_data[@intCast(romfs_start)..]);
+                try reader.streamExact64(writer, romfs_size -| (hashed_region_data.len - romfs_start));
+            } else {
+                try reader.discardAll64(romfs_start - hashed_region_data.len);
+                try reader.streamExact64(writer, romfs_size);
+            }
         },
-        .logo, .exefs => try writer.writeAll(region_data),
+        .logo, .exefs => {
+            try writer.writeAll(hashed_region_data);
+            try reader.streamExact64(writer, (size - hash_region_size));
+        },
     }
 
     try writer.flush();

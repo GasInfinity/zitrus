@@ -1,5 +1,6 @@
 pub const version = "0.0.0-pre1";
 
+pub const MakeFirm = @import("build/MakeFirm.zig");
 pub const Make3dsx = @import("build/Make3dsx.zig");
 pub const MakeSmdh = @import("build/MakeSmdh.zig");
 pub const MakeRomFs = @import("build/MakeRomFs.zig");
@@ -47,8 +48,6 @@ pub const target = struct {
 };
 
 pub fn build(b: *Build) void {
-    const release = b.option(bool, "release", "Perform a release build") orelse false;
-
     const optimize = b.standardOptimizeOption(.{});
     const tools_target = b.standardTargetOptions(.{});
 
@@ -79,10 +78,7 @@ pub fn build(b: *Build) void {
 
     zitrus.addImport("zitrus", zitrus);
 
-    if (release) {
-        buildReleases(b, config, zdap, zigimg, zitrus);
-        return;
-    }
+    makeReleaseStep(b, optimize, config, zdap, zigimg, zitrus);
 
     // XXX: Yes, this is really needed for each target / optimize...
     const zitrus_lib = b.addLibrary(.{
@@ -147,22 +143,32 @@ pub fn build(b: *Build) void {
 }
 
 const release_targets: []const std.Target.Query = &.{
+    // Everyone is welcome to the party!
+    // NOTE: Even if your platform is not included here it may be supported if zig supports it.
     .{ .cpu_arch = .x86, .os_tag = .linux },
     .{ .cpu_arch = .x86, .os_tag = .windows },
+    .{ .cpu_arch = .x86, .os_tag = .netbsd },
     .{ .cpu_arch = .x86_64, .os_tag = .linux },
     .{ .cpu_arch = .x86_64, .os_tag = .windows },
     .{ .cpu_arch = .x86_64, .os_tag = .macos },
     .{ .cpu_arch = .x86_64, .os_tag = .freebsd },
+    .{ .cpu_arch = .x86_64, .os_tag = .netbsd },
+    .{ .cpu_arch = .arm, .os_tag = .linux },
+    .{ .cpu_arch = .arm, .os_tag = .freebsd },
+    .{ .cpu_arch = .arm, .os_tag = .netbsd },
     .{ .cpu_arch = .aarch64, .os_tag = .linux },
     .{ .cpu_arch = .aarch64, .os_tag = .windows },
     .{ .cpu_arch = .aarch64, .os_tag = .macos },
     .{ .cpu_arch = .aarch64, .os_tag = .freebsd },
+    .{ .cpu_arch = .aarch64, .os_tag = .netbsd },
     .{ .cpu_arch = .riscv64, .os_tag = .linux },
 };
 
-fn buildReleases(b: *Build, config: *Build.Step.Options, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) void {
+fn makeReleaseStep(b: *Build, optimize: std.builtin.OptimizeMode, config: *Build.Step.Options, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) void {
+    const release_step = b.step("release", "Perform a release build");
+
     for (release_targets) |release_target| {
-        _, const tools = buildTools(b, config, .ReleaseSafe, b.resolveTargetQuery(release_target), zdap, zigimg, zitrus);
+        _, const tools = buildTools(b, config, optimize, b.resolveTargetQuery(release_target), zdap, zigimg, zitrus);
 
         tools.root_module.strip = true;
 
@@ -174,7 +180,7 @@ fn buildReleases(b: *Build, config: *Build.Step.Options, zdap: *Build.Module, zi
             },
         });
 
-        b.getInstallStep().dependOn(&tools_output.step);
+        release_step.dependOn(&tools_output.step);
     }
 }
 

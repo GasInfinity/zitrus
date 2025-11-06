@@ -300,7 +300,7 @@ pub fn sendReceiveParameter(apt: Applet, service: Service, srv: ServiceManager, 
 }
 
 pub fn sendGlanceParameter(apt: Applet, service: Service, srv: ServiceManager, id: AppId, parameter: []u8) !ParameterResult {
-    return switch ((try apt.lockSendCommand(service, srv, command.GlanceParameter, .{ .id = id, .parameter_size = parameter.len }, .{.parameter = parameter })).cases()) {
+    return switch ((try apt.lockSendCommand(service, srv, command.GlanceParameter, .{ .id = id, .parameter_size = parameter.len }, .{ .parameter = parameter })).cases()) {
         .success => |s| .initGlance(s.value),
         .failure => |code| horizon.unexpectedResult(code),
     };

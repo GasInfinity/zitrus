@@ -1,18 +1,19 @@
 //! NCCHs are used to store executables (ExeFS) and files alike (RomFS) when
 //! encrypted in the console they're known as `.APP`
 //!
+//! * `smdh` - Application metadata (title, icon, etc...) stored in the ExeFS.
 //! * `exefs` - Embedded filesystem where the executable and some metadata is stored.
 //! * `romfs` - Embedded filesystem used primarily for *assets*.
 //!
 //! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/NCCH
 
+pub const smdh = @import("ncch/smdh.zig");
 pub const exefs = @import("ncch/exefs.zig");
 pub const romfs = @import("ncch/romfs.zig");
 
 pub const magic = "NCCH";
 
 // TODO: Docs, Docs and Docs
-/// A `0x100` RSA signature precedes this
 pub const Header = extern struct {
     pub const WithSignature = extern struct {
         signature: [0x100]u8,
@@ -115,10 +116,30 @@ pub const Header = extern struct {
     /// RomFS superblock SHA-256 hash spanning from the start of the RomFS to `romfs_hash_region_size`.
     romfs_superblock_hash: [0x20]u8,
 
-    pub const CheckError = error{NotNcch};
+    pub const CheckError = error{
+        NotNcch,
+        UnknownVersion,
+        UnknownPlatform,
+        UnknownContent,
+        Encrypted,
+    };
+
     /// Checks whether the Header is valid
     pub fn check(hdr: Header) CheckError!void {
         if (!std.mem.eql(u8, &hdr.magic, magic)) return error.NotNcch;
+        if (!hdr.flags.extra.no_crypto) return error.Encrypted;
+        switch (hdr.version) {
+            _ => return error.UnknownVersion,
+            else => {},
+        }
+        switch (hdr.flags.platform) {
+            _ => return error.UnknownPlatform,
+            else => {},
+        }
+        switch (hdr.flags.content.type) {
+            _ => return error.UnknownContent,
+            else => {},
+        }
     }
 
     comptime {
@@ -131,12 +152,12 @@ pub const ExtendedHeader = extern struct {
         pub const Flags = packed struct(u8) {
             compressed_code: bool,
             allow_sd_usage: bool,
-            _: u6,
+            _: u6 = 0,
         };
 
         pub const CodeSetInfo = extern struct {
             address: u32,
-            physical_region_size: u32,
+            pages: u32,
             size: u32,
         };
 
@@ -269,7 +290,7 @@ pub const ExtendedHeader = extern struct {
         };
 
         pub const KernelCapabilities = extern struct {
-            descriptors: [28]horizon.Process.CapabilityDescriptor,
+            descriptors: [28]horizon.Process.Capability,
             _reserved0: [0x10]u8 = @splat(0),
 
             comptime {
@@ -293,7 +314,7 @@ pub const ExtendedHeader = extern struct {
             };
 
             storage_access: StorageAccess,
-            _reserved: [11]u8 = @splat(0xFF),
+            _reserved: [11]u8 = @splat(0x00),
             version: u8 = 2,
 
             comptime {
@@ -321,7 +342,7 @@ pub const ExtendedHeader = extern struct {
 pub const AccessDescriptor = extern struct {
     signature: [0x100]u8,
     header_rsa_modulus: [0x100]u8,
-    limit_access_control: ExtendedHeader.AccessControlInfo,
+    access_control: ExtendedHeader.AccessControlInfo,
 
     comptime {
         std.debug.assert(@sizeOf(AccessDescriptor) == 0x400);

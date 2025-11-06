@@ -116,12 +116,18 @@ You can (and are encouraged) to look at the `tools` directory as it is a good ex
     - 🟢 Disassemble: Outputs **Z**itrus**P**ica**A**sse**m**bly. Either RAW instructions, ZPSH's or DVL's (.shbin) can be disassembled.
 - 🟢 Firm (tools/Firm): Make / Info / Dump
     - 🟢 Make: Confirmed to build (and boot!) Luma3DS from source, however needs more testing as the firm is not 1:1.
-- 🟡 Ncch (tools/Ncch): Dump (/ Info)
+- 🟡 Ncch (tools/Ncch): Make CXI / Dump / Info
     - 🟢 ExeFS (tools/ExeFs): Make / List / Dump
     - 🟢 RomFS (tools/RomFs): Make / List / Dump
-- 🟡 LZrev (tools/LzRev): Decompression
+- 🟡 Compression (tools/Compress):
+    - 🟡 LZrev (Compress/LzRev): Decompression
+    - 🟡 Yaz0 (Compress/Yaz): Decompression
+    - 🟡 LZ10 (Compress/Lz10): Decompression
+    - 🟡 LZ11 (Compress/Lz11): Decompression
+- 🟡 Archives:
+    - 🟡 Darc (Archive/Darc): List
+    - 🔴 Sarc
 - 🔴 Cro0 / Crr0
-- 🔴 Arc / Bcma / SArc / Etc
 - 🔴 Cia
 
 ## Horizon

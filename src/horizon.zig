@@ -98,6 +98,276 @@ pub fn Result(T: type) type {
     };
 }
 
+pub const SystemCall = enum(u8) {
+    @"0x00",
+    control_memory,
+    query_memory,
+    exit,
+    get_process_affinity_mask,
+    set_process_affinity_mask,
+    get_process_ideal_processor,
+    set_process_ideal_processor,
+    create_thread,
+    exit_thread,
+    sleep_thread,
+    get_thread_priority,
+    set_thread_priority,
+    get_thread_affinity_mask,
+    set_thread_affinity_mask,
+    get_thread_ideal_processor,
+    set_thread_ideal_processor,
+    get_cpu_count,
+    run,
+    create_mutex,
+    release_mutex,
+    create_semaphore,
+    release_semaphore,
+    create_event,
+    signal_event,
+    clear_event,
+    create_timer,
+    set_timer,
+    cancel_timer,
+    clear_timer,
+    create_memory_block,
+    map_memory_block,
+    unmap_memory_block,
+    create_address_arbiter,
+    arbitrate_address,
+    close_handle,
+    wait_synchronization,
+    wait_synchronization_multiple,
+    /// Stubbed
+    signal_and_wait,
+    duplicate_handle,
+    get_system_tick,
+    get_handle_info,
+    get_system_info,
+    get_process_info,
+    get_thread_info,
+    connect_to_port,
+    /// Stubbed
+    send_sync_request1,
+    /// Stubbed
+    send_sync_request2,
+    /// Stubbed
+    send_sync_request3,
+    /// Stubbed
+    send_sync_request4,
+    send_sync_request,
+    open_process,
+    open_thread,
+    get_process_id,
+    get_process_id_of_thread,
+    get_thread_id,
+    get_resource_limit,
+    get_resource_limit_limit_values,
+    get_resource_limit_current_values,
+    get_thread_context,
+    break_execution,
+    output_debug_string,
+    control_performance_counter,
+    @"0x3F",
+    @"0x40",
+    @"0x41",
+    @"0x42",
+    @"0x43",
+    @"0x44",
+    @"0x45",
+    @"0x46",
+    create_port,
+    create_session_to_port,
+    create_session,
+    accept_session,
+    /// Stubbed
+    reply_and_receive1,
+    /// Stubbed
+    reply_and_receive2,
+    /// Stubbed
+    reply_and_receive3,
+    /// Stubbed
+    reply_and_receive4,
+    reply_and_receive,
+    bind_interrupt,
+    unbind_interrupt,
+    invalidate_process_data_cache,
+    store_process_data_cache,
+    flush_process_data_cache,
+    start_inter_process_dma,
+    stop_dma,
+    get_dma_state,
+    restart_dma,
+    set_gpu_prot,
+    set_wifi_enabled,
+    @"0x5B",
+    @"0x5C",
+    @"0x5D",
+    @"0x5E",
+    @"0x5F",
+    debug_active_process,
+    break_debug_process,
+    terminate_debug_process,
+    get_process_debug_event,
+    continue_debug_event,
+    get_process_list,
+    get_thread_list,
+    get_debug_thread_context,
+    set_debug_thread_context,
+    query_debug_process_memory,
+    read_process_memory,
+    write_process_memory,
+    set_hardware_breakpoint,
+    get_debug_thread_parameter,
+    @"0x6E",
+    @"0x6F",
+    control_process_memory,
+    map_process_memory,
+    unmap_process_memory,
+    create_codeset,
+    @"0x74",
+    create_process,
+    terminate_process,
+    set_process_resource_limits,
+    create_resource_limit,
+    set_resource_limit_limit_values,
+    /// Stubbed since 2.0.0-2
+    add_code_segment,
+    /// Removed in 11.0.0-33
+    backdoor,
+    set_state,
+    query_process_memory,
+    @"0x7E",
+    @"0x7F",
+    @"0x80",
+    @"0x81",
+    @"0x82",
+    @"0x83",
+    @"0x84",
+    @"0x85",
+    @"0x86",
+    @"0x87",
+    @"0x88",
+    @"0x89",
+    @"0x8A",
+    @"0x8B",
+    @"0x8C",
+    @"0x8D",
+    @"0x8E",
+    @"0x8F",
+    @"0x90",
+    @"0x91",
+    @"0x92",
+    @"0x93",
+    @"0x94",
+    @"0x95",
+    @"0x96",
+    @"0x97",
+    @"0x98",
+    @"0x99",
+    @"0x9A",
+    @"0x9B",
+    @"0x9C",
+    @"0x9D",
+    @"0x9E",
+    @"0x9F",
+    @"0xA0",
+    @"0xA1",
+    @"0xA2",
+    @"0xA3",
+    @"0xA4",
+    @"0xA5",
+    @"0xA6",
+    @"0xA7",
+    @"0xA8",
+    @"0xA9",
+    @"0xAA",
+    @"0xAB",
+    @"0xAC",
+    @"0xAD",
+    @"0xAE",
+    @"0xAF",
+    @"0xB0",
+    @"0xB1",
+    @"0xB2",
+    @"0xB3",
+    @"0xB4",
+    @"0xB5",
+    @"0xB6",
+    @"0xB7",
+    @"0xB8",
+    @"0xB9",
+    @"0xBA",
+    @"0xBB",
+    @"0xBC",
+    @"0xBD",
+    @"0xBE",
+    @"0xBF",
+    @"0xC0",
+    @"0xC1",
+    @"0xC2",
+    @"0xC3",
+    @"0xC4",
+    @"0xC5",
+    @"0xC6",
+    @"0xC7",
+    @"0xC8",
+    @"0xC9",
+    @"0xCA",
+    @"0xCB",
+    @"0xCC",
+    @"0xCD",
+    @"0xCE",
+    @"0xCF",
+    @"0xD0",
+    @"0xD1",
+    @"0xD2",
+    @"0xD3",
+    @"0xD4",
+    @"0xD5",
+    @"0xD6",
+    @"0xD7",
+    @"0xD8",
+    @"0xD9",
+    @"0xDA",
+    @"0xDB",
+    @"0xDC",
+    @"0xDD",
+    @"0xDE",
+    @"0xDF",
+    @"0xE0",
+    @"0xE1",
+    @"0xE2",
+    @"0xE3",
+    @"0xE4",
+    @"0xE5",
+    @"0xE6",
+    @"0xE7",
+    @"0xE8",
+    @"0xE9",
+    @"0xEA",
+    @"0xEB",
+    @"0xEC",
+    @"0xED",
+    @"0xEE",
+    @"0xEF",
+    @"0xF0",
+    @"0xF1",
+    @"0xF2",
+    @"0xF3",
+    @"0xF4",
+    @"0xF5",
+    @"0xF6",
+    @"0xF7",
+    @"0xF8",
+    @"0xF9",
+    @"0xFA",
+    @"0xFB",
+    @"0xFC",
+    @"0xFD",
+    @"0xFE",
+    breakpoint,
+};
+
 pub const LimitableResource = enum(u32) {
     commit,
     thread,
@@ -202,15 +472,6 @@ pub const SystemInfo = union(Type) {
     used_memory: MemoryRegion,
     used_kernel_memory: void,
     loaded_kernel_processes: void,
-};
-
-pub const ProcessInfoType = enum(u32) {
-    used_heap_memory,
-    used_handles = 0x4,
-    highes_used_handles,
-
-    num_threads = 0x7,
-    max_threads,
 };
 
 pub const BreakReason = enum(u32) {
@@ -644,8 +905,19 @@ pub const Thread = packed struct(u32) {
 };
 
 pub const Process = packed struct(u32) {
+    pub const InfoType = enum(u32) {
+        used_heap_memory,
+        used_handles = 0x4,
+        highes_used_handles,
+
+        num_threads = 0x7,
+        max_threads,
+    };
+
     // TODO: Make union(u32) when implemented in zig
-    pub const CapabilityDescriptor = packed union {
+    pub const Capability = packed union {
+        pub const none: Capability = @bitCast(@as(u32, 0xFFFFFFFF));
+
         // I suppose this allows you to use `svcBindInterrupt`?
         pub const InterruptInfo = packed struct(u32) {
             pub const magic_value = 0b1110;
@@ -664,7 +936,7 @@ pub const Process = packed struct(u32) {
             header: u5 = magic_value,
         };
 
-        pub const KernelReleaseVersion = packed struct(u32) {
+        pub const KernelVersion = packed struct(u32) {
             pub const magic_value = 0b1111110;
 
             minor: u8,
@@ -683,7 +955,7 @@ pub const Process = packed struct(u32) {
 
         pub const KernelFlags = packed struct(u32) {
             pub const magic_value = 0b111111110;
-            pub const MemoryType = enum(u3) { application = 1, system, base, _ };
+            pub const MemoryType = enum(u4) { application = 1, system, base, _ };
 
             allow_debug: bool,
             force_debug: bool,
@@ -696,7 +968,7 @@ pub const Process = packed struct(u32) {
             memory_type: MemoryType,
             special_memory: bool,
             allow_cpu2: bool,
-            _unused0: u10 = 0,
+            _unused0: u9 = 0,
             header: u9 = magic_value,
         };
 
@@ -724,12 +996,28 @@ pub const Process = packed struct(u32) {
 
         interrupt_info: InterruptInfo,
         system_call_mask: SystemCallMask,
-        kernel_release: KernelReleaseVersion,
+        kernel_version: KernelVersion,
         kernel_flags: KernelFlags,
         handle_table_size: HandleTableSize,
         map_range_start: MapAddressRangeStart,
         map_range_end: MapAddressRangeEnd,
         map_io_page: MapIoPage,
+
+        pub fn kernelVersion(major: u8, minor: u8) Capability {
+            return .{ .kernel_version = .{ .major = major, .minor = minor } };
+        }
+
+        pub fn kernelFlags(flags: KernelFlags) Capability {
+            return .{ .kernel_flags = flags };
+        }
+
+        pub fn handleTableSize(size: u19) Capability {
+            return .{ .handle_table_size = .{ .size = size } };
+        }
+
+        pub fn syscallMask(index: u3, mask: u24) Capability {
+            return .{ .system_call_mask = .{ .index = index, .mask = mask } };
+        }
     };
 
     pub const current: Process = @bitCast(@as(u32, 0xFFFF8001));
@@ -943,7 +1231,7 @@ pub fn setThreadIdealProcessor(thread: Process, ideal_processor: i32) result.Cod
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn getCurrentProcessorNumber() i32 {
+pub fn getCpuCount() i32 {
     return asm volatile ("svc 0x11"
         : [processor_number] "={r0}" (-> i32),
         :
@@ -1207,7 +1495,7 @@ pub fn getSystemInfo(info: SystemInfo.Type, param: u32) Result(i64) {
     return .of(code, @bitCast((@as(u64, hi) << 32) | lo));
 }
 
-pub fn getProcessInfo(process: Process, info: ProcessInfoType) Result(i64) {
+pub fn getProcessInfo(process: Process, info: Process.InfoType) Result(i64) {
     var lo: u32 = undefined;
     var hi: u32 = undefined;
 

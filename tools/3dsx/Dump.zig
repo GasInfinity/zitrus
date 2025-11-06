@@ -59,7 +59,7 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
         },
     };
 
-    if (hdr.header_size != @sizeOf(@"3dsx".Header) + @sizeOf(@"3dsx".ExtendedHeader)) {
+    if (hdr.header_size < @sizeOf(@"3dsx".Header) + @sizeOf(@"3dsx".ExtendedHeader)) {
         log.err("3dsx doesn't have a SMDH or RomFS", .{});
         return 1;
     }

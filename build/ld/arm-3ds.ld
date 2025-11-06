@@ -1,4 +1,5 @@
 /* 
+* Good sources:
 * https://sourceware.org/binutils/docs/ld/Scripts.html
 * https://gabi.xinuos.com/elf/
 **/
@@ -36,7 +37,7 @@ SECTIONS
 	. = ALIGN(0x1000);
 	.text : {
 		KEEP(*(.text.base))
-		ASSERT(SIZEOF(.prm) == 0 || SIZEOF(.prm) > 0 && SIZEOF(.text.base) == 4, "When embedding/using program metadata, the first and only instruction in `_start` must be a branch to a function");
+		ASSERT(SIZEOF(.prm) == 0 || (SIZEOF(.prm) > 0 && SIZEOF(.text.base) == 4), "When embedding/using program metadata, the first and only instruction in `_start` must be a branch to a function");
 		*(.prm)
 
 		*(.text*)

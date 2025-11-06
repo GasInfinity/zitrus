@@ -1,9 +1,9 @@
-pub const description = "List files in a RomFS directory.";
+pub const description = "List files in a DARC.";
 
 pub const descriptions = .{
     .zon = "Output zon instead",
     .minify = "Minify the output if zon",
-    .path = "Path inside the RomFS to list files from, if none root is assumed",
+    .path = "Path inside the RomFS to list files from, if none '.' (or root if '.' doesn't exist) is assumed",
 };
 
 pub const switches = .{
@@ -18,7 +18,7 @@ path: ?[]const u8,
 
 @"--": struct {
     pub const descriptions = .{
-        .input = "RomFS to list files from, if none stdin is used",
+        .input = "DARC to list files from, if none stdin is used",
     };
 
     input: ?[]const u8,
@@ -38,9 +38,10 @@ pub fn main(args: List, arena: std.mem.Allocator) !u8 {
 
     var input_buffer: [4096]u8 = undefined;
     var input_reader = input_file.readerStreaming(&input_buffer); // XXX: positional reader hangs in discardRemaining
+    const input = &input_reader.interface;
 
-    const init = romfs.View.initReader(&input_reader.interface, arena) catch |err| {
-        log.err("could not open RomFS: {t}", .{err});
+    const init = darc.View.initReader(input, arena) catch |err| {
+        log.err("could not open DARC: {t}", .{err});
         return 1;
     };
 
@@ -51,7 +52,9 @@ pub fn main(args: List, arena: std.mem.Allocator) !u8 {
     const utf16_path = try std.unicode.utf8ToUtf16LeAlloc(arena, real_path);
     defer arena.free(utf16_path);
 
-    const dir = view.openDir(.root, utf16_path) catch |err| {
+    const dir = view.openDir(.root, utf16_path) catch |err| if (std.mem.eql(u8, real_path, "."))
+        .root
+    else {
         log.err("error opening directory in RomFS '{s}': {t}\n", .{ real_path, err });
         return 1;
     };
@@ -103,8 +106,8 @@ pub fn main(args: List, arena: std.mem.Allocator) !u8 {
 
 const List = @This();
 
-const log = std.log.scoped(.romfs);
+const log = std.log.scoped(.darc);
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const romfs = zitrus.horizon.fmt.ncch.romfs;
+const darc = zitrus.horizon.fmt.archive.darc;

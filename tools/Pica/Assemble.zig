@@ -91,8 +91,8 @@ pub fn main(args: Assemble, arena: std.mem.Allocator) !u8 {
     switch (args.ofmt) {
         .dvl => @panic("TODO"),
         .zpsh => {
-            if(assembled.encoded.instructions.items.len == 0) {
-                log.err("cannot output zpsh, shader has no instructions", .{}); 
+            if (assembled.encoded.instructions.items.len == 0) {
+                log.err("cannot output zpsh, shader has no instructions", .{});
                 return 1;
             }
 

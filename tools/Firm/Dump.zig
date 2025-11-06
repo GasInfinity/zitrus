@@ -36,6 +36,14 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         return 1;
     };
 
+    header.check() catch |err| switch (err) {
+        error.UnalignedSectionOffset => log.warn("a section in the FIRM is not aligned!", .{}),
+        else => {
+            log.err("could not open FIRM: {t}", .{err});
+            return 1;
+        },
+    };
+
     if (args.section) |section_index| {
         const section = header.sections[section_index];
 

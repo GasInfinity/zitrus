@@ -536,7 +536,7 @@ fn emitDirtyUniforms(rnd: *RenderingState, queue: *command.Queue) void {
     queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
     defer queue.add(p3d, &p3d.primitive_engine.mode, .init(.drawing));
 
-    const shader_registers: []const *Graphics.Shader = &.{ &p3d.vertex_shader, &p3d.geometry_shader };
+    const shader_registers: []const *volatile Graphics.Shader = &.{ &p3d.vertex_shader, &p3d.geometry_shader };
     const shader_stages: []const mango.ShaderStage = &.{ mango.ShaderStage.vertex, mango.ShaderStage.geometry };
 
     for (shader_registers, shader_stages) |registers, stage| {
@@ -548,7 +548,7 @@ fn emitDirtyUniforms(rnd: *RenderingState, queue: *command.Queue) void {
     }
 }
 
-fn emitFloatUniforms(flt_dirty: *std.EnumSet(pica.shader.register.Source.Constant), flt_constants: *std.EnumArray(pica.shader.register.Source.Constant, [4]f32), shader: *pica.Graphics.Shader, queue: *command.Queue) void {
+fn emitFloatUniforms(flt_dirty: *std.EnumSet(pica.shader.register.Source.Constant), flt_constants: *std.EnumArray(pica.shader.register.Source.Constant, [4]f32), shader: *volatile pica.Graphics.Shader, queue: *command.Queue) void {
     var last_const: ?pica.shader.register.Source.Constant = null;
 
     var it = flt_dirty.iterator();

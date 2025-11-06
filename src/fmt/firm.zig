@@ -7,10 +7,10 @@
 //!
 //! Based on the documentation found in 3dbrew: https://3dbrew.org/wiki/FIRM
 
-pub const magic_value = "FIRM";
+pub const magic = "FIRM";
 
 pub const Header = extern struct {
-    magic: [4]u8 = magic_value.*,
+    magic: [4]u8 = magic.*,
     /// Higher values have higher priority.
     boot_priority: u32,
     arm11_entry: u32,
@@ -19,6 +19,15 @@ pub const Header = extern struct {
     sections: [4]Section,
     /// RSA-2048 signature of the `Header` SHA-256 hash.
     signature: [0x100]u8,
+
+    pub const CheckError = error{ NotFirm, UnalignedSectionOffset };
+    pub fn check(hdr: Header) CheckError!void {
+        if (!std.mem.eql(u8, &hdr.magic, magic)) return error.NotFirm;
+        for (&hdr.sections) |section| {
+            if (section.size == 0) continue;
+            if (!std.mem.isAligned(section.offset, Section.min_alignment)) return error.UnalignedSectionOffset;
+        }
+    }
 };
 
 pub const Section = extern struct {

@@ -1,4 +1,4 @@
-const TitleId = struct {
+pub const TitleId = struct {
     variation: u8 = 0,
     unique: u24,
     category: u16 = 0,
@@ -25,8 +25,8 @@ pub const AccessControl = struct {
     };
 
     pub const ExecutionConfig = struct {
-        ideal_processor: u8,
-        affinity_mask: u8,
+        ideal_processor: u2,
+        affinity_mask: u2,
         mode: SystemMode,
         priority: u8,
     };
@@ -76,8 +76,9 @@ pub const KernelCapabilities = struct {
 
     version: ?Version = null,
     flags: ?KernelCapabilities.Flags = null,
-    handle_table_size: ?u32 = null,
-    system_call_access: []const u16 = &.{},
+    handle_table_size: ?u19 = null,
+    // XXX: This could be an EnumFieldStruct or bitset but how would be encode it?
+    system_call_access: []const horizon.SystemCall = &.{},
     mapped_ranges: []const MapAddressRange = &.{},
     mapped_io_pages: []const MapIoPage = &.{},
 };
@@ -147,21 +148,21 @@ pub fn initNcch(hdr: *const ncch.Header, ex_hdr: *const ncch.ExtendedHeader, gpa
         .save_data_size = ex_hdr.system_control.system_info.save_data_size,
         .access_control = .{
             .kernel = blk: {
-                const Descriptor = horizon.Process.CapabilityDescriptor;
+                const Descriptor = horizon.Process.Capability;
 
                 var capabilities: KernelCapabilities = .{};
                 var i: usize = 0;
 
-                var used_syscalls: std.ArrayListUnmanaged(u16) = .empty;
+                var used_syscalls: std.ArrayListUnmanaged(horizon.SystemCall) = .empty;
 
                 while (i < ex_hdr.access_control.kernel_capabilities.descriptors.len) {
                     const descriptor = ex_hdr.access_control.kernel_capabilities.descriptors[i];
 
                     // NOTE: We cannot use a switch as the header is not fixed-size.
                     // XXX: ^ This is ugly as hell still.
-                    if (descriptor.kernel_release.header == Descriptor.KernelReleaseVersion.magic_value) capabilities.version = .{
-                        .major = descriptor.kernel_release.major,
-                        .minor = descriptor.kernel_release.minor,
+                    if (descriptor.kernel_version.header == Descriptor.KernelVersion.magic_value) capabilities.version = .{
+                        .major = descriptor.kernel_version.major,
+                        .minor = descriptor.kernel_version.minor,
                     } else if (descriptor.kernel_flags.header == Descriptor.KernelFlags.magic_value) capabilities.flags = .{
                         .allow_debug = descriptor.kernel_flags.allow_debug,
                         .force_debug = descriptor.kernel_flags.force_debug,
@@ -186,7 +187,7 @@ pub fn initNcch(hdr: *const ncch.Header, ex_hdr: *const ncch.ExtendedHeader, gpa
                         const start = descriptor.system_call_mask.index * @as(u8, @bitSizeOf(u24));
 
                         for (0..@bitSizeOf(u24)) |bit| {
-                            if (((mask >> @intCast(bit)) & 0b1) != 0) try used_syscalls.append(gpa, @intCast(start + bit));
+                            if (((mask >> @intCast(bit)) & 0b1) != 0) try used_syscalls.append(gpa, @enumFromInt(start + bit));
                         }
                     } else if (descriptor.map_range_start.header == Descriptor.MapAddressRangeStart.magic_value) {
                         // TODO:

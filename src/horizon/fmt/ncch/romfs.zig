@@ -35,16 +35,16 @@ pub const Header = extern struct {
         }
     };
 
-    length: u32 = @sizeOf(Header),
+    header_size: u32 = @sizeOf(Header),
     directory_info: HashMetaInfo,
     file_info: HashMetaInfo,
     file_data_offset: u32,
 
-    pub const CheckError = error{ InvalidHeaderLength, InvalidDataAlignment, InvalidDirectoryAlignment, InvalidFileAlignment };
+    pub const CheckError = error{ InvalidHeaderSize, InvalidDataAlignment, InvalidDirectoryAlignment, InvalidFileAlignment };
 
     /// Checks if the header is consistent/valid.
     pub fn check(hdr: Header) CheckError!void {
-        if (hdr.length != @sizeOf(Header)) return error.InvalidHeaderLength;
+        if (hdr.header_size != @sizeOf(Header)) return error.InvalidHeaderSize;
         if (!std.mem.isAligned(hdr.file_data_offset, Header.min_data_alignment)) return error.InvalidDataAlignment;
         if (!hdr.directory_info.isAligned()) return error.InvalidDirectoryAlignment;
         if (!hdr.file_info.isAligned()) return error.InvalidFileAlignment;
@@ -419,7 +419,7 @@ pub const Builder = struct {
         const aligned_data_offset = std.mem.alignForward(u32, data_offset, Header.min_data_alignment);
 
         try writer.writeStruct(Header{
-            .length = @sizeOf(Header),
+            .header_size = @sizeOf(Header),
             .directory_info = .{
                 .hash_table_offset = @sizeOf(Header),
                 .hash_table_size = @intCast(@sizeOf(u32) * builder.directory_hashes.items.len),
@@ -526,7 +526,7 @@ pub const View = struct {
         data_offset: u32,
     };
 
-    pub const InitError = error{OverlappingRegions} || Header.CheckError || std.Io.Reader.Error || std.mem.Allocator.Error;
+    pub const InitError = Header.CheckError || std.Io.Reader.Error || std.mem.Allocator.Error || error{OverlappingRegions};
 
     directories: meta.DirectoryView,
     files: meta.FileView,
@@ -659,9 +659,7 @@ pub const View = struct {
             last = current.name;
         }
 
-        if (path[path.len - 1] == separator) {
-            return if (view.findDirectory(last_parent, last)) |dir| .initDirectory(dir) else error.FileNotFound;
-        }
+        if (path[path.len - 1] == separator) return if (view.findDirectory(last_parent, last)) |dir| .initDirectory(dir) else error.FileNotFound;
 
         return if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral(".")))
             .initDirectory(last_parent)

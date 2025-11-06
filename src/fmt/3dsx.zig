@@ -177,7 +177,7 @@ fn processRelocations(info: code.Info, rodata_file_size: u32, data_file_size: u3
     const text, const text_size = .{ info.segments[0].virtual_address, info.segments[0].memory_size };
     const rodata = std.mem.alignForward(u32, text + text_size, zitrus.horizon.heap.page_size);
     const data = std.mem.alignForward(u32, rodata + rodata_file_size, zitrus.horizon.heap.page_size);
-    const top = std.mem.alignForward(u32, data + data_file_size, zitrus.horizon.heap.page_size);
+    const top = data + data_file_size; // NOTE: we don't want to end up relocating something that is bss...
 
     const base_addresses: []const u32 = &.{ text, rodata, data, top };
 

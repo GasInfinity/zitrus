@@ -10,6 +10,7 @@
 
 pub const max_name_len = 8;
 pub const max_files = 10;
+pub const min_alignment = 0x200;
 
 pub const Header = extern struct {
     pub const File = extern struct {
@@ -107,46 +108,49 @@ pub const File = struct {
     pub fn init(name: []const u8, data: []const u8) File {
         return .{ .name = name, .data = data };
     }
-
-    pub fn fillNameBuffer(name: []const u8) [8]u8 {
-        std.debug.assert(name.len <= 8);
-        var buf: [8]u8 = undefined;
-        @memcpy(buf[0..name.len], name);
-        @memset(buf[name.len..], 0);
-        return buf;
-    }
 };
 
-/// Writes an ExeFS to the specified writer.
+/// Gets a `Header` computed over all the files.
 ///
-/// Asserts that the amount of files is less than `Header.max_files`,
-/// its file size fits in an `u32` and the accumulated size of all files
-/// is less or equal than `std.math.maxInt(u32)`.
-pub fn write(writer: *std.Io.Writer, files: []const File) std.Io.Writer.Error!void {
+/// The `File`s are added sequentially (with the required alignment) and the total final size of the ExeFS
+/// will be `@sizeOf(Header) + Header.files[files.len - 1].offset + Header.files[files.len - 1].size`
+pub fn header(files: []const File) Header {
     std.debug.assert(files.len <= max_files);
 
-    var header: Header = std.mem.zeroes(Header);
+    var hdr: Header = std.mem.zeroes(Header);
     var accumulated_offset: u32 = 0;
 
     for (files, 0..) |file, i| {
-        defer accumulated_offset += @intCast(file.data.len);
+        defer accumulated_offset += std.mem.alignForward(u32, @intCast(file.data.len), min_alignment);
 
-        header.files[i] = .{
-            .name = File.fillNameBuffer(file.name),
+        hdr.files[i] = .{
+            .name = zitrus.fmt.fixedArrayFromSlice(u8, max_name_len, file.name),
             .offset = accumulated_offset,
             .size = @intCast(file.data.len),
         };
 
-        std.crypto.hash.sha2.Sha256.hash(file.data, &header.file_hashes[max_files - 1 - i], .{});
+        std.crypto.hash.sha2.Sha256.hash(file.data, &hdr.file_hashes[max_files - 1 - i], .{});
     }
 
-    try writer.writeStruct(header, .little);
+    return hdr;
+}
+
+/// Writes an ExeFS to the specified writer by writing all `File`s sequentially.
+///
+/// Asserts that the amount of files is less than `max_files`,
+/// its file size fits in an `u32` and the accumulated size of all files
+/// is less or equal than `std.math.maxInt(u32)`.
+pub fn write(writer: *std.Io.Writer, files: []const File) std.Io.Writer.Error!void {
+    std.debug.assert(files.len <= max_files);
+    try writer.writeStruct(header(files), .little);
 
     for (files) |file| {
         try writer.writeAll(file.data);
+
+        const aligned_size = std.mem.alignForward(usize, file.data.len, min_alignment);
+        try writer.splatByteAll(0, aligned_size - file.data.len);
     }
 }
 
-// TODO: Tests
-
 const std = @import("std");
+const zitrus = @import("zitrus");

@@ -179,7 +179,6 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
         @memset(data[safe_size..], undefined);
         try reader.interface.readSliceAll(data[0..safe_size]);
 
-
         hdr.sections[i] = .{
             .offset = file_offset,
             .address = section.address,

@@ -18,8 +18,8 @@ jobs:
         with:
           version: 0.15.2 
       
-      - name: Build
-        run: zig build -Drelease
+      - name: Build Release
+        run: zig build release -Doptimize=ReleaseSafe
 
       - name: Package artifacts
         working-directory: zig-out

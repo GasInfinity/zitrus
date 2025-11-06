@@ -11,7 +11,7 @@ pub const Header = packed struct(u32) {
 pub const Id = enum(u16) {
     _,
 
-    pub fn fromRegister(comptime base: *pica.Graphics, register: *anyopaque) Id {
+    pub fn fromRegister(comptime base: *volatile pica.Graphics, register: *volatile anyopaque) Id {
         std.debug.assert(@intFromPtr(register) >= @intFromPtr(base) and @intFromPtr(register) < (@intFromPtr(base) + @sizeOf(pica.Graphics))); // invalid internal register, pointer is not within the valid range
 
         const offset = @intFromPtr(register) - @intFromPtr(base);
@@ -45,11 +45,11 @@ pub const Queue = struct {
         queue.current_index = 0;
     }
 
-    pub fn add(queue: *Queue, comptime base: *pica.Graphics, register: anytype, value: std.meta.Child(@TypeOf(register))) void {
+    pub fn add(queue: *Queue, comptime base: *volatile pica.Graphics, register: anytype, value: std.meta.Child(@TypeOf(register))) void {
         return queue.addMasked(base, register, value, 0xF);
     }
 
-    pub fn addMasked(queue: *Queue, comptime base: *pica.Graphics, register: anytype, value: std.meta.Child(@TypeOf(register)), mask: u4) void {
+    pub fn addMasked(queue: *Queue, comptime base: *volatile pica.Graphics, register: anytype, value: std.meta.Child(@TypeOf(register)), mask: u4) void {
         comptime std.debug.assert(@typeInfo(@TypeOf(register)) == .pointer);
 
         const Child = std.meta.Child(@TypeOf(register));
@@ -101,7 +101,7 @@ pub const Queue = struct {
         }
     }
 
-    fn IncrementalWritesTuple(comptime base: *pica.Graphics, comptime registers: anytype) type {
+    fn IncrementalWritesTuple(comptime base: *volatile pica.Graphics, comptime registers: anytype) type {
         const RegistersType = @TypeOf(registers);
 
         comptime std.debug.assert(@typeInfo(RegistersType) == .@"struct");
@@ -140,11 +140,11 @@ pub const Queue = struct {
         return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &needed_fields, .decls = &.{}, .is_tuple = true } });
     }
 
-    pub fn addIncremental(queue: *Queue, comptime base: *pica.Graphics, comptime registers: anytype, values: IncrementalWritesTuple(base, registers)) void {
+    pub fn addIncremental(queue: *Queue, comptime base: *volatile pica.Graphics, comptime registers: anytype, values: IncrementalWritesTuple(base, registers)) void {
         return queue.addIncrementalMasked(base, registers, values, 0b1111);
     }
 
-    pub fn addIncrementalMasked(queue: *Queue, comptime base: *pica.Graphics, comptime registers: anytype, values: IncrementalWritesTuple(base, registers), mask: u4) void {
+    pub fn addIncrementalMasked(queue: *Queue, comptime base: *volatile pica.Graphics, comptime registers: anytype, values: IncrementalWritesTuple(base, registers), mask: u4) void {
         if (registers.len == 0) return;
 
         comptime std.debug.assert(values.len <= 256);
@@ -165,16 +165,14 @@ pub const Queue = struct {
         queue.current_index += std.mem.alignForward(usize, values.len - 1, 2); // commands must be aligned to 8 bytes
     }
 
-    pub fn addConsecutive(queue: *Queue, comptime base: *pica.Graphics, comptime register: anytype, values: []const std.meta.Child(@TypeOf(register))) void {
+    pub fn addConsecutive(queue: *Queue, comptime base: *volatile pica.Graphics, register: anytype, values: []const std.meta.Child(@TypeOf(register))) void {
         return queue.addConsecutiveMasked(base, register, values, 0b1111);
     }
 
-    pub fn addConsecutiveMasked(queue: *Queue, comptime base: *pica.Graphics, comptime register: anytype, values: []const std.meta.Child(@TypeOf(register)), mask: u4) void {
+    pub fn addConsecutiveMasked(queue: *Queue, comptime base: *volatile pica.Graphics, register: anytype, values: []const std.meta.Child(@TypeOf(register)), mask: u4) void {
         comptime std.debug.assert(@typeInfo(@TypeOf(register)) == .pointer);
 
-        if (values.len == 0) {
-            return;
-        }
+        if (values.len == 0) return;
 
         const Child = std.meta.Child(@TypeOf(register));
         const id: Id = .fromRegister(base, register);

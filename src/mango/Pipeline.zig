@@ -461,7 +461,7 @@ pub const Graphics = struct {
 
             const combiner_regs = &p3d.texture_combiners;
 
-            const units: []const *pica.Graphics.TextureCombiners.Unit = &.{ &combiner_regs.@"0", &combiner_regs.@"1", &combiner_regs.@"2", &combiner_regs.@"3", &combiner_regs.@"4", &combiner_regs.@"5" };
+            const units: []const *volatile pica.Graphics.TextureCombiners.Unit = &.{ &combiner_regs.@"0", &combiner_regs.@"1", &combiner_regs.@"2", &combiner_regs.@"3", &combiner_regs.@"4", &combiner_regs.@"5" };
             const units_start: usize = units.len - compiled.configured;
 
             var i: u8 = 0;
@@ -731,7 +731,7 @@ pub const CompiledShaderInfo = struct {
     integer_constants: std.EnumArray(pica.shader.register.Integral.Integer, [4]u8),
 };
 
-pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, comptime shader: *pica.Graphics.Shader, queue: *command.Queue) !CompiledShaderInfo {
+pub fn compileShader(state: mango.GraphicsPipelineCreateInfo.ShaderStageState, shader: *volatile pica.Graphics.Shader, queue: *command.Queue) !CompiledShaderInfo {
     const requested_entrypoint_name = state.name[0..state.name_len];
     const parsed = zpsh.Parsed.initBuffer(state.code[0..state.code_len]) catch return error.ValidationFailed;
 

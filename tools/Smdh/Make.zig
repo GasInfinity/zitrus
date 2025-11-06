@@ -35,7 +35,7 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
         var file_reader = file.reader(&buffer);
         const file_size = try file_reader.getSize();
 
-        if(file_size > std.math.maxInt(u31)) {
+        if (file_size > std.math.maxInt(u31)) {
             log.err("settings size is too big!", .{});
             return 1;
         }

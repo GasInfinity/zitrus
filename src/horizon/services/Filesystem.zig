@@ -48,7 +48,7 @@ pub const PathType = enum(i32) {
                 name: [ncch.exefs.max_name_len]u8,
 
                 pub fn init(name: []const u8) Path {
-                    return .{ .name = ncch.exefs.File.fillNameBuffer(name) };
+                    return .{ .name = zitrus.fmt.fixedArrayFromSlice(u8, ncch.exefs.max_name_len, name) };
                 }
             };
 

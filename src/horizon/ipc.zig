@@ -29,7 +29,7 @@ pub fn MoveHandles(comptime T: type) type {
 pub fn HandleArray(comptime T: type) type {
     return struct {
         pub const Wrapped = T;
-        
+
         wrapped: T,
 
         pub fn array(value: T) HandleArraySelf {
@@ -73,7 +73,7 @@ pub fn Mapped(comptime mapping_permissions: Permissions) type {
         pub fn mapped(slice: Slice) MappedSliceSelf {
             return .{ .slice = slice };
         }
-        
+
         const MappedSliceSelf = @This();
     };
 }
@@ -120,31 +120,32 @@ pub const Codec = union(enum) {
     pub fn of(comptime T: type) Codec {
         return switch (@typeInfo(T)) {
             .int, .float, .bool => .{ .raw = @sizeOf(T) },
-            .@"enum" => if(T == horizon.Object)
+            .@"enum" => if (T == horizon.Object)
                 .{ .handles = 1 }
-            else if(T == ReplaceByProcessId)
+            else if (T == ReplaceByProcessId)
                 .replace_by_process_id
             else
                 .{ .raw = @sizeOf(T) },
-            .@"union" => |un| if(un.layout == .auto)
+            .@"union" => |un| if (un.layout == .auto)
                 @compileError("cannot serialize / deserialize auto unions")
-            else .{ .raw = @sizeOf(T) },
-            .array => |arr| if(arr.len == 0) 
+            else
+                .{ .raw = @sizeOf(T) },
+            .array => |arr| if (arr.len == 0)
                 @compileError("cannot serialize 0-bit arrays")
             else switch (comptime Codec.of(arr.child)) {
                 .raw => |_| .{ .raw = @sizeOf(T) },
                 .handles => |_| .{ .handles = arr.len },
                 else => @compileError("cannot serialize array of " ++ @typeName(arr.child)),
             },
-            .@"struct" => |st| if(comptime isWrappedHandle(T))
+            .@"struct" => |st| if (comptime isWrappedHandle(T))
                 .{ .handles = 1 }
             else switch (st.layout) {
                 .@"extern", .@"packed" => .{ .raw = @sizeOf(T) },
                 .auto => blk: {
-                    if(comptime isStatic(T)) break :blk .static_slice;
-                    if(comptime isMapped(T)) break :blk .mapped_slice;
-                    if(comptime isMoveHandles(T)) {
-                        if(comptime !isValidMoveHandlesType(T.Wrapped)) @compileError("a `MoveHandles` must be wrapping a handle, an array of them or a `HandleArray`");
+                    if (comptime isStatic(T)) break :blk .static_slice;
+                    if (comptime isMapped(T)) break :blk .mapped_slice;
+                    if (comptime isMoveHandles(T)) {
+                        if (comptime !isValidMoveHandlesType(T.Wrapped)) @compileError("a `MoveHandles` must be wrapping a handle, an array of them or a `HandleArray`");
 
                         break :blk switch (comptime Codec.of(T.Wrapped)) {
                             .handles => |amount| .{ .move_handles = amount },
@@ -152,8 +153,8 @@ pub const Codec = union(enum) {
                             else => comptime unreachable,
                         };
                     }
-                    if(comptime isHandleArray(T)) {
-                        if(comptime !isValidHandleArrayType(T.Wrapped)) @compileError("a `HandleArray` must be wrapping a struct / tuple of handles");
+                    if (comptime isHandleArray(T)) {
+                        if (comptime !isValidHandleArrayType(T.Wrapped)) @compileError("a `HandleArray` must be wrapping a struct / tuple of handles");
                         const wrapped_ty = @typeInfo(T.Wrapped).@"struct";
 
                         comptime var flds: [wrapped_ty.fields.len]u6 = undefined;
@@ -165,17 +166,17 @@ pub const Codec = union(enum) {
                         const runtime_flds = comptime flds; // NOTE: required to not get "runtime value contains reference to comptime var"
                         break :blk .{ .handle_array = &runtime_flds };
                     }
-                    
+
                     comptime var flds: [st.fields.len]Codec = undefined;
-                    comptime var params: Buffer.PackedCommand.Parameters = .parameters(0, 0); 
+                    comptime var params: Buffer.PackedCommand.Parameters = .parameters(0, 0);
 
                     inline for (st.fields, 0..) |f, i| {
                         flds[i] = comptime .of(f.type);
 
                         const fld_params = comptime flds[i].parameters();
 
-                        if(flds[i] == .fields) @compileError("struct cannot contain `auto` nested structs");
-                        if(params.translate > 0 and fld_params.normal > 0) @compileError("struct cannot fill 'normal' slots (u8, u16, etc...) after filling 'translate' slots (Handles, StaticSlice, etc...)");
+                        if (flds[i] == .fields) @compileError("struct cannot contain `auto` nested structs");
+                        if (params.translate > 0 and fld_params.normal > 0) @compileError("struct cannot fill 'normal' slots (u8, u16, etc...) after filling 'translate' slots (Handles, StaticSlice, etc...)");
 
                         params.normal += fld_params.normal;
                         params.translate += fld_params.translate;
@@ -192,18 +193,18 @@ pub const Codec = union(enum) {
     pub fn write(comptime codec: Codec, comptime T: type, value: T) [codec.size()]u32 {
         return switch (codec) {
             .raw => |sz| @bitCast(@as(*const [sz]u8, @ptrCast(&value)).* ++ @as([std.mem.alignForward(u32, sz, @sizeOf(u32)) - sz]u8, @splat(0))),
-            .static_slice => [2]u32{@bitCast(Buffer.TranslationDescriptor.StaticBuffer.init(@intCast(value.slice.len), T.index)), @intCast(@intFromPtr(value.slice.ptr))},
-            .mapped_slice => [2]u32{@bitCast(Buffer.TranslationDescriptor.MappedBuffer.init(@intCast(value.slice.len), T.permissions.read, T.permissions.write)), @intCast(@intFromPtr(value.slice.ptr))},
-            .replace_by_process_id => [2]u32{@bitCast(Buffer.TranslationDescriptor.Handle.replace_by_proccess_id), 0x00},
+            .static_slice => [2]u32{ @bitCast(Buffer.TranslationDescriptor.StaticBuffer.init(@intCast(value.slice.len), T.index)), @intCast(@intFromPtr(value.slice.ptr)) },
+            .mapped_slice => [2]u32{ @bitCast(Buffer.TranslationDescriptor.MappedBuffer.init(@intCast(value.slice.len), T.permissions.read, T.permissions.write)), @intCast(@intFromPtr(value.slice.ptr)) },
+            .replace_by_process_id => [2]u32{ @bitCast(Buffer.TranslationDescriptor.Handle.replace_by_proccess_id), 0x00 },
             .handles, .move_handles => |amount| [1]u32{@bitCast(Buffer.TranslationDescriptor.Handle.init(amount, codec == .move_handles))} ++ @as(*const [amount]u32, @ptrCast(&value)).*,
             .handle_array, .move_handle_array => |flds| blk: {
                 const WrappedType = @TypeOf(value.wrapped);
 
                 const sz = comptime codec.size();
-                var raw: [sz]u32 = [1]u32{@bitCast(Buffer.TranslationDescriptor.Handle.init((sz-1), codec == .move_handle_array))} ++ @as([sz-1]u32, @splat(0));
+                var raw: [sz]u32 = [1]u32{@bitCast(Buffer.TranslationDescriptor.Handle.init((sz - 1), codec == .move_handle_array))} ++ @as([sz - 1]u32, @splat(0));
 
                 var curr: usize = 1;
-                inline for(flds, @typeInfo(WrappedType).@"struct".fields) |fld, info| {
+                inline for (flds, @typeInfo(WrappedType).@"struct".fields) |fld, info| {
                     // NOTE: We don't do a @bitCast to avoid having to check if its an enum and having to do @intFromEnum :p
                     raw[curr..][0..fld].* = @as(*const [fld]u32, @ptrCast(&@field(value.wrapped, info.name))).*;
                     curr += fld;
@@ -212,7 +213,7 @@ pub const Codec = union(enum) {
                 break :blk raw;
             },
             .fields => |flds| blk: {
-                var current: [codec.size()]u32 = undefined; 
+                var current: [codec.size()]u32 = undefined;
 
                 var i: usize = 0;
                 inline for (flds, @typeInfo(T).@"struct".fields) |fld, info| {
@@ -229,60 +230,63 @@ pub const Codec = union(enum) {
 
     pub const ReadError = error{BadTranslationHeader};
     pub fn bufRead(comptime codec: Codec, comptime T: type, buffer: []const u32) !T {
+        // TODO: Azahar HLE is not behaving the same as the 3DS, investigate later. For now we'll remove these checks
         return switch (codec) {
             .raw => |_| @as(*align(@sizeOf(u32)) const T, @ptrCast(buffer)).*,
             .static_slice => blk: {
                 const header: Buffer.TranslationDescriptor.StaticBuffer = @bitCast(buffer[0]);
-                
-                if(header.type != .static_buffer) return error.BadTranslationHeader;
-                if(header.index != T.index) return error.BadTranslationHeader;
+                //
+                // if(header.type != .static_buffer) return error.BadTranslationHeader;
+                // if(header.index != T.index) return error.BadTranslationHeader;
 
+                if (header.size == 0) return .static(&.{});
                 break :blk .static(@as([*]u8, @ptrFromInt(buffer[1]))[0..header.size]);
             },
             .mapped_slice => blk: {
                 const header: Buffer.TranslationDescriptor.MappedBuffer = @bitCast(buffer[0]);
-                
-                if(header.type != 1) return error.BadTranslationHeader;
-                if(header.read != T.permissions.read) return error.BadTranslationHeader;
-                if(header.write != T.permissions.write) return error.BadTranslationHeader;
+                //
+                // if(header.type != 1) return error.BadTranslationHeader;
+                // if(header.read != T.permissions.read) return error.BadTranslationHeader;
+                // if(header.write != T.permissions.write) return error.BadTranslationHeader;
 
+                if (header.size == 0) return .mapped(&.{});
                 break :blk .mapped(@as([*]u8, @ptrFromInt(buffer[1]))[0..header.size]);
             },
             .replace_by_process_id => blk: {
-                const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
-
-                if(header.type != .handle) return error.BadTranslationHeader;
-                if(header.extra_handles > 0) return error.BadTranslationHeader;
-                if(!header.replace_by_process_id) return error.BadTranslationHeader;
+                // const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
+                //
+                // if(header.type != .handle) return error.BadTranslationHeader;
+                // if(header.extra_handles > 0) return error.BadTranslationHeader;
+                // if(!header.replace_by_process_id) return error.BadTranslationHeader;
 
                 break :blk @enumFromInt(buffer[1]);
             },
             .handles, .move_handles => |amount| blk: {
-                const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
-
-                if(header.type != .handle) return error.BadTranslationHeader;
-                if(header.extra_handles != amount-1) return error.BadTranslationHeader;
-                if(header.move_handles != (codec == .move_handles)) return error.BadTranslationHeader;
+                // const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
+                //
+                // if(header.type != .handle) return error.BadTranslationHeader;
+                // if(header.extra_handles != amount-1) return error.BadTranslationHeader;
+                // if(header.move_handles != (codec == .move_handles)) return error.BadTranslationHeader;
 
                 var result: T = undefined;
-                @as(*[amount]u32, @ptrCast(&result)).* = buffer[1..][0..amount].*; 
+                @as(*[amount]u32, @ptrCast(&result)).* = buffer[1..][0..amount].*;
                 break :blk result;
             },
             .handle_array, .move_handle_array => |flds| blk: {
-                const sz = codec.size();
-                const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
+                // const sz = codec.size();
+                // const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
 
-                if(header.type != .handle) return error.BadTranslationHeader;
-                if(header.extra_handles != (sz-2)) return error.BadTranslationHeader;
-                if(header.move_handles != (codec == .move_handle_array)) return error.BadTranslationHeader;
+                // if(header.type != .handle) return error.BadTranslationHeader;
+                // if(header.extra_handles != (sz-2)) return error.BadTranslationHeader;
+                // if(header.move_handles != (codec == .move_handle_array)) return error.BadTranslationHeader;
 
                 const WrappedType = T.Wrapped;
                 var result: WrappedType = undefined;
-                
+
                 var i: usize = 1;
                 inline for (flds, @typeInfo(WrappedType).@"struct".fields) |fld, info| {
                     defer i += fld;
-                    
+
                     @as(*[fld]u32, @ptrCast(&@field(result, info.name))).* = buffer[i..][0..fld].*;
                 }
 
@@ -290,7 +294,7 @@ pub const Codec = union(enum) {
             },
             .fields => |flds| blk: {
                 var result: T = undefined;
-                
+
                 var i: usize = 0;
                 inline for (flds, @typeInfo(T).@"struct".fields) |fld, info| {
                     defer i += fld.size();
@@ -316,7 +320,7 @@ pub const Codec = union(enum) {
             .move_handles, .handles => |amount| .parameters(0, amount + 1),
             .move_handle_array, .handle_array => |flds| blk: {
                 var sum: u6 = 1;
-                
+
                 for (flds) |fld| {
                     sum += fld;
                 }
@@ -328,7 +332,7 @@ pub const Codec = union(enum) {
                 var params: Buffer.PackedCommand.Parameters = .parameters(0, 0);
 
                 for (flds) |fld| {
-                    const fld_parameters = fld.parameters(); 
+                    const fld_parameters = fld.parameters();
 
                     std.debug.assert(params.translate == 0 or (params.translate > 0 and fld_parameters.normal == 0)); // Must not happen, this means somehow we DID accept a normal parameter after a translate one. Tripping this means there's a bug!
 
@@ -362,25 +366,25 @@ pub const Codec = union(enum) {
         try testExpect(.mapped_slice, .of(Mapped(.r)));
         try testExpect(.mapped_slice, .of(Mapped(.w)));
 
-        try testExpect(.{ .handle_array = &.{2, 1, 1} }, .of(HandleArray(struct {
+        try testExpect(.{ .handle_array = &.{ 2, 1, 1 } }, .of(HandleArray(struct {
             pads: [2]horizon.Event,
             debug: horizon.Event,
             yeah: horizon.Event,
         })));
-        try testExpect(.{ .handle_array = &.{1, 1, 1, 4} }, .of(HandleArray(struct {
+        try testExpect(.{ .handle_array = &.{ 1, 1, 1, 4 } }, .of(HandleArray(struct {
             pads: [1]horizon.Event,
             debug: horizon.Event,
             yeah: horizon.Event,
             more: [4]horizon.Synchronization,
         })));
-        try testExpect(.{ .move_handle_array = &.{1, 1, 1, 4} }, .of(MoveHandles(HandleArray(struct {
+        try testExpect(.{ .move_handle_array = &.{ 1, 1, 1, 4 } }, .of(MoveHandles(HandleArray(struct {
             pads: [1]horizon.Event,
             debug: horizon.Event,
             yeah: horizon.Event,
             more: [4]horizon.Synchronization,
         }))));
 
-        try testExpect(.{ .fields = &.{.of(u8), .of(u16), .of(horizon.Process)} }, .of(struct {
+        try testExpect(.{ .fields = &.{ .of(u8), .of(u16), .of(horizon.Process) } }, .of(struct {
             u8: u8,
             u16: u16,
             hnd: horizon.Process,
@@ -451,16 +455,16 @@ pub const Codec = union(enum) {
             }) = .array(.{}),
         };
 
-        try testExpectWritten(&.{42, 69, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(2)), 200, 500}, Foo, .{});
+        try testExpectWritten(&.{ 42, 69, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(2)), 200, 500 }, Foo, .{});
 
-        const Bar= extern struct {
+        const Bar = extern struct {
             u8: [2]u8 = @splat(42),
             u16: u16 = 69,
         };
 
-        try testExpectWritten(&.{42, 69, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(2)), 200, 500}, Foo, .{});
+        try testExpectWritten(&.{ 42, 69, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(2)), 200, 500 }, Foo, .{});
 
-        if(builtin.target.cpu.arch.endian() == .little) try testExpectWritten(&@as([1]u32, @bitCast([_]u8{42, 42, 69, 0})), Bar, .{});
+        if (builtin.target.cpu.arch.endian() == .little) try testExpectWritten(&@as([1]u32, @bitCast([_]u8{ 42, 42, 69, 0 })), Bar, .{});
 
         // NOTE: We cannot test `MappedSlice`s and `StaticSlice`s on >64-bit platforms as we do an `@intFromPtr`
     }
@@ -471,9 +475,9 @@ pub const Codec = union(enum) {
     }
 
     test bufRead {
-        const Foo = struct { u8: u8, u16: u16, obj: horizon.Object }; 
-        
-        try testExpectRead(Foo, .{ .u8 = 42, .u16 = 69, .obj = @enumFromInt(0x200) }, &.{42, 69, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(1)), 0x200});
+        const Foo = struct { u8: u8, u16: u16, obj: horizon.Object };
+
+        try testExpectRead(Foo, .{ .u8 = 42, .u16 = 69, .obj = @enumFromInt(0x200) }, &.{ 42, 69, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(1)), 0x200 });
     }
 };
 
@@ -481,14 +485,14 @@ pub fn Command(comptime CommandId: type, comptime command_id: CommandId, comptim
     std.debug.assert(@typeInfo(CommandRequest) == .@"struct");
     std.debug.assert(@typeInfo(CommandResponse) == .@"struct");
 
-    const StaticOutput = if(@hasDecl(CommandRequest, "StaticOutput")) @field(CommandRequest, "StaticOutput") else struct {};
+    const StaticOutput = if (@hasDecl(CommandRequest, "StaticOutput")) @field(CommandRequest, "StaticOutput") else struct {};
 
-    if(@typeInfo(StaticOutput) != .@"struct") @compileError("StaticOutput must only contain output `[]u8`s for the Command");
+    if (@typeInfo(StaticOutput) != .@"struct") @compileError("StaticOutput must only contain output `[]u8`s for the Command");
 
     for (@typeInfo(StaticOutput).@"struct".fields) |f| {
         const f_ty = @typeInfo(f.type);
 
-        if(f_ty != .pointer) @compileError("StaticOutput field '" ++ f.name ++ "' must be a slice or pointer to one item");
+        if (f_ty != .pointer) @compileError("StaticOutput field '" ++ f.name ++ "' must be a slice or pointer to one item");
 
         switch (f_ty.pointer.size) {
             .c, .many => @compileError("StaticOutput field '" ++ f.name ++ "' must be a slice or pointer to one item"),
@@ -618,11 +622,11 @@ pub const Buffer = extern struct {
             .parameters = DefinedCommand.request_parameters,
         };
         const written = DefinedCommand.request.write(DefinedCommand.Request, request);
-        comptime std.debug.assert(written.len <= buffer.packed_command.parameters.len); 
+        comptime std.debug.assert(written.len <= buffer.packed_command.parameters.len);
 
         @memcpy(buffer.packed_command.parameters[0..written.len], &written);
 
-        inline for(@typeInfo(DefinedCommand.RequestStaticOutput).@"struct".fields, 0..) |f, i| {
+        inline for (@typeInfo(DefinedCommand.RequestStaticOutput).@"struct".fields, 0..) |f, i| {
             const static_buffer: []u8 = @ptrCast(@field(static_output, f.name));
 
             buffer.static_buffers[i << 1] = @bitCast(TranslationDescriptor.StaticBuffer.init(@intCast(static_buffer.len), @intCast(i)));
@@ -631,12 +635,12 @@ pub const Buffer = extern struct {
     }
 
     pub fn writeResponse(buffer: *Buffer, comptime DefinedCommand: type, result: Result(DefinedCommand.Response)) void {
-        if(!result.code.isSuccess()) {
+        if (!result.code.isSuccess()) {
             buffer.packed_command.header = .{
                 .command_id = @intFromEnum(DefinedCommand.id),
                 .parameters = .parameters(1, 0),
             };
-            
+
             buffer.packed_command.parameters[0] = @bitCast(result.code);
             return;
         }
@@ -647,7 +651,7 @@ pub const Buffer = extern struct {
         };
 
         const written = DefinedCommand.response.write(DefinedCommand.Response, result.value);
-        comptime std.debug.assert(written.len <= buffer.packed_command.parameters.len); 
+        comptime std.debug.assert(written.len <= buffer.packed_command.parameters.len);
 
         buffer.packed_command.parameters[0] = @bitCast(result.code);
         @memcpy(buffer.packed_command.parameters[1..][0..written.len], &written);
@@ -658,22 +662,22 @@ pub const Buffer = extern struct {
     } || Codec.ReadError;
 
     pub fn readResponse(buffer: *Buffer, comptime DefinedCommand: type) ReadError!Result(DefinedCommand.Response) {
-        if(buffer.packed_command.header.command_id != @intFromEnum(DefinedCommand.id)) return error.BadIpcHeader;
+        if (buffer.packed_command.header.command_id != @intFromEnum(DefinedCommand.id)) return error.BadIpcHeader;
 
         const code: horizon.result.Code = @bitCast(buffer.packed_command.parameters[0]);
 
-        if(!code.isSuccess()) return .of(code, undefined);
+        if (!code.isSuccess()) return .of(code, undefined);
 
-        if(buffer.packed_command.header.parameters.normal != DefinedCommand.response_parameters.normal + 1) return error.BadIpcHeader;
-        if(buffer.packed_command.header.parameters.translate != DefinedCommand.response_parameters.translate) return error.BadIpcHeader;
+        if (buffer.packed_command.header.parameters.normal != DefinedCommand.response_parameters.normal + 1) return error.BadIpcHeader;
+        if (buffer.packed_command.header.parameters.translate != DefinedCommand.response_parameters.translate) return error.BadIpcHeader;
 
         return .of(code, try DefinedCommand.response.bufRead(DefinedCommand.Response, buffer.packed_command.parameters[1..]));
     }
 
     pub fn readRequest(buffer: *Buffer, comptime DefinedCommand: type) ReadError!DefinedCommand.Request {
-        if(buffer.packed_command.header.command_id != @intFromEnum(DefinedCommand.id)) return error.BadIpcHeader;
-        if(buffer.packed_command.header.parameters != DefinedCommand.request_parameters) return error.BadIpcHeader;
-        
+        if (buffer.packed_command.header.command_id != @intFromEnum(DefinedCommand.id)) return error.BadIpcHeader;
+        if (buffer.packed_command.header.parameters != DefinedCommand.request_parameters) return error.BadIpcHeader;
+
         return DefinedCommand.request.bufRead(DefinedCommand.Request, &buffer.packed_command.parameters);
     }
 };
@@ -709,12 +713,12 @@ test Buffer {
 
     try testing.expectEqualSlices(u32, &.{20}, buf.packed_command.parameters[0..1]);
     try testing.expectEqual(request, try buf.readRequest(command_testing.Foo));
-    
+
     const response: command_testing.Foo.Response = .{
         .newly_standard = 0x4269,
         .newly_handles = .array(.{
             .shared = @bitCast(@as(u32, 0x800)),
-            .pad = .{@bitCast(@as(u32, 0x42)), @bitCast(@as(u32, 0x7958))},
+            .pad = .{ @bitCast(@as(u32, 0x42)), @bitCast(@as(u32, 0x7958)) },
         }),
     };
 
@@ -722,7 +726,7 @@ test Buffer {
     buf.writeResponse(command_testing.Foo, result);
 
     try testing.expectEqual(0, buf.packed_command.parameters[0]);
-    try testing.expectEqualSlices(u32, &.{0x4269, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(3)), 0x800, 0x42, 0x7958}, buf.packed_command.parameters[1..][0..5]);
+    try testing.expectEqualSlices(u32, &.{ 0x4269, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(3)), 0x800, 0x42, 0x7958 }, buf.packed_command.parameters[1..][0..5]);
     try testing.expectEqual(result, try buf.readResponse(command_testing.Foo));
 }
 
@@ -750,9 +754,9 @@ fn isHandleArray(comptime T: type) bool {
 fn isValidHandleArrayType(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .@"struct" => |st| for (st.fields) |f| switch (@typeInfo(f.type)) {
-            .@"struct" => if(!isWrappedHandle(f.type)) return false,
-            .array => |arr| if(!isWrappedHandle(arr.child)) return false,
-            .@"enum" => if(f.type != horizon.Object) return false,
+            .@"struct" => if (!isWrappedHandle(f.type)) return false,
+            .array => |arr| if (!isWrappedHandle(arr.child)) return false,
+            .@"enum" => if (f.type != horizon.Object) return false,
             else => return false,
         } else true,
         else => false,
