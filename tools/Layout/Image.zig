@@ -1,25 +1,23 @@
-pub const description = "Make / List / Dump a DARC archive";
+pub const description = "Make / Dump a (CTR) Layout Image";
 
 const Subcommand = enum {
-    ls,
     dump,
 };
 
 @"-": union(Subcommand) {
-    ls: List,
     dump: Dump,
 },
 
-pub fn main(args: Darc, arena: std.mem.Allocator) !u8 {
+pub fn main(args: Image, arena: std.mem.Allocator) !u8 {
     return switch (args.@"-") {
         inline else => |sub| sub.main(arena),
     };
 }
 
-const Darc = @This();
+const Image = @This();
 
-const List = @import("Darc/List.zig");
-const Dump = @import("Darc/Dump.zig");
+const Dump = @import("Image/Dump.zig");
 
 const std = @import("std");
 const zitrus = @import("zitrus");
+const layout = zitrus.horizon.fmt.layout;

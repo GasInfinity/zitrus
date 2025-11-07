@@ -102,6 +102,42 @@ pub const morton = struct {
 
         return values;
     }
+
+    pub const Strategy = enum { tile, untile };
+
+    pub fn convert(comptime T: type, comptime strategy: Strategy, comptime tile_size: usize, width: usize, dst_pixels: []T, src_pixels: []const T) void {
+        std.debug.assert(dst_pixels.len == src_pixels.len);
+        const max_tile_subindex = (tile_size * tile_size);
+        const SubindexInt = std.math.IntFittingRange(0, max_tile_subindex - 1);
+
+        const height = @divExact(src_pixels.len, width);
+        const width_tiles = @divExact(width, tile_size);
+        const height_tiles = @divExact(height, tile_size);
+
+        var i: u16 = 0;
+        for (0..height_tiles) |y_tile| {
+            const y_start = y_tile * tile_size;
+
+            for (0..width_tiles) |x_tile| {
+                const x_start = x_tile * tile_size;
+
+                for (0..max_tile_subindex) |tile| {
+                    const x, const y = toDimensions(SubindexInt, 2, @intCast(tile));
+
+                    const linear_index = i;
+                    const morton_index = (y_start + y) * width + x_start + x;
+
+                    const src_pixel, const dst_pixel = switch (strategy) {
+                        .tile => .{ &src_pixels[morton_index], &dst_pixels[linear_index] },
+                        .untile => .{ &src_pixels[linear_index], &dst_pixels[morton_index] },
+                    };
+
+                    dst_pixel.* = src_pixel.*;
+                    i += 1;
+                }
+            }
+        }
+    }
 };
 
 pub const Screen = enum(u1) {
@@ -547,6 +583,16 @@ pub const TextureUnitFormat = enum(u4) {
     a4,
     etc1,
     etc1a4,
+
+    pub fn scale(format: TextureUnitFormat, size: usize) usize {
+        return switch (format) {
+            .abgr8888 => size << 2,
+            .bgr888 => size * 3,
+            .rgba5551, .rgb565, .rgba4444, .ia88, .hilo88 => size << 1,
+            .i8, .a8, .ia44, .etc1a4 => size,
+            .i4, .a4, .etc1 => size >> 1,
+        };
+    }
 };
 
 pub const TextureUnitTexture2Coordinates = enum(u1) {

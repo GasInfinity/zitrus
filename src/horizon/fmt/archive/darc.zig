@@ -67,14 +67,45 @@ pub const TableEntry = extern struct {
     attributes: Attributes,
     info: Info,
 
-    pub fn name(entry: TableEntry, table: []const u16) []const u16 {
+    pub fn name(entry: TableEntry, table: []const u16) [:0]const u16 {
         return std.mem.span(@as([*:0]const u16, @ptrCast(table))[@divExact(entry.attributes.name_offset, 2)..]);
     }
 };
 
 pub const View = struct {
-    pub const File = enum(u32) { _ };
-    pub const Directory = enum(u32) { root = 0, _ };
+    pub const Directory = enum(u32) {
+        root = 0,
+        _,
+
+        pub fn name(directory: Directory, view: View) [:0]const u16 {
+            return view.entries[@intFromEnum(directory)].name(view.name_table);
+        }
+    };
+
+    pub const File = enum(u32) {
+        pub const Stat = struct {
+            /// Offset of file data starting from `data_offset`.
+            offset: u32,
+            /// Size of the file in bytes.
+            size: u32,
+        };
+
+        _,
+
+        pub fn name(file: File, view: View) [:0]const u16 {
+            return view.entries[@intFromEnum(file)].name(view.name_table);
+        }
+
+        pub fn stat(file: File, view: View) Stat {
+            const file_meta = view.entries[@intFromEnum(file)];
+
+            return .{
+                .offset = file_meta.info.file.offset,
+                .size = file_meta.info.file.size,
+            };
+        }
+    };
+
     pub const Entry = struct {
         pub const Handle = enum(u32) { _ };
 

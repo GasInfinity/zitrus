@@ -1,4 +1,4 @@
-//! LZ11 decompressor and (TODO) compressor.
+//! LZ10 decompressor and (TODO) compressor.
 //!
 //! LZ-like compression format where the maximum match offset is `4096` and length `18`.
 //!

@@ -73,7 +73,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         defer out.deinit(arena);
 
         // XXX: we allocate too much, shouldn't we able to convert in-place also here?
-        common.tileImage(.untile, icon_size, @ptrCast(out.pixels.rgb565), std.mem.bytesAsSlice(Rgb565, icon));
+        pica.morton.convert(Rgb565, .untile, 8, icon_size, @ptrCast(out.pixels.rgb565), std.mem.bytesAsSlice(Rgb565, icon));
 
         try out.convert(arena, .rgb24);
         try out.writeToFilePath(arena, path, &write_buffer, .{ .png = .{} });
@@ -87,11 +87,10 @@ const Rgb565 = pica.ColorFormat.Rgb565;
 const Dump = @This();
 const log = std.log.scoped(.smdh);
 
-const common = @import("common.zig");
 const Settings = @import("Settings.zig");
 
 const std = @import("std");
 const zigimg = @import("zigimg");
 const zitrus = @import("zitrus");
-const smdh = zitrus.horizon.fmt.smdh;
+const smdh = zitrus.horizon.fmt.ncch.smdh;
 const pica = zitrus.hardware.pica;

@@ -3,7 +3,7 @@ pub const description = "List files in a DARC.";
 pub const descriptions = .{
     .zon = "Output zon instead",
     .minify = "Minify the output if zon",
-    .path = "Path inside the RomFS to list files from, if none '.' (or root if '.' doesn't exist) is assumed",
+    .path = "Path inside the DARC to list files from, if none '.' (or root if '.' doesn't exist) is assumed",
 };
 
 pub const switches = .{
@@ -55,7 +55,7 @@ pub fn main(args: List, arena: std.mem.Allocator) !u8 {
     const dir = view.openDir(.root, utf16_path) catch |err| if (std.mem.eql(u8, real_path, "."))
         .root
     else {
-        log.err("error opening directory in RomFS '{s}': {t}\n", .{ real_path, err });
+        log.err("error opening directory in DARC '{s}': {t}\n", .{ real_path, err });
         return 1;
     };
 

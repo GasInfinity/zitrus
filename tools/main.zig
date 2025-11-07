@@ -9,6 +9,7 @@ const Applets = union(enum) {
     pica: @import("Pica.zig"),
     compress: @import("Compress.zig"),
     archive: @import("Archive.zig"),
+    layout: @import("Layout.zig"),
 };
 
 const Arguments = struct {

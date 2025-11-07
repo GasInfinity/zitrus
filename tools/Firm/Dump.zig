@@ -1,6 +1,9 @@
 pub const description = "Dump sections of a 3DS firmware file.";
 
-pub const descriptions = .{ .section = "Section to dump, if none all sections are dumped", .output = "Output directory / file. Directory outputs must be specified, if none stdout is used" };
+pub const descriptions = .{
+    .section = "Section to dump, if none all sections are dumped",
+    .output = "Output directory / file. Directory outputs must be specified, if none stdout is used",
+};
 
 pub const switches = .{
     .section = 's',

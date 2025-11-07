@@ -1,3 +1,5 @@
+pub const etc = @import("compress/etc.zig");
+
 pub const lz = @import("compress/lz.zig");
 pub const yaz = @import("compress/yaz.zig");
 pub const lz10 = @import("compress/lz10.zig");

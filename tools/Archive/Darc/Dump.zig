@@ -1,8 +1,8 @@
-pub const description = "Dump the contents of a RomFS.";
+pub const description = "Dump the contents of a DARC.";
 
 pub const descriptions = .{
     .output = "Output directory / file. Directory outputs must be specified, if none stdout is used",
-    .path = "Path inside the RomFS to dump, directories are allowed",
+    .path = "Path inside the DARC to dump, directories are allowed",
 };
 
 pub const switches = .{
@@ -15,7 +15,7 @@ path: ?[]const u8,
 
 @"--": struct {
     pub const descriptions = .{
-        .input = "RomFS to dump from, if none stdin is used",
+        .input = "DARC to dump from, if none stdin is used",
     };
 
     input: ?[]const u8,
@@ -36,8 +36,8 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     var input_buffer: [4096]u8 = undefined;
     var input_reader = input_file.reader(&input_buffer); // XXX: positional reader hangs in discardRemaining
 
-    const init = romfs.View.initReader(&input_reader.interface, arena) catch |err| {
-        log.err("could not open RomFS: {t}", .{err});
+    const init = darc.View.initReader(&input_reader.interface, arena) catch |err| {
+        log.err("could not open DARC: {t}", .{err});
         return 1;
     };
     // NOTE: Now input_reader points to file_data_offset as described in the doc comment (important for piping as we can't seek)
@@ -50,19 +50,19 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     defer arena.free(utf16_path);
 
     const opened = view.openAny(.root, utf16_path) catch |err| {
-        log.err("could not open file '{s}' in RomFS: {t}", .{ real_path, err });
+        log.err("could not open file '{s}' in DARC: {t}", .{ real_path, err });
         return 1;
     };
 
     switch (opened.kind) {
         .directory => if (args.output) |out| {
             if (!input_should_close) {
-                // XXX: arbitrary limitation, we could technically read the full RomFS
+                // XXX: arbitrary limitation, we could technically read the full DARC
                 log.err("cannot dump full directory contents while piping", .{});
                 return 1;
             }
 
-            const romfs_dir = opened.asDirectory();
+            const darc_dir = opened.asDirectory();
 
             var output_directory = cwd.makeOpenPath(out, .{}) catch |err| {
                 log.err("could not make path '{s}': {t}", .{ out, err });
@@ -70,7 +70,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
             };
             defer output_directory.close();
 
-            try dumpDirectory(&input_reader, init.data_offset, view, romfs_dir, output_directory);
+            try dumpDirectory(&input_reader, init.data_offset, view, darc_dir, output_directory);
         } else {
             log.err("directory outputs must be specified", .{});
             return 1;
@@ -103,8 +103,8 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     return 0;
 }
 
-fn dumpDirectory(reader: *std.fs.File.Reader, data_offset: usize, view: romfs.View, romfs_dir: romfs.View.Directory, dir: std.fs.Dir) !void {
-    var it = view.iterator(romfs_dir);
+fn dumpDirectory(reader: *std.fs.File.Reader, data_offset: usize, view: darc.View, darc_dir: darc.View.Directory, dir: std.fs.Dir) !void {
+    var it = view.iterator(darc_dir);
 
     while (it.next(view)) |entry| {
         var name_buf: [1024]u8 = undefined;
@@ -125,7 +125,7 @@ fn dumpDirectory(reader: *std.fs.File.Reader, data_offset: usize, view: romfs.Vi
                 var file_buf: [2048]u8 = undefined;
                 var file_writer = output_file.writerStreaming(&file_buf);
 
-                try reader.seekTo(data_offset + stat.offset);
+                try reader.seekTo(stat.offset);
                 try reader.interface.streamExact64(&file_writer.interface, stat.size);
                 try file_writer.interface.flush();
             },
@@ -146,8 +146,8 @@ fn dumpDirectory(reader: *std.fs.File.Reader, data_offset: usize, view: romfs.Vi
 
 const Dump = @This();
 
-const log = std.log.scoped(.romfs);
+const log = std.log.scoped(.darc);
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const romfs = zitrus.horizon.fmt.ncch.romfs;
+const darc = zitrus.horizon.fmt.archive.darc;

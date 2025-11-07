@@ -21,4 +21,3 @@ const Dump = @import("Firm/Dump.zig");
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const firm = zitrus.fmt.firm;

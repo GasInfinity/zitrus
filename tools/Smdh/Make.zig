@@ -109,13 +109,13 @@ fn loadIcons(arena: std.mem.Allocator, large_path: []const u8, small_path: ?[]co
     var large_image = try loadIconWithSize(smdh.Icons.large_size, arena, large_path);
     defer large_image.deinit(arena);
 
-    common.tileImage(.tile, smdh.Icons.large_size, @alignCast(std.mem.bytesAsSlice(Rgb565, &icons.large)), @ptrCast(large_image.pixels.rgb565));
+    pica.morton.convert(Rgb565, .tile, 8, smdh.Icons.large_size, @alignCast(std.mem.bytesAsSlice(Rgb565, &icons.large)), @ptrCast(large_image.pixels.rgb565));
 
     if (small_path) |path| {
         var small_image = try loadIconWithSize(smdh.Icons.small_size, arena, path);
         defer small_image.deinit(arena);
 
-        common.tileImage(.tile, smdh.Icons.small_size, @alignCast(std.mem.bytesAsSlice(Rgb565, &icons.small)), @ptrCast(small_image.pixels.rgb565));
+        pica.morton.convert(Rgb565, .tile, 8, smdh.Icons.small_size, @alignCast(std.mem.bytesAsSlice(Rgb565, &icons.small)), @ptrCast(small_image.pixels.rgb565));
     } else {
         var downsampled = try zigimg.Image.create(arena, smdh.Icons.small_size, smdh.Icons.small_size, .rgb565);
         defer downsampled.deinit(arena);
@@ -140,7 +140,7 @@ fn loadIcons(arena: std.mem.Allocator, large_path: []const u8, small_path: ?[]co
             }
         }
 
-        common.tileImage(.tile, smdh.Icons.small_size, @alignCast(std.mem.bytesAsSlice(Rgb565, &icons.small)), downsampled_pixels);
+        pica.morton.convert(Rgb565, .tile, 8, smdh.Icons.small_size, @alignCast(std.mem.bytesAsSlice(Rgb565, &icons.small)), downsampled_pixels);
     }
 
     return icons;
@@ -151,11 +151,10 @@ const Rgb565 = pica.ColorFormat.Rgb565;
 const Make = @This();
 const log = std.log.scoped(.smdh);
 
-const common = @import("common.zig");
 const Settings = @import("Settings.zig");
 
 const std = @import("std");
 const zigimg = @import("zigimg");
 const zitrus = @import("zitrus");
-const smdh = zitrus.horizon.fmt.smdh;
+const smdh = zitrus.horizon.fmt.ncch.smdh;
 const pica = zitrus.hardware.pica;

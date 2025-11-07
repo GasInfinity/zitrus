@@ -112,7 +112,7 @@ You can (and are encouraged) to look at the `tools` directory as it is a good ex
 - 🟢 Smdh (tools/Smdh): Make / Dump
 - 🟢 3dsx (tools/3dsx): Make / Dump
 - 🟢 Pica (tools/Pica): Assemble / Disassemble
-    - 🟢 Assemble: Only **Z**itrus**P**ica**Sh**aders are implemented as an output format.
+    - 🟢 Assemble: Only **Z**itrus**P**ica**Sh**ader's are implemented as an output format.
     - 🟢 Disassemble: Outputs **Z**itrus**P**ica**A**sse**m**bly. Either RAW instructions, ZPSH's or DVL's (.shbin) can be disassembled.
 - 🟢 Firm (tools/Firm): Make / Info / Dump
     - 🟢 Make: Confirmed to build (and boot!) Luma3DS from source, however needs more testing as the firm is not 1:1.
@@ -124,9 +124,13 @@ You can (and are encouraged) to look at the `tools` directory as it is a good ex
     - 🟡 Yaz0 (Compress/Yaz): Decompression
     - 🟡 LZ10 (Compress/Lz10): Decompression
     - 🟡 LZ11 (Compress/Lz11): Decompression
-- 🟡 Archives:
-    - 🟡 Darc (Archive/Darc): List
-    - 🔴 Sarc
+- 🟡 Archives (tools/Archive):
+    - 🟡 Darc (Archive/Darc): List / Dump
+    - 🟡 Sarc (Archive/Sarc): List
+- 🟡 Layouts (tools/Layout):
+    - 🟡 Image (Layout/Image): Dump
+    - 🔴 Layout
+    - 🔴 Animation 
 - 🔴 Cro0 / Crr0
 - 🔴 Cia
 

@@ -26,6 +26,7 @@ pub const ncch = @import("fmt/ncch.zig");
 pub const dvl = @import("fmt/dvl.zig");
 
 pub const archive = @import("fmt/archive.zig");
+pub const layout = @import("fmt/layout.zig");
 pub const audio = @import("fmt/audio.zig");
 pub const cro0 = @import("fmt/cro0.zig");
 
@@ -38,6 +39,7 @@ comptime {
     _ = dvl;
 
     _ = archive;
+    _ = layout;
     _ = audio;
     _ = cro0;
 }
