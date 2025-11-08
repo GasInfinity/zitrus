@@ -1,4 +1,9 @@
-pub const version = "0.0.0-pre1";
+pub const version: std.SemanticVersion = .{
+    .major = 0,
+    .minor = 0,
+    .patch = 0,
+    .pre = "pre1",
+};
 
 pub const MakeFirm = @import("build/MakeFirm.zig");
 pub const Make3dsx = @import("build/Make3dsx.zig");
@@ -65,8 +70,9 @@ pub fn build(b: *Build) void {
 
     const config = b.addOptions();
 
-    // TODO: Add commit hash if not a release
-    config.addOption([]const u8, "version", version);
+    const version_slice = buildVersion(b);
+
+    config.addOption([]const u8, "version", version_slice);
 
     const zitrus = b.addModule("zitrus", .{
         .root_source_file = b.path("src/zitrus.zig"),
@@ -78,7 +84,7 @@ pub fn build(b: *Build) void {
 
     zitrus.addImport("zitrus", zitrus);
 
-    makeReleaseStep(b, optimize, config, zdap, zigimg, zitrus);
+    makeReleaseStep(b, version_slice, optimize, config, zdap, zigimg, zitrus);
 
     // XXX: Yes, this is really needed for each target / optimize...
     const zitrus_lib = b.addLibrary(.{
@@ -142,6 +148,71 @@ pub fn build(b: *Build) void {
     buildScripts(b, zdap);
 }
 
+// NOTE: This literally what zig does, almost 1:1 but we have prereleases so we have to work with that.
+fn buildVersion(b: *Build) []const u8 {
+    const maybe_version = b.option([]const u8, "version-string", "Override zitrus version");
+
+    if(maybe_version) |ver| return ver;
+
+    if(!std.process.can_spawn) {
+        std.log.err("Cannot retrieve version info from git, set it with version-string manually", .{});
+        std.process.exit(1);
+    }
+
+    const version_string = b.fmt("{f}", .{version});
+
+    var code: u8 = undefined;
+    const git_describe_untrimmed = b.runAllowFail(&.{
+        "git",
+        "-C", b.build_root.path orelse ".",
+        "--git-dir", ".git",
+        "describe", "--match", "v*.*.*",
+        "--tags", "--abbrev=9"
+    }, &code, .Ignore) catch return version_string;
+    const git_describe = std.mem.trim(u8, git_describe_untrimmed, " \n\r");
+
+    switch (std.mem.count(u8, git_describe, "-")) {
+        0, 1 => {
+            // Tagged release or prerelease
+            if(!std.mem.eql(u8, git_describe, version_string)) {
+                std.log.err("Version '{s}' does not match git tag '{s}'", .{version_string, git_describe });
+                std.process.exit(1);
+            }
+
+            return version_string;
+        },
+        2, 3 => |cnt| {
+            var it = std.mem.splitScalar(u8, git_describe, '-');   
+
+            // `[1..]` to skip the 'v' in release tags.
+            const last_tagged = if(cnt == 2) it.next().?[1..] else b.fmt("{s}-{s}", .{it.next().?[1..], it.next().?}); 
+            const commit_height = it.next().?;
+            const commit_hash = it.next().?;
+
+            const last_tagged_version = std.SemanticVersion.parse(last_tagged) catch {
+                std.log.err("Last tagged version '{s}' is NOT a valid semantic version ", .{last_tagged});
+                std.process.exit(1);
+            };
+
+            if(version.order(last_tagged_version) != .gt) {
+                std.log.err("Version '{s}' must be greater than last tagged '{s}'", .{version_string, last_tagged});
+                std.process.exit(1);
+            }
+
+            if(commit_hash.len < 1 or commit_hash[0] != 'g') {
+                std.log.err("Unexpected git describe output: '{s}'", .{git_describe});
+                return version_string;
+            }
+            
+            return b.fmt("{}.{}.{}-dev.{s}+{s}", .{version.major, version.minor, version.patch, commit_height, commit_hash[1..]});
+        },
+        else => {
+            std.log.err("Unexpected git describe output: '{s}'", .{git_describe});
+            return version_string;
+        },
+    }
+}
+
 const release_targets: []const std.Target.Query = &.{
     // Everyone is welcome to the party!
     // NOTE: Even if your platform is not included here it may be supported if zig supports it.
@@ -164,18 +235,21 @@ const release_targets: []const std.Target.Query = &.{
     .{ .cpu_arch = .riscv64, .os_tag = .linux },
 };
 
-fn makeReleaseStep(b: *Build, optimize: std.builtin.OptimizeMode, config: *Build.Step.Options, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) void {
+fn makeReleaseStep(b: *Build, version_slice: []const u8, optimize: std.builtin.OptimizeMode, config: *Build.Step.Options, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) void {
     const release_step = b.step("release", "Perform a release build");
 
     for (release_targets) |release_target| {
         _, const tools = buildTools(b, config, optimize, b.resolveTargetQuery(release_target), zdap, zigimg, zitrus);
 
-        tools.root_module.strip = true;
+        tools.root_module.strip = switch (optimize) {
+            .Debug, .ReleaseSafe => false,
+            else => true,
+        };
 
         const tools_output = b.addInstallArtifact(tools, .{
             .dest_dir = .{
                 .override = .{
-                    .custom = release_target.zigTriple(b.allocator) catch @panic("OOM"),
+                    .custom = b.fmt("zitrus-{s}-{s}", .{release_target.zigTriple(b.allocator) catch @panic("OOM"), version_slice}),
                 },
             },
         });

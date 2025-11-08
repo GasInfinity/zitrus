@@ -1,5 +1,5 @@
 # NOTE: Currently only docs are deployed, maybe a webpage could be added in the future?
-name: cd
+name: Deploy site
 on:
   push:
     branches:

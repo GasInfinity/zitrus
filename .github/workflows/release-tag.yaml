@@ -18,15 +18,15 @@ jobs:
         with:
           version: 0.15.2 
       
-      - name: Build Release
-        run: zig build release -Doptimize=ReleaseSafe
+      - name: Build release
+        run: zig build release -Doptimize=ReleaseFast
 
       - name: Package artifacts
         working-directory: zig-out
         run: |
           set -e
           for artifact in *; do 
-            if [[ $artifact == *"-windows" ]]; then
+            if [[ $artifact == *"-windows-"* ]]; then
               zip -q -r "$artifact.zip" "$artifact"/*
             else 
               tar -czf "$artifact.tar.gz" "$artifact"/*

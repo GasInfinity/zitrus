@@ -1,9 +1,11 @@
-name: ci
+name: CI
 on:
   pull_request:
   push:
     branches:
       - main
+permissions:
+  contents: write
 jobs:
   build-test:
     strategy:
@@ -29,3 +31,39 @@ jobs:
       # We don't test them yet in CI as we need a way to do it (what emulator? does any support headless?) but at least they must build.
       - name: Build all standalone 3DS tests
         run: zig build build-tests
+  release-dev:
+    needs: build-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build development release
+        run: zig build release -Doptimize=ReleaseSafe
+
+      - name: Package development release
+        working-directory: zig-out
+        run: |
+          set -e
+          for artifact in *; do 
+            if [[ $artifact == *"-windows-"* ]]; then
+              zip -q -r "$artifact.zip" "$artifact"/*
+            else 
+              tar -czf "$artifact.tar.gz" "$artifact"/*
+            fi
+            rm -r -- $artifact
+          done
+
+      - name: Development release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: dev
+          body: Latest unstripped `ReleaseSafe` development versions.
+          prerelease: true
+          files: zig-out/*

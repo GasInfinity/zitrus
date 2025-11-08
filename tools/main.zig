@@ -50,7 +50,7 @@ pub fn main() !u8 {
     }
 
     if (arguments.@"-" == null) {
-        std.log.info("access the help menu with 'zitrus' -h'\n", .{});
+        std.log.info("access the help menu with 'zitrus -h'\n", .{});
         return 0;
     }
 
