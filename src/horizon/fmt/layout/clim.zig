@@ -1,4 +1,4 @@
-//! **L**ayout **Im**age (?)
+//! **L**ayout **Im**age
 //!
 //! Weirdly it has a footer instead of a header and obviously image data is tiled.
 //!
@@ -50,7 +50,7 @@ pub const Footer = extern struct {
     header_offset: u32,
 };
 
-pub const Metadata = extern struct {
+pub const Image = extern struct {
     width: u16,
     height: u16,
     format: Format,

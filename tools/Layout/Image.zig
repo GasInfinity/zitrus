@@ -20,4 +20,3 @@ const Dump = @import("Image/Dump.zig");
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const layout = zitrus.horizon.fmt.layout;

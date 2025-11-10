@@ -109,15 +109,16 @@ pub fn main(args: Dvl, arena: std.mem.Allocator) !u8 {
         }
 
         try in.discardAll(entry_offset - last);
+
         const entry = try in.takeStruct(dvl.EntrypointHeader, .little);
-        last += @sizeOf(dvl.EntrypointHeader);
+        last = entry_offset + @sizeOf(dvl.EntrypointHeader);
 
         entry.check() catch |err| {
             log.err("invalid entrypoint ({}): {t}, skipping", .{ i, err });
             continue;
         };
 
-        if (entry.entry.start + entry.entry.end > instructions.len) {
+        if (entry.entry.start > instructions.len or entry.entry.end > instructions.len) {
             log.err("invalid entrypoint ({}) range {X:0>3} - {X:0>3}, skipping", .{ i, entry.entry.start, entry.entry.end });
             continue;
         }
@@ -160,7 +161,6 @@ pub fn main(args: Dvl, arena: std.mem.Allocator) !u8 {
         std.mem.sort(EntrypointRegion, &region_mapping, {}, EntrypointRegion.lessThan);
 
         var region_last: u32 = @sizeOf(dvl.EntrypointHeader);
-
         for (&region_mapping) |map| {
             if (map.blob.size == 0) {
                 try out.print("; E_{X:0>3} has no {t}\n", .{ i, map.kind });
@@ -205,14 +205,13 @@ pub fn main(args: Dvl, arena: std.mem.Allocator) !u8 {
                         }
 
                         switch (output.semantic) {
-                            else => {},
+                            else => try out.print(".out E_{X:0>3} {t}.{f} {t}\n", .{ i, @as(shader.register.Destination.Output, @enumFromInt(output.register)), output.mask.native(), output.semantic }),
+                            .texture_coordinates_0_w => try out.print(".out E_{X:0>3} {t}.{f} texture_coordinates_0.z\n", .{ i, @as(shader.register.Destination.Output, @enumFromInt(output.register)), output.mask.native() }),
                             _ => {
                                 log.err("invalid entrypoint ({}) output ({}) semantic {}", .{ i, current_output, @intFromEnum(output.semantic) });
                                 continue;
                             },
                         }
-
-                        try out.print(".out E_{X:0>3} {t}.{f} {t}\n", .{ i, @as(shader.register.Destination.Output, @enumFromInt(output.register)), output.mask.native(), output.semantic });
                     }
                     try out.writeByte('\n');
 

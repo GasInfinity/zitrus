@@ -1,7 +1,8 @@
-pub const description = "Dump a (CTR) Layout Image to a PKM (if ETC1) or PNG/JPEG.";
+pub const description = "Dump a (CTR) Layout Image to a PKM (if ETC1) or to the specified output format.";
 
 pub const descriptions = .{
     .output = "Output directory / file. Directory outputs must be specified, if none stdout is used",
+    .ofmt = "Output format, it is not guaranteed that all work, support depends on zigimg as-is. PNG is used by default",
 };
 
 pub const switches = .{
@@ -9,7 +10,10 @@ pub const switches = .{
     .verbose = 'v',
 };
 
+pub const OutputFormat = zigimg.Image.Format;
+
 output: ?[]const u8,
+ofmt: OutputFormat = .png,
 verbose: bool,
 
 @"--": struct {
@@ -67,16 +71,16 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         return 1;
     };
 
-    try reader.discardAll(hdr.size - @sizeOf(lyt.Header));
+    try reader.discardAll(hdr.header_size - @sizeOf(lyt.Header));
 
-    var maybe_meta: ?clim.Metadata = null;
+    var maybe_meta: ?clim.Image = null;
 
     for (0..hdr.blocks) |_| {
         const block_hdr = try reader.takeStruct(lyt.block.Header, .little);
 
         switch (block_hdr.kind) {
-            .meta => {
-                const meta = try reader.takeStruct(clim.Metadata, .little);
+            .image => {
+                const meta = try reader.takeStruct(clim.Image, .little);
 
                 maybe_meta = meta;
                 if (args.verbose) log.info("Width: {} | Height: {} | Format: {}", .{ meta.width, meta.height, meta.format });
@@ -108,11 +112,34 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     const untiled_image_data: []u8 = try arena.alloc(u8, tiled_image_data.len);
     defer arena.free(untiled_image_data);
 
-    // XXX: It makes sense that all files I can dump are ETC1 but then I don't know how other formats could look like...
+    const default_encoder_opts = switch (args.ofmt) {
+        inline else => |t| @unionInit(zigimg.Image.EncoderOptions, @tagName(t), if(@FieldType(zigimg.Image.EncoderOptions, @tagName(t)) == void) {} else .{}), 
+    };
+
     switch (meta.format) {
+        .i4, .a4 => {
+            @memset(untiled_image_data, 0x00); // NOTE: undefined bits make partial updates impossible, we MUST do this!
+            zitrus.hardware.pica.morton.convertNibbles(.untile, 8, width_po2, untiled_image_data, tiled_image_data);
+            
+            var img: zigimg.Image = try .create(arena, width_po2, height_po2, .grayscale4);
+            defer img.deinit(arena);
+
+            for (untiled_image_data, 0..) |src, i| {
+                img.pixels.grayscale4[i*2] = .{ .value = @intCast(src & 0xF) };
+                img.pixels.grayscale4[i*2+1] = .{ .value = @intCast(src >> 4) };
+            }
+
+            try img.writeToFile(arena, output_file, &out_buf, default_encoder_opts);
+        },
+        .ia88 => {
+            zitrus.hardware.pica.morton.convert(.untile, 8, width_po2, @sizeOf(u16), untiled_image_data,  tiled_image_data);
+
+            const img: zigimg.Image = try .fromRawPixelsOwned(width_po2, height_po2, untiled_image_data, .grayscale8Alpha);
+            try img.writeToFile(arena, output_file, &out_buf, default_encoder_opts);
+        },
         .etc1 => {
             // NOTE: Tile size of 2 as each ETC block is 4x4, also as we convert to ETC "pixels" we must divide width/height by 4!
-            zitrus.hardware.pica.morton.convert([8]u8, .untile, 2, @divExact(width_po2, etc.pixels_per_block), std.mem.bytesAsSlice([8]u8, untiled_image_data), std.mem.bytesAsSlice([8]u8, tiled_image_data));
+            zitrus.hardware.pica.morton.convert(.untile, 2, @divExact(width_po2, etc.pixels_per_block), @sizeOf(etc.Block), untiled_image_data,  tiled_image_data);
 
             // NOTE: The 3DS stores ETC1 in little endian instead of big...
             const as_u64: []align(1) u64 = std.mem.bytesAsSlice(u64, untiled_image_data);
@@ -142,6 +169,8 @@ const log = std.log.scoped(.clim);
 
 const std = @import("std");
 const zitrus = @import("zitrus");
+
+const zigimg = @import("zigimg");
 const etc = zitrus.compress.etc;
 
 const lyt = zitrus.horizon.fmt.layout;

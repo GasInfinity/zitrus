@@ -105,16 +105,17 @@ pub const morton = struct {
 
     pub const Strategy = enum { tile, untile };
 
-    pub fn convert(comptime T: type, comptime strategy: Strategy, comptime tile_size: usize, width: usize, dst_pixels: []T, src_pixels: []const T) void {
+    pub fn convert(comptime strategy: Strategy, comptime tile_size: usize, width: usize, pixel_size: usize, dst_pixels: []u8, src_pixels: []const u8) void {
         std.debug.assert(dst_pixels.len == src_pixels.len);
         const max_tile_subindex = (tile_size * tile_size);
         const SubindexInt = std.math.IntFittingRange(0, max_tile_subindex - 1);
 
-        const height = @divExact(src_pixels.len, width);
+        const height = @divExact(@divExact(src_pixels.len, pixel_size), width);
         const width_tiles = @divExact(width, tile_size);
         const height_tiles = @divExact(height, tile_size);
+        const stride = width * pixel_size;
 
-        var i: u16 = 0;
+        var i: usize = 0;
         for (0..height_tiles) |y_tile| {
             const y_start = y_tile * tile_size;
 
@@ -125,14 +126,56 @@ pub const morton = struct {
                     const x, const y = toDimensions(SubindexInt, 2, @intCast(tile));
 
                     const linear_index = i;
-                    const morton_index = (y_start + y) * width + x_start + x;
+                    const morton_index = (y_start + y) * stride + (x_start + x) * pixel_size;
 
                     const src_pixel, const dst_pixel = switch (strategy) {
-                        .tile => .{ &src_pixels[morton_index], &dst_pixels[linear_index] },
-                        .untile => .{ &src_pixels[linear_index], &dst_pixels[morton_index] },
+                        .tile => .{ src_pixels[morton_index..][0..pixel_size], dst_pixels[linear_index..][0..pixel_size] },
+                        .untile => .{ src_pixels[linear_index..][0..pixel_size], dst_pixels[morton_index..][0..pixel_size] },
                     };
 
-                    dst_pixel.* = src_pixel.*;
+                    @memcpy(dst_pixel, src_pixel);
+                    i += pixel_size;
+                }
+            }
+        }
+    }
+
+    pub fn convertNibbles(comptime strategy: Strategy, comptime tile_size: usize, width: usize, dst_pixels: []u8, src_pixels: []const u8) void {
+        std.debug.assert(dst_pixels.len == src_pixels.len);
+        const max_tile_subindex = (tile_size * tile_size);
+        const SubindexInt = std.math.IntFittingRange(0, max_tile_subindex - 1);
+
+        const height = @divExact(src_pixels.len << 1, width);
+        const width_tiles = @divExact(width, tile_size);
+        const height_tiles = @divExact(height, tile_size);
+        const stride = @divExact(width, 2);
+
+        var i: usize = 0;
+        for (0..height_tiles) |y_tile| {
+            const y_start = y_tile * tile_size;
+
+            for (0..width_tiles) |x_tile| {
+                const x_start = x_tile * tile_size;
+
+                for (0..max_tile_subindex) |tile| {
+                    const x, const y = toDimensions(SubindexInt, 2, @intCast(tile));
+
+                    const linear_index = i >> 1;
+                    const second_linear_nibble = (i & 1) != 0; 
+
+                    const morton_x = (x_start + x);
+                    const morton_index = (y_start + y) * stride + (morton_x >> 1);
+                    const second_morton_nibble = (morton_x & 1) != 0;
+                    
+                    const src_pixel, const dst_pixel, const second_src_nibble, const second_dst_nibble = switch (strategy) {
+                        .tile => .{ &src_pixels[morton_index], &dst_pixels[linear_index], second_morton_nibble, second_linear_nibble },
+                        .untile => .{ &src_pixels[linear_index], &dst_pixels[morton_index], second_linear_nibble, second_morton_nibble },
+                    };
+
+                    const src_nibble = if(second_src_nibble) (src_pixel.* >> 4) else (src_pixel.* & 0xF);
+                    const last_dst_pixel = dst_pixel.*;
+
+                    dst_pixel.* = if(second_dst_nibble) (last_dst_pixel & 0xF) | (src_nibble << 4) else (last_dst_pixel & 0xF0) | src_nibble;
                     i += 1;
                 }
             }
@@ -331,18 +374,18 @@ pub const OutputMap = packed struct(u32) {
         color_b,
         color_a,
 
-        texture_coordinate_0_u,
-        texture_coordinate_0_v,
-        texture_coordinate_1_u,
-        texture_coordinate_1_v,
-        texture_coordinate_0_w,
+        texture_coordinates_0_u,
+        texture_coordinates_0_v,
+        texture_coordinates_1_u,
+        texture_coordinates_1_v,
+        texture_coordinates_0_w,
 
         view_x = 0x12,
         view_y,
         view_z,
 
-        texture_coordinate_2_u,
-        texture_coordinate_2_v,
+        texture_coordinates_2_u,
+        texture_coordinates_2_v,
 
         unused = 0x1F,
 
@@ -360,23 +403,23 @@ pub const OutputMap = packed struct(u32) {
             };
         }
 
-        pub fn isTextureCoordinate0(semantic: Semantic) bool {
+        pub fn isTextureCoordinates0(semantic: Semantic) bool {
             return switch (semantic) {
-                .texture_coordinate_0_u, .texture_coordinate_0_v, .texture_coordinate_0_w => true,
+                .texture_coordinates_0_u, .texture_coordinates_0_v, .texture_coordinates_0_w => true,
                 else => false,
             };
         }
 
-        pub fn isTextureCoordinate1(semantic: Semantic) bool {
+        pub fn isTextureCoordinates1(semantic: Semantic) bool {
             return switch (semantic) {
-                .texture_coordinate_1_u, .texture_coordinate_1_v => true,
+                .texture_coordinates_1_u, .texture_coordinates_1_v => true,
                 else => false,
             };
         }
 
-        pub fn isTextureCoordinate2(semantic: Semantic) bool {
+        pub fn isTextureCoordinates2(semantic: Semantic) bool {
             return switch (semantic) {
-                .texture_coordinate_2_u, .texture_coordinate_2_v => true,
+                .texture_coordinates_2_u, .texture_coordinates_2_v => true,
                 else => false,
             };
         }
@@ -826,9 +869,9 @@ pub const Graphics = extern struct {
             _unknown1: u1 = 0,
             etc1: Etc1Flag,
             _unknown2: u2 = 0,
-            wrap_t: TextureUnitAddressMode,
+            address_mode_v: TextureUnitAddressMode,
             _unknown3: u1 = 0,
-            wrap_s: TextureUnitAddressMode,
+            address_mode_u: TextureUnitAddressMode,
             _unknown4: u5 = 0,
             is_shadow: bool,
             _unknown5: u3 = 0,

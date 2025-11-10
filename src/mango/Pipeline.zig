@@ -148,10 +148,10 @@ pub const Graphics = struct {
                 // zig fmt: on
                 attribute_clock.color_present = attribute_clock.color_present or (map.x.isColor() or map.y.isColor() or map.z.isColor() or map.w.isColor());
                 attribute_clock.position_z_present = attribute_clock.position_z_present or (map.x == .position_z or map.y == .position_z or map.z == .position_z or map.w == .position_z);
-                tex_coords_present.* = tex_coords_present.copyWith(0, tex_coords_present.get(0) or (map.x.isTextureCoordinate0() or map.y.isTextureCoordinate0() or map.z.isTextureCoordinate0() or map.w.isTextureCoordinate0()));
-                tex_coords_present.* = tex_coords_present.copyWith(1, tex_coords_present.get(1) or (map.x.isTextureCoordinate1() or map.y.isTextureCoordinate1() or map.z.isTextureCoordinate1() or map.w.isTextureCoordinate1()));
-                tex_coords_present.* = tex_coords_present.copyWith(2, tex_coords_present.get(2) or (map.x.isTextureCoordinate2() or map.y.isTextureCoordinate2() or map.z.isTextureCoordinate2() or map.w.isTextureCoordinate2()));
-                attribute_clock.texture_coordinates_0_w_present = attribute_clock.texture_coordinates_0_w_present or (map.x == .texture_coordinate_0_w or map.y == .texture_coordinate_0_w or map.z == .texture_coordinate_0_w or map.w == .texture_coordinate_0_w);
+                tex_coords_present.* = tex_coords_present.copyWith(0, tex_coords_present.get(0) or (map.x.isTextureCoordinates0() or map.y.isTextureCoordinates0() or map.z.isTextureCoordinates0() or map.w.isTextureCoordinates0()));
+                tex_coords_present.* = tex_coords_present.copyWith(1, tex_coords_present.get(1) or (map.x.isTextureCoordinates1() or map.y.isTextureCoordinates1() or map.z.isTextureCoordinates1() or map.w.isTextureCoordinates1()));
+                tex_coords_present.* = tex_coords_present.copyWith(2, tex_coords_present.get(2) or (map.x.isTextureCoordinates2() or map.y.isTextureCoordinates2() or map.z.isTextureCoordinates2() or map.w.isTextureCoordinates2()));
+                attribute_clock.texture_coordinates_0_w_present = attribute_clock.texture_coordinates_0_w_present or (map.x == .texture_coordinates_0_w or map.y == .texture_coordinates_0_w or map.z == .texture_coordinates_0_w or map.w == .texture_coordinates_0_w);
                 attribute_clock.normal_view_present = attribute_clock.normal_view_present or (map.x.isView() or map.x.isNormalQuaternion()) or (map.y.isView() or map.y.isNormalQuaternion()) or (map.z.isView() or map.z.isNormalQuaternion()) or (map.w.isView() or map.w.isNormalQuaternion());
                 // zig fmt: off
 

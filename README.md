@@ -115,7 +115,6 @@ You can (and are encouraged) to look at the `tools` directory as it is a good ex
     - 🟢 Assemble: Only **Z**itrus**P**ica**Sh**ader's are implemented as an output format.
     - 🟢 Disassemble: Outputs **Z**itrus**P**ica**A**sse**m**bly. Either RAW instructions, ZPSH's or DVL's (.shbin) can be disassembled.
 - 🟢 Firm (tools/Firm): Make / Info / Dump
-    - 🟢 Make: Confirmed to build (and boot!) Luma3DS from source, however needs more testing as the firm is not 1:1.
 - 🟡 Ncch (tools/Ncch): Make CXI / Dump / Info
     - 🟢 ExeFS (tools/ExeFs): Make / List / Dump
     - 🟢 RomFS (tools/RomFs): Make / List / Dump
@@ -125,8 +124,8 @@ You can (and are encouraged) to look at the `tools` directory as it is a good ex
     - 🟡 LZ10 (Compress/Lz10): Decompression
     - 🟡 LZ11 (Compress/Lz11): Decompression
 - 🟡 Archives (tools/Archive):
-    - 🟡 Darc (Archive/Darc): List / Dump
-    - 🟡 Sarc (Archive/Sarc): List
+    - 🟢 Darc (Archive/Darc): Make / List / Dump
+    - 🟡 Sarc (Archive/Sarc): List / Dump
 - 🟡 Layouts (tools/Layout):
     - 🟡 Image (Layout/Image): Dump
     - 🔴 Layout

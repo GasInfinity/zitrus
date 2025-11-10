@@ -60,10 +60,15 @@ jobs:
             rm -r -- $artifact
           done
 
+      - name: Delete last development release
+        run: gh release delete dev --cleanup-tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Development release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: dev
-          body: Latest unstripped `ReleaseSafe` development versions.
+          body: Latest unstripped `ReleaseSafe` development version.
           prerelease: true
           files: zig-out/*

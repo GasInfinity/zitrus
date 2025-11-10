@@ -29,7 +29,7 @@
 .out main o0 position 
 .out main o1 view
 .out main o2 normal_quaternion
-.out main o3.xy texture_coordinate_0.xy
+.out main o3.xy texture_coordinates_0.xy
 
 .set main f95 (1, 0, 0.5, 0)
 

@@ -2,7 +2,7 @@ pub const description = "List the sections of a firmware and optionally check th
 
 pub const descriptions = .{
     .minify = "Emit the neccesary whitespace only",
-    .check_hash = "Check hashes of files inside the ExeFS",
+    .check_hash = "Check hashes of files inside the FIRM",
 };
 
 pub const switches = .{

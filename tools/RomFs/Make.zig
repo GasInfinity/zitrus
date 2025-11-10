@@ -91,6 +91,7 @@ fn addDirectory(builder: *romfs.Builder, gpa: std.mem.Allocator, dir: *std.fs.Di
                 const contents = try reader.interface.allocRemaining(gpa, .unlimited);
                 defer gpa.free(contents);
 
+                // TODO: streamFile to not allocate 2 times the same data and write it directly!
                 try builder.addFile(gpa, b_dir, .utf8(entry.name), contents);
             },
             else => log.warn("ignoring entry '{s}', cannot handle entry kind: {t}", .{ entry.name, entry.kind }),

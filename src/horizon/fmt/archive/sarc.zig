@@ -31,13 +31,13 @@ pub const FileAllocationTable = extern struct {
     pub const Entry = extern struct {
         hash: u32,
         /// In `u32`s
-        offset: u16,
+        name_offset: u16,
         attributes: u16,
         data_start: u32,
         data_end: u32,
 
         pub fn name(entry: Entry, name_table: []const u8) [:0]const u8 {
-            return std.mem.span(@as([*:0]const u8, @ptrCast(name_table))[@as(usize, entry.offset) * @sizeOf(u32) ..]);
+            return std.mem.span(@as([*:0]const u8, @ptrCast(name_table))[@as(usize, entry.name_offset) * @sizeOf(u32) ..]);
         }
     };
 
@@ -106,8 +106,8 @@ pub const View = struct {
 
     pub const Init = struct {
         view: View,
-        data_offset: usize,
-        data_size: usize,
+        data_offset: u32,
+        data_size: u32,
     };
 
     pub const InitError = std.Io.Reader.Error || std.mem.Allocator.Error || Header.CheckError || FileAllocationTable.CheckError || FilenameTable.CheckError;
@@ -167,10 +167,13 @@ pub const View = struct {
     }
 
     pub fn openFileAbsolute(view: View, path: []const u8) !File {
+        return view.openFileAbsoluteHash(hashName(path, view.hash_multiplier));
+    }
+
+    pub fn openFileAbsoluteHash(view: View, hash: u32) !File {
         const search_ctx: PathSearchContext = .{
             .view = view,
-            .path = path,
-            .hash = hashName(path, view.hash_multiplier),
+            .hash = hash,
         };
 
         return @enumFromInt(std.sort.binarySearch(FileAllocationTable.Entry, view.entries, search_ctx, PathSearchContext.compareEntries) orelse return error.FileNotFound);
@@ -190,7 +193,6 @@ pub const View = struct {
 
     const PathSearchContext = struct {
         view: View,
-        path: []const u8,
         hash: u32,
 
         pub fn compareEntries(ctx: PathSearchContext, item: FileAllocationTable.Entry) std.math.Order {

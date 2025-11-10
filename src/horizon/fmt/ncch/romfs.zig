@@ -107,40 +107,6 @@ pub const meta = struct {
         }
     };
 
-    pub const Name = union(enum(u1)) {
-        as_utf8: []const u8,
-        as_utf16: []const u16,
-
-        pub fn utf8(value: []const u8) Name {
-            return .{ .as_utf8 = value };
-        }
-
-        pub fn utf16(value: []const u16) Name {
-            return .{ .as_utf16 = value };
-        }
-
-        /// Calculates UTF-16 length of the name.
-        ///
-        /// Asserts the name is a valid utf8 or utf16 string.
-        pub fn length(name: Name) usize {
-            return switch (name) {
-                .as_utf8 => |as_utf8| std.unicode.calcUtf16LeLen(as_utf8) catch unreachable,
-                .as_utf16 => |as_utf16| as_utf16.len,
-            };
-        }
-
-        /// Asserts the name is a valid utf8 or utf16 string and that the encoded string fits in the output.
-        pub fn encode(name: Name, buf: []u16) usize {
-            return switch (name) {
-                .as_utf8 => |as_utf8| std.unicode.utf8ToUtf16Le(buf, as_utf8) catch unreachable,
-                .as_utf16 => |as_utf16| blk: {
-                    @memcpy(buf[0..as_utf16.len], as_utf16);
-                    break :blk as_utf16.len;
-                },
-            };
-        }
-    };
-
     fn Builder(comptime T: type, comptime TOffset: type) type {
         if ((T != FileHeader or TOffset != FileOffset) and (T != DirectoryHeader or TOffset != DirectoryOffset)) @compileError("Can only use a metadata table with a valid header and offset.");
 
@@ -153,7 +119,7 @@ pub const meta = struct {
                 builder.data.deinit(gpa);
             }
 
-            pub fn addOne(builder: *Self, gpa: std.mem.Allocator, parent: DirectoryOffset, name: Name) !TOffset {
+            pub fn addOne(builder: *Self, gpa: std.mem.Allocator, parent: DirectoryOffset, name: hfmt.AnyUtf) !TOffset {
                 const name_len = name.length();
                 const name_byte_len = name_len * @sizeOf(u16);
                 const total_elements = @divExact(@sizeOf(T) + std.mem.alignForward(usize, name_byte_len, @sizeOf(u32)), @sizeOf(u32));
@@ -336,7 +302,7 @@ pub const Builder = struct {
         builder.file_data.deinit(gpa);
     }
 
-    pub fn addDirectory(builder: *Builder, gpa: std.mem.Allocator, parent: *Directory, name: meta.Name) !Directory {
+    pub fn addDirectory(builder: *Builder, gpa: std.mem.Allocator, parent: *Directory, name: hfmt.AnyUtf) !Directory {
         const new = try builder.directories.addOne(gpa, parent.offset, name);
 
         switch (parent.last_directory) {
@@ -359,7 +325,7 @@ pub const Builder = struct {
         };
     }
 
-    pub fn addFile(builder: *Builder, gpa: std.mem.Allocator, parent: *Directory, name: meta.Name, data: []const u8) !void {
+    pub fn addFile(builder: *Builder, gpa: std.mem.Allocator, parent: *Directory, name: hfmt.AnyUtf, data: []const u8) !void {
         const new = try builder.files.addOne(gpa, parent.offset, name);
         const new_hdr = builder.files.get(new);
 
@@ -845,4 +811,5 @@ const testing = std.testing;
 const builtin = @import("builtin");
 const std = @import("std");
 const zitrus = @import("zitrus");
-const ivfc = zitrus.horizon.fmt.ivfc;
+const hfmt = zitrus.horizon.fmt;
+const ivfc = hfmt.ivfc;

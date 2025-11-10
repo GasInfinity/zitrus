@@ -40,8 +40,8 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         log.err("could not open DARC: {t}", .{err});
         return 1;
     };
-    // NOTE: Now input_reader points to file_data_offset as described in the doc comment (important for piping as we can't seek)
 
+    // NOTE: Now input_reader points to data_offset as described in the doc comment (important for piping as we can't seek)
     const view = init.view;
     defer view.deinit(arena);
 
@@ -70,7 +70,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
             };
             defer output_directory.close();
 
-            try dumpDirectory(&input_reader, init.data_offset, view, darc_dir, output_directory);
+            try dumpDirectory(&input_reader, view, darc_dir, output_directory);
         } else {
             log.err("directory outputs must be specified", .{});
             return 1;
@@ -103,7 +103,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     return 0;
 }
 
-fn dumpDirectory(reader: *std.fs.File.Reader, data_offset: usize, view: darc.View, darc_dir: darc.View.Directory, dir: std.fs.Dir) !void {
+fn dumpDirectory(reader: *std.fs.File.Reader, view: darc.View, darc_dir: darc.View.Directory, dir: std.fs.Dir) !void {
     var it = view.iterator(darc_dir);
 
     while (it.next(view)) |entry| {
@@ -125,7 +125,7 @@ fn dumpDirectory(reader: *std.fs.File.Reader, data_offset: usize, view: darc.Vie
                 var file_buf: [2048]u8 = undefined;
                 var file_writer = output_file.writerStreaming(&file_buf);
 
-                try reader.seekTo(stat.offset);
+                try reader.seekTo(view.data_offset + stat.offset);
                 try reader.interface.streamExact64(&file_writer.interface, stat.size);
                 try file_writer.interface.flush();
             },
@@ -138,7 +138,7 @@ fn dumpDirectory(reader: *std.fs.File.Reader, data_offset: usize, view: darc.Vie
                 };
                 defer output_directory.close();
 
-                try dumpDirectory(reader, data_offset, view, directory, output_directory);
+                try dumpDirectory(reader, view, directory, output_directory);
             },
         }
     }

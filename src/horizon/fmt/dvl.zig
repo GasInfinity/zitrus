@@ -157,12 +157,13 @@ pub const OutputEntry = extern struct {
         position,
         normal_quaternion,
         color,
-        texure_coordinates_0,
-        texure_coordinates_0_w,
-        texure_coordinates_1,
-        texure_coordinates_2,
+        texture_coordinates_0,
+        texture_coordinates_0_w,
+        texture_coordinates_1,
+        texture_coordinates_2,
 
         view = 0x8,
+        dummy, // NOTE: Not in 3dbrew but consistently shows in disassembled shaders, looks like it may be used with "merge output maps" or just as a placeholder.
         _,
     };
 

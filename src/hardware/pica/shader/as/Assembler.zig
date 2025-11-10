@@ -288,8 +288,8 @@ const Mnemonic = enum {
     pub fn kind(mnemonic: Mnemonic) Kind {
         return switch (mnemonic) {
             .@"break", .nop, .emit, .end => .unparametized,
-            .add, .dp3, .dp4, .dph, .dst, .mul, .max, .min => .binary,
-            .ex2, .lg2, .litp, .sge, .slt, .flr, .rcp, .rsq, .mova, .mov => .unary,
+            .add, .dp3, .dp4, .dph, .dst, .mul, .sge, .slt, .max, .min => .binary,
+            .ex2, .lg2, .litp,  .flr, .rcp, .rsq, .mova, .mov => .unary,
             .breakc, .call, .callc, .ifc, .jmpc => .flow_conditional,
             .callu, .ifu, .jmpu, .loop => .flow_uniform,
             .cmp => .comparison,
@@ -400,11 +400,11 @@ const Semantic = enum {
     /// xyzw
     color,
     /// xyz
-    texture_coordinate_0,
+    texture_coordinates_0,
     /// xy
-    texture_coordinate_1,
+    texture_coordinates_1,
     /// xy
-    texture_coordinate_2,
+    texture_coordinates_2,
     /// xyzw
     view,
     /// xyzw
@@ -415,9 +415,9 @@ const Semantic = enum {
             .position => .{ .position_x, .position_y, .position_z, .position_w },
             .normal_quaternion => .{ .normal_quaternion_x, .normal_quaternion_y, .normal_quaternion_z, .normal_quaternion_w },
             .color => .{ .color_r, .color_g, .color_b, .color_a },
-            .texture_coordinate_0 => .{ .texture_coordinate_0_u, .texture_coordinate_0_v, .texture_coordinate_0_w, .unused },
-            .texture_coordinate_1 => .{ .texture_coordinate_1_u, .texture_coordinate_1_v, .unused, .unused },
-            .texture_coordinate_2 => .{ .texture_coordinate_2_u, .texture_coordinate_2_v, .unused, .unused },
+            .texture_coordinates_0 => .{ .texture_coordinates_0_u, .texture_coordinates_0_v, .texture_coordinates_0_w, .unused },
+            .texture_coordinates_1 => .{ .texture_coordinates_1_u, .texture_coordinates_1_v, .unused, .unused },
+            .texture_coordinates_2 => .{ .texture_coordinates_2_u, .texture_coordinates_2_v, .unused, .unused },
             .view => .{ .view_x, .view_y, .view_z, .unused },
             .dummy => .{ .unused, .unused, .unused, .unused },
         };

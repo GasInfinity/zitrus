@@ -226,7 +226,7 @@ const Diagnostic = struct {
     const number_too_big: Diagnostic = .init("expected a smaller number");
     const number_too_small: Diagnostic = .init("expected a bigger number");
 
-    const expected_semantic: Diagnostic = .init("expected a semantic (position, normal_quaternion, color, texture_coordinate_x, view, dummy)");
+    const expected_semantic: Diagnostic = .init("expected a semantic (position, normal_quaternion, color, texture_coordinates_x, view, dummy)");
     const invalid_semantic_component: Diagnostic = .init("swizzled a semantic component that does not exist");
     const output_has_semantic: Diagnostic = .init("output register component already has a semantic component");
     const expected_primitive: Diagnostic = .init("expected a primitive operation (none, emmiting)");

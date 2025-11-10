@@ -204,7 +204,7 @@ fn buildVersion(b: *Build) []const u8 {
                 return version_string;
             }
             
-            return b.fmt("{}.{}.{}-dev.{s}+{s}", .{version.major, version.minor, version.patch, commit_height, commit_hash[1..]});
+            return b.fmt("{}.{}.{}-{s}.dev.{s}+{s}", .{version.major, version.minor, version.patch, version.pre.?, commit_height, commit_hash[1..]});
         },
         else => {
             std.log.err("Unexpected git describe output: '{s}'", .{git_describe});

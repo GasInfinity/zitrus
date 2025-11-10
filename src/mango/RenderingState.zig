@@ -461,8 +461,8 @@ fn emitDirtyTextureUnits(rnd: *RenderingState, queue: *command.Queue) void {
                 .mag_filter = sampler.data.mag_filter,
                 .min_filter = sampler.data.min_filter,
                 .etc1 = if (format == .etc1) .etc1 else .none,
-                .wrap_t = sampler.data.address_mode_u,
-                .wrap_s = sampler.data.address_mode_v,
+                .address_mode_v = sampler.data.address_mode_v,
+                .address_mode_u = sampler.data.address_mode_u,
                 .is_shadow = false, // TODO: Shadow
                 .mip_filter = sampler.data.mip_filter,
                 .type = .@"2d", // TODO: Different types
@@ -504,8 +504,8 @@ fn emitDirtyTextureUnits(rnd: *RenderingState, queue: *command.Queue) void {
                 .mag_filter = sampler.data.mag_filter,
                 .min_filter = sampler.data.min_filter,
                 .etc1 = if (format == .etc1) .etc1 else .none,
-                .wrap_t = sampler.data.address_mode_u,
-                .wrap_s = sampler.data.address_mode_v,
+                .address_mode_v = sampler.data.address_mode_v,
+                .address_mode_u = sampler.data.address_mode_u,
                 .is_shadow = false,
                 .mip_filter = sampler.data.mip_filter,
                 .type = .@"2d",

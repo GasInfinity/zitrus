@@ -31,3 +31,5 @@ pub const Pkm = extern struct {
     real_width: u16,
     real_height: u16,
 };
+
+pub const Block = packed struct(u64) { _: u64 = 0 };
