@@ -1,4 +1,4 @@
-![Zitrus Logo](https://github.com/GasInfinity/zitrus/blob/main/assets/zitrus-logo.png?raw=true)
+![Zitrus Logo](https://codeberg.org/GasInfinity/zitrus/raw/branch/main/assets/zitrus-logo.png)
 
 ---
 ![Zig support](https://img.shields.io/badge/Zig-0.15.x-color?logo=zig&color=%23f3ab20)
@@ -14,7 +14,7 @@
 > the first stable (minor) release, a.k.a `0.1.0`. No ETA is given.
 
 ```bash
-zig fetch --save git+https://github.com/GasInfinity/zitrus
+zig fetch --save git+https://codeberg.org/GasInfinity/zitrus
 ```
 
 Then add this to your `build.zig`:
@@ -89,7 +89,7 @@ You can (and are encouraged) to look at the `tools` directory as it is a good ex
 ### Legend
 ⚠️ Feature regressed temporarily due to dependency or upstream (usually when zig updates this can happen)
  
-⛔ Blocked due to upstream. Impossible to do until something gets fixed or added, usually listed in https://github.com/GasInfinity/zitrus/issues/1
+⛔ Blocked due to upstream. Impossible to do until something gets fixed or added, usually listed in https://codeberg.org/GasInfinity/zitrus/issues/1
 
 🟢 Fully implemented
 🟡 Partially implemented
