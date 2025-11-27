@@ -1,5 +1,5 @@
 // NOTE: as you can see, the shader address must be aligned to 32-bits
-const position_vtx_storage align(@sizeOf(u32)) = @embedFile("position.zpsh").*;
+const position_vtx_storage align(@sizeOf(u32)) = @embedFile("position.psh").*;
 const position_vtx = &position_vtx_storage;
 
 // XXX: Needed for the page_allocator

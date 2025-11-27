@@ -1,4 +1,4 @@
-# Zitrus PICA200 shader assembly language
+# PICA200 shader assembly language
 
 This is yet another PICA200 shader assembler focused on simplicity. It is a simple 2-pass assembler where first 
 labels and directives are processed and then instructions are assembled as their length is fixed.

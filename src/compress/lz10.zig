@@ -46,6 +46,14 @@ pub fn blockKind(block: u1) lz.Block {
     };
 }
 
+pub fn blockEncoding(block: lz.Block) u1 {
+    return switch (block) {
+        .literal => 0,
+        .match => 1,
+    };
+}
+
+pub const Compress = lz.Compress(lz10);
 pub const Decompress = lz.Decompress(lz10);
 
 // TODO: Tests

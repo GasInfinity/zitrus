@@ -33,13 +33,13 @@ pub const aes = struct {
         algorithm: Algorithm,
         key: Key,
         source: ipc.Mapped(.r),
-        destination: ipc.Static(.w),
+        destination: ipc.Mapped(.w),
     };
 
     pub const Output = struct {
         feedback_iv_ctr: [16]u8,
         source: ipc.Mapped(.r),
-        destination: ipc.Static(.w),
+        destination: ipc.Mapped(.w),
     };
 
     pub const CcmInput = struct {
@@ -52,7 +52,7 @@ pub const aes = struct {
         algorithm: Algorithm,
         key: Key,
         source: ipc.Mapped(.r),
-        destination: ipc.Static(.w),
+        destination: ipc.Mapped(.w),
     };
 };
 
@@ -84,13 +84,15 @@ pub const command = struct {
         encrypt_rsa = 0x0001,
         sign_rsa_sha256,
         verify_rsa_sha256,
-        aes_operation = 0x0003,
+        /// Removed in 2.0.0-2
+        set_aes_key,
+        aes_operation,
         aes_ccm_operation,
         get_gamecard_uuid,
         get_gamecard_maker_encrypted_uuid,
         get_gamecard_autostartup,
         get_gamecard_maker,
-        get_local_friend_code_seed,
+        get_local_friend_seed,
         get_device_id,
         seed_random,
         next_random_bytes,

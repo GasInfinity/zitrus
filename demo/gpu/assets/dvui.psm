@@ -1,0 +1,46 @@
+.alias iPos v0
+.alias iColor v1
+.alias iTexCoord0 v2
+
+.entry main vertex
+
+; First constant is 1/255
+.set main f95 (0.003921568627451, 1.0, 0.0, 0.0)
+.alias cOneOverMaxU8 f95.xxxx
+.alias cOne f95.yyyy
+
+.out main o0 position
+.alias oPos o0
+
+.out main o1 color
+.alias oColor o1
+
+.out main o2.xy texture_coordinates_0.xy
+.alias oTexCoord0 o2
+
+; layout(location = 0) uniform mat4x4 uPersp;
+.alias uPerspM0 f0
+.alias uPerspM1 f1
+.alias uPerspM2 f2
+.alias uPerspM3 f3
+
+; We may have uv's which are NOT from textures that are a power of two
+; so we multiply by this the coordinates to retransform them to the real uv.
+.alias uTexCoordMult f4
+.alias uDummyCorruption f5 ; WHAT??? WHY DOES THE GPU CORRUPT ITSELF WHEN UPLOADING ONLY 1 UNIFORM?
+
+main:
+    ; oColor = iColor / 255;
+    mul oColor, iColor, cOneOverMaxU8 
+    
+    ; oTexCoord0 = iTexCoord0 * uTexCoordMult
+    mul r0, iTexCoord0, uTexCoordMult
+    mov oTexCoord0.x, r0.x
+    add oTexCoord0.yzw, cOne, -r0
+
+    ; oPos = uPersp * vec4(iPos, 0, 1) // PICA200 seems to fill z with 0.0 and w with 1.0
+    dp4 oPos.x, uPerspM0, iPos
+    dp4 oPos.y, uPerspM1, iPos
+    dp4 oPos.z, uPerspM2, iPos
+    dp4 oPos.w, uPerspM3, iPos
+    end  

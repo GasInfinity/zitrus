@@ -1,18 +1,21 @@
 pub const description = "Compress / Decompress LZ10 (.lz, .lz77), used in 3DS titles.";
 
 pub const descriptions = .{
+    .header = "Add extra bytes as a header, e.g: 'LZ77'",
     .output = "Output file, if none stdout is used",
     .decompress = "Decompress data",
 };
 
 pub const switches = .{
+    .header = 'h',
     .output = 'o',
     .decompress = 'd',
     .verbose = 'v',
 };
 
-output: ?[]const u8,
+header: ?[]const u8,
 decompress: bool,
+output: ?[]const u8,
 verbose: bool,
 
 @"--": struct {
@@ -24,11 +27,7 @@ verbose: bool,
 },
 
 pub fn main(args: Lz10, arena: std.mem.Allocator) !u8 {
-    _ = arena;
     const cwd = std.fs.cwd();
-
-    if (!args.decompress) @panic("TODO: Compress :(");
-
     const input_file, const input_should_close = if (args.@"--".input) |in|
         .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
             log.err("could not open input file '{s}': {t}", .{ in, err });
@@ -50,32 +49,79 @@ pub fn main(args: Lz10, arena: std.mem.Allocator) !u8 {
     var input_buf: [4096]u8 = undefined;
     var input_reader = input_file.readerStreaming(&input_buf);
 
-    const maybe_hdr = try input_reader.interface.peekArray(4);
+    if(args.decompress) {
+        const maybe_hdr = try input_reader.interface.peekArray(4);
 
-    // The decompressor works with the raw stream and doesn't (and shouldn't) handle this.
-    if (std.mem.eql(u8, maybe_hdr, "LZ77") or std.mem.eql(u8, maybe_hdr, "CMPR")) input_reader.interface.toss(4);
+        // The decompressor works with the raw stream and doesn't (and shouldn't) handle this.
+        if (std.mem.eql(u8, maybe_hdr, "LZ77") or std.mem.eql(u8, maybe_hdr, "CMPR")) input_reader.interface.toss(4);
 
-    var decompressor: lz10.Decompress = .init(&input_reader.interface, &.{});
+        var decompressor: lz10.Decompress = .init(&input_reader.interface, &.{});
 
-    var decompress_buf: [lz10.max_window_len]u8 = undefined;
-    var output_writer = output_file.writerStreaming(&decompress_buf);
+        var decompress_buf: [lz10.max_window_len]u8 = undefined;
+        var output_writer = output_file.writerStreaming(&decompress_buf);
 
-    const streamed = decompressor.reader.streamRemaining(&output_writer.interface) catch |err| switch (err) {
-        error.ReadFailed => {
-            log.err("error decompressing, corrupted? {t}", .{decompressor.err.?});
-            log.err("useful info: ", .{});
-            log.err("  - remaining bytes to decompress: {}", .{decompressor.remaining_uncompressed});
+        const streamed = decompressor.reader.streamRemaining(&output_writer.interface) catch |err| switch (err) {
+            error.ReadFailed => {
+                log.err("error decompressing, corrupted? {t}", .{decompressor.err.?});
+                log.err("useful info: ", .{});
+                log.err("  - remaining bytes to decompress: {}", .{decompressor.remaining_uncompressed});
+                return 1;
+            },
+            error.WriteFailed => {
+                log.err("error writing to output: {t}", .{output_writer.err.?});
+                return 1;
+            },
+        };
+
+        try output_writer.interface.flush();
+        if (args.verbose) log.info("Decompressed size: {} bytes", .{streamed});
+
+        const input_remaining = try input_reader.interface.discardRemaining();
+        if (input_remaining != 0) log.warn("Got {} more bytes after decompressing", .{input_remaining});
+        return 0;
+    }
+    
+    log.warn("Only a 'fastestest' compression is currently supported (a.k.a: no compression), file size will be bigger!", .{});
+    
+    // TODO: Migrate to normal `Compress` when implemented.
+    var output_buf: [4096]u8 = undefined;
+    var output_writer = output_file.writerStreaming(&output_buf);
+
+    var compress_buf: [lz10.max_window_len]u8 = undefined;
+    var compressor: lz10.Compress.Raw = .init(&output_writer.interface, &compress_buf);
+
+    if(args.header) |hdr| try output_writer.interface.writeAll(hdr);
+
+    if(input_reader.getSize()) |size| {
+        if(size >= std.math.maxInt(u24)) {
+            log.err("cannot compress, file size is too big, {} > {}!", .{size, std.math.maxInt(u24)});
             return 1;
-        },
-        error.WriteFailed => {
-            log.err("error writing to output: {t}", .{output_writer.err.?});
-            return 1;
-        },
-    };
+        }
 
+        try output_writer.interface.writeStruct(lz10.Header{
+            .uncompressed_len = @intCast(size),
+        }, .little);
+        try input_reader.interface.streamExact64(&compressor.writer, size);
+    } else |_| {
+        var allocating: std.Io.Writer.Allocating = .init(arena);
+        defer allocating.deinit();
+
+        const size = try input_reader.interface.streamRemaining(&allocating.writer);
+
+        if(size >= std.math.maxInt(u24)) {
+            log.err("cannot compress, file size is too big, {} > {}!", .{size, std.math.maxInt(u24)});
+            return 1;
+        }
+
+        try output_writer.interface.writeStruct(lz10.Header{
+            .uncompressed_len = @intCast(size),
+        }, .little);
+        try compressor.writer.writeAll(allocating.written());
+        // We need to allocate as we don't know the size in advance :(
+    }
+
+    try compressor.end();
     try output_writer.interface.flush();
-    if (args.verbose) log.info("Decompressed size: {} bytes", .{streamed});
-    if (try input_reader.interface.discardRemaining() != 0) log.warn("Got more data after decompressing", .{});
     return 0;
 }
 

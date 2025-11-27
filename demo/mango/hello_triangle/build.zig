@@ -21,11 +21,11 @@ pub fn build(b: *std.Build) void {
     });
 
     const position_shader = zitrus.AssembleZpsm.init(zitrus_dep, .{
-        .name = "position.zpsh",
-        .root_source_file = b.path("assets/position.zpsm"),
+        .name = "position.psh",
+        .root_source_file = b.path("assets/position.psm"),
     });
 
-    exe.root_module.addAnonymousImport("position.zpsh", .{ .root_source_file = position_shader.out });
+    exe.root_module.addAnonymousImport("position.psh", .{ .root_source_file = position_shader.out });
 
     exe.pie = true;
     exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));

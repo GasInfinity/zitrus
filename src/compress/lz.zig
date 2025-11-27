@@ -256,6 +256,139 @@ pub fn Decompress(comptime context: type) type {
     };
 }
 
+/// TODO: Look at how compressors are implemented with the Writer interface and implement a proper compressor.
+pub fn Compress(comptime Context: type) type {
+    return struct {
+        pub const Lookup = struct {
+
+        };
+
+        output: *Writer,
+        writer: Writer,
+        buffer: []u8,
+        lookup: Lookup,
+
+
+        fn drain(w: *Writer, data: []const []const u8, splat: usize) Writer.Error!usize {
+            _ = w.fixedDrain(data, splat) catch {};
+            try rebaseInner(w, Context.history_len, 0);
+        } 
+
+        fn rebase(w: *Writer, preserve: usize, capacity: usize) Writer.Error!void {
+            _ = w;
+            _ = preserve;
+            _ = capacity;
+        }
+
+        fn rebaseInner(w: *Writer, preserve: usize, capacity: usize) Writer.Error!void {
+            _ = w;
+            _ = preserve;
+            _ = capacity;
+        }
+
+        /// Does not compress data
+        pub const Raw = struct {
+            const only_literals = @as(u8, Context.blockEncoding(.literal)) * 0xFF;
+
+            output: *Writer,
+            writer: Writer,
+
+            /// It is asserted that `buffer` is at least 8 bytes.
+            pub fn init(output: *Writer, buffer: []u8) Raw {
+                std.debug.assert(buffer.len >= 8);
+
+                return .{
+                    .output = output,
+                    .writer = .{
+                        .vtable = &.{
+                            .drain = &Raw.drain,
+                        },
+                        .buffer = buffer,
+                        .end = 0,
+                    },
+                };
+            }
+
+            /// Ends the stream of data.
+            /// After calling this, the `.writer` becomes `.failing`.
+            pub fn end(raw: *Raw) Writer.Error!void {
+                defer raw.writer = .failing; 
+                
+                var buffered = raw.writer.buffered();
+
+                while (buffered.len > 0) {
+                    const to_write = @min(buffered.len, 8);
+
+                    try raw.output.writeByte(only_literals);
+                    try raw.output.writeAll(buffered[0..to_write]);
+                    buffered = buffered[to_write..]; 
+                }
+            }
+
+            fn drain(w: *Writer, data: []const []const u8, splat: usize) Writer.Error!usize {
+                const r: *Raw = @fieldParentPtr("writer", w);
+                const out = r.output;
+
+                var buffered = r.writer.buffered();
+
+                while (buffered.len >= 8) {
+                    try out.writeByte(only_literals);
+                    try out.writeAll(buffered[0..8]);
+
+                    buffered = buffered[8..];
+                }
+
+                const full_data_len = Writer.countSplat(data, splat);
+
+                if(buffered.len + full_data_len < 8) {
+                    @branchHint(.unlikely);
+
+                    @memmove(r.writer.buffer, buffered);
+                    r.writer.end = buffered.len;
+                    return 0;
+                }
+
+                r.writer.end = 0;
+
+                var literals_len: usize = buffered.len;
+                var literals: [8]u8 = undefined;
+                @memcpy(&literals, buffered);
+
+                var current_index: usize = 0;
+                var current_data_index: usize = 0;
+                var remaining_splat = splat;
+
+                while (true) {
+                    const current = data[current_index];
+                    const to_fill = @min(literals.len - literals_len, current.len);
+
+                    @memcpy(literals[literals_len..], data[current_index][current_data_index..][0..to_fill]);
+                    literals_len += to_fill;
+
+                    if(literals_len == literals.len) {
+                        defer literals_len = 0;
+
+                        try out.writeByte(only_literals);
+                        try out.writeAll(&literals);
+                    }
+
+                    if(current_data_index + to_fill == current.len) {
+                        const is_splat = current_index == data.len - 1;
+                        current_data_index = 0;
+                        current_index += @intFromBool(!is_splat); 
+
+                        if(is_splat) if(remaining_splat > 0) {
+                            remaining_splat -= 1;
+                        } else break;
+                    } else current_data_index += to_fill;
+                }
+
+                return full_data_len - literals_len;
+            }
+        };
+    };
+}
+
 const Writer = std.Io.Writer;
 const Reader = std.Io.Reader;
 

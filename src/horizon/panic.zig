@@ -33,7 +33,8 @@ pub fn throw(msg: []const u8, ret_trace: ?*std.builtin.StackTrace) noreturn {
         break :lt 0xAAAAAAAA;
     };
 
-    errdisp.sendSetUserString(stack_trace_writer.buffer[0..stack_trace_writer.end]) catch {};
+    horizon.debug.print("{s}\n", .{stack_trace_writer.buffered()});
+    errdisp.sendSetUserString(stack_trace_writer.buffered()) catch {};
 
     const process_id: u32 = switch (horizon.getProcessId(.current).cases()) {
         .success => |s| s.value,

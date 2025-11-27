@@ -103,7 +103,129 @@ pub const morton = struct {
         return values;
     }
 
-    pub const Strategy = enum { tile, untile };
+    test toDimensions {
+        try testing.expectEqual([2]u3{0b001, 0b001}, toDimensions(u6, 2, 0b000011));
+        try testing.expectEqual([2]u3{0b010, 0b010}, toDimensions(u6, 2, 0b001100));
+        try testing.expectEqual([2]u3{0b011, 0b011}, toDimensions(u6, 2, 0b001111));
+        try testing.expectEqual([2]u3{0b111, 0b111}, toDimensions(u6, 2, 0b111111));
+    }
+
+    /// Returns the morton linear index for the coordinates.
+    pub fn toIndex(comptime T: type, comptime dimensions: usize, value: [dimensions]T) std.meta.Int(.unsigned, dimensions * @bitSizeOf(T)) {
+        std.debug.assert(@typeInfo(T) == .int);
+
+        const IndexType = std.meta.Int(.unsigned, dimensions * @bitSizeOf(T));
+        const max_index = dimensions * @bitSizeOf(T);
+        var index: IndexType = 0;
+
+        inline for (0..max_index) |i| {
+            const dimension = i % dimensions;
+            const dimension_bit = i / dimensions;
+
+            index |= (@as(IndexType, value[dimension]) << (i - dimension_bit)) & (@as(IndexType, 1) << i);
+        }
+
+        return index;
+    }
+
+    test toIndex {
+        try testing.expectEqual(0b000011, toIndex(u3, 2, .{1, 1}));
+        try testing.expectEqual(0b001100, toIndex(u3, 2, .{2, 2}));
+        try testing.expectEqual(0b001111, toIndex(u3, 2, .{3, 3}));
+        try testing.expectEqual(0b110000, toIndex(u3, 2, .{4, 4}));
+        try testing.expectEqual(0b111111, toIndex(u3, 2, .{7, 7}));
+
+        try testing.expectEqual(0b101011, toIndex(u3, 2, .{1, 7}));
+        try testing.expectEqual(0b011101, toIndex(u3, 2, .{7, 2}));
+    }
+
+    // TODO: We could test fuzzing (zig 0.16.0) value -> toDimensions -> toIndex -> value, as it must always be idempotent
+
+    pub const Strategy = enum {
+        /// Linear -> Morton
+        tile,
+        /// Morton -> Linear
+        untile,
+    };
+
+    pub const ConversionOptions = struct {
+        input_x: usize,
+        input_y: usize,
+        input_stride: usize,
+
+        output_x: usize,
+        output_y: usize,
+        output_stride: usize,
+
+        width: usize,
+        height: usize,
+
+        pixel_size: usize,
+
+        pub fn full(width: usize, height: usize, pixel_size: usize) ConversionOptions {
+            return .{
+                .input_x = 0,   
+                .input_y = 0,   
+                .input_stride = width * pixel_size,
+
+                .output_x = 0,
+                .output_y = 0,
+                .output_stride = width * pixel_size,
+
+                .width = width,
+                .height = height,
+
+                .pixel_size = pixel_size,
+            };
+        }
+    };
+
+    /// Asserts that the Morton-tiled Image is divisible by the `tile_size`
+    pub fn convert2(comptime strategy: Strategy, comptime tile_size: usize, dst_pixels: []u8, src_pixels: []const u8, opts: ConversionOptions) void {
+        comptime std.debug.assert(std.math.isPowerOfTwo(tile_size)); // We depend on this and the PICA only supports 2x2 (ETC), 8x8 and 32x32 tile sizes.
+
+        const tile_pixels = (tile_size * tile_size);
+        const subtile_mask = (tile_size - 1);
+        const tile_shift = comptime std.math.log2(tile_size);
+
+        const output_real_width = opts.output_stride / opts.pixel_size;
+
+        for (0..opts.height) |current_y| {
+            const input_y = current_y + opts.input_y;
+            const output_y = current_y + opts.output_y;
+
+            for (0..opts.width) |current_x| {
+                const input_x = current_x + opts.input_x;
+                const output_x = current_x + opts.output_x;
+
+                const src_pixel, const dst_pixel = pxl: switch (strategy) {
+                    .tile => {
+                        const src_index = input_y * opts.input_stride + input_x * opts.pixel_size;
+
+                        std.debug.assert((output_real_width & subtile_mask) == 0);
+                        const dst_tile_pixels_per_line = (output_real_width >> tile_shift) * tile_pixels;
+
+                        const dst_tile_y = output_y >> tile_shift;
+                        const dst_tile_x = output_x >> tile_shift;
+
+                        const dst_subtile_y: u3 = @intCast(output_y & subtile_mask);
+                        const dst_subtile_x: u3 = @intCast(output_x & subtile_mask);
+                        const dst_subtile_morton = toIndex(u3, 2, .{dst_subtile_x, dst_subtile_y});
+
+                        const dst_pixel_start = (dst_tile_y * dst_tile_pixels_per_line) + (dst_tile_x * tile_pixels);
+                        const dst_index = (dst_pixel_start + dst_subtile_morton) * opts.pixel_size;
+
+                        break :pxl .{ src_pixels[src_index..][0..opts.pixel_size], dst_pixels[dst_index..][0..opts.pixel_size] };
+                    },
+                    .untile => {
+                        comptime unreachable; // TODO
+                    }
+                };
+
+                @memcpy(dst_pixel, src_pixel);
+            }
+        }
+    }
 
     pub fn convert(comptime strategy: Strategy, comptime tile_size: usize, width: usize, pixel_size: usize, dst_pixels: []u8, src_pixels: []const u8) void {
         std.debug.assert(dst_pixels.len == src_pixels.len);
@@ -899,6 +1021,7 @@ pub const Graphics = extern struct {
 
         pub const Primary = extern struct {
             border_color: [4]u8,
+            /// Height and WIdth, NOT Width and Height!
             dimensions: [2]u16,
             parameters: Parameters,
             lod: LevelOfDetail,
@@ -911,6 +1034,7 @@ pub const Graphics = extern struct {
 
         pub const Secondary = extern struct {
             border_color: [4]u8,
+            /// Height and WIdth, NOT Width and Height!
             dimensions: [2]u16,
             /// WARNING: Type is ignored in secondary texture units, they're always 2d according to 3dbrew.
             parameters: Parameters,
@@ -2078,8 +2202,11 @@ comptime {
     if (@sizeOf(MemoryCopy) != 0x2C)
         @compileError(std.fmt.comptimePrint("(@sizeOf(MemoryCopy) == 0x{X}) and 0x{X} != 0x2C!", .{ @sizeOf(MemoryCopy), @sizeOf(MemoryCopy) }));
 
+    _ = morton;
     _ = shader;
 }
+
+const testing = std.testing;
 
 const builtin = @import("builtin");
 

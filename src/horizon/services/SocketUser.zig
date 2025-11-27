@@ -141,7 +141,7 @@ pub const command = struct {
         process_id: ipc.ReplaceByProcessId = .replace,
         opt: ipc.Static(9),
     }, struct { posix_return: u32 });
-    pub const Fnctl = ipc.Command(Id, .fnctl, struct {
+    pub const Fcntl = ipc.Command(Id, .fcntl, struct {
         socket: u32,
         cmd: u32,
         arg: u32,

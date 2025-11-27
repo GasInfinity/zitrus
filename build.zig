@@ -112,7 +112,7 @@ pub fn build(b: *Build) void {
     const docs_step = b.step("docs", "Install docs");
     docs_step.dependOn(&install_docs.step);
 
-    const tools, const tools_exe = buildTools(b, config, optimize, tools_target, zdap, zigimg, zitrus);
+    const tools, const tools_exe = createToolsExecutable(b, config, optimize, tools_target, zdap, zigimg, zitrus);
 
     const mod_tests = b.addTest(.{
         .name = "zitrus-mod-tests",
@@ -144,8 +144,8 @@ pub fn build(b: *Build) void {
 
     const run_step = b.step("run", "Runs zitrus tools");
     run_step.dependOn(&run_tool.step);
-    buildTests(b, zitrus, tools_exe);
-    buildScripts(b, zdap);
+    makeTestSteps(b, zitrus, tools_exe);
+    makeScriptSteps(b, zitrus, zdap);
 }
 
 // NOTE: This literally what zig does, almost 1:1 but we have prereleases so we have to work with that.
@@ -239,7 +239,7 @@ fn makeReleaseStep(b: *Build, version_slice: []const u8, optimize: std.builtin.O
     const release_step = b.step("release", "Perform a release build");
 
     for (release_targets) |release_target| {
-        _, const tools = buildTools(b, config, optimize, b.resolveTargetQuery(release_target), zdap, zigimg, zitrus);
+        _, const tools = createToolsExecutable(b, config, optimize, b.resolveTargetQuery(release_target), zdap, zigimg, zitrus);
 
         tools.root_module.strip = switch (optimize) {
             .Debug, .ReleaseSafe => false,
@@ -258,7 +258,7 @@ fn makeReleaseStep(b: *Build, version_slice: []const u8, optimize: std.builtin.O
     }
 }
 
-fn buildTools(b: *Build, config: *Build.Step.Options, optimize: std.builtin.OptimizeMode, mod_target: Build.ResolvedTarget, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) struct { *Build.Module, *Build.Step.Compile } {
+fn createToolsExecutable(b: *Build, config: *Build.Step.Options, optimize: std.builtin.OptimizeMode, mod_target: Build.ResolvedTarget, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) struct { *Build.Module, *Build.Step.Compile } {
     const tools = b.createModule(.{
         .root_source_file = b.path("tools/main.zig"),
         .target = mod_target,
@@ -281,9 +281,10 @@ fn buildTools(b: *Build, config: *Build.Step.Options, optimize: std.builtin.Opti
 const Script = struct { name: []const u8, path: []const u8 };
 const scripts: []const Script = &.{
     .{ .name = "gen-spirv-spec", .path = "scripts/gen-spirv-spec.zig" },
+    .{ .name = "gen-md-docs", .path = "scripts/gen-md-docs.zig" },
 };
 
-fn buildScripts(b: *Build, zdap: *Build.Module) void {
+fn makeScriptSteps(b: *Build, zitrus: *Build.Module, zdap: *Build.Module) void {
     inline for (scripts) |script| {
         const script_exe = b.addExecutable(.{
             .name = script.name,
@@ -293,11 +294,12 @@ fn buildScripts(b: *Build, zdap: *Build.Module) void {
                 .optimize = .Debug,
                 .imports = &.{
                     .{ .name = "zdap", .module = zdap },
+                    .{ .name = "zitrus", .module = zitrus },
                 },
             }),
         });
 
-        const run_script_step = b.step("run-script-" ++ script.name, "Run " ++ script.name);
+        const run_script_step = b.step("run-" ++ script.name, "Run " ++ script.name);
         const run_script = b.addRunArtifact(script_exe);
 
         if (b.args) |args| {
@@ -318,8 +320,8 @@ const standalone_tests: []const StandaloneTest = &.{
     .{ .name = "mango", .path = "test/mango.zig" },
 };
 
-fn buildTests(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Compile) void {
-    const build_tests_step = b.step("build-tests", "Builds tests for the running on the 3ds");
+fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Compile) void {
+    const build_tests_step = b.step("build-tests", "Builds tests for running on the 3DS");
 
     inline for (standalone_tests) |standalone_test| {
         const tests_exe = b.addTest(.{
@@ -344,7 +346,7 @@ fn buildTests(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Compil
             .exe = tests_exe,
         });
 
-        const build_test_step = b.step("build-test-" ++ standalone_test.name, "Builds the '" ++ standalone_test.name ++ "' test for running on the 3ds");
+        const build_test_step = b.step("build-" ++ standalone_test.name ++ "-test", "Builds the '" ++ standalone_test.name ++ "' test for running on the 3DS");
 
         const install_lib_test = b.addInstallArtifact(tests_exe, .{ .dest_sub_path = "tests/" ++ standalone_test.name ++ ".elf" });
         const install_lib_3dsx_test = b.addInstallBinFile(tests_3dsx.out, "tests/" ++ standalone_test.name ++ ".3dsx");

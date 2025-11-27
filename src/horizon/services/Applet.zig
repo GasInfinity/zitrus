@@ -729,7 +729,7 @@ pub const command = struct {
         start_resident_applet,
         cancel_library_applet,
         send_dsp_sleep,
-        send_dsp_wake_up,
+        send_dsp_wakeup,
         reply_sleep_query,
         reply_sleep_notification_complete,
         send_capture_buffer_info,

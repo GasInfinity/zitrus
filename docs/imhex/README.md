@@ -22,3 +22,4 @@ Used to see the differences between what zitrus outputs and the original file, a
 - Layout:
     - 🟢 Image (a visualizer could be made but i'm lazy, its just unswizzling and converting to RGBA so ImHex can display it)
     - 🛠️ Animation
+    - 🛠️ Layout

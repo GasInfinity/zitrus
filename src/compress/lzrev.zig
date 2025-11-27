@@ -135,3 +135,6 @@ const testing = std.testing;
 
 const builtin = @import("builtin");
 const std = @import("std");
+
+const zitrus = @import("zitrus");
+const lz = zitrus.compress.lz;

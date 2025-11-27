@@ -2,8 +2,6 @@
 
 // TODO: Missing methods / commands
 
-const service_names = [_][]const u8{ "cfg:i", "cfg:s", "cfg:u" };
-
 pub const Service = enum(u2) {
     user,
     system,

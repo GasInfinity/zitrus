@@ -24,11 +24,7 @@ verbose: bool,
 },
 
 pub fn main(args: Yaz, arena: std.mem.Allocator) !u8 {
-    _ = arena;
     const cwd = std.fs.cwd();
-
-    if (!args.decompress) @panic("TODO: Compress :(");
-
     const input_file, const input_should_close = if (args.@"--".input) |in|
         .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
             log.err("could not open input file '{s}': {t}", .{ in, err });
@@ -49,27 +45,71 @@ pub fn main(args: Yaz, arena: std.mem.Allocator) !u8 {
 
     var input_buf: [4096]u8 = undefined;
     var input_reader = input_file.readerStreaming(&input_buf);
-    var decompressor: yaz.Decompress = .init(&input_reader.interface, &.{});
 
-    var decompress_buf: [yaz.max_window_len]u8 = undefined;
-    var output_writer = output_file.writerStreaming(&decompress_buf);
+    if(args.decompress) {
+        var decompressor: yaz.Decompress = .init(&input_reader.interface, &.{});
 
-    const streamed = decompressor.reader.streamRemaining(&output_writer.interface) catch |err| switch (err) {
-        error.ReadFailed => {
-            log.err("error decompressing, corrupted? {t}", .{decompressor.err.?});
-            log.err("useful info: ", .{});
-            log.err("  - remaining bytes to decompress: {}", .{decompressor.remaining_uncompressed});
+        var decompress_buf: [yaz.max_window_len]u8 = undefined;
+        var output_writer = output_file.writerStreaming(&decompress_buf);
+
+        const streamed = decompressor.reader.streamRemaining(&output_writer.interface) catch |err| switch (err) {
+            error.ReadFailed => {
+                log.err("error decompressing, corrupted? {t}", .{decompressor.err.?});
+                log.err("useful info: ", .{});
+                log.err("  - remaining bytes to decompress: {}", .{decompressor.remaining_uncompressed});
+                return 1;
+            },
+            error.WriteFailed => {
+                log.err("error writing to output: {t}", .{output_writer.err.?});
+                return 1;
+            },
+        };
+
+        try output_writer.interface.flush();
+        if (args.verbose) log.info("Decompressed size: {} bytes", .{streamed});
+        if (try input_reader.interface.discardRemaining() != 0) log.warn("Got more data after decompressing", .{});
+        return 0;
+    }
+
+    log.warn("Only a 'fastestest' compression is currently supported (a.k.a: no compression), file size will be bigger!", .{});
+    
+    // TODO: Migrate to normal `Compress` when implemented.
+    var output_buf: [4096]u8 = undefined;
+    var output_writer = output_file.writerStreaming(&output_buf);
+
+    var compress_buf: [yaz.max_window_len]u8 = undefined;
+    var compressor: yaz.Compress.Raw = .init(&output_writer.interface, &compress_buf);
+
+    if(input_reader.getSize()) |size| {
+        if(size >= std.math.maxInt(u24)) {
+            log.err("cannot compress, file size is too big, {} > {}!", .{size, std.math.maxInt(u24)});
             return 1;
-        },
-        error.WriteFailed => {
-            log.err("error writing to output: {t}", .{output_writer.err.?});
-            return 1;
-        },
-    };
+        }
 
+        try output_writer.interface.writeStruct(yaz.Header{
+            .uncompressed_len = @intCast(size),
+        }, .little);
+        try input_reader.interface.streamExact64(&compressor.writer, size);
+    } else |_| {
+        var allocating: std.Io.Writer.Allocating = .init(arena);
+        defer allocating.deinit();
+
+        const size = try input_reader.interface.streamRemaining(&allocating.writer);
+
+        if(size >= std.math.maxInt(u24)) {
+            log.err("cannot compress, file size is too big, {} > {}!", .{size, std.math.maxInt(u24)});
+            return 1;
+        }
+
+        try output_writer.interface.writeStruct(yaz.Header{
+            .uncompressed_len = @intCast(size),
+        }, .little);
+        try compressor.writer.writeAll(allocating.written());
+        // We need to allocate as we don't know the size in advance :(
+    }
+
+    try compressor.end();
     try output_writer.interface.flush();
-    if (args.verbose) log.info("Decompressed size: {} bytes", .{streamed});
-    if (try input_reader.interface.discardRemaining() != 0) log.warn("Got more data after decompressing", .{});
     return 0;
 }
 

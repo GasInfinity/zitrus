@@ -88,7 +88,7 @@ pub fn main() !u8 {
     const args = try std.process.argsAlloc(gpa);
     defer std.process.argsFree(gpa, args);
 
-    const arguments = zdap.parse(args, "gen-spirv-spec", Arguments, .{});
+    const arguments = zdap.Parser.parse(Arguments, "gen-spirv-spec", args, .{});
 
     const spec_source = std.fs.cwd().readFileAlloc(gpa, arguments.@"--".spec, std.math.maxInt(usize)) catch |err| {
         std.debug.print("could not read spec '{s}': {t}", .{ arguments.@"--".spec, err });

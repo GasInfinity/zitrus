@@ -72,6 +72,7 @@ pub inline fn get() *ThreadLocalStorage {
 }
 
 // TODO: only export this when not using tpidrurw as it wouldn't be needed.
+
 export fn __aeabi_read_tp() callconv(.naked) void {
     const tp_offset = (@offsetOf(ThreadLocalStorage, "state") + @offsetOf(ThreadLocalStorage.State, "tp"));
 
@@ -83,6 +84,11 @@ export fn __aeabi_read_tp() callconv(.naked) void {
         :
         : [tp_offset] "i" (tp_offset),
         : .{ .r0 = true });
+}
+
+const TlsIndex = extern struct { module: usize, offset: usize };
+export fn __tls_get_addr(index: *const TlsIndex) *anyopaque {
+    return @ptrFromInt(@intFromPtr(get().state.tp) + index.offset); 
 }
 
 const ipc = @import("ipc.zig");

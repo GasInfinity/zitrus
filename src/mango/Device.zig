@@ -273,6 +273,9 @@ pub fn initHorizonBacked(create_info: mango.HorizonBackedDeviceCreateInfo, gpa: 
         .submit_queue = .init(device),
     };
 
+    device.gsp_shm.framebuffers[device.gsp_thread_index][0].header = std.mem.zeroes(GspGpu.FramebufferInfo.Header);
+    device.gsp_shm.framebuffers[device.gsp_thread_index][1].header = std.mem.zeroes(GspGpu.FramebufferInfo.Header);
+
     device.driver_thread = try .create(driverMain, device, (&device.driver_stack).ptr + device.driver_stack.len, create_info.driver_priority, create_info.driver_processor);
     return device;
 }

@@ -56,7 +56,7 @@ pub const command = struct {
         get_gamecard_maker_encrypted_uuid,
         get_gamecard_autostartup,
         get_gamecard_maker,
-        get_local_friend_code_seed,
+        get_local_friend_seed,
         get_device_id,
         seed_random,
         next_random_bytes,

@@ -476,10 +476,7 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
     std.debug.assert(cmd.state == .recording);
     std.debug.assert(cmd.scope == .render_pass);
 
-    if (draw_count == 0) {
-        return;
-    }
-
+    if (draw_count == 0) return;
     std.debug.assert(stride >= @sizeOf(mango.MultiDrawIndexedInfo) and std.mem.isAligned(stride, 4));
     std.debug.assertReadable(std.mem.asBytes(&index_info[0]));
 
@@ -693,14 +690,18 @@ fn beforeDraw(cmd: *CommandBuffer, draw_count: usize) bool {
 
     const queue = &cmd.queue;
 
-    if (cmd.bound_graphics_pipeline != cmd.emitted_graphics_pipeline) if (cmd.bound_graphics_pipeline) |bound_gfx_pipeline| {
-        @memcpy(cmd.queue.buffer[cmd.queue.current_index..][0..bound_gfx_pipeline.encoded_command_state.len], bound_gfx_pipeline.encoded_command_state);
-        cmd.queue.current_index += bound_gfx_pipeline.encoded_command_state.len;
+    if (cmd.bound_graphics_pipeline != cmd.emitted_graphics_pipeline) {
+        std.debug.assert(cmd.bound_graphics_pipeline != null); // May be removed if we ever get shader objects
 
-        bound_gfx_pipeline.copyGraphicsState(&cmd.gfx_state);
-        bound_gfx_pipeline.copyRenderingState(&cmd.rnd_state);
-        cmd.emitted_graphics_pipeline = bound_gfx_pipeline;
-    };
+        if (cmd.bound_graphics_pipeline) |bound_gfx_pipeline| {
+            @memcpy(cmd.queue.buffer[cmd.queue.current_index..][0..bound_gfx_pipeline.encoded_command_state.len], bound_gfx_pipeline.encoded_command_state);
+            cmd.queue.current_index += bound_gfx_pipeline.encoded_command_state.len;
+
+            bound_gfx_pipeline.copyGraphicsState(&cmd.gfx_state);
+            bound_gfx_pipeline.copyRenderingState(&cmd.rnd_state);
+            cmd.emitted_graphics_pipeline = bound_gfx_pipeline;
+        }
+    }
 
     cmd.gfx_state.emitDirty(queue);
     cmd.rnd_state.emitDirty(queue);

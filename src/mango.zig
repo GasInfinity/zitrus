@@ -916,7 +916,6 @@ pub const SamplerCreateInfo = extern struct {
 };
 
 pub const GraphicsPipelineCreateInfo = extern struct {
-    // XXX: Is this really needed?
     pub const FormatRenderingInfo = extern struct {
         color_attachment_format: Format,
         depth_stencil_attachment_format: Format,
@@ -1028,7 +1027,7 @@ pub const GraphicsPipelineCreateInfo = extern struct {
         depth_compare_op: CompareOperation = .lt,
 
         stencil_test_enable: bool = false,
-        back_front: StencilOperationState,
+        back_front: StencilOperationState = std.mem.zeroes(StencilOperationState),
     };
 
     pub const ColorBlendState = extern struct {

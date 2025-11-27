@@ -134,7 +134,8 @@ pub fn endRendering(rnd: *RenderingState) bool {
 pub fn bindVertexBuffers(rnd: *RenderingState, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
     if (binding_count == 0) return;
 
-    std.debug.assert(first_binding < p3d.primitive_engine.attributes.vertex_buffers.len and first_binding + binding_count <= p3d.primitive_engine.attributes.vertex_buffers.len);
+    // NOTE: `comptime` here is needed even if the len is comptime? It somehow tries to read the array (which IS invalid as it shouldn't be accessed directly)
+    std.debug.assert(first_binding < (comptime p3d.primitive_engine.attributes.vertex_buffers.len) and first_binding + binding_count <= (comptime p3d.primitive_engine.attributes.vertex_buffers.len));
     std.debug.assertReadable(std.mem.sliceAsBytes(buffers[0..binding_count]));
     std.debug.assertReadable(std.mem.sliceAsBytes(offsets[0..binding_count]));
 
@@ -456,7 +457,7 @@ fn emitDirtyTextureUnits(rnd: *RenderingState, queue: *command.Queue) void {
             &p3d.texture_units.@"0".address[0],
         }, .{
             sampler.data.borderColor(),
-            .{ image.info.width(), image.info.height() },
+            .{ image.info.height(), image.info.width() },
             .{
                 .mag_filter = sampler.data.mag_filter,
                 .min_filter = sampler.data.min_filter,
@@ -499,7 +500,7 @@ fn emitDirtyTextureUnits(rnd: *RenderingState, queue: *command.Queue) void {
 
         queue.add(p3d, unit_register, .{
             .border_color = sampler.data.borderColor(),
-            .dimensions = .{ image.info.width(), image.info.height() },
+            .dimensions = .{ image.info.height(), image.info.width() },
             .parameters = .{
                 .mag_filter = sampler.data.mag_filter,
                 .min_filter = sampler.data.min_filter,
