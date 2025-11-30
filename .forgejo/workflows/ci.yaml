@@ -10,15 +10,15 @@ jobs:
   build-test:
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest-aarch64-tiny]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Setup zig
-        uses: mlugg/setup-zig@v2
+        uses: https://codeberg.org/mlugg/setup-zig@v2
         with:
           version: 0.15.2
 
@@ -33,14 +33,14 @@ jobs:
         run: zig build build-tests
   release-dev:
     needs: build-test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-aarch64-tiny
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Setup zig
-        uses: mlugg/setup-zig@v2
+        uses: https://codeberg.org/mlugg/setup-zig@v2
         with:
           version: 0.15.2
 
@@ -60,15 +60,12 @@ jobs:
             rm -r -- $artifact
           done
 
-      - name: Delete last development release
-        run: gh release delete dev --cleanup-tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Development release
-        uses: softprops/action-gh-release@v2
+        uses: actions/forgejo-release@v2.7.3
         with:
-          tag_name: dev
-          body: Latest unstripped `ReleaseSafe` development version.
+          tag: dev
+          override: true
           prerelease: true
-          files: zig-out/*
+          direction: upload
+          release-notes: Latest unstripped `ReleaseSafe` development version.
+          release-dir: zig-out/

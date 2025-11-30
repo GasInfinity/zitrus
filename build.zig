@@ -216,23 +216,24 @@ fn buildVersion(b: *Build) []const u8 {
 const release_targets: []const std.Target.Query = &.{
     // Everyone is welcome to the party!
     // NOTE: Even if your platform is not included here it may be supported if zig supports it.
-    .{ .cpu_arch = .x86, .os_tag = .linux },
-    .{ .cpu_arch = .x86, .os_tag = .windows },
-    .{ .cpu_arch = .x86, .os_tag = .netbsd },
+    // FIXME: add thonky as a runner and re-enable these, rinpi runs out of memory
+    // .{ .cpu_arch = .x86, .os_tag = .linux },
+    // .{ .cpu_arch = .x86, .os_tag = .windows },
+    // .{ .cpu_arch = .x86, .os_tag = .netbsd },
     .{ .cpu_arch = .x86_64, .os_tag = .linux },
-    .{ .cpu_arch = .x86_64, .os_tag = .windows },
-    .{ .cpu_arch = .x86_64, .os_tag = .macos },
-    .{ .cpu_arch = .x86_64, .os_tag = .freebsd },
-    .{ .cpu_arch = .x86_64, .os_tag = .netbsd },
-    .{ .cpu_arch = .arm, .os_tag = .linux },
-    .{ .cpu_arch = .arm, .os_tag = .freebsd },
-    .{ .cpu_arch = .arm, .os_tag = .netbsd },
-    .{ .cpu_arch = .aarch64, .os_tag = .linux },
-    .{ .cpu_arch = .aarch64, .os_tag = .windows },
-    .{ .cpu_arch = .aarch64, .os_tag = .macos },
-    .{ .cpu_arch = .aarch64, .os_tag = .freebsd },
-    .{ .cpu_arch = .aarch64, .os_tag = .netbsd },
-    .{ .cpu_arch = .riscv64, .os_tag = .linux },
+    // .{ .cpu_arch = .x86_64, .os_tag = .windows },
+    // .{ .cpu_arch = .x86_64, .os_tag = .macos },
+    // .{ .cpu_arch = .x86_64, .os_tag = .freebsd },
+    // .{ .cpu_arch = .x86_64, .os_tag = .netbsd },
+    // .{ .cpu_arch = .arm, .os_tag = .linux },
+    // .{ .cpu_arch = .arm, .os_tag = .freebsd },
+    // .{ .cpu_arch = .arm, .os_tag = .netbsd },
+    // .{ .cpu_arch = .aarch64, .os_tag = .linux },
+    // .{ .cpu_arch = .aarch64, .os_tag = .windows },
+    // .{ .cpu_arch = .aarch64, .os_tag = .macos },
+    // .{ .cpu_arch = .aarch64, .os_tag = .freebsd },
+    // .{ .cpu_arch = .aarch64, .os_tag = .netbsd },
+    // .{ .cpu_arch = .riscv64, .os_tag = .linux },
 };
 
 fn makeReleaseStep(b: *Build, version_slice: []const u8, optimize: std.builtin.OptimizeMode, config: *Build.Step.Options, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) void {
