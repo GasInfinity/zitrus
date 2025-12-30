@@ -14,6 +14,40 @@ pub fn close(ldr: Loader) void {
     ldr.session.close();
 }
 
+pub fn sendLoadProcess(ldr: Loader, program: Program) !horizon.Process {
+    const data = tls.get();
+    return switch ((try data.ipc.sendRequest(ldr.session, command.LoadProcess, .{ .program = program }, .{})).cases()) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendRegisterProgram(ldr: Loader, base: Filesystem.ProgramInfo, update: Filesystem.ProgramInfo) !Program {
+    const data = tls.get();
+    return switch ((try data.ipc.sendRequest(ldr.session, command.RegisterProgram, .{ .base = base, .update = update }, .{})).cases()) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendUnregisterProgram(ldr: Loader, program: Program) !void {
+    const data = tls.get();
+    return switch ((try data.ipc.sendRequest(ldr.session, command.UnregisterProgram, .{ .program = program }, .{})).cases()) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendGetProgramInfo(ldr: Loader, program: Program) !horizon.fmt.ncch.ExtendedHeader {
+    var exhdr: horizon.fmt.ncch.ExtendedHeader = undefined;
+
+    const data = tls.get();
+    return switch ((try data.ipc.sendRequest(ldr.session, command.GetProgramInfo, .{ .program = program }, .{ .extended_header = &exhdr })).cases()) {
+        .success => exhdr,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
 pub const command = struct {
     pub const LoadProcess = ipc.Command(Id, .load_process, struct { program: Program }, struct { process: horizon.Process });
     pub const RegisterProgram = ipc.Command(Id, .register_program, struct { base: Filesystem.ProgramInfo, update: Filesystem.ProgramInfo }, struct { program: Program });

@@ -54,7 +54,6 @@ const smdh: zitrus.MakeSmdh = .init(zitrus_dep, .{
 });
 
 // See `MakeRomFs` if you need something patchable unlike `@embedFile`.
-// WARNING: Won't be properly cached as there's an issue upstream.
 
 // This step will convert your executable to 3dsx (the defacto homebrew executable format) to execute it in an emulator or real 3DS
 const final_3dsx: zitrus.Make3dsx = .init(zitrus_dep, .{ .exe = exe, .smdh = smdh });
@@ -159,7 +158,7 @@ You can (and are encouraged) to look at the `tools` directory as it is a good ex
 - 🟡 `soc:U`
 - 🟡 `ps:ps`
 - 🟡 `pxi:ps9`
-- 🟡 `Loader`
+- 🟢 `Loader`
 - 🔴 All other [services](https://www.3dbrew.org/wiki/Services_API) not listed here
 
 ### Library Applets
@@ -209,6 +208,7 @@ Whether register bits are present and/or relevant tooling (assemblers, disassemb
 - 🟢 LGY
 - 🟢 HID
 - 🟢 I2C 
+- 🟡 CPU (ARM9 & ARM11)
 - 🟡 DSP
 - 🟡 PICA200: Missing typing of some documented registers, mostly done.
 

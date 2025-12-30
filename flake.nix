@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     zig.url = "github:silversquirl/zig-flake/compat";
-    zls.url = "github:zigtools/zls";
+    zls.url = "github:zigtools/zls/0.15.1";
 
     zig.inputs.nixpkgs.follows = "nixpkgs";
     zls.inputs.nixpkgs.follows = "nixpkgs";

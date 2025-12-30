@@ -72,7 +72,7 @@ pub const BoundMemoryInfo = packed struct(u64) {
 
 data: Data,
 
-pub fn virtualAddress(memory: DeviceMemory) [*]u8 {
+pub fn virtualAddress(memory: DeviceMemory) [*]align(0x1000) u8 {
     return @ptrFromInt((@as(u32, memory.data.virtual_page_shifted) << 12));
 }
 

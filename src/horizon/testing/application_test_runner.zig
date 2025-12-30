@@ -18,30 +18,36 @@ var log_err_count: usize = 0;
 pub fn main() void {
     @disableInstrumentation();
 
-    const srv = horizon.ServiceManager.open() catch unreachable;
+    const srv = horizon.ServiceManager.open() catch @panic("Error opening connection to srv:");
     defer srv.close();
 
-    srv.sendRegisterClient() catch unreachable;
+    srv.sendRegisterClient() catch @panic("Error registering in srv:");
 
-    var notif_man = horizon.ServiceManager.Notification.Manager.init(srv) catch unreachable;
+    var notif_man = horizon.ServiceManager.Notification.Manager.init(srv) catch @panic("Error initializing Notification Manager");
     defer notif_man.deinit();
 
     horizon.testing.srv = srv;
     defer horizon.testing.srv = undefined;
 
-    const apt = horizon.services.Applet.open(.app, srv) catch unreachable;
+    const apt = horizon.services.Applet.open(.app, srv) catch @panic("Error opening connection to APT:A");
     defer apt.close();
 
     horizon.testing.apt = apt;
     defer horizon.testing.apt = undefined;
 
-    const gsp = horizon.services.GspGpu.open(srv) catch unreachable;
+    const gsp = horizon.services.GspGpu.open(srv) catch @panic("Error opening connection to gsp::GPU");
     defer gsp.close();
 
     horizon.testing.gsp = gsp;
     defer horizon.testing.gsp = undefined;
 
-    var app = horizon.services.Applet.Application.init(apt, .app, srv) catch unreachable;
+    const arbiter = horizon.AddressArbiter.create() catch @panic("Error creating address arbiter");
+    defer arbiter.close();
+
+    horizon.testing.arbiter = arbiter;
+    defer horizon.testing.arbiter = undefined;
+
+    var app = horizon.services.Applet.Application.init(apt, .app, srv) catch @panic("Error initializing Application");
     defer app.deinit(apt, .app, srv);
 
     // NOTE: We want std.debug.print behaviour, we don't want to lose our logged info if the app crashes!
@@ -91,10 +97,10 @@ pub fn main() void {
     debug_writer.flush() catch {};
 
     if (log_err_count != 0 or fail_count != 0) {
-        const hid = horizon.services.Hid.open(.user, srv) catch unreachable;
+        const hid = horizon.services.Hid.open(.user, srv) catch @panic("Error opening connection to hid:USER");
         defer hid.close();
 
-        var input = horizon.services.Hid.Input.init(hid) catch unreachable;
+        var input = horizon.services.Hid.Input.init(hid) catch @panic("Error initializing Hid Input");
         defer input.deinit();
 
         // TODO: we could wait instead!
@@ -111,7 +117,7 @@ pub fn main() void {
 
 pub fn log(
     comptime message_level: std.log.Level,
-    comptime scope: @Type(.enum_literal),
+    comptime scope: @TypeOf(.enum_literal),
     comptime format: []const u8,
     args: anytype,
 ) void {

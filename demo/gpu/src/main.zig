@@ -92,9 +92,6 @@ pub const Scene = struct {
         .{ .pos = .{ -1, -1, 1 }, .norm = .{ 0, -1, 0 }, .uv = .{ 1, 0 } },
     };
 
-    backend: DvuiBackend,
-    window: dvui.Window,
-
     semaphore: mango.Semaphore,
     current_timeline: u64,
 
@@ -123,19 +120,6 @@ pub const Scene = struct {
     }
 
     pub fn init(device: mango.Device, gpa: std.mem.Allocator) !Scene {
-        var dvui_backend: DvuiBackend = try .init(.{
-            .gpa = gpa,
-            .device = device,
-
-            .color_attachment_format = .a8b8g8r8_unorm,
-        });
-        errdefer dvui_backend.deinit();
-        
-        var dvui_window = try dvui.Window.init(@src(), gpa, dvui_backend.backend(), .{
-            .color_scheme = .dark,
-        });
-        errdefer dvui_window.deinit();
-
         const sema = try device.createSemaphore(.initial_zero, gpa);
         errdefer device.destroySemaphore(sema, gpa);
 
@@ -302,11 +286,7 @@ pub const Scene = struct {
         }, gpa);
         defer device.destroySampler(simple_sampler, gpa);
 
-        last = dvui_backend.nanoTime();
         return .{
-            .backend = dvui_backend,
-            .window = dvui_window,
-
             .semaphore = sema,
             .current_timeline = 1,
 
@@ -385,8 +365,7 @@ pub const Scene = struct {
         }
     }
 
-    pub fn render(scene: *Scene, input: Hid.Input) !void {
-        scene.window.backend = scene.backend.backend(); // HACK: Don't try this at home!
+    pub fn render(scene: *Scene) !void {
         const cmd = scene.cmd;
 
         try cmd.begin();
@@ -455,41 +434,6 @@ pub const Scene = struct {
             cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.mul(camera_view, zmath.mat.translate(4, 0, 1)));
             scene.cube_mesh.draw(cmd);
         }
-
-        try scene.backend.beginRendering(.{
-            .cmd = cmd,
-            .color_attachment = scene.bottom_renderbuffer.color.view,
-            .render_size = .{ 240, 320 },
-
-            .rotate = .ccw90,
-            .inside_pass = false,
-        });
-        try scene.window.begin(scene.backend.nanoTime());
-        _ = try scene.backend.addAllEvents(&scene.window, input);
-
-        {
-            const floating = dvui.floatingWindow(@src(), .{}, .{});
-            defer floating.deinit();
-
-            dvui.label(@src(), "We cooking w/this one :fire_emoji:", .{}, .{});     
-            dvui.label(@src(), "Elapsed: {}", .{elapsed}, .{});     
-
-            if(dvui.button(@src(), "Toggle Debug", .{}, .{})) {
-                dvui.toggleDebugWindow();
-            }
-        }
-
-        dvui.label(@src(), "Overall Stats (Ignoring these labels)", .{}, .{});
-        dvui.label(@src(), "DVUI Drawcalls: {}", .{scene.backend.stats.draw_calls}, .{});
-        dvui.label(@src(), "DVUI Combiner State Changes: {}", .{scene.backend.stats.combiner_state_changes}, .{});
-
-        dvui.label(@src(), "DVUI Textures: {}", .{scene.backend.textures.items.len}, .{});
-        for (scene.backend.textures.items, 0..) |tex, i| {
-            dvui.label(@src(), "- Texture with size of {} bytes", .{@intFromEnum(tex.memory_size)}, .{ .id_extra = i });
-        }
-
-        _ = try scene.window.end(.{});
-        _ = try scene.backend.endRendering();
 
         try cmd.end();
     }
@@ -848,7 +792,7 @@ pub fn main() !void {
     const bottom_swap: DoubleBufferedSwapchain = try .initBgr888(device, .bottom_240x320, gpa);
     defer bottom_swap.deinit(device, gpa);
 
-    defer device.waitIdle() catch unreachable;
+    defer device.waitIdle();
 
     var scene: Scene = try .init(device, gpa);
     defer scene.deinit(device, gpa);
@@ -872,20 +816,13 @@ pub fn main() !void {
         const bottom_image_idx = try bottom_swap.acquireNext(device);
         const top_image_idx = try top_swap.acquireNext(device);
 
-        const current = scene.backend.nanoTime();
-        elapsed = current - last;
         try scene.update(pad);
-        try scene.render(app.input);
+        try scene.render();
         try scene.submitPresent(device, top_swap, top_image_idx, bottom_swap, bottom_image_idx);
-        last = current;
     }
 }
 
 pub const panic = zitrus.horizon.panic;
-
-const dvui = @import("dvui");
-const ScrollInfo = dvui.ScrollInfo;
-const DvuiBackend = @import("dvui-zitrus");
 
 const zitrus = @import("zitrus");
 

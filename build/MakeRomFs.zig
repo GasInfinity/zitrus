@@ -1,9 +1,4 @@
 //! A wrapper to simplify making a RomFS with the build system.
-//!
-//! WARNING: The RomFS WON'T be properly cached due to an upstream issue
-//! in the build system. See https://github.com/ziglang/zig/issues/20935
-//! You will have to delete your cache directory if you want your RomFS
-//! to update, sorry!
 
 pub const Options = struct {
     name: []const u8 = "romfs",
@@ -40,7 +35,11 @@ pub fn initInner(b: *Build, config: Config, options: Options) MakeRomFs {
     make.setName(b.fmt("make romfs ({s})", .{name}));
     make.addArgs(&.{ "romfs", "make" });
 
-    make.addDirectoryArg(options.root);
+    // XXX: Workaround https://github.com/ziglang/zig/issues/20935 as WriteFile handles caching
+    const workaround_issue_20935 = b.addWriteFiles();
+    const workaround_directory = workaround_issue_20935.addCopyDirectory(options.root, "", .{});
+
+    make.addDirectoryArg(workaround_directory);
     make.addArg("--output");
 
     const out = make.addOutputFileArg(options.name);

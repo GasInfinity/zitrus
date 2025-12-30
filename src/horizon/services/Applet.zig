@@ -192,8 +192,6 @@ lock: Mutex,
 /// All subsequent requests to the returned `Applet` must be done to the same service it was created with.
 pub fn open(service: Service, srv: ServiceManager) !Applet {
     const apt_session = try srv.getService(service.name(), .wait);
-    defer apt_session.close();
-
     const data = tls.get();
 
     const lock: Mutex = lock: {
@@ -477,7 +475,7 @@ pub fn sendUnlockTransition(apt: Applet, service: Service, srv: ServiceManager, 
 }
 
 pub fn lockSendCommand(apt: Applet, service: Service, srv: ServiceManager, comptime DefinedCommand: type, request: DefinedCommand.Request, static_output: DefinedCommand.RequestStaticOutput) !Result(DefinedCommand.Response) {
-    try apt.lock.wait(-1);
+    try apt.lock.wait(.none);
     defer apt.lock.release();
 
     const fresh_session = try srv.sendGetServiceHandle(service.name(), .wait);

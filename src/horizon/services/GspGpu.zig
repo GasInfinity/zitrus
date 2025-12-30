@@ -337,7 +337,9 @@ pub const GxCommand = extern struct {
             const next_command_index: u4 = @intCast((hdr.current_command_index + hdr.total_commands) % 15);
             queue.commands[next_command_index] = cmd;
 
-            _ = @atomicRmw(u8, &queue.header.total_commands, .Add, 1, .release);
+            // XXX: Workaround for https://github.com/ziglang/zig/issues/25715
+            const as_u8s: *[4]u8 = @ptrCast(&queue.header);
+            _ = @atomicRmw(u8, &as_u8s[@divExact(@bitOffsetOf(Queue.Header, "total_commands"), 8)], .Add, 1, .release);
         }
     };
 

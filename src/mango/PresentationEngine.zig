@@ -109,7 +109,7 @@ pub fn acquireNextImage(pe: *PresentationEngine, swapchain: mango.Swapchain, tim
     std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
 
     const chain = pe.chains.getPtr(screen);
-    return chain.acquireNextIndex(timeout, pe.queue.device.arbiter);
+    return chain.acquireNextIndex(@enumFromInt(timeout), pe.queue.device.arbiter);
 }
 
 pub fn present(pe: *PresentationEngine, info: mango.PresentInfo) !void {
@@ -328,26 +328,41 @@ const Swapchain = struct {
         return new;
     }
 
+    /// Can only be called by driver code.
     pub fn wakePushAvailable(chain: *Swapchain, index: u8, arbiter: horizon.AddressArbiter) void {
         chain.available.pushFrontAssumeCapacity(index);
 
-        _ = chain.available_wake.fetchAdd(1, .monotonic);
-        arbiter.arbitrate(&chain.available_wake.raw, .{ .signal = 1 }) catch unreachable;
+        if(chain.available_wake.fetchAdd(1, .monotonic) == 0) arbiter.arbitrate(&chain.available_wake.raw, .{ .signal = 1 }) catch unreachable;
     }
 
-    pub fn acquireNextIndex(chain: *Swapchain, timeout: i64, arbiter: horizon.AddressArbiter) !u8 {
+    fn tryAcquireNextIndex(chain: *Swapchain) ?u8 {
+        const maybe_next = chain.available.popBack();
+
+        if (maybe_next) |next| {
+            _ = chain.available_wake.fetchSub(1, .monotonic);
+            return next;
+        }
+
+        return null;
+    }
+
+    /// Can only be called by client code, the driver NEVER acquires indices.
+    ///
+    /// Externally synchronized
+    pub fn acquireNextIndex(chain: *Swapchain, timeout: horizon.Timeout, arbiter: horizon.AddressArbiter) !u8 {
         while (true) {
-            const maybe_next = chain.available.popBack();
+            if (chain.tryAcquireNextIndex()) |idx| return idx;
 
-            if (maybe_next) |next| {
-                _ = chain.available_wake.fetchSub(1, .monotonic);
-                return next;
-            }
-
-            try arbiter.arbitrate(&chain.available_wake.raw, .{ .wait_if_less_than_timeout = .{
+            // Either:
+            //   1 - The driver pushes a new index and this doesn't wait
+            //   2 - We wait and we're signaled, we'll get the new index in the next iteration.
+            //   3 - We wait and we get a Timeout, in that case we have to check again if we have an index available (we may get a Timeout before waking up)
+            arbiter.arbitrate(&chain.available_wake.raw, .{ .wait_if_less_than_timeout = .{
                 .value = 1,
                 .timeout = timeout,
-            } });
+                // Try to acquire again before erroring if somehow we got a Timeout before the driver called wake.
+                // XXX: Azahar does not have the same behavior as ofw, this somehow becomes a timeout even if timeout == -1
+            } }) catch return if (chain.tryAcquireNextIndex()) |idx| idx else error.Timeout; 
         }
     }
 };

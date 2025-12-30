@@ -5,6 +5,41 @@
 
 pub const port = "srv:";
 
+pub const PortAccessError = error{
+    /// The name was too long, `0` or has embedded `\0`.
+    BadPortName,
+    /// Process doesn't have access to the specified service/port.
+    AccessDenied,
+};
+
+pub const PortRetrievalError = error{
+    /// The port was not registered.
+    PortNotFound,
+};
+
+pub const ServiceRetrievalError = horizon.ClientPort.CreateSessionError;
+
+pub const PortRegistrationError = error{
+    /// The name was too long, `0` or has embedded `\0`.
+    BadPortName,
+    /// The service/port is already registered.
+    PortAlreadyExists,
+    /// Service Manager is out of memory for services.
+    SystemResources,
+};
+
+pub const PortUnregistrationError = error{
+    /// Tried to unregister a service/port that was not registered.
+    PortNotFound,
+    /// Tried to unregister a service/port not owned by this process.
+    AccessDenied,
+};
+
+pub const NotificationError = error{
+    /// Tried to enable notifications without registering the process.
+    ProcessNotFound,
+};
+
 pub const Notification = enum(u32) {
     must_terminate = 0x100,
     sleep_mode_entry,
@@ -59,15 +94,15 @@ pub const Notification = enum(u32) {
         }
 
         pub fn waitNotification(man: Manager, srv: ServiceManager) !Notification {
-            return try man.waitNotificationTimeout(srv, -1).?;
+            return try man.waitNotificationTimeout(srv, .none).?;
         }
 
         pub fn pollNotification(man: Manager, srv: ServiceManager) !?Notification {
-            return try man.waitNotificationTimeout(srv, 0);
+            return try man.waitNotificationTimeout(srv, .fromNanoseconds(0));
         }
 
-        pub fn waitNotificationTimeout(man: Manager, srv: ServiceManager, timeout_ns: i64) !?Notification {
-            man.notification.wait(timeout_ns) catch |err| switch (err) {
+        pub fn waitNotificationTimeout(man: Manager, srv: ServiceManager, timeout: horizon.Timeout) !?Notification {
+            man.notification.wait(timeout) catch |err| switch (err) {
                 error.Timeout => return null,
                 else => |e| return e,
             };
@@ -105,14 +140,17 @@ pub fn sendRegisterClient(srv: ServiceManager) !void {
 }
 
 pub fn sendEnableNotification(srv: ServiceManager) !Semaphore {
+    const C = horizon.result.Code;
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.EnableNotification, .{}, .{})).cases()) {
         .success => |s| s.value.notification_received,
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if(code == C.srv_process_not_registered) error.ProcessNotFound
+        else horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendRegisterService(srv: ServiceManager, name: []const u8, max_sessions: i16) !ServerPort {
+    const C = horizon.result.Code;
     std.debug.assert(name.len <= 8);
 
     var req: command.RegisterService.Request = .{
@@ -125,11 +163,15 @@ pub fn sendRegisterService(srv: ServiceManager, name: []const u8, max_sessions: 
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.RegisterService, req, .{})).cases()) {
         .success => |s| s.value.server,
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if(code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName
+        else if(code == C.os_already_exists) error.PortAlreadyExists
+        else if(code == C.srv_out_of_services) error.SystemResources
+        else horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendUnregisterService(srv: ServiceManager, name: []const u8) !void {
+    const C = horizon.result.Code;
     std.debug.assert(name.len <= 8);
 
     var req: command.UnregisterService.Request = .{
@@ -141,14 +183,14 @@ pub fn sendUnregisterService(srv: ServiceManager, name: []const u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.UnregisterService, req, .{})).cases()) {
         .success => {},
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if(C.os_not_found) error.PortNotFound
+        else if(C.srv_access_denied) error.AccessDenied
+        else horizon.unexpectedResult(code),
     };
 }
 
-pub const GetServiceHandleError = error{ AccessDenied, PortFull };
-
-// FIXME: Handle errors properly!
 pub fn sendGetServiceHandle(srv: ServiceManager, name: []const u8, flags: command.GetServiceHandle.Request.Flags) !ClientSession {
+    const C = horizon.result.Code;
     std.debug.assert(name.len <= 8);
 
     var req: command.GetServiceHandle.Request = .{
@@ -161,11 +203,18 @@ pub fn sendGetServiceHandle(srv: ServiceManager, name: []const u8, flags: comman
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.GetServiceHandle, req, .{})).cases()) {
         .success => |s| s.value.service.wrapped,
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if(code == C.kernel_invalid_handle) unreachable 
+        else if(code == C.srv_access_denied) error.AccessDenied
+        else if(code == C.out_of_sessions or code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory) error.SystemResources
+        else if(code == C.os_port_busy) error.PortBusy 
+        else if(code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName
+        else if(code == C.os_not_found) error.PortNotFound
+        else horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendRegisterPort(srv: ServiceManager, name: []const u8, registering_port: ClientPort) !ServerPort {
+    const C = horizon.result.Code;
     std.debug.assert(name.len <= 8);
 
     var req: command.RegisterPort.Request = .{
@@ -178,11 +227,15 @@ pub fn sendRegisterPort(srv: ServiceManager, name: []const u8, registering_port:
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.RegisterPort, req, .{})).cases()) {
         .success => |s| s.value.server,
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if(code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName
+        else if(code == C.os_already_exists) error.PortAlreadyExists
+        else if(code == C.srv_out_of_services) error.SystemResources
+        else horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendUnregisterPort(srv: ServiceManager, name: []const u8) !void {
+    const C = horizon.result.Code;
     std.debug.assert(name.len <= 8);
 
     var req: command.UnregisterPort.Request = .{
@@ -194,11 +247,14 @@ pub fn sendUnregisterPort(srv: ServiceManager, name: []const u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.UnregisterPort, req, .{})).cases()) {
         .success => {},
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if(C.os_not_found) error.PortNotFound
+        else if(C.srv_access_denied) error.AccessDenied
+        else horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendGetPort(srv: ServiceManager, name: []const u8, wait_until_found: bool) !ClientPort {
+    const C = horizon.result.Code;
     std.debug.assert(name.len <= 8);
 
     var req: command.GetPort.Request = .{
@@ -211,7 +267,10 @@ pub fn sendGetPort(srv: ServiceManager, name: []const u8, wait_until_found: bool
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.GetPort, req, .{})).cases()) {
         .success => |s| s.value.service,
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if(code == C.srv_access_denied) error.AccessDenied
+        else if(code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName
+        else if(code == C.os_not_found) error.PortNotFound
+        else horizon.unexpectedResult(code),
     };
 }
 
@@ -256,19 +315,21 @@ pub fn sendPublishAndGetSubscriber(srv: ServiceManager, notification: Notificati
 }
 
 pub fn sendIsServiceRegistered(srv: ServiceManager, name: []const u8) !bool {
+    const C = horizon.result.Code;
     std.debug.assert(name.len <= 8);
 
     var req: command.IsServiceRegistered.Request = .{
         .name = undefined,
         .name_len = name.len,
     };
-
     @memcpy(req.name[0..name.len], name);
 
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.IsServiceRegistered, req, .{})).cases()) {
         .success => |s| s.value.registered,
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if(code == C.srv_access_denied) error.AccessDenied
+        else if(code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName
+        else horizon.unexpectedResult(code),
     };
 }
 

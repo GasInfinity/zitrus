@@ -392,7 +392,7 @@ pub const View = struct {
     pub fn openAny(view: View, parent: Directory, path: []const u16) !Entry {
         if (path.len == 0) return error.FileNotFound;
 
-        var it = ComponentIterator.init(path) catch {};
+        var it: ComponentIterator = try .init(path);
 
         var last_parent: Directory = if (it.root()) |_| .root else parent;
         var last: []const u16 = (it.next() orelse (if (it.root() != null) return .initDirectory(.root) else return error.BadPathName)).name;

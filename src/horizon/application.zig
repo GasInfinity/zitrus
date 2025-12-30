@@ -114,31 +114,31 @@ fn Manager(comptime accelerated: bool) type {
             app.* = undefined;
         }
 
-        /// Same behaviour as `app.waitEventTimeout(-1)`
+        /// Same behaviour as `app.waitEventTimeout(.none)`
         pub fn waitEvent(app: *Application) !Event {
-            return app.waitEventTimeout(-1).?;
+            return app.waitEventTimeout(.none).?;
         }
 
-        /// Same behaviour as `app.waitEventTimeout(0)`
+        /// Same behaviour as `app.waitEventTimeout(.fromNanoseconds(0))`
         pub fn pollEvent(app: *Application) !?Event {
-            return app.waitEventTimeout(0);
+            return try app.waitEventTimeout(.fromNanoseconds(0)); 
         }
 
         /// Waits for an event until one is encountered or a timeout happens.
         ///
         /// Automatically jumps to the home menu and sleeps if requested and allowed.
-        pub fn waitEventTimeout(app: *Application, timeout: i64) !?Event {
+        pub fn waitEventTimeout(app: *Application, timeout: horizon.Timeout) !?Event {
             while (try app.notification_manager.pollNotification(app.srv)) |notif| switch (notif) {
                 .must_terminate => return .quit,
                 else => {},
             };
 
-            while (try app.apt_app.waitNotificationTimeout(app.apt, apt_service, app.srv, timeout)) |n| switch (n) {
+            while (app.apt_app.waitNotificationTimeout(app.apt, apt_service, app.srv, timeout) catch |err| switch(err) {
+                error.Timeout => return null,
+                else => |e| return e,
+            }) |n| switch (n) {
                 .jump_home, .jump_home_by_power => {
-                    if (accelerated) {
-                        try app.device.waitIdle();
-                    }
-
+                    if (accelerated) app.device.waitIdle();
                     switch (try app.apt_app.jumpToHome(app.apt, apt_service, app.srv, app.gsp, .none)) {
                         .resumed => {},
                         .jump_home => unreachable,
@@ -146,10 +146,7 @@ fn Manager(comptime accelerated: bool) type {
                     }
                 },
                 .sleeping => {
-                    if (accelerated) {
-                        try app.device.waitIdle();
-                    }
-
+                    if (accelerated) app.device.waitIdle();
                     while (try app.apt_app.waitNotification(app.apt, apt_service, app.srv) != .sleep_wakeup) {}
                     try app.gsp.sendSetLcdForceBlack(false);
                 },

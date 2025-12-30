@@ -1,8 +1,8 @@
 //! RomFS reader and writer.
 //!
-//!
 //! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/RomFS
 
+pub const max_path = 255;
 pub const separator = '/';
 pub const ComponentIterator = std.fs.path.ComponentIterator(.posix, u16);
 
@@ -588,7 +588,8 @@ pub const View = struct {
         gpa.free(view.file_hashes);
     }
 
-    pub fn openFile(view: View, parent: Directory, path: []const u16) !File {
+    pub const OpenFileError = OpenError || error{IsDir};
+    pub fn openFile(view: View, parent: Directory, path: []const u16) OpenFileError!File {
         const opened = try view.openAny(parent, path);
 
         return switch (opened.kind) {
@@ -597,7 +598,8 @@ pub const View = struct {
         };
     }
 
-    pub fn openDir(view: View, parent: Directory, path: []const u16) !Directory {
+    pub const OpenDirError = OpenError || error{NotDir};
+    pub fn openDir(view: View, parent: Directory, path: []const u16) OpenDirError!Directory {
         const opened = try view.openAny(parent, path);
 
         return switch (opened.kind) {
@@ -606,10 +608,11 @@ pub const View = struct {
         };
     }
 
-    pub fn openAny(view: View, parent: Directory, path: []const u16) !Entry {
+    pub const OpenError = error{BadPathName, FileNotFound};
+    pub fn openAny(view: View, parent: Directory, path: []const u16) OpenError!Entry {
         if (path.len == 0) return error.FileNotFound;
 
-        var it = ComponentIterator.init(path) catch {};
+        var it: ComponentIterator = try .init(path);
 
         var last_parent: Directory = if (it.root()) |_| .root else parent;
         var last: []const u16 = (it.next() orelse (if (it.root() != null) return .initDirectory(.root) else return error.BadPathName)).name;

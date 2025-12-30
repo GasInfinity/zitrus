@@ -108,7 +108,10 @@ pub fn main() !void {
             .{ .memory = top_presentable_image_memory, .memory_offset = .size(400 * 240 * 3) },
         },
     }, gpa);
-    defer device.destroySwapchain(top_swapchain, gpa);
+    defer {
+        device.waitIdle(); // We cannot destroy the swapchain if it has pending presents!
+        device.destroySwapchain(top_swapchain, gpa);
+    }
 
     // Even though we'll only render in this example to the top screen,
     // we should remember that surface contents are UNDEFINED before
@@ -127,7 +130,10 @@ pub fn main() !void {
             .{ .memory = bottom_presentable_image_memory, .memory_offset = .size(320 * 240 * 3) },
         },
     }, gpa);
-    defer device.destroySwapchain(bottom_swapchain, gpa);
+    defer {
+        device.waitIdle(); // We cannot destroy the swapchain if it has pending presents!
+        device.destroySwapchain(bottom_swapchain, gpa);
+    }
 
     // Same as with Vulkan, you must get the swapchain images.
     //
@@ -480,8 +486,6 @@ pub fn main() !void {
             .value = sync_counter,
         }, -1);
     }
-
-    try device.waitIdle();
 }
 
 const mango = zitrus.mango;

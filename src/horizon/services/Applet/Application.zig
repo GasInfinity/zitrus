@@ -55,7 +55,7 @@ pub fn init(apt: Applet, service: Applet.Service, srv: ServiceManager) !Applicat
 
     // We must wait for the wakeup command we get after initializing and enabling ourselves
     {
-        try parameters.wait(-1);
+        try parameters.wait(.none);
         var parameter = try apt.sendReceiveParameter(service, srv, environment.program_meta.app_id, &.{});
         defer parameter.deinit();
 
@@ -122,15 +122,15 @@ pub fn setSleepAllowed(app: *Application, apt: Applet, service: Applet.Service, 
 }
 
 pub fn waitNotification(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager) !NotificationResult {
-    return (try app.waitNotificationTimeout(apt, service, srv, -1)).?;
+    return (try app.waitNotificationTimeout(apt, service, srv, .none)).?;
 }
 
 pub fn pollNotification(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager) !?NotificationResult {
-    return app.waitNotificationTimeout(apt, service, srv, 0);
+    return app.waitNotificationTimeout(apt, service, srv, .fromNanoseconds(0));
 }
 
-pub fn waitNotificationTimeout(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, timeout_ns: i64) !?NotificationResult {
-    app.notification_event.wait(timeout_ns) catch |err| switch (err) {
+pub fn waitNotificationTimeout(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, timeout: horizon.Timeout) !?NotificationResult {
+    app.notification_event.wait(timeout) catch |err| switch (err) {
         error.Timeout => return null,
         else => return err,
     };
@@ -178,7 +178,7 @@ pub fn waitNotificationTimeout(app: *Application, apt: Applet, service: Applet.S
 
 fn waitParameterConsumingNotifications(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, parameter: []u8) !Applet.ParameterResult {
     while (true) {
-        const is_parameter = try Event.waitMultiple(&.{ app.notification_event, app.parameters_event }, false, -1) == 1;
+        const is_parameter = try Event.waitMany(&.{ app.notification_event, app.parameters_event }, false, .none) == 1;
 
         if (!is_parameter) {
             switch (try apt.sendInquireNotification(service, srv, environment.program_meta.app_id)) {
@@ -300,7 +300,7 @@ pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, s
 
     try apt.sendSendParameter(service, srv, environment.program_meta.app_id, target_app_id, if (is_library_applet) .request else .request_for_sys_applet, .null, std.mem.asBytes(&apt_capture_info));
 
-    try app.parameters_event.wait(-1);
+    try app.parameters_event.wait(.none);
     var parameters = try apt.sendReceiveParameter(service, srv, environment.program_meta.app_id, &.{});
     defer parameters.deinit();
 

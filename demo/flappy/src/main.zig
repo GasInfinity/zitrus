@@ -1,4 +1,4 @@
-// 3 bird images here
+// 3 bird images in the sheet
 const bird_sheet = std.mem.bytesAsSlice(Bgr888, @embedFile("bird"));
 const pipes_sheet = std.mem.bytesAsSlice(Bgr888, @embedFile("pipes"));
 const ground = std.mem.bytesAsSlice(Bgr888, @embedFile("ground"));
@@ -59,10 +59,10 @@ const AppState = struct {
     pipes_end: u8 = 0,
     ground_y: f32 = 0,
     bird_x: f32 = (Screen.top.width() / 2),
-    current_bird_sprite: f32 = 0,
-    current_bird_sprite_framerate: f32 = (1.0 / 6.0),
+    bird_sprite: f32 = 0,
+    bird_sprite_velocity: f32 = 9,
 
-    pub fn update(state: *AppState, pressed: Hid.Pad.State, touch_pressed: bool, random: std.Random) void {
+    pub fn update(state: *AppState, delta: f32, pressed: Hid.Pad.State, touch_pressed: bool, random: std.Random) void {
         switch (state.game) {
             .get_ready => {
                 if (pressed.a or touch_pressed) {
@@ -72,17 +72,10 @@ const AppState = struct {
                 state.bird_x = (Screen.top.width() / 2);
             },
             .gaming => |*g| {
-                if (pressed.a or touch_pressed) {
-                    g.bird_velocity = 100;
-                } else {
-                    g.bird_velocity -= 150 * (1.0 / 60.0);
-                }
+                if (pressed.a or touch_pressed) g.bird_velocity = 100
+                else g.bird_velocity = @max(-100, g.bird_velocity - 150 * delta);
 
-                if (g.bird_velocity <= -100) {
-                    g.bird_velocity = -100;
-                }
-
-                state.bird_x += g.bird_velocity * (1.0 / 60.0);
+                state.bird_x += g.bird_velocity * delta;
 
                 if (state.bird_x + (bird_image_size - bird_collider_size) < ground_total_width) {
                     state.bird_x = ground_total_width - (bird_image_size - bird_collider_size);
@@ -120,7 +113,7 @@ const AppState = struct {
                 var last_pipe_y: f32 = 0;
 
                 for (state.pipes[0..state.pipes_end]) |*pipe| {
-                    pipe.y -= pipe_velocity * (1.0 / 60.0);
+                    pipe.y -= pipe_velocity * delta;
 
                     // Pipes go screen_height -> 0
                     if (pipe.y > last_pipe_y) {
@@ -152,20 +145,20 @@ const AppState = struct {
                     state.pipes_end -= 1;
                 }
 
-                state.ground_y -= pipe_velocity * (1.0 / 60.0);
+                state.ground_y -= pipe_velocity * delta;
 
                 if (state.ground_y <= -ground_image_height) {
                     state.ground_y += ground_image_height;
                 }
 
-                state.current_bird_sprite += state.current_bird_sprite_framerate;
+                state.bird_sprite += state.bird_sprite_velocity * delta;
 
-                if (state.current_bird_sprite >= 2.5) {
-                    state.current_bird_sprite = 2;
-                    state.current_bird_sprite_framerate *= -1;
-                } else if (state.current_bird_sprite <= -0.5) {
-                    state.current_bird_sprite = 0;
-                    state.current_bird_sprite_framerate *= -1;
+                if (state.bird_sprite >= 2.5) {
+                    state.bird_sprite = 2;
+                    state.bird_sprite_velocity *= -1;
+                } else if (state.bird_sprite <= -0.5) {
+                    state.bird_sprite = 0;
+                    state.bird_sprite_velocity *= -1;
                 }
             },
             .game_over => {
@@ -244,8 +237,9 @@ const AppState = struct {
 
     fn drawBird(state: AppState, ctx: ScreenCtx) void {
         const pxi: i32 = @intFromFloat(@round(state.bird_x));
-        const cbsi: usize = @intFromFloat(@trunc(state.current_bird_sprite));
+        const cbsi: usize = @intFromFloat(@trunc(state.bird_sprite));
         const bird_image = bird_sheet[((bird_image_size * bird_image_size) * cbsi)..][0..(bird_image_size * bird_image_size)];
+
         ctx.drawSprite(.transparent_bitmap, pxi, bird_y, bird_image_size, bird_image, .{ .transparent = transparent_color }, .{});
     }
 };
@@ -285,6 +279,9 @@ pub fn main() !void {
     var last_current: Hid.Pad.State = std.mem.zeroes(Hid.Pad.State);
     var last_pressed: bool = false;
 
+    var last: u64 = @truncate(horizon.time.getSystemNanoseconds());
+    var delta: f32 = 0;
+
     main_loop: while (true) {
         while (try app.pollEvent()) |ev| switch (ev) {
             .jump_home_rejected => {},
@@ -308,12 +305,16 @@ pub fn main() !void {
         last_pressed = touch.pressed;
         const top = ScreenCtx.initBuffer(soft.currentFramebuffer(.top, .left), Screen.top.width());
 
-        app_state.update(pressed, touch_pressed, random);
+        app_state.update(delta, pressed, touch_pressed, random);
         app_state.draw(top);
 
         soft.flushBuffers();
         soft.swapBuffers(.none);
         try soft.waitVBlank();
+
+        const end: u64 = @truncate(horizon.time.getSystemNanoseconds());
+        delta = @as(f32, @floatFromInt(end - last)) / std.time.ns_per_s;
+        last = end;
     }
 }
 

@@ -69,11 +69,15 @@ pub fn readPositional(fs: RomFs, file: romfs.View.File, position: u64, buffer: [
     return fs.file.sendRead(fs.data_offset + stat.offset, read_buffer);
 }
 
-pub fn openAny(fs: RomFs, parent: romfs.View.Directory, path: [:0]const u16) !romfs.View.Entry {
+pub fn openAny(fs: RomFs, parent: romfs.View.Directory, path: []const u16) !romfs.View.Entry {
     return fs.view.openAny(parent, path);
 }
 
-pub fn openFile(fs: RomFs, parent: romfs.View.Directory, path: [:0]const u16) !romfs.View.File {
+pub fn openFile(fs: RomFs, parent: romfs.View.Directory, path: []const u16) !romfs.View.File {
+    return fs.view.openFile(parent, path);
+}
+
+pub fn openDir(fs: RomFs, parent: romfs.View.Directory, path: []const u16) !romfs.View.File {
     return fs.view.openFile(parent, path);
 }
 

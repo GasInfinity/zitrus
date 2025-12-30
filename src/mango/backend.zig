@@ -91,7 +91,9 @@ pub fn SingleProducerSingleConsumerBoundedQueue(comptime T: type, comptime capac
             const next_index: u16 = @intCast((hdr.index + hdr.len) % capacity);
             queue.items[next_index] = item;
 
-            _ = @atomicRmw(u16, &queue.header.raw.len, .Add, 1, .release);
+            // XXX: Workaround for https://github.com/ziglang/zig/issues/25715
+            const as_u16s: *[2]u16 = @ptrCast(&queue.header.raw);
+            _ = @atomicRmw(u16, &as_u16s[@divExact(@bitOffsetOf(Header, "len"), 16)], .Add, 1, .release);
         }
 
         pub fn peekBack(queue: *SpScQueue) ?T {

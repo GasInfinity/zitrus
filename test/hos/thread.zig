@@ -21,7 +21,7 @@ test "created and executed successfully" {
     const thread: Thread = try .create(Data.main, &data, (&thread_stack).ptr + thread_stack.len, .priority(0x30), .default);
     defer thread.close();
 
-    try thread.wait(5 * std.time.ns_per_s);
+    try thread.wait(.fromNanoseconds(5 * std.time.ns_per_s));
     try testing.expect(data.result == (90 + 140));
 }
 
@@ -38,7 +38,7 @@ test "is cooperative" {
     defer thread.close();
 
     // NOTE: If we're truly cooperative, this MUST not timeout.
-    try thread.wait(0);
+    try thread.wait(.fromNanoseconds(0));
 }
 
 const testing = std.testing;

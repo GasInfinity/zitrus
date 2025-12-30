@@ -56,17 +56,17 @@ pub fn deinit(gfx: *Graphics, gsp: GspGpu) void {
 }
 
 pub fn waitInterrupts(gfx: *Graphics) !GspGpu.Interrupt.Set {
-    return (try gfx.waitInterruptsTimeout(-1)).?;
+    return (try gfx.waitInterruptsTimeout(.none)).?;
 }
 
 pub fn pollInterrupts(gfx: *Graphics) !?GspGpu.Interrupt.Set {
-    return try gfx.waitInterruptsTimeout(0);
+    return try gfx.waitInterruptsTimeout(.fromNanoseconds(0));
 }
 
-pub fn waitInterruptsTimeout(gfx: *Graphics, timeout_ns: i64) !?GspGpu.Interrupt.Set {
+pub fn waitInterruptsTimeout(gfx: *Graphics, timeout: horizon.Timeout) !?GspGpu.Interrupt.Set {
     const int_ev = gfx.interrupt_event;
 
-    int_ev.wait(timeout_ns) catch |err| switch (err) {
+    int_ev.wait(timeout) catch |err| switch (err) {
         error.Timeout => return null,
         else => |e| return e,
     };

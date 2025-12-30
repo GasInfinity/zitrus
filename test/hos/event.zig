@@ -1,5 +1,5 @@
 fn expectUnsignaled(ev: Event) !void {
-    ev.wait(0) catch |err| switch (err) {
+    ev.wait(.fromNanoseconds(0)) catch |err| switch (err) {
         error.Timeout => return,
         else => return err,
     };
@@ -19,7 +19,7 @@ test "oneshot reset when a thread wakes up" {
     defer oneshot.close();
 
     oneshot.signal();
-    try oneshot.wait(0); // must not fail as the event is already signaled
+    try oneshot.wait(.fromNanoseconds(0)); // must not fail as the event is already signaled
 
     try expectUnsignaled(oneshot);
 }
@@ -30,9 +30,7 @@ test "sticky never reset unless explicitly done" {
 
     sticky.signal();
 
-    for (0..4) |_| {
-        try sticky.wait(0); // must not fail for any iteration
-    }
+    for (0..4) |_| try sticky.wait(.fromNanoseconds(0)); // must not fail for any iteration
 
     sticky.clear();
 
@@ -47,10 +45,10 @@ test "duplicated shares state" {
     defer dup_ev.close();
 
     ev.signal();
-    try dup_ev.wait(0);
+    try dup_ev.wait(.fromNanoseconds(0));
 
     dup_ev.signal();
-    try ev.wait(0);
+    try ev.wait(.fromNanoseconds(0));
 
     try expectUnsignaled(ev);
     try expectUnsignaled(dup_ev);

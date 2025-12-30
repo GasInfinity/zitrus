@@ -8,18 +8,22 @@ pub const Handle = enum(u32) {
 /// DO NOT ACCESS THIS FIELD LIKE THIS!!! ACCESSES MUST BE ATOMIC, USE value()!
 raw_value: u64,
 
-/// Wake cookie.
-wake: i32,
+/// Wake cookie. 
+wake: std.atomic.Value(i32) = .init(0),
 
 pub fn init(create_info: mango.SemaphoreCreateInfo) Semaphore {
     return .{
         .raw_value = create_info.initial_value,
-        .wake = -1,
     };
 }
 
 pub fn counterValue(sema: *Semaphore) u64 {
     return zitrus.atomicLoad64(u64, &sema.raw_value);
+}
+
+pub fn signal(sema: *Semaphore, value: u64) bool {
+    zitrus.atomicStore64(u64, &sema.raw_value, value); 
+    return sema.wake.swap(0, .monotonic) < 0;
 }
 
 pub fn toHandle(image: *Semaphore) Handle {

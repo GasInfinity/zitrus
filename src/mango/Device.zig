@@ -191,7 +191,7 @@ pub const Handle = enum(u32) {
         return b_device.waitSemaphore(wait_info, timeout);
     }
 
-    pub fn waitIdle(device: Handle) !void {
+    pub fn waitIdle(device: Handle) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return b_device.waitIdle();
     }
@@ -282,7 +282,7 @@ pub fn initHorizonBacked(create_info: mango.HorizonBackedDeviceCreateInfo, gpa: 
 
 pub fn deinit(device: *Device, gpa: std.mem.Allocator) void {
     device.running.store(false, .monotonic);
-    device.driver_thread.wait(-1) catch unreachable;
+    device.driver_thread.wait(.none) catch unreachable; // No error.Timeout can happen
     device.driver_thread.close();
     device.gsp_shm_memory_block.unmap(@ptrCast(@alignCast(device.gsp_shm)));
 
@@ -312,7 +312,7 @@ pub fn allocateMemory(device: *Device, allocate_info: mango.MemoryAllocateInfo, 
     const allocated_memory: backend.DeviceMemory = switch (allocate_info.memory_type) {
         .fcram_cached => fcram: {
             const allocated_virtual_address = switch (horizon.controlMemory(.{
-                .fundamental_operation = .commit,
+                .kind = .commit,
                 .area = .all,
                 .linear = true,
             }, null, null, aligned_allocation_size, .rw).cases()) {
@@ -347,10 +347,10 @@ pub fn freeMemory(device: *Device, memory: mango.DeviceMemory, gpa: std.mem.Allo
 
     switch (b_memory.data.heap) {
         .fcram => _ = horizon.controlMemory(.{
-            .fundamental_operation = .free,
+            .kind = .free,
             .area = .all,
             .linear = true,
-        }, b_memory.virtualAddress(), null, b_memory.size(), .rw),
+        }, @ptrCast(b_memory.virtualAddress()), null, b_memory.size(), .rw),
         .vram_a, .vram_b => {
             const bank: zitrus.memory.VRamBank = switch (b_memory.data.heap) {
                 .fcram => unreachable,
@@ -601,26 +601,28 @@ pub fn acquireNextImage(device: *Device, swapchain: mango.Swapchain, timeout: i6
 pub fn signalSemaphore(device: *Device, signal_info: mango.SemaphoreOperation) !void {
     const b_semaphore: *backend.Semaphore = .fromHandleMutable(signal_info.semaphore);
 
-    zitrus.atomicStore64(u64, &b_semaphore.raw_value, signal_info.value);
-    device.arbiter.arbitrate(&b_semaphore.wake, .{ .signal = -1 }) catch unreachable;
+    if(b_semaphore.signal(signal_info.value)) {
+        // Only wake if anyone was waiting
+        device.arbiter.arbitrate(&b_semaphore.wake.raw, .{ .signal = -1 }) catch unreachable;
+    }
 }
 
 pub fn waitSemaphore(device: *Device, wait_info: mango.SemaphoreOperation, timeout: i64) !void {
     const b_semaphore: *backend.Semaphore = .fromHandleMutable(wait_info.semaphore);
 
     while (true) {
-        if (b_semaphore.counterValue() >= wait_info.value) {
-            return;
-        }
+        if (b_semaphore.counterValue() >= wait_info.value) return;
 
-        try device.arbiter.arbitrate(&b_semaphore.wake, .{ .wait_if_less_than_timeout = .{
-            .value = 0,
-            .timeout = timeout,
-        } });
+        device.arbiter.arbitrate(&b_semaphore.wake.raw, .{ .decrement_and_wait_if_less_than_timeout = .{
+            .value = 1,
+            .timeout = @enumFromInt(timeout),
+            // We may get a Timeout before the driver waking us
+            // XXX: Azahar does not have the same behavior as ofw, this somehow becomes a timeout even if timeout == -1
+        } }) catch return if(b_semaphore.counterValue() >= wait_info.value) {} else error.Timeout;
     }
 }
 
-pub fn waitIdle(device: *Device) !void {
+pub fn waitIdle(device: *Device) void {
     for (std.enums.values(Queue.Type)) |kind| {
         const queue_status = device.queue_statuses.getPtr(kind);
 
@@ -642,14 +644,14 @@ fn driverMain(ctx: ?*anyopaque) callconv(.c) noreturn {
     const device: *Device = @ptrCast(@alignCast(ctx.?));
     const presentation_engine = &device.presentation_engine;
     const gsp = device.gsp;
-    const gsp_int = &device.gsp_shm.interrupt_queue[device.gsp_thread_index];
-    const gsp_gx = &device.gsp_shm.command_queue[device.gsp_thread_index];
-    const gsp_framebuffers = &device.gsp_shm.framebuffers[device.gsp_thread_index];
+    const int_que = &device.gsp_shm.interrupt_queue[device.gsp_thread_index];
+    const gx = &device.gsp_shm.command_queue[device.gsp_thread_index];
+    const fbs = &device.gsp_shm.framebuffers[device.gsp_thread_index];
 
     while (device.running.load(.monotonic)) {
-        device.interrupt_event.wait(-1) catch unreachable;
+        device.interrupt_event.wait(.none) catch unreachable; // No error.Timeout can happen
 
-        const interrupts = gsp_int.popBackAll();
+        const interrupts = int_que.popBackAll();
 
         // NOTE: The application may have wanted to wake us up!
         if (!interrupts.eql(.initEmpty())) {
@@ -665,8 +667,8 @@ fn driverMain(ctx: ?*anyopaque) callconv(.c) noreturn {
 
                         last_submission.cmd_buffer.notifyCompleted();
                     },
-                    .vblank_top => _ = presentation_engine.refresh(gsp_framebuffers, .top),
-                    .vblank_bottom => _ = presentation_engine.refresh(gsp_framebuffers, .bottom),
+                    .vblank_top => _ = presentation_engine.refresh(fbs, .top),
+                    .vblank_bottom => _ = presentation_engine.refresh(fbs, .bottom),
                 }
             }
         }
@@ -707,12 +709,12 @@ fn driverMain(ctx: ?*anyopaque) callconv(.c) noreturn {
 
                     switch (kind) {
                         .fill => {
-                            gsp_gx.pushFrontAssumeCapacity(.initMemoryFill(.{ .init(itm.data, itm.value), null }, .none));
+                            gx.pushFrontAssumeCapacity(.initMemoryFill(.{ .init(itm.data, itm.value), null }, .none));
                         },
                         .transfer => {
                             switch (itm.flags.kind) {
-                                .copy => gsp_gx.pushFrontAssumeCapacity(.initTextureCopy(itm.src, itm.dst, itm.flags.extra.copy, itm.input_gap_size, itm.output_gap_size, .none)),
-                                .linear_tiled, .tiled_linear, .tiled_tiled => gsp_gx.pushFrontAssumeCapacity(.initDisplayTransfer(itm.src, itm.dst, itm.flags.extra.transfer.src_fmt, itm.input_gap_size, itm.flags.extra.transfer.dst_fmt, itm.output_gap_size, .{
+                                .copy => gx.pushFrontAssumeCapacity(.initTextureCopy(itm.src, itm.dst, itm.flags.extra.copy, itm.input_gap_size, itm.output_gap_size, .none)),
+                                .linear_tiled, .tiled_linear, .tiled_tiled => gx.pushFrontAssumeCapacity(.initDisplayTransfer(itm.src, itm.dst, itm.flags.extra.transfer.src_fmt, itm.input_gap_size, itm.flags.extra.transfer.dst_fmt, itm.output_gap_size, .{
                                     .mode = switch (itm.flags.kind) {
                                         .copy => unreachable,
                                         .linear_tiled => .linear_tiled,
@@ -727,9 +729,9 @@ fn driverMain(ctx: ?*anyopaque) callconv(.c) noreturn {
                         .submit => {
                             const b_cmd = itm.cmd_buffer;
 
-                            gsp_gx.pushFrontAssumeCapacity(.initProcessCommandList(b_cmd.queue.buffer[0..b_cmd.queue.current_index], .none, .flush, .none));
+                            gx.pushFrontAssumeCapacity(.initProcessCommandList(b_cmd.queue.buffer[0..b_cmd.queue.current_index], .none, .flush, .none));
                         },
-                        .present => presentation_engine.queueWork(gsp_framebuffers, itm),
+                        .present => presentation_engine.queueWork(fbs, itm),
                     }
 
                     enqueued_commands += 1;

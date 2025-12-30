@@ -10,6 +10,7 @@ comptime {
     _ = @import("hos/thread.zig");
     _ = @import("hos/mutex.zig");
     _ = @import("hos/semaphore.zig");
+    _ = @import("hos/arbiter.zig");
 }
 
 const zitrus = @import("zitrus");

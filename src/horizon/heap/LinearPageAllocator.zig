@@ -17,7 +17,7 @@ pub fn alloc(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize)
     const aligned_len = std.mem.alignForward(usize, len, horizon.heap.page_size);
 
     return switch (horizon.controlMemory(.{
-        .fundamental_operation = .commit,
+        .kind = .commit,
         .area = .all,
         .linear = true,
     }, null, null, aligned_len, .rw).cases()) {
@@ -52,10 +52,10 @@ pub fn free(ctx: *anyopaque, memory: []u8, alignment: Alignment, ra: usize) void
     const aligned_len = std.mem.alignForward(usize, memory.len, horizon.heap.page_size);
 
     _ = horizon.controlMemory(.{
-        .fundamental_operation = .free,
+        .kind = .free,
         .area = .all,
         .linear = true,
-    }, memory.ptr, null, aligned_len, .rw);
+    }, @alignCast(@ptrCast(memory.ptr)), null, aligned_len, .rw);
 }
 
 const std = @import("std");

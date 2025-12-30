@@ -31,7 +31,6 @@ pub fn build(b: *std.Build) void {
         .settings = b.path("smdh-settings.zon"),
     });
 
-    // XXX: Caching blocked by upstream.
     const romfs = zitrus.MakeRomFs.init(zitrus_dep, .{
         .root = b.path("assets/"),
     });
