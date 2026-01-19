@@ -601,7 +601,7 @@ pub fn acquireNextImage(device: *Device, swapchain: mango.Swapchain, timeout: i6
 pub fn signalSemaphore(device: *Device, signal_info: mango.SemaphoreOperation) !void {
     const b_semaphore: *backend.Semaphore = .fromHandleMutable(signal_info.semaphore);
 
-    if(b_semaphore.signal(signal_info.value)) {
+    if (b_semaphore.signal(signal_info.value)) {
         // Only wake if anyone was waiting
         device.arbiter.arbitrate(&b_semaphore.wake.raw, .{ .signal = -1 }) catch unreachable;
     }
@@ -613,12 +613,14 @@ pub fn waitSemaphore(device: *Device, wait_info: mango.SemaphoreOperation, timeo
     while (true) {
         if (b_semaphore.counterValue() >= wait_info.value) return;
 
-        device.arbiter.arbitrate(&b_semaphore.wake.raw, .{ .decrement_and_wait_if_less_than_timeout = .{
-            .value = 1,
-            .timeout = @enumFromInt(timeout),
-            // We may get a Timeout before the driver waking us
-            // XXX: Azahar does not have the same behavior as ofw, this somehow becomes a timeout even if timeout == -1
-        } }) catch return if(b_semaphore.counterValue() >= wait_info.value) {} else error.Timeout;
+        device.arbiter.arbitrate(&b_semaphore.wake.raw, .{
+            .decrement_and_wait_if_less_than_timeout = .{
+                .value = 1,
+                .timeout = @enumFromInt(timeout),
+                // We may get a Timeout before the driver waking us
+                // XXX: Azahar does not have the same behavior as ofw, this somehow becomes a timeout even if timeout == -1
+            },
+        }) catch return if (b_semaphore.counterValue() >= wait_info.value) {} else error.Timeout;
     }
 }
 

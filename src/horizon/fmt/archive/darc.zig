@@ -26,7 +26,7 @@ pub const Header = extern struct {
     file_size: u32,
 
     meta_offset: u32,
-    /// In bytes, 
+    /// In bytes,
     meta_size: u32,
     file_data_offset: u32,
 
@@ -92,17 +92,19 @@ pub const Builder = struct {
                     .name_offset = name_offset,
                     .kind = .directory,
                 },
-                .info = .{ .directory = .{
-                    .parent = @enumFromInt(@intFromEnum(builder.current)),
-                    .end = undefined, // NOTE: To be filled by `Directory.end`
-                }},
+                .info = .{
+                    .directory = .{
+                        .parent = @enumFromInt(@intFromEnum(builder.current)),
+                        .end = undefined, // NOTE: To be filled by `Directory.end`
+                    },
+                },
             });
-            
+
             builder.current = @enumFromInt(builder.entries.items.len - 1);
             return builder.current;
         }
 
-        pub fn addFile(dir: Directory, builder: *Builder, gpa: std.mem.Allocator, name: hfmt.AnyUtf, data: []const u8, alignment: std.mem.Alignment) std.mem.Allocator.Error!void { 
+        pub fn addFile(dir: Directory, builder: *Builder, gpa: std.mem.Allocator, name: hfmt.AnyUtf, data: []const u8, alignment: std.mem.Alignment) std.mem.Allocator.Error!void {
             var data_reader: std.Io.Reader = .fixed(data);
             return dir.streamFile(builder, gpa, name, &data_reader, alignment);
         }
@@ -124,11 +126,13 @@ pub const Builder = struct {
                     .name_offset = name_offset,
                     .kind = .file,
                 },
-                .info = .{ .file = .{
-                    // NOTE: This offset will be patched when we write it!
-                    .offset = alignment_bytes, 
-                    .size = @intCast(builder.file_data.items.len - data_offset),
-                } },
+                .info = .{
+                    .file = .{
+                        // NOTE: This offset will be patched when we write it!
+                        .offset = alignment_bytes,
+                        .size = @intCast(builder.file_data.items.len - data_offset),
+                    },
+                },
             });
         }
 
@@ -158,7 +162,7 @@ pub const Builder = struct {
         builder.file_data.deinit(gpa);
         builder.name_table.deinit(gpa);
         builder.entries.deinit(gpa);
-        builder.* = undefined; 
+        builder.* = undefined;
     }
 
     pub fn beginRoot(builder: *Builder, gpa: std.mem.Allocator) std.mem.Allocator.Error!Directory {
@@ -194,11 +198,11 @@ pub const Builder = struct {
             .meta_offset = @sizeOf(Header),
             .meta_size = meta_size,
             .file_data_offset = data_offset,
-        }, .little); 
-        
+        }, .little);
+
         {
             var current_data_offset: u32 = data_offset;
-            for (builder.entries.items) |entry| switch(entry.attributes.kind) {
+            for (builder.entries.items) |entry| switch (entry.attributes.kind) {
                 .file => {
                     const file_alignment = entry.info.file.offset;
                     const aligned_data_offset = std.mem.alignForward(u32, current_data_offset, file_alignment);
@@ -207,7 +211,7 @@ pub const Builder = struct {
                     try writer.writeStruct(MetaEntry{
                         .attributes = entry.attributes,
                         // NOTE: Offset stores alignment, see above
-                        .info = .{ .file = .{ .offset = aligned_data_offset, .size = file_size } }
+                        .info = .{ .file = .{ .offset = aligned_data_offset, .size = file_size } },
                     }, .little);
 
                     current_data_offset = aligned_data_offset + file_size;
@@ -222,7 +226,7 @@ pub const Builder = struct {
         {
             var current_data_offset: u32 = data_offset;
             var remaining_data = builder.file_data.items;
-            for (builder.entries.items) |entry| switch(entry.attributes.kind) {
+            for (builder.entries.items) |entry| switch (entry.attributes.kind) {
                 .file => {
                     const file_alignment = entry.info.file.offset;
                     const aligned_data_offset = std.mem.alignForward(u32, current_data_offset, file_alignment);

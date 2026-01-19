@@ -259,20 +259,17 @@ pub fn Decompress(comptime context: type) type {
 /// TODO: Look at how compressors are implemented with the Writer interface and implement a proper compressor.
 pub fn Compress(comptime Context: type) type {
     return struct {
-        pub const Lookup = struct {
-
-        };
+        pub const Lookup = struct {};
 
         output: *Writer,
         writer: Writer,
         buffer: []u8,
         lookup: Lookup,
 
-
         fn drain(w: *Writer, data: []const []const u8, splat: usize) Writer.Error!usize {
             _ = w.fixedDrain(data, splat) catch {};
             try rebaseInner(w, Context.history_len, 0);
-        } 
+        }
 
         fn rebase(w: *Writer, preserve: usize, capacity: usize) Writer.Error!void {
             _ = w;
@@ -312,8 +309,8 @@ pub fn Compress(comptime Context: type) type {
             /// Ends the stream of data.
             /// After calling this, the `.writer` becomes `.failing`.
             pub fn end(raw: *Raw) Writer.Error!void {
-                defer raw.writer = .failing; 
-                
+                defer raw.writer = .failing;
+
                 var buffered = raw.writer.buffered();
 
                 while (buffered.len > 0) {
@@ -321,7 +318,7 @@ pub fn Compress(comptime Context: type) type {
 
                     try raw.output.writeByte(only_literals);
                     try raw.output.writeAll(buffered[0..to_write]);
-                    buffered = buffered[to_write..]; 
+                    buffered = buffered[to_write..];
                 }
             }
 
@@ -340,7 +337,7 @@ pub fn Compress(comptime Context: type) type {
 
                 const full_data_len = Writer.countSplat(data, splat);
 
-                if(buffered.len + full_data_len < 8) {
+                if (buffered.len + full_data_len < 8) {
                     @branchHint(.unlikely);
 
                     @memmove(r.writer.buffer, buffered);
@@ -365,19 +362,19 @@ pub fn Compress(comptime Context: type) type {
                     @memcpy(literals[literals_len..], data[current_index][current_data_index..][0..to_fill]);
                     literals_len += to_fill;
 
-                    if(literals_len == literals.len) {
+                    if (literals_len == literals.len) {
                         defer literals_len = 0;
 
                         try out.writeByte(only_literals);
                         try out.writeAll(&literals);
                     }
 
-                    if(current_data_index + to_fill == current.len) {
+                    if (current_data_index + to_fill == current.len) {
                         const is_splat = current_index == data.len - 1;
                         current_data_index = 0;
-                        current_index += @intFromBool(!is_splat); 
+                        current_index += @intFromBool(!is_splat);
 
-                        if(is_splat) if(remaining_splat > 0) {
+                        if (is_splat) if (remaining_splat > 0) {
                             remaining_splat -= 1;
                         } else break;
                     } else current_data_index += to_fill;

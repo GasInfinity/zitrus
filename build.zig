@@ -152,9 +152,9 @@ pub fn build(b: *Build) void {
 fn buildVersion(b: *Build) []const u8 {
     const maybe_version = b.option([]const u8, "version-string", "Override zitrus version");
 
-    if(maybe_version) |ver| return ver;
+    if (maybe_version) |ver| return ver;
 
-    if(!std.process.can_spawn) {
+    if (!std.process.can_spawn) {
         std.log.err("Cannot retrieve version info from git, set it with version-string manually", .{});
         std.process.exit(1);
     }
@@ -164,28 +164,33 @@ fn buildVersion(b: *Build) []const u8 {
     var code: u8 = undefined;
     const git_describe_untrimmed = b.runAllowFail(&.{
         "git",
-        "-C", b.build_root.path orelse ".",
-        "--git-dir", ".git",
-        "describe", "--match", "v*.*.*",
-        "--tags", "--abbrev=9"
+        "-C",
+        b.build_root.path orelse ".",
+        "--git-dir",
+        ".git",
+        "describe",
+        "--match",
+        "v*.*.*",
+        "--tags",
+        "--abbrev=9",
     }, &code, .Ignore) catch return version_string;
     const git_describe = std.mem.trim(u8, git_describe_untrimmed, " \n\r");
 
     switch (std.mem.count(u8, git_describe, "-")) {
         0, 1 => {
             // Tagged release or prerelease
-            if(!std.mem.eql(u8, git_describe, version_string)) {
-                std.log.err("Version '{s}' does not match git tag '{s}'", .{version_string, git_describe });
+            if (!std.mem.eql(u8, git_describe, version_string)) {
+                std.log.err("Version '{s}' does not match git tag '{s}'", .{ version_string, git_describe });
                 std.process.exit(1);
             }
 
             return version_string;
         },
         2, 3 => |cnt| {
-            var it = std.mem.splitScalar(u8, git_describe, '-');   
+            var it = std.mem.splitScalar(u8, git_describe, '-');
 
             // `[1..]` to skip the 'v' in release tags.
-            const last_tagged = if(cnt == 2) it.next().?[1..] else b.fmt("{s}-{s}", .{it.next().?[1..], it.next().?}); 
+            const last_tagged = if (cnt == 2) it.next().?[1..] else b.fmt("{s}-{s}", .{ it.next().?[1..], it.next().? });
             const commit_height = it.next().?;
             const commit_hash = it.next().?;
 
@@ -194,17 +199,17 @@ fn buildVersion(b: *Build) []const u8 {
                 std.process.exit(1);
             };
 
-            if(version.order(last_tagged_version) != .gt) {
-                std.log.err("Version '{s}' must be greater than last tagged '{s}'", .{version_string, last_tagged});
+            if (version.order(last_tagged_version) != .gt) {
+                std.log.err("Version '{s}' must be greater than last tagged '{s}'", .{ version_string, last_tagged });
                 std.process.exit(1);
             }
 
-            if(commit_hash.len < 1 or commit_hash[0] != 'g') {
+            if (commit_hash.len < 1 or commit_hash[0] != 'g') {
                 std.log.err("Unexpected git describe output: '{s}'", .{git_describe});
                 return version_string;
             }
-            
-            return b.fmt("{}.{}.{}-{s}.dev.{s}+{s}", .{version.major, version.minor, version.patch, version.pre.?, commit_height, commit_hash[1..]});
+
+            return b.fmt("{}.{}.{}-{s}.dev.{s}+{s}", .{ version.major, version.minor, version.patch, version.pre.?, commit_height, commit_hash[1..] });
         },
         else => {
             std.log.err("Unexpected git describe output: '{s}'", .{git_describe});
@@ -250,7 +255,7 @@ fn makeReleaseStep(b: *Build, version_slice: []const u8, optimize: std.builtin.O
         const tools_output = b.addInstallArtifact(tools, .{
             .dest_dir = .{
                 .override = .{
-                    .custom = b.fmt("zitrus-{s}-{s}", .{release_target.zigTriple(b.allocator) catch @panic("OOM"), version_slice}),
+                    .custom = b.fmt("zitrus-{s}-{s}", .{ release_target.zigTriple(b.allocator) catch @panic("OOM"), version_slice }),
                 },
             },
         });

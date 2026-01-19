@@ -1,4 +1,3 @@
-
 test "(no timeout) returns instantly succeeding" {
     const arbiter = horizon.testing.arbiter;
 
@@ -26,7 +25,7 @@ test "(timeout: none) returns instantly with timeout" {
 const signal = struct {
     // XXX: not ideal (the sleep)
     fn one(ctx: ?*anyopaque) callconv(.c) noreturn {
-        const value: *std.atomic.Value(i32) = @alignCast(@ptrCast(ctx.?));
+        const value: *std.atomic.Value(i32) = @ptrCast(@alignCast(ctx.?));
         while (value.load(.monotonic) != -1) {
             horizon.sleepThread(20000);
         }
@@ -35,7 +34,7 @@ const signal = struct {
     }
 
     fn all(ctx: ?*anyopaque) callconv(.c) noreturn {
-        const value: *std.atomic.Value(i32) = @alignCast(@ptrCast(ctx.?));
+        const value: *std.atomic.Value(i32) = @ptrCast(@alignCast(ctx.?));
         while (value.load(.monotonic) != -1) {
             horizon.sleepThread(20000);
         }
@@ -75,7 +74,7 @@ test "(timeout: any) returns timeout without deadlocking" {
 
     var value: i32 = 0;
 
-    try std.testing.expect(arbiter.arbitrate(&value, .{ .wait_if_less_than_timeout = .{ .value = 1, .timeout = .fromNanoseconds(1000)} }) == error.Timeout);
+    try std.testing.expect(arbiter.arbitrate(&value, .{ .wait_if_less_than_timeout = .{ .value = 1, .timeout = .fromNanoseconds(1000) } }) == error.Timeout);
 }
 
 const std = @import("std");

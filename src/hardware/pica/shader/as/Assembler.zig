@@ -289,7 +289,7 @@ const Mnemonic = enum {
         return switch (mnemonic) {
             .@"break", .nop, .emit, .end => .unparametized,
             .add, .dp3, .dp4, .dph, .dst, .mul, .sge, .slt, .max, .min => .binary,
-            .ex2, .lg2, .litp,  .flr, .rcp, .rsq, .mova, .mov => .unary,
+            .ex2, .lg2, .litp, .flr, .rcp, .rsq, .mova, .mov => .unary,
             .breakc, .call, .callc, .ifc, .jmpc => .flow_conditional,
             .callu, .ifu, .jmpu, .loop => .flow_uniform,
             .cmp => .comparison,

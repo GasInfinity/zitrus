@@ -49,7 +49,7 @@ pub fn main(args: Lz10, arena: std.mem.Allocator) !u8 {
     var input_buf: [4096]u8 = undefined;
     var input_reader = input_file.readerStreaming(&input_buf);
 
-    if(args.decompress) {
+    if (args.decompress) {
         const maybe_hdr = try input_reader.interface.peekArray(4);
 
         // The decompressor works with the raw stream and doesn't (and shouldn't) handle this.
@@ -80,9 +80,9 @@ pub fn main(args: Lz10, arena: std.mem.Allocator) !u8 {
         if (input_remaining != 0) log.warn("Got {} more bytes after decompressing", .{input_remaining});
         return 0;
     }
-    
+
     log.warn("Only a 'fastestest' compression is currently supported (a.k.a: no compression), file size will be bigger!", .{});
-    
+
     // TODO: Migrate to normal `Compress` when implemented.
     var output_buf: [4096]u8 = undefined;
     var output_writer = output_file.writerStreaming(&output_buf);
@@ -90,11 +90,11 @@ pub fn main(args: Lz10, arena: std.mem.Allocator) !u8 {
     var compress_buf: [lz10.max_window_len]u8 = undefined;
     var compressor: lz10.Compress.Raw = .init(&output_writer.interface, &compress_buf);
 
-    if(args.header) |hdr| try output_writer.interface.writeAll(hdr);
+    if (args.header) |hdr| try output_writer.interface.writeAll(hdr);
 
-    if(input_reader.getSize()) |size| {
-        if(size >= std.math.maxInt(u24)) {
-            log.err("cannot compress, file size is too big, {} > {}!", .{size, std.math.maxInt(u24)});
+    if (input_reader.getSize()) |size| {
+        if (size >= std.math.maxInt(u24)) {
+            log.err("cannot compress, file size is too big, {} > {}!", .{ size, std.math.maxInt(u24) });
             return 1;
         }
 
@@ -108,8 +108,8 @@ pub fn main(args: Lz10, arena: std.mem.Allocator) !u8 {
 
         const size = try input_reader.interface.streamRemaining(&allocating.writer);
 
-        if(size >= std.math.maxInt(u24)) {
-            log.err("cannot compress, file size is too big, {} > {}!", .{size, std.math.maxInt(u24)});
+        if (size >= std.math.maxInt(u24)) {
+            log.err("cannot compress, file size is too big, {} > {}!", .{ size, std.math.maxInt(u24) });
             return 1;
         }
 

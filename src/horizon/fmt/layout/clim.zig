@@ -3,7 +3,7 @@
 //! Weirdly it has a footer instead of a header and obviously image data is tiled.
 //!
 //! Based on the documentation found in GBATEK:
-//! * https://www.problemkaputt.de/gbatek.htm#3dsfilesvideolayoutimagesclimflim 
+//! * https://www.problemkaputt.de/gbatek.htm#3dsfilesvideolayoutimagesclimflim
 
 pub const magic = "CLIM";
 

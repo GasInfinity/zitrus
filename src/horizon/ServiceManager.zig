@@ -144,8 +144,7 @@ pub fn sendEnableNotification(srv: ServiceManager) !Semaphore {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.EnableNotification, .{}, .{})).cases()) {
         .success => |s| s.value.notification_received,
-        .failure => |code| if(code == C.srv_process_not_registered) error.ProcessNotFound
-        else horizon.unexpectedResult(code),
+        .failure => |code| if (code == C.srv_process_not_registered) error.ProcessNotFound else horizon.unexpectedResult(code),
     };
 }
 
@@ -163,10 +162,7 @@ pub fn sendRegisterService(srv: ServiceManager, name: []const u8, max_sessions: 
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.RegisterService, req, .{})).cases()) {
         .success => |s| s.value.server,
-        .failure => |code| if(code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName
-        else if(code == C.os_already_exists) error.PortAlreadyExists
-        else if(code == C.srv_out_of_services) error.SystemResources
-        else horizon.unexpectedResult(code),
+        .failure => |code| if (code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName else if (code == C.os_already_exists) error.PortAlreadyExists else if (code == C.srv_out_of_services) error.SystemResources else horizon.unexpectedResult(code),
     };
 }
 
@@ -183,9 +179,7 @@ pub fn sendUnregisterService(srv: ServiceManager, name: []const u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.UnregisterService, req, .{})).cases()) {
         .success => {},
-        .failure => |code| if(C.os_not_found) error.PortNotFound
-        else if(C.srv_access_denied) error.AccessDenied
-        else horizon.unexpectedResult(code),
+        .failure => |code| if (C.os_not_found) error.PortNotFound else if (C.srv_access_denied) error.AccessDenied else horizon.unexpectedResult(code),
     };
 }
 
@@ -203,13 +197,7 @@ pub fn sendGetServiceHandle(srv: ServiceManager, name: []const u8, flags: comman
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.GetServiceHandle, req, .{})).cases()) {
         .success => |s| s.value.service.wrapped,
-        .failure => |code| if(code == C.kernel_invalid_handle) unreachable 
-        else if(code == C.srv_access_denied) error.AccessDenied
-        else if(code == C.out_of_sessions or code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory) error.SystemResources
-        else if(code == C.os_port_busy) error.PortBusy 
-        else if(code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName
-        else if(code == C.os_not_found) error.PortNotFound
-        else horizon.unexpectedResult(code),
+        .failure => |code| if (code == C.kernel_invalid_handle) unreachable else if (code == C.srv_access_denied) error.AccessDenied else if (code == C.out_of_sessions or code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory) error.SystemResources else if (code == C.os_port_busy) error.PortBusy else if (code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName else if (code == C.os_not_found) error.PortNotFound else horizon.unexpectedResult(code),
     };
 }
 
@@ -227,10 +215,7 @@ pub fn sendRegisterPort(srv: ServiceManager, name: []const u8, registering_port:
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.RegisterPort, req, .{})).cases()) {
         .success => |s| s.value.server,
-        .failure => |code| if(code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName
-        else if(code == C.os_already_exists) error.PortAlreadyExists
-        else if(code == C.srv_out_of_services) error.SystemResources
-        else horizon.unexpectedResult(code),
+        .failure => |code| if (code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName else if (code == C.os_already_exists) error.PortAlreadyExists else if (code == C.srv_out_of_services) error.SystemResources else horizon.unexpectedResult(code),
     };
 }
 
@@ -247,9 +232,7 @@ pub fn sendUnregisterPort(srv: ServiceManager, name: []const u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.UnregisterPort, req, .{})).cases()) {
         .success => {},
-        .failure => |code| if(C.os_not_found) error.PortNotFound
-        else if(C.srv_access_denied) error.AccessDenied
-        else horizon.unexpectedResult(code),
+        .failure => |code| if (C.os_not_found) error.PortNotFound else if (C.srv_access_denied) error.AccessDenied else horizon.unexpectedResult(code),
     };
 }
 
@@ -267,10 +250,7 @@ pub fn sendGetPort(srv: ServiceManager, name: []const u8, wait_until_found: bool
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.GetPort, req, .{})).cases()) {
         .success => |s| s.value.service,
-        .failure => |code| if(code == C.srv_access_denied) error.AccessDenied
-        else if(code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName
-        else if(code == C.os_not_found) error.PortNotFound
-        else horizon.unexpectedResult(code),
+        .failure => |code| if (code == C.srv_access_denied) error.AccessDenied else if (code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName else if (code == C.os_not_found) error.PortNotFound else horizon.unexpectedResult(code),
     };
 }
 
@@ -327,9 +307,7 @@ pub fn sendIsServiceRegistered(srv: ServiceManager, name: []const u8) !bool {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.IsServiceRegistered, req, .{})).cases()) {
         .success => |s| s.value.registered,
-        .failure => |code| if(code == C.srv_access_denied) error.AccessDenied
-        else if(code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName
-        else horizon.unexpectedResult(code),
+        .failure => |code| if (code == C.srv_access_denied) error.AccessDenied else if (code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName else horizon.unexpectedResult(code),
     };
 }
 

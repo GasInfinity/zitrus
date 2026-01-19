@@ -104,10 +104,10 @@ pub const morton = struct {
     }
 
     test toDimensions {
-        try testing.expectEqual([2]u3{0b001, 0b001}, toDimensions(u6, 2, 0b000011));
-        try testing.expectEqual([2]u3{0b010, 0b010}, toDimensions(u6, 2, 0b001100));
-        try testing.expectEqual([2]u3{0b011, 0b011}, toDimensions(u6, 2, 0b001111));
-        try testing.expectEqual([2]u3{0b111, 0b111}, toDimensions(u6, 2, 0b111111));
+        try testing.expectEqual([2]u3{ 0b001, 0b001 }, toDimensions(u6, 2, 0b000011));
+        try testing.expectEqual([2]u3{ 0b010, 0b010 }, toDimensions(u6, 2, 0b001100));
+        try testing.expectEqual([2]u3{ 0b011, 0b011 }, toDimensions(u6, 2, 0b001111));
+        try testing.expectEqual([2]u3{ 0b111, 0b111 }, toDimensions(u6, 2, 0b111111));
     }
 
     /// Returns the morton linear index for the coordinates.
@@ -129,14 +129,14 @@ pub const morton = struct {
     }
 
     test toIndex {
-        try testing.expectEqual(0b000011, toIndex(u3, 2, .{1, 1}));
-        try testing.expectEqual(0b001100, toIndex(u3, 2, .{2, 2}));
-        try testing.expectEqual(0b001111, toIndex(u3, 2, .{3, 3}));
-        try testing.expectEqual(0b110000, toIndex(u3, 2, .{4, 4}));
-        try testing.expectEqual(0b111111, toIndex(u3, 2, .{7, 7}));
+        try testing.expectEqual(0b000011, toIndex(u3, 2, .{ 1, 1 }));
+        try testing.expectEqual(0b001100, toIndex(u3, 2, .{ 2, 2 }));
+        try testing.expectEqual(0b001111, toIndex(u3, 2, .{ 3, 3 }));
+        try testing.expectEqual(0b110000, toIndex(u3, 2, .{ 4, 4 }));
+        try testing.expectEqual(0b111111, toIndex(u3, 2, .{ 7, 7 }));
 
-        try testing.expectEqual(0b101011, toIndex(u3, 2, .{1, 7}));
-        try testing.expectEqual(0b011101, toIndex(u3, 2, .{7, 2}));
+        try testing.expectEqual(0b101011, toIndex(u3, 2, .{ 1, 7 }));
+        try testing.expectEqual(0b011101, toIndex(u3, 2, .{ 7, 2 }));
     }
 
     // TODO: We could test fuzzing (zig 0.16.0) value -> toDimensions -> toIndex -> value, as it must always be idempotent
@@ -164,8 +164,8 @@ pub const morton = struct {
 
         pub fn full(width: usize, height: usize, pixel_size: usize) ConversionOptions {
             return .{
-                .input_x = 0,   
-                .input_y = 0,   
+                .input_x = 0,
+                .input_y = 0,
                 .input_stride = width * pixel_size,
 
                 .output_x = 0,
@@ -210,7 +210,7 @@ pub const morton = struct {
 
                         const dst_subtile_y: u3 = @intCast(output_y & subtile_mask);
                         const dst_subtile_x: u3 = @intCast(output_x & subtile_mask);
-                        const dst_subtile_morton = toIndex(u3, 2, .{dst_subtile_x, dst_subtile_y});
+                        const dst_subtile_morton = toIndex(u3, 2, .{ dst_subtile_x, dst_subtile_y });
 
                         const dst_pixel_start = (dst_tile_y * dst_tile_pixels_per_line) + (dst_tile_x * tile_pixels);
                         const dst_index = (dst_pixel_start + dst_subtile_morton) * opts.pixel_size;
@@ -219,7 +219,7 @@ pub const morton = struct {
                     },
                     .untile => {
                         comptime unreachable; // TODO
-                    }
+                    },
                 };
 
                 @memcpy(dst_pixel, src_pixel);
@@ -283,21 +283,21 @@ pub const morton = struct {
                     const x, const y = toDimensions(SubindexInt, 2, @intCast(tile));
 
                     const linear_index = i >> 1;
-                    const second_linear_nibble = (i & 1) != 0; 
+                    const second_linear_nibble = (i & 1) != 0;
 
                     const morton_x = (x_start + x);
                     const morton_index = (y_start + y) * stride + (morton_x >> 1);
                     const second_morton_nibble = (morton_x & 1) != 0;
-                    
+
                     const src_pixel, const dst_pixel, const second_src_nibble, const second_dst_nibble = switch (strategy) {
                         .tile => .{ &src_pixels[morton_index], &dst_pixels[linear_index], second_morton_nibble, second_linear_nibble },
                         .untile => .{ &src_pixels[linear_index], &dst_pixels[morton_index], second_linear_nibble, second_morton_nibble },
                     };
 
-                    const src_nibble = if(second_src_nibble) (src_pixel.* >> 4) else (src_pixel.* & 0xF);
+                    const src_nibble = if (second_src_nibble) (src_pixel.* >> 4) else (src_pixel.* & 0xF);
                     const last_dst_pixel = dst_pixel.*;
 
-                    dst_pixel.* = if(second_dst_nibble) (last_dst_pixel & 0xF) | (src_nibble << 4) else (last_dst_pixel & 0xF0) | src_nibble;
+                    dst_pixel.* = if (second_dst_nibble) (last_dst_pixel & 0xF) | (src_nibble << 4) else (last_dst_pixel & 0xF0) | src_nibble;
                     i += 1;
                 }
             }

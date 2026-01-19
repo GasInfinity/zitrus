@@ -8,7 +8,7 @@ pub const Handle = enum(u32) {
 /// DO NOT ACCESS THIS FIELD LIKE THIS!!! ACCESSES MUST BE ATOMIC, USE value()!
 raw_value: u64,
 
-/// Wake cookie. 
+/// Wake cookie.
 wake: std.atomic.Value(i32) = .init(0),
 
 pub fn init(create_info: mango.SemaphoreCreateInfo) Semaphore {
@@ -22,7 +22,7 @@ pub fn counterValue(sema: *Semaphore) u64 {
 }
 
 pub fn signal(sema: *Semaphore, value: u64) bool {
-    zitrus.atomicStore64(u64, &sema.raw_value, value); 
+    zitrus.atomicStore64(u64, &sema.raw_value, value);
     return sema.wake.swap(0, .monotonic) < 0;
 }
 

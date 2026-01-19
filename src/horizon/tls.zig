@@ -88,7 +88,7 @@ export fn __aeabi_read_tp() callconv(.naked) void {
 
 const TlsIndex = extern struct { module: usize, offset: usize };
 export fn __tls_get_addr(index: *const TlsIndex) *anyopaque {
-    return @ptrFromInt(@intFromPtr(get().state.tp) + index.offset); 
+    return @ptrFromInt(@intFromPtr(get().state.tp) + index.offset);
 }
 
 const ipc = @import("ipc.zig");

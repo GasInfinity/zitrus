@@ -1,6 +1,6 @@
 pub const clim = @import("layout/clim.zig");
 pub const clyt = @import("layout/clyt.zig");
-pub const clan  = @import("layout/clan.zig");
+pub const clan = @import("layout/clan.zig");
 
 pub const Header = extern struct {
     magic: [4]u8,
@@ -47,8 +47,6 @@ pub const block = extern struct {
         size: u32,
     };
 };
-
-
 
 comptime {
     _ = clim;

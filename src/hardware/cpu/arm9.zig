@@ -16,11 +16,16 @@ pub const Control = packed struct(u32) {
     _reserved3: u12 = 0,
 
     pub inline fn read() Control {
-        return asm volatile("mrc p15, 0, %[cnt], c1, c0, 0" : [cnt] "=r" (-> Control));
+        return asm volatile ("mrc p15, 0, %[cnt], c1, c0, 0"
+            : [cnt] "=r" (-> Control),
+        );
     }
 
     pub inline fn write(cnt: Control) void {
-        return asm volatile("mcr p15, 0, %[cnt], c1, c0, 0" :: [cnt] "r" (cnt));
+        return asm volatile ("mcr p15, 0, %[cnt], c1, c0, 0"
+            :
+            : [cnt] "r" (cnt),
+        );
     }
 };
 

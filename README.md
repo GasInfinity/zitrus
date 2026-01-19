@@ -5,6 +5,7 @@
   
 3DS homebrew sdk written entirely in zig.
 
+
 ## Installation
 
 > [!NOTE]
@@ -83,6 +84,8 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 
 You can (and are encouraged) to look at the `tools` directory as it is a good example of how to use the API's `zitrus` provides outside (and inside!) of a 3DS environment. Almost all tools are self-contained and span 50-300 LOC.
 
+*[There's also a WIP wiki](https://codeberg.org/GasInfinity/zitrus/wiki)*
+
 # Coverage
 
 ### Legend
@@ -135,9 +138,10 @@ You can (and are encouraged) to look at the `tools` directory as it is a good ex
 ## Horizon
 
 ### Runtime
-- 🔴⛔ `threadlocal` variables.
+- 🔴 `threadlocal` variables.
 - 🟡⛔🔋 Panic / error reporting and tracing.
 - 🟡⛔🔋 *Application* Test runner.
+- 🔴⛔🔋 `libc`
 
 ### Services
     
@@ -217,6 +221,12 @@ I wanted to learn arm and always wanted to develop 3DS homebrew, also I searched
 - Really simplified and easy development. You don't need complex toolchains, you just need the `zig` executable, that's it. The tools `zitrus` provides also have no dependencies, they'll work on any platform that zig supports! You can still use devkitPRO's binutils if you need.
 - Safety in `Debug` and `ReleaseSafe` modes. Zitrus currently uses the `ErrDisp` port to report panics and returned errors. The only missing thing is reporting return traces with debugging symbols (Currently only addresses are logged)
 - Really useful and simple build-system (as you've seen the example `build.zig` is really small and makefiles are really arcane)
+
+## Contributing
+
+**Please refrain from using LLMs to make PRs and/or Issues as-is**
+
+Currently there's no place to discuss contributions or usage of the SDK, feel free to open an issue if you want to use `zitrus` but don't know how to start (remember, lack of documentation is *also* an issue!)
 
 # Credits
 - [3dbrew](https://www.3dbrew.org/wiki/Main_Page) is seriously the best resource if you need info about the 3DS hardware/software.

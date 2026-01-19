@@ -1,10 +1,8 @@
 pub const description = "WIP Animation Info RE";
 
-pub const descriptions = .{
-};
+pub const descriptions = .{};
 
-pub const switches = .{
-};
+pub const switches = .{};
 
 @"--": struct {
     pub const descriptions = .{
@@ -15,7 +13,7 @@ pub const switches = .{
 },
 
 pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
-    if(true) @panic("TODO");
+    if (true) @panic("TODO");
     _ = args;
     _ = arena;
     return 0;

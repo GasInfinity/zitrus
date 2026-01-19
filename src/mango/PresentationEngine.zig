@@ -332,7 +332,7 @@ const Swapchain = struct {
     pub fn wakePushAvailable(chain: *Swapchain, index: u8, arbiter: horizon.AddressArbiter) void {
         chain.available.pushFrontAssumeCapacity(index);
 
-        if(chain.available_wake.fetchAdd(1, .monotonic) == 0) arbiter.arbitrate(&chain.available_wake.raw, .{ .signal = 1 }) catch unreachable;
+        if (chain.available_wake.fetchAdd(1, .monotonic) == 0) arbiter.arbitrate(&chain.available_wake.raw, .{ .signal = 1 }) catch unreachable;
     }
 
     fn tryAcquireNextIndex(chain: *Swapchain) ?u8 {
@@ -357,12 +357,14 @@ const Swapchain = struct {
             //   1 - The driver pushes a new index and this doesn't wait
             //   2 - We wait and we're signaled, we'll get the new index in the next iteration.
             //   3 - We wait and we get a Timeout, in that case we have to check again if we have an index available (we may get a Timeout before waking up)
-            arbiter.arbitrate(&chain.available_wake.raw, .{ .wait_if_less_than_timeout = .{
-                .value = 1,
-                .timeout = timeout,
-                // Try to acquire again before erroring if somehow we got a Timeout before the driver called wake.
-                // XXX: Azahar does not have the same behavior as ofw, this somehow becomes a timeout even if timeout == -1
-            } }) catch return if (chain.tryAcquireNextIndex()) |idx| idx else error.Timeout; 
+            arbiter.arbitrate(&chain.available_wake.raw, .{
+                .wait_if_less_than_timeout = .{
+                    .value = 1,
+                    .timeout = timeout,
+                    // Try to acquire again before erroring if somehow we got a Timeout before the driver called wake.
+                    // XXX: Azahar does not have the same behavior as ofw, this somehow becomes a timeout even if timeout == -1
+                },
+            }) catch return if (chain.tryAcquireNextIndex()) |idx| idx else error.Timeout;
         }
     }
 };

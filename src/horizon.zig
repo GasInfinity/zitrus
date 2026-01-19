@@ -411,14 +411,14 @@ pub const MemoryOperation = packed struct(u32) {
         commit,
         map,
         unmap,
-        protect,    
+        protect,
     };
 
     pub const Region = enum(u3) {
         all,
         app,
         system,
-        base,    
+        base,
     };
 
     kind: Kind,
@@ -538,9 +538,8 @@ pub const ResourceLimit = packed struct(u32) {
         const C = result.Code;
         return switch (createResourceLimit().cases()) {
             .success => |s| s.value,
-            .failure => |code| if (code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory) error.SystemResources
-            else unexpectedResult(code),
-        }; 
+            .failure => |code| if (code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory) error.SystemResources else unexpectedResult(code),
+        };
     }
 
     pub fn setLimitValues(resource_limit: ResourceLimit, resources: []const LimitableResource, amount: []const i64) !void {
@@ -548,7 +547,7 @@ pub const ResourceLimit = packed struct(u32) {
 
         const code = setResourceLimitLimitValues(resource_limit, resources, amount, resources.len);
 
-        if(!code.isSuccess()) return unexpectedResult(code); // TODO: Investigate
+        if (!code.isSuccess()) return unexpectedResult(code); // TODO: Investigate
     }
 
     pub fn close(limit: ResourceLimit) void {
@@ -557,18 +556,17 @@ pub const ResourceLimit = packed struct(u32) {
 };
 
 pub const CodeSet = packed struct(u32) {
-    pub const Info = extern struct {}; // TODO: 
+    pub const Info = extern struct {}; // TODO:
     pub const CreateError = Object.Error;
 
     obj: Object,
-    
+
     pub fn create(info: CodeSet.Info, text: [*]align(heap.page_size) const u8, rodata: [*]align(heap.page_size) const u8, data: [*]align(heap.page_size) const u8) CreateError!ResourceLimit {
         const C = result.Code;
         return switch (createCodeSet(info, text, rodata, data).cases()) {
             .success => |s| s.value,
-            .failure => |code| if (code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory) error.SystemResources
-            else unexpectedResult(code),
-        }; 
+            .failure => |code| if (code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory) error.SystemResources else unexpectedResult(code),
+        };
     }
 
     pub fn close(set: CodeSet) void {
@@ -613,8 +611,7 @@ pub const AddressArbiter = packed struct(u32) {
 
         const code = arbitrateAddress(arbiter, address, std.meta.activeTag(arbitration), value, timeout);
 
-        return if (code == C.os_timeout) error.Timeout
-        else if (code == C.kernel_unaligned_address) unreachable // NOTE: If you hit this you 100% have IB as the pointer is assumed to be aligned
+        return if (code == C.os_timeout) error.Timeout else if (code == C.kernel_unaligned_address) unreachable // NOTE: If you hit this you 100% have IB as the pointer is assumed to be aligned
         else if (code == C.os_invalid_string) unreachable // NOTE: invalid address
         else if (!code.isSuccess()) unreachable // NOTE: really unreachable
         else {};
@@ -896,10 +893,7 @@ pub const ClientSession = packed struct(u32) {
         const C = result.Code;
         const code = sendSyncRequest(session);
 
-        return if (code == C.kernel_invalid_handle) unreachable
-        else if (code == C.os_session_closed_by_remote) error.ConnectionClosedByPeer 
-        else if (!code.isSuccess()) unexpectedResult(code)
-        else {};
+        return if (code == C.kernel_invalid_handle) unreachable else if (code == C.os_session_closed_by_remote) error.ConnectionClosedByPeer else if (!code.isSuccess()) unexpectedResult(code) else {};
     }
 
     pub fn close(session: ClientSession) void {
@@ -1037,14 +1031,14 @@ pub const Thread = packed struct(u32) {
     }
 
     pub fn id(thread: Thread) Id {
-        return switch(getThreadId(thread)) {
+        return switch (getThreadId(thread)) {
             .success => |s| s.value,
             .failure => unreachable, // NOTE: basically invalid handle!
-        }; 
+        };
     }
-        
+
     pub fn pid(thread: Thread) Process.Id {
-        return switch(getThreadProcessId(thread)) {
+        return switch (getThreadProcessId(thread)) {
             .success => |s| s.value,
             .failure => unreachable, // NOTE: basically invalid handle!
         };
@@ -1188,26 +1182,26 @@ pub const Process = packed struct(u32) {
     sync: Synchronization,
 
     pub fn id(process: Process) Process.Id {
-        return switch(getProcessId(process)) {
+        return switch (getProcessId(process)) {
             .success => |s| s.value,
             .failure => unreachable, // NOTE: basically invalid handle!
         };
     }
 
     pub fn controlMemory(process: Process, operation: MemoryOperation.Kind, addr0: ?*anyopaque, addr1: ?*anyopaque, size: usize, permissions: MemoryPermission) !void {
-        const code = controlProcessMemory(process, operation, addr0, addr1, size, permissions); 
+        const code = controlProcessMemory(process, operation, addr0, addr1, size, permissions);
 
         if (!code.isSuccess()) return unexpectedResult(code);
     }
 
     pub fn mapMemory(process: Process, slice: []align(heap.page_size) u8) !void {
-        const code = mapProcessMemory(process, slice); 
+        const code = mapProcessMemory(process, slice);
 
         if (!code.isSuccess()) return unexpectedResult(code);
     }
 
     pub fn unmapMemory(process: Process, slice: []align(heap.page_size) u8) !void {
-        const code = unmapProcessMemory(process, slice); 
+        const code = unmapProcessMemory(process, slice);
 
         if (!code.isSuccess()) unreachable; // NOTE: programmer error
     }

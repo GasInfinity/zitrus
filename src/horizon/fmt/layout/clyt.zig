@@ -41,7 +41,7 @@ pub const Material = extern struct {
         _unused0: u15 = 0,
     };
 
-    name: [20]u8, 
+    name: [20]u8,
     combiner_buffer_constant: [4]u8,
     combiner_unit_constant: [6][4]u8,
     flags: Flags,
@@ -126,11 +126,9 @@ pub const Material = extern struct {
             each_indirect,
         };
 
-        pub const ColorConfig = packed struct(u32) {
-        };
+        pub const ColorConfig = packed struct(u32) {};
 
-        pub const AlphaConfig = packed struct(u32) {
-        };
+        pub const AlphaConfig = packed struct(u32) {};
 
         color: ColorConfig,
         alpha: AlphaConfig,
@@ -141,9 +139,7 @@ pub const Material = extern struct {
         reference: f32,
     };
 
-    pub const Blend = extern struct {
-
-    };
+    pub const Blend = extern struct {};
 };
 
 pub const Pane = extern struct {

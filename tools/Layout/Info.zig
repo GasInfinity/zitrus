@@ -1,10 +1,8 @@
 pub const description = "WIP Layout Info RE";
 
-pub const descriptions = .{
-};
+pub const descriptions = .{};
 
-pub const switches = .{
-};
+pub const switches = .{};
 
 @"--": struct {
     pub const descriptions = .{
@@ -44,7 +42,7 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
         switch (block_hdr.kind) {
             .layout => {
                 const lyt_hdr = try reader.takeStruct(clyt.Layout, .little);
-                log.info("{t} | ({}, {})", .{lyt_hdr.origin, lyt_hdr.canvas_size[0], lyt_hdr.canvas_size[1]});
+                log.info("{t} | ({}, {})", .{ lyt_hdr.origin, lyt_hdr.canvas_size[0], lyt_hdr.canvas_size[1] });
             },
             .textures, .fonts => |kind| {
                 const kind_name: []const u8 = switch (kind) {
@@ -61,9 +59,9 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
                 defer arena.free(name_table);
 
                 for (name_offsets) |offset| {
-                    const name = std.mem.span(@as([*:0]const u8, @ptrCast(name_table))[offset - (entries * @sizeOf(u32))..]);
+                    const name = std.mem.span(@as([*:0]const u8, @ptrCast(name_table))[offset - (entries * @sizeOf(u32)) ..]);
 
-                    log.info("Dependency on {s}: {s}", .{kind_name, name});
+                    log.info("Dependency on {s}: {s}", .{ kind_name, name });
                 }
             },
             .materials => {
@@ -76,8 +74,8 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
                     const real_offset = offset - (@sizeOf(lyt.block.Header) + @sizeOf(u32) + entry_offsets.len * @sizeOf(u32));
                     try reader.discardAll(real_offset - last);
 
-                    const mat = try reader.takeStruct(clyt.Material, .little); 
-                    const name = mat.name[0..std.mem.indexOfScalar(u8, &mat.name, 0) orelse mat.name.len];
+                    const mat = try reader.takeStruct(clyt.Material, .little);
+                    const name = mat.name[0 .. std.mem.indexOfScalar(u8, &mat.name, 0) orelse mat.name.len];
 
                     log.info("Material {s}", .{name});
                     log.info("Combiner Buffer Color: {any}", .{mat.combiner_buffer_constant});
@@ -89,19 +87,19 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
             },
             .pane => {
                 const pane = try reader.takeStruct(clyt.Pane, .little);
-                const name = pane.name[0..std.mem.indexOfScalar(u8, &pane.name, 0) orelse pane.name.len];
-                log.info("Pane {s}: {}", .{name, pane});
+                const name = pane.name[0 .. std.mem.indexOfScalar(u8, &pane.name, 0) orelse pane.name.len];
+                log.info("Pane {s}: {}", .{ name, pane });
             },
             .picture => {
                 const picture = try reader.takeStruct(clyt.Picture, .little);
                 try reader.discardAll(picture.coordinate_entries * @sizeOf([4][2]f32));
 
-                const name = picture.pane.name[0..std.mem.indexOfScalar(u8, &picture.pane.name, 0) orelse picture.pane.name.len];
-                log.info("Picture {s}: {}", .{name, picture});
+                const name = picture.pane.name[0 .. std.mem.indexOfScalar(u8, &picture.pane.name, 0) orelse picture.pane.name.len];
+                log.info("Picture {s}: {}", .{ name, picture });
             },
             .group => {
                 const group = try reader.takeStruct(clyt.Group, .little);
-                const name = group.name[0..std.mem.indexOfScalar(u8, &group.name, 0) orelse group.name.len];
+                const name = group.name[0 .. std.mem.indexOfScalar(u8, &group.name, 0) orelse group.name.len];
 
                 const references = try reader.readSliceEndianAlloc(arena, clyt.Pane.Reference, group.panes, .little);
                 defer arena.free(references);
@@ -109,7 +107,7 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
                 log.info("Group {s}", .{name});
 
                 for (references) |ref| {
-                    const ref_slice = ref[0..std.mem.indexOfScalar(u8, &ref, 0) orelse ref.len];
+                    const ref_slice = ref[0 .. std.mem.indexOfScalar(u8, &ref, 0) orelse ref.len];
                     log.info("references: {s}", .{ref_slice});
                 }
             },
@@ -117,7 +115,7 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
                 try reader.discardAll(block_hdr.size - @sizeOf(lyt.block.Header));
                 log.err("TODO unhandled block kind: {s}", .{@as([4]u8, @bitCast(@intFromEnum(block_hdr.kind)))});
                 continue;
-            }
+            },
         }
     }
 

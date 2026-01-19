@@ -19,7 +19,7 @@ pub var gsp: horizon.services.GspGpu = if (!builtin.is_test)
 else
     undefined;
 
-pub var arbiter: horizon.AddressArbiter = if(!builtin.is_test)
+pub var arbiter: horizon.AddressArbiter = if (!builtin.is_test)
     @compileError("trying to get the testing address arbiter when not testing")
 else
     undefined;

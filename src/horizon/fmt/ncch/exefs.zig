@@ -73,8 +73,8 @@ pub const Header = extern struct {
 
             const file = &it.header.files[it.current];
 
-            const name = file.name[0..std.mem.indexOfScalar(u8, &file.name, 0) orelse file.name.len];
-            
+            const name = file.name[0 .. std.mem.indexOfScalar(u8, &file.name, 0) orelse file.name.len];
+
             if (name.len == 0) return null;
 
             defer it.current += 1;

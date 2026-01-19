@@ -55,7 +55,7 @@ pub fn free(ctx: *anyopaque, memory: []u8, alignment: Alignment, ra: usize) void
         .kind = .free,
         .area = .all,
         .linear = true,
-    }, @alignCast(@ptrCast(memory.ptr)), null, aligned_len, .rw);
+    }, @ptrCast(@alignCast(memory.ptr)), null, aligned_len, .rw);
 }
 
 const std = @import("std");

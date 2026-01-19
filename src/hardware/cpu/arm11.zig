@@ -19,11 +19,16 @@ pub const Control = packed struct(u32) {
         _reserved0: u25 = 0,
 
         pub inline fn read() Auxiliary {
-            return asm volatile("mrc p15, 0, %[cnt], c1, c0, 1" : [cnt] "=r" (-> Auxiliary));
+            return asm volatile ("mrc p15, 0, %[cnt], c1, c0, 1"
+                : [cnt] "=r" (-> Auxiliary),
+            );
         }
 
         pub inline fn write(cnt: Auxiliary) void {
-            return asm volatile("mcr p15, 0, %[cnt], c1, c0, 1" :: [cnt] "r" (cnt));
+            return asm volatile ("mcr p15, 0, %[cnt], c1, c0, 1"
+                :
+                : [cnt] "r" (cnt),
+            );
         }
     };
 
@@ -53,13 +58,18 @@ pub const Control = packed struct(u32) {
     tex_remap: bool = false,
     force_access_permissions: bool = false,
     _reserved6: u2 = 0,
-    
+
     pub inline fn read() Control {
-        return asm volatile("mrc p15, 0, %[cnt], c1, c0, 0" : [cnt] "=r" (-> Control));
+        return asm volatile ("mrc p15, 0, %[cnt], c1, c0, 0"
+            : [cnt] "=r" (-> Control),
+        );
     }
 
     pub inline fn write(cnt: Control) void {
-        return asm volatile("mcr p15, 0, %[cnt], c1, c0, 0" :: [cnt] "r" (cnt));
+        return asm volatile ("mcr p15, 0, %[cnt], c1, c0, 0"
+            :
+            : [cnt] "r" (cnt),
+        );
     }
 };
 
@@ -72,11 +82,16 @@ pub const CoprocessorAccess = packed struct(u32) {
     _reserved1: u8 = 0,
 
     pub inline fn read() CoprocessorAccess {
-        return asm volatile("mrc p15, 0, %[acc], c1, c0, 2" : [acc] "=r" (-> CoprocessorAccess));
+        return asm volatile ("mrc p15, 0, %[acc], c1, c0, 2"
+            : [acc] "=r" (-> CoprocessorAccess),
+        );
     }
 
     pub inline fn write(acc: CoprocessorAccess) void {
-        return asm volatile("mcr p15, 0, %[acc], c1, c0, 2" :: [acc] "r" (acc));
+        return asm volatile ("mcr p15, 0, %[acc], c1, c0, 2"
+            :
+            : [acc] "r" (acc),
+        );
     }
 };
 
@@ -93,15 +108,22 @@ pub const TranslationTable = extern struct {
         shared: bool = false,
         _reserved1: u1 = 0,
         region: Cachable = .none,
-        /// TTBL 0 base depends on `Control.separate_table_boundary` and TTBL 1 is restricted to 16KB pages 
+        /// TTBL 0 base depends on `Control.separate_table_boundary` and TTBL 1 is restricted to 16KB pages
         base: u27,
 
         pub inline fn read(comptime table: u1) Base {
-            return asm volatile("mrc p15, 0, %[base], c2, c0, %[reg]" : [base] "=r" (-> Base) : [reg] "i" (table));
+            return asm volatile ("mrc p15, 0, %[base], c2, c0, %[reg]"
+                : [base] "=r" (-> Base),
+                : [reg] "i" (table),
+            );
         }
 
         pub inline fn write(base: Base, comptime table: u1) void {
-            return asm volatile("mcr p15, 0, %[base], c2, c0, %[reg]" :: [base] "r" (base), [reg] "i" (table));
+            return asm volatile ("mcr p15, 0, %[base], c2, c0, %[reg]"
+                :
+                : [base] "r" (base),
+                  [reg] "i" (table),
+            );
         }
     };
 
@@ -121,11 +143,16 @@ pub const TranslationTable = extern struct {
         _reserved0: u29 = 0,
 
         pub inline fn read() TranslationTable.Control {
-            return asm volatile("mrc p15, 0, %[cnt], c2, c0, 2" : [cnt] "=r" (-> TranslationTable.Control));
+            return asm volatile ("mrc p15, 0, %[cnt], c2, c0, 2"
+                : [cnt] "=r" (-> TranslationTable.Control),
+            );
         }
 
         pub inline fn write(cnt: TranslationTable.Control) void {
-            return asm volatile("mcr p15, 0, %[cnt], c2, c0, 2" :: [cnt] "r" (cnt));
+            return asm volatile ("mcr p15, 0, %[cnt], c2, c0, 2"
+                :
+                : [cnt] "r" (cnt),
+            );
         }
     };
 };
@@ -136,11 +163,16 @@ pub const DomainAccess = packed struct(u32) {
     access: BitpackedArray(Mode, 16),
 
     pub inline fn read() DomainAccess {
-        return asm volatile("mrc p15, 0, %[acc], c3, c0, 0" : [acc] "=r" (-> DomainAccess));
+        return asm volatile ("mrc p15, 0, %[acc], c3, c0, 0"
+            : [acc] "=r" (-> DomainAccess),
+        );
     }
 
     pub inline fn write(acc: DomainAccess) void {
-        return asm volatile("mcr p15, 0, %[acc], c3, c0, 0" :: [acc] "r" (acc));
+        return asm volatile ("mcr p15, 0, %[acc], c3, c0, 0"
+            :
+            : [acc] "r" (acc),
+        );
     }
 };
 
@@ -157,24 +189,38 @@ pub const Fault = packed struct(u32) {
     _reserved1: u19,
 
     pub inline fn read(comptime kind: Kind) Fault {
-        return asm volatile("mrc p15, 0, %[st], c5, c0, %[kind]" : [st] "=r" (-> DomainAccess) : [kind] "i" (@intFromEnum(kind)));
+        return asm volatile ("mrc p15, 0, %[st], c5, c0, %[kind]"
+            : [st] "=r" (-> DomainAccess),
+            : [kind] "i" (@intFromEnum(kind)),
+        );
     }
 
     pub inline fn write(st: Fault, comptime kind: Kind) void {
-        return asm volatile("mcr p15, 0, %[st], c5, c0, %[kind]" :: [st] "r" (st), [kind] "i" (@intFromEnum(kind)));
+        return asm volatile ("mcr p15, 0, %[st], c5, c0, %[kind]"
+            :
+            : [st] "r" (st),
+              [kind] "i" (@intFromEnum(kind)),
+        );
     }
 
     pub const Address = packed struct(u32) {
         pub const Kind = enum(u1) { default, watchpoint };
-        
+
         virtual: u32,
 
         pub inline fn read(comptime kind: Address.Kind) u32 {
-            return asm volatile("mrc p15, 0, %[addr], c6, c0, %[kind]" : [addr] "=r" (-> Address) : [kind] "i" (@intFromEnum(kind)));
+            return asm volatile ("mrc p15, 0, %[addr], c6, c0, %[kind]"
+                : [addr] "=r" (-> Address),
+                : [kind] "i" (@intFromEnum(kind)),
+            );
         }
 
         pub inline fn write(addr: Address, comptime kind: Address.Kind) void {
-            return asm volatile("mcr p15, 0, %[addr], c6, c0, %[kind]" :: [addr] "r" (addr), [kind] "i" (@intFromEnum(kind)));
+            return asm volatile ("mcr p15, 0, %[addr], c6, c0, %[kind]"
+                :
+                : [addr] "r" (addr),
+                  [kind] "i" (@intFromEnum(kind)),
+            );
         }
     };
 };

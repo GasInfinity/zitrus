@@ -72,8 +72,7 @@ const AppState = struct {
                 state.bird_x = (Screen.top.width() / 2);
             },
             .gaming => |*g| {
-                if (pressed.a or touch_pressed) g.bird_velocity = 100
-                else g.bird_velocity = @max(-100, g.bird_velocity - 150 * delta);
+                if (pressed.a or touch_pressed) g.bird_velocity = 100 else g.bird_velocity = @max(-100, g.bird_velocity - 150 * delta);
 
                 state.bird_x += g.bird_velocity * delta;
 

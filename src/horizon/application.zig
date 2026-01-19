@@ -121,7 +121,7 @@ fn Manager(comptime accelerated: bool) type {
 
         /// Same behaviour as `app.waitEventTimeout(.fromNanoseconds(0))`
         pub fn pollEvent(app: *Application) !?Event {
-            return try app.waitEventTimeout(.fromNanoseconds(0)); 
+            return try app.waitEventTimeout(.fromNanoseconds(0));
         }
 
         /// Waits for an event until one is encountered or a timeout happens.
@@ -133,7 +133,7 @@ fn Manager(comptime accelerated: bool) type {
                 else => {},
             };
 
-            while (app.apt_app.waitNotificationTimeout(app.apt, apt_service, app.srv, timeout) catch |err| switch(err) {
+            while (app.apt_app.waitNotificationTimeout(app.apt, apt_service, app.srv, timeout) catch |err| switch (err) {
                 error.Timeout => return null,
                 else => |e| return e,
             }) |n| switch (n) {

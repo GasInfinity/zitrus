@@ -27,7 +27,7 @@ path: ?[]const u8,
 pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     const cwd = std.fs.cwd();
 
-    if(args.hash != null and args.path != null) {
+    if (args.hash != null and args.path != null) {
         log.err("Specify either --path or --hash", .{});
         return 1;
     }
@@ -58,18 +58,19 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     const utf16_path = try std.unicode.utf8ToUtf16LeAlloc(arena, real_path);
     defer arena.free(utf16_path);
 
-    const maybe_hash: ?u32 = if(args.hash) |hash|
+    const maybe_hash: ?u32 = if (args.hash) |hash|
         hash
-    else if(args.path) |path|
+    else if (args.path) |path|
         sarc.hashName(path, view.hash_multiplier)
-    else null;
+    else
+        null;
 
-    if(maybe_hash) |hash| {
+    if (maybe_hash) |hash| {
         const opened = view.openFileAbsoluteHash(hash) catch |err| {
-            if(args.path) |path|
+            if (args.path) |path|
                 log.err("could not open file '{s}' (hash {}) in SARC: {t}", .{ path, hash, err })
-            else 
-                log.err("could not open file with hash {} in SARC: {t}", .{hash, err});
+            else
+                log.err("could not open file with hash {} in SARC: {t}", .{ hash, err });
             return 1;
         };
 
@@ -94,7 +95,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         return 0;
     }
 
-    if(args.output == null) {
+    if (args.output == null) {
         log.err("directory outputs must be specified", .{});
         return 1;
     }
@@ -119,16 +120,16 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         const name = file.name(view);
         const stat = file.stat(view);
 
-        var parent: std.fs.Dir, const close_parent, const display_name = if(name.len == 0)
+        var parent: std.fs.Dir, const close_parent, const display_name = if (name.len == 0)
             .{ output_directory, false, std.fmt.bufPrint(&hash_name_buf, "unnamed_{X:0>8}", .{stat.hash}) catch unreachable }
-        else if(std.fs.path.dirname(name)) |dir|
+        else if (std.fs.path.dirname(name)) |dir|
             .{ try output_directory.makeOpenPath(dir, .{}), true, std.fs.path.basenamePosix(name) }
         else
             .{ output_directory, false, name };
-        defer if(close_parent) parent.close();
+        defer if (close_parent) parent.close();
 
         const output_file = parent.createFile(display_name, .{}) catch |err| {
-            log.err("could not create file '{s}': {t}", .{display_name, err});
+            log.err("could not create file '{s}': {t}", .{ display_name, err });
             continue;
         };
         defer output_file.close();

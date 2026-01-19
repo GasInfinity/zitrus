@@ -50,11 +50,11 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
         var darc_root = try builder.beginRoot(arena);
         defer darc_root.end(&builder);
 
-        var prefixed_root, const end_root = if(args.prefix) |prefix| 
+        var prefixed_root, const end_root = if (args.prefix) |prefix|
             .{ try darc_root.beginDirectory(&builder, arena, .utf8(prefix)), true }
-        else 
-            .{ darc_root, false};
-        defer if(end_root) prefixed_root.end(&builder);
+        else
+            .{ darc_root, false };
+        defer if (end_root) prefixed_root.end(&builder);
 
         addDirectory(&builder, arena, &root, &prefixed_root) catch |err| {
             log.err("couldn't create DARC: {t}", .{err});
@@ -99,12 +99,12 @@ fn addDirectory(builder: *darc.Builder, gpa: std.mem.Allocator, dir: *std.fs.Dir
                 const end_pos = try file.getEndPos();
 
                 // XXX: Maybe we could allow doing this by file extension instead of all this dance?
-                const alignment: std.mem.Alignment = if(end_pos > 4) blk: {
+                const alignment: std.mem.Alignment = if (end_pos > 4) blk: {
                     try reader.seekTo(try file.getEndPos() - 4);
 
                     const maybe_footer_header_offset = try reader.interface.peekInt(u32, .little);
 
-                    if(maybe_footer_header_offset + @sizeOf(lyt.Header) > end_pos)
+                    if (maybe_footer_header_offset + @sizeOf(lyt.Header) > end_pos)
                         break :blk darc.min_alignment
                     else {
                         try reader.seekTo(maybe_footer_header_offset);

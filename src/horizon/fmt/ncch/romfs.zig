@@ -608,7 +608,7 @@ pub const View = struct {
         };
     }
 
-    pub const OpenError = error{BadPathName, FileNotFound};
+    pub const OpenError = error{ BadPathName, FileNotFound };
     pub fn openAny(view: View, parent: Directory, path: []const u16) OpenError!Entry {
         if (path.len == 0) return error.FileNotFound;
 

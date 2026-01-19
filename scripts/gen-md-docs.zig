@@ -31,22 +31,22 @@ pub fn main() !void {
 
         try output.print("# {s}\n\n", .{zitrus_name});
 
-        if(spans_multiple_services) {
+        if (spans_multiple_services) {
             const ServicesEnum = @field(ServiceType, "Service");
             const services = std.enums.values(ServicesEnum);
 
             try output.print("Service(s): ", .{});
 
             for (services, 0..) |service, i| {
-                try output.print("`{s}`", .{service.name()}); 
+                try output.print("`{s}`", .{service.name()});
 
-                if(i + 1 < services.len) try output.writeAll(", ");
+                if (i + 1 < services.len) try output.writeAll(", ");
             }
             try output.writeByte('\n');
         } else try output.print("Service: `{s}`\n", .{@field(ServiceType, "service")});
         try output.writeAll("\n---\n\n");
 
-        if(!@hasDecl(ServiceType, "command") or !@hasDecl(ServiceType.command, "Id")) {
+        if (!@hasDecl(ServiceType, "command") or !@hasDecl(ServiceType.command, "Id")) {
             log.warn("Service `{}` is not conformant as it doesn't have a `command` decl or an `Id` enum inside", .{});
             continue;
         }
@@ -54,15 +54,15 @@ pub fn main() !void {
         const id_commands = @typeInfo(ServiceType.command).@"struct".decls;
 
         // Will always be 1 as `Id` is there.
-        if(id_commands.len > 1) {
+        if (id_commands.len > 1) {
             inline for (id_commands) |command| {
-                if(comptime std.mem.eql(u8, command.name, "Id")) continue; // The only decl allowed there appart from the commands themselves
-                
+                if (comptime std.mem.eql(u8, command.name, "Id")) continue; // The only decl allowed there appart from the commands themselves
+
                 const Command = @field(ServiceType.command, command.name);
                 const name = command.name;
                 const id = Command.id;
 
-                try output.print("* `{s}`: (0x{X:0>4})\n", .{name, id});
+                try output.print("* `{s}`: (0x{X:0>4})\n", .{ name, id });
             }
 
             try output.writeByte('\n');
