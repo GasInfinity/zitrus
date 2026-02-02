@@ -10,9 +10,9 @@ const Subcommand = enum {
     make: Make,
 },
 
-pub fn main(args: Ncch, arena: std.mem.Allocator) !u8 {
+pub fn run(args: Ncch, io: std.Io, arena: std.mem.Allocator) !u8 {
     return switch (args.@"-") {
-        inline else => |s| s.main(arena),
+        inline else => |s| s.run(io, arena),
     };
 }
 

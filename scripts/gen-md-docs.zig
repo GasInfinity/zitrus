@@ -3,25 +3,30 @@ pub const description =
 ;
 
 @"--": struct {
-    pub const descriptions = .{ .output = "Output directory" };
+    pub const descriptions: plz.Descriptions(@This()) = .{ .output = "Output directory" };
 
     output: []const u8,
 },
 
-pub fn main() !void {
-    var gpa_state: std.heap.DebugAllocator(.{}) = .init;
-    defer std.debug.assert(gpa_state.deinit() == .ok);
+pub fn main(init: std.process.Init) !u8 {
+    const arena = init.arena.allocator();
+    const io = init.io;
 
-    const gpa = gpa_state.allocator();
+    const args = try init.minimal.args.toSlice(arena);
 
-    const args = try std.process.argsAlloc(gpa);
-    defer std.process.argsFree(gpa, args);
+    var diagnostic: plz.Diagnostic = undefined;
+    const arguments = plz.parseSlice(@This(), "gen-md-docs",  &diagnostic, args[1..]) catch {
+        const stderr = try io.lockStderr(&.{}, null); 
+        defer io.unlockStderr();
 
-    const arguments = zdap.Parser.parse(@This(), "gen-md-docs", args, .{});
+        try diagnostic.render(stderr.terminal(), .default); 
+        try stderr.file_writer.interface.flush();
+        return if(diagnostic.kind == .help) 0 else 1;
+    }; 
     _ = arguments;
 
     var out_buf: [4096]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writerStreaming(&out_buf);
+    var stdout_writer = std.Io.File.stdout().writerStreaming(io, &out_buf);
     const output = &stdout_writer.interface;
 
     inline for (@typeInfo(zitrus.horizon.services).@"struct".decls) |service_decl| {
@@ -70,10 +75,11 @@ pub fn main() !void {
     }
 
     try output.flush();
+    return 0;
 }
 
 const log = std.log.scoped(.@"gen-md");
 
 const std = @import("std");
-const zdap = @import("zdap");
+const plz = @import("plz");
 const zitrus = @import("zitrus");

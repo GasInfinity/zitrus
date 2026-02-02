@@ -1,50 +1,50 @@
 pub const description = "Disassemble ZPSH shaders, a new and currently unstable shader format which is specific to zitrus.";
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .output = "Output file, if none stdout is used",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .output = 'o',
 };
 
 output: ?[]const u8,
 
 @"--": struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .input = "Input file, if none stdin is used",
     };
 
     input: ?[]const u8,
 },
 
-pub fn main(args: Zpsh, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: Zpsh, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
 
     const input_file, const input_should_close = if (args.@"--".input) |in|
-        .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
+        .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
             log.err("could not open input file '{s}': {t}", .{ in, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdin(), false };
-    defer if (input_should_close) input_file.close();
+        .{ std.Io.File.stdin(), false };
+    defer if (input_should_close) input_file.close(io);
 
     const output_file, const output_should_close = if (args.output) |out|
-        .{ cwd.createFile(out, .{}) catch |err| {
+        .{ cwd.createFile(io, out, .{}) catch |err| {
             log.err("could not open output file '{s}': {t}", .{ out, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdout(), false };
-    defer if (output_should_close) output_file.close();
+        .{ std.Io.File.stdout(), false };
+    defer if (output_should_close) output_file.close(io);
 
     var input_buffer: [4096]u8 = undefined;
-    var input_reader = input_file.readerStreaming(&input_buffer);
+    var input_reader = input_file.readerStreaming(io, &input_buffer);
     const in = &input_reader.interface;
 
     var output_buffer: [4096]u8 = undefined;
-    var output_writer = output_file.writerStreaming(&output_buffer);
+    var output_writer = output_file.writerStreaming(io, &output_buffer);
     const out = &output_writer.interface;
 
     const hdr: zpsh.Header = try in.takeStruct(zpsh.Header, .little);
@@ -190,6 +190,7 @@ const Zpsh = @This();
 const log = std.log.scoped(.pica);
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 
 const zpsh = zitrus.fmt.zpsh;

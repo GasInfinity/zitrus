@@ -9,7 +9,7 @@ pub const MakeFirm = @import("build/MakeFirm.zig");
 pub const Make3dsx = @import("build/Make3dsx.zig");
 pub const MakeSmdh = @import("build/MakeSmdh.zig");
 pub const MakeRomFs = @import("build/MakeRomFs.zig");
-pub const AssembleZpsm = @import("build/AssembleZpsm.zig");
+pub const AssemblePsm = @import("build/AssemblePsm.zig");
 
 pub const target = struct {
     pub const arm11 = struct {
@@ -19,15 +19,6 @@ pub const target = struct {
 
             /// Default test runner running in HOS as an application.
             pub const application_test_runner = "src/horizon/testing/application_test_runner.zig";
-
-            /// Deprecated: Will eventually be replaced by 'arm-3ds' (zig 0.16.0)
-            pub const query: std.Target.Query = .{
-                .cpu_arch = .arm,
-                .cpu_model = .{ .explicit = &std.Target.arm.cpu.mpcore },
-                .abi = .eabihf,
-                .os_tag = .other,
-                // .cpu_features_add = std.Target.arm.featureSet(&.{.read_tp_tpidrurw}),
-            };
         };
 
         pub const freestanding = struct {
@@ -62,8 +53,8 @@ pub fn build(b: *Build) void {
     const zsflt_dep = b.dependency("zsflt", .{});
     const zsflt = zsflt_dep.module("zsflt");
 
-    const zdap_dep = b.dependency("zdap", .{});
-    const zdap = zdap_dep.module("zdap");
+    const plz_dep = b.dependency("plz", .{});
+    const plz = plz_dep.module("plz");
 
     const zigimg_dep = b.dependency("zigimg", .{});
     const zigimg = zigimg_dep.module("zigimg");
@@ -84,14 +75,17 @@ pub fn build(b: *Build) void {
 
     zitrus.addImport("zitrus", zitrus);
 
-    makeReleaseStep(b, version_slice, optimize, config, zdap, zigimg, zitrus);
+    makeReleaseStep(b, version_slice, optimize, config, plz, zigimg, zitrus);
 
     // XXX: Yes, this is really needed for each target / optimize...
     const zitrus_lib = b.addLibrary(.{
         .name = "zitrus",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/zitrus.zig"),
-            .target = b.resolveTargetQuery(target.arm11.horizon.query),
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .arm,
+                .os_tag = .@"3ds",
+            }),
             .imports = &.{
                 .{ .name = "zalloc", .module = zalloc },
                 .{ .name = "zsflt", .module = zsflt },
@@ -112,7 +106,7 @@ pub fn build(b: *Build) void {
     const docs_step = b.step("docs", "Install docs");
     docs_step.dependOn(&install_docs.step);
 
-    const tools, const tools_exe = createToolsExecutable(b, config, optimize, tools_target, zdap, zigimg, zitrus);
+    const tools, const tools_exe = createToolsExecutable(b, config, optimize, tools_target, plz, zigimg, zitrus);
 
     const mod_tests = b.addTest(.{
         .name = "zitrus-mod-tests",
@@ -145,7 +139,7 @@ pub fn build(b: *Build) void {
     const run_step = b.step("run", "Runs zitrus tools");
     run_step.dependOn(&run_tool.step);
     makeTestSteps(b, zitrus, tools_exe);
-    makeScriptSteps(b, zitrus, zdap);
+    makeScriptSteps(b, zitrus, plz);
 }
 
 // NOTE: This literally what zig does, almost 1:1 but we have prereleases so we have to work with that.
@@ -173,7 +167,7 @@ fn buildVersion(b: *Build) []const u8 {
         "v*.*.*",
         "--tags",
         "--abbrev=9",
-    }, &code, .Ignore) catch return version_string;
+    }, &code, .ignore) catch return version_string;
     const git_describe = std.mem.trim(u8, git_describe_untrimmed, " \n\r");
 
     switch (std.mem.count(u8, git_describe, "-")) {
@@ -241,11 +235,11 @@ const release_targets: []const std.Target.Query = &.{
     // .{ .cpu_arch = .riscv64, .os_tag = .linux },
 };
 
-fn makeReleaseStep(b: *Build, version_slice: []const u8, optimize: std.builtin.OptimizeMode, config: *Build.Step.Options, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) void {
+fn makeReleaseStep(b: *Build, version_slice: []const u8, optimize: std.builtin.OptimizeMode, config: *Build.Step.Options, plz: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) void {
     const release_step = b.step("release", "Perform a release build");
 
     for (release_targets) |release_target| {
-        _, const tools = createToolsExecutable(b, config, optimize, b.resolveTargetQuery(release_target), zdap, zigimg, zitrus);
+        _, const tools = createToolsExecutable(b, config, optimize, b.resolveTargetQuery(release_target), plz, zigimg, zitrus);
 
         tools.root_module.strip = switch (optimize) {
             .Debug, .ReleaseSafe => false,
@@ -264,15 +258,16 @@ fn makeReleaseStep(b: *Build, version_slice: []const u8, optimize: std.builtin.O
     }
 }
 
-fn createToolsExecutable(b: *Build, config: *Build.Step.Options, optimize: std.builtin.OptimizeMode, mod_target: Build.ResolvedTarget, zdap: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) struct { *Build.Module, *Build.Step.Compile } {
+fn createToolsExecutable(b: *Build, config: *Build.Step.Options, optimize: std.builtin.OptimizeMode, mod_target: Build.ResolvedTarget, plz: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) struct { *Build.Module, *Build.Step.Compile } {
+    _ = zigimg;
     const tools = b.createModule(.{
         .root_source_file = b.path("tools/main.zig"),
         .target = mod_target,
         .optimize = optimize,
         .imports = &.{
             .{ .name = "zitrus", .module = zitrus },
-            .{ .name = "zdap", .module = zdap },
-            .{ .name = "zigimg", .module = zigimg },
+            .{ .name = "plz", .module = plz },
+            // .{ .name = "zigimg", .module = zigimg },
         },
     });
 
@@ -290,7 +285,7 @@ const scripts: []const Script = &.{
     .{ .name = "gen-md-docs", .path = "scripts/gen-md-docs.zig" },
 };
 
-fn makeScriptSteps(b: *Build, zitrus: *Build.Module, zdap: *Build.Module) void {
+fn makeScriptSteps(b: *Build, zitrus: *Build.Module, plz: *Build.Module) void {
     inline for (scripts) |script| {
         const script_exe = b.addExecutable(.{
             .name = script.name,
@@ -299,7 +294,7 @@ fn makeScriptSteps(b: *Build, zitrus: *Build.Module, zdap: *Build.Module) void {
                 .target = b.resolveTargetQuery(.{}),
                 .optimize = .Debug,
                 .imports = &.{
-                    .{ .name = "zdap", .module = zdap },
+                    .{ .name = "plz", .module = plz },
                     .{ .name = "zitrus", .module = zitrus },
                 },
             }),
@@ -335,7 +330,10 @@ fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Com
             .test_runner = .{ .mode = .simple, .path = b.path(target.arm11.horizon.application_test_runner) },
             .root_module = b.createModule(.{
                 .root_source_file = b.path(standalone_test.path),
-                .target = b.resolveTargetQuery(target.arm11.horizon.query),
+                .target = b.resolveTargetQuery(.{
+                    .cpu_arch = .arm,
+                    .os_tag = .@"3ds",
+                }),
                 .optimize = .ReleaseSafe,
                 .imports = &.{
                     .{ .name = "zitrus", .module = zitrus },

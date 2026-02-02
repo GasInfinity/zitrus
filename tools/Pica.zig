@@ -7,9 +7,9 @@ const Subcommand = enum { @"asm", disasm };
     disasm: Disassemble,
 },
 
-pub fn main(args: Pica, arena: std.mem.Allocator) !u8 {
+pub fn run(args: Pica, io: std.Io, arena: std.mem.Allocator) !u8 {
     return switch (args.@"-") {
-        inline else => |sub| sub.main(arena),
+        inline else => |sub| sub.run(io, arena),
     };
 }
 

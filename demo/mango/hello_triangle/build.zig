@@ -11,7 +11,10 @@ pub fn build(b: *std.Build) void {
         .name = "hello_triangle.elf",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
-            .target = b.resolveTargetQuery(zitrus.target.arm11.horizon.query),
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .arm,
+                .os_tag = .@"3ds",
+            }),
             .optimize = optimize,
             .single_threaded = true,
             .imports = &.{
@@ -20,7 +23,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    const position_shader = zitrus.AssembleZpsm.init(zitrus_dep, .{
+    const position_shader = zitrus.AssemblePsm.init(zitrus_dep, .{
         .name = "position.psh",
         .root_source_file = b.path("assets/position.psm"),
     });

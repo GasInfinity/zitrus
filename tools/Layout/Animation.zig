@@ -8,9 +8,9 @@ const Subcommand = enum {
     info: Info,
 },
 
-pub fn main(args: Animation, arena: std.mem.Allocator) !u8 {
+pub fn run(args: Animation, io: std.Io, arena: std.mem.Allocator) !u8 {
     return switch (args.@"-") {
-        inline else => |sub| sub.main(arena),
+        inline else => |sub| sub.run(io, arena),
     };
 }
 

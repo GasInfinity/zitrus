@@ -54,11 +54,11 @@ pub const Info = struct {
         DuplicatedSegment,
         InvalidRelocations,
         UnknownSegment,
-    } || std.fs.File.Reader.SeekError || std.Io.Reader.Error || std.mem.Allocator.Error;
+    } || std.Io.File.Reader.SeekError || std.Io.Reader.Error || std.mem.Allocator.Error;
 
     const R_ARM_RELATIVE = 23;
 
-    pub fn extractStaticElfAlloc(reader: *std.fs.File.Reader, gpa: std.mem.Allocator) ElfExtractError!Info {
+    pub fn extractStaticElfAlloc(reader: *std.Io.File.Reader, gpa: std.mem.Allocator) ElfExtractError!Info {
         const hdr: elf.Elf32_Ehdr = try reader.interface.takeStruct(elf.Elf32_Ehdr, .little);
 
         if (!std.mem.eql(u8, hdr.e_ident[0..4], elf.MAGIC)) return error.NotElf;
@@ -131,7 +131,7 @@ pub const Info = struct {
     }
 
     /// Streams the segments sequentially to the writer aligning to `alignment`.
-    pub fn alignedStream(info: Info, writer: *std.Io.Writer, reader: *std.fs.File.Reader, segment_alignment: std.mem.Alignment) !void {
+    pub fn alignedStream(info: Info, writer: *std.Io.Writer, reader: *std.Io.File.Reader, segment_alignment: std.mem.Alignment) !void {
         for (info.segments) |seg| {
             try reader.seekTo(seg.file_offset);
             try reader.interface.streamExact(writer, seg.file_size);

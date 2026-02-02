@@ -1,56 +1,56 @@
 pub const description = "Compress / Decompress LZ11 (.lz, .lz77), used in 3DS titles.";
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .output = "Output file, if none stdout is used",
     .decompress = "Decompress data",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .output = 'o',
     .decompress = 'd',
     .verbose = 'v',
 };
 
 output: ?[]const u8,
-decompress: bool,
-verbose: bool,
+decompress: ?void,
+verbose: ?void,
 
 @"--": struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .input = "Input file, if none stdin is used",
     };
 
     input: ?[]const u8,
 },
 
-pub fn main(args: Lz11, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: Lz11, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
     const input_file, const input_should_close = if (args.@"--".input) |in|
-        .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
+        .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
             log.err("could not open input file '{s}': {t}", .{ in, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdin(), false };
-    defer if (input_should_close) input_file.close();
+        .{ std.Io.File.stdin(), false };
+    defer if (input_should_close) input_file.close(io);
 
     const output_file, const should_close = if (args.output) |out|
-        .{ cwd.createFile(out, .{}) catch |err| {
+        .{ cwd.createFile(io, out, .{}) catch |err| {
             log.err("could not open output file '{s}': {t}", .{ out, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdout(), false };
-    defer if (should_close) output_file.close();
+        .{ std.Io.File.stdout(), false };
+    defer if (should_close) output_file.close(io);
 
     var input_buf: [4096]u8 = undefined;
-    var input_reader = input_file.readerStreaming(&input_buf);
+    var input_reader = input_file.readerStreaming(io, &input_buf);
 
-    if (args.decompress) {
+    if (args.decompress) |_| {
         var decompressor: lz11.Decompress = .init(&input_reader.interface, &.{});
 
         var decompress_buf: [lz11.max_window_len]u8 = undefined;
-        var output_writer = output_file.writerStreaming(&decompress_buf);
+        var output_writer = output_file.writerStreaming(io, &decompress_buf);
 
         const streamed = decompressor.reader.streamRemaining(&output_writer.interface) catch |err| switch (err) {
             error.ReadFailed => {
@@ -66,7 +66,7 @@ pub fn main(args: Lz11, arena: std.mem.Allocator) !u8 {
         };
 
         try output_writer.interface.flush();
-        if (args.verbose) log.info("Decompressed size: {} bytes", .{streamed});
+        if (args.verbose) |_| log.info("Decompressed size: {} bytes", .{streamed});
         const input_remaining = try input_reader.interface.discardRemaining();
         if (input_remaining != 0) log.warn("Got {} more bytes after decompressing", .{input_remaining});
         return 0;
@@ -76,7 +76,7 @@ pub fn main(args: Lz11, arena: std.mem.Allocator) !u8 {
 
     // TODO: Migrate to normal `Compress` when implemented.
     var output_buf: [4096]u8 = undefined;
-    var output_writer = output_file.writerStreaming(&output_buf);
+    var output_writer = output_file.writerStreaming(io, &output_buf);
 
     var compress_buf: [lz11.max_window_len]u8 = undefined;
     var compressor: lz11.Compress.Raw = .init(&output_writer.interface, &compress_buf);
@@ -119,5 +119,6 @@ const Lz11 = @This();
 const log = std.log.scoped(.lz11);
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 const lz11 = zitrus.compress.lz11;

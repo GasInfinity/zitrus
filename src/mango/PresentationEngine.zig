@@ -362,7 +362,7 @@ const Swapchain = struct {
                     .value = 1,
                     .timeout = timeout,
                     // Try to acquire again before erroring if somehow we got a Timeout before the driver called wake.
-                    // XXX: Azahar does not have the same behavior as ofw, this somehow becomes a timeout even if timeout == -1
+                    // XXX: Azahar does not have the same behavior as ofw, this somehow becomes a timeout even if timeout == -1. Worked around directly in AddressArbiter
                 },
             }) catch return if (chain.tryAcquireNextIndex()) |idx| idx else error.Timeout;
         }

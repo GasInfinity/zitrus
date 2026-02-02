@@ -12,9 +12,9 @@ pub const Format = enum {
     zpsh: Zpsh,
 },
 
-pub fn main(args: Disassemble, arena: std.mem.Allocator) !u8 {
+pub fn run(args: Disassemble, io: std.Io, arena: std.mem.Allocator) !u8 {
     return switch (args.@"-") {
-        inline else => |fmt| fmt.main(arena),
+        inline else => |fmt| fmt.run(io, arena),
     };
 }
 

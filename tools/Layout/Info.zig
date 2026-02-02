@@ -1,30 +1,30 @@
 pub const description = "WIP Layout Info RE";
 
-pub const descriptions = .{};
+pub const descriptions: plz.Descriptions(@This()) = .{};
 
-pub const switches = .{};
+pub const short: plz.Short(@This()) = .{};
 
 @"--": struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .input = "Input file, if none stdin is used",
     };
 
     input: ?[]const u8,
 },
 
-pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: Info, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
     const input_file, const input_should_close = if (args.@"--".input) |in|
-        .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
+        .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
             log.err("could not open CLYT '{s}': {t}", .{ in, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdin(), false };
-    defer if (input_should_close) input_file.close();
+        .{ std.Io.File.stdin(), false };
+    defer if (input_should_close) input_file.close(io);
 
     var buf: [4096]u8 = undefined;
-    var input_reader = input_file.reader(&buf);
+    var input_reader = input_file.reader(io, &buf);
     const reader = &input_reader.interface;
 
     const hdr = try reader.takeStruct(lyt.Header, .little);
@@ -127,6 +127,7 @@ const Info = @This();
 const log = std.log.scoped(.clyt);
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 const etc = zitrus.compress.etc;
 

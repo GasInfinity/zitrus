@@ -14,9 +14,9 @@ const Subcommand = enum {
     lz11: Lz11,
 },
 
-pub fn main(args: Compress, arena: std.mem.Allocator) !u8 {
+pub fn run(args: Compress, io: std.Io, arena: std.mem.Allocator) !u8 {
     return switch (args.@"-") {
-        inline else => |sub| sub.main(arena),
+        inline else => |sub| sub.run(io, arena),
     };
 }
 

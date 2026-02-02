@@ -9,9 +9,9 @@ const Format = enum {
     cxi: Cxi,
 },
 
-pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
+pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
     return switch (args.@"-") {
-        inline else => |sub| sub.main(arena),
+        inline else => |sub| sub.run(io, arena),
     };
 }
 

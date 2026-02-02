@@ -10,9 +10,9 @@ const Subcommand = enum {
     image: Image,
 },
 
-pub fn main(args: Layout, arena: std.mem.Allocator) !u8 {
+pub fn run(args: Layout, io: std.Io, arena: std.mem.Allocator) !u8 {
     return switch (args.@"-") {
-        inline else => |sub| sub.main(arena),
+        inline else => |sub| sub.run(io, arena),
     };
 }
 

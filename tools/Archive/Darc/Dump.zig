@@ -1,11 +1,11 @@
 pub const description = "Dump the contents of a DARC.";
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .output = "Output directory / file. Directory outputs must be specified, if none stdout is used",
     .path = "Path inside the DARC to dump, directories are allowed",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .output = 'o',
     .path = 'p',
 };
@@ -14,27 +14,27 @@ output: ?[]const u8,
 path: ?[]const u8,
 
 @"--": struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .input = "DARC to dump from, if none stdin is used",
     };
 
     input: ?[]const u8,
 },
 
-pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
 
     const input_file, const input_should_close = if (args.@"--".input) |in|
-        .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
+        .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
             log.err("could not open input file '{s}': {t}", .{ in, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdin(), false };
-    defer if (input_should_close) input_file.close();
+        .{ std.Io.File.stdin(), false };
+    defer if (input_should_close) input_file.close(io);
 
     var input_buffer: [4096]u8 = undefined;
-    var input_reader = input_file.reader(&input_buffer); // XXX: positional reader hangs in discardRemaining
+    var input_reader = input_file.reader(io, &input_buffer); // XXX: positional reader hangs in discardRemaining
 
     const init = darc.View.initReader(&input_reader.interface, arena) catch |err| {
         log.err("could not open DARC: {t}", .{err});
@@ -64,32 +64,32 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
 
             const darc_dir = opened.asDirectory();
 
-            var output_directory = cwd.makeOpenPath(out, .{}) catch |err| {
+            var output_directory = cwd.createDirPathOpen(io, out, .{}) catch |err| {
                 log.err("could not make path '{s}': {t}", .{ out, err });
                 return 1;
             };
-            defer output_directory.close();
+            defer output_directory.close(io);
 
-            try dumpDirectory(&input_reader, view, darc_dir, output_directory);
+            try dumpDirectory(&input_reader, view, darc_dir, io, output_directory);
         } else {
             log.err("directory outputs must be specified", .{});
             return 1;
         },
         .file => {
             const output_file, const output_should_close = if (args.output) |out|
-                .{ cwd.createFile(out, .{}) catch |err| {
+                .{ cwd.createFile(io, out, .{}) catch |err| {
                     log.err("could not open output file '{s}': {t}", .{ out, err });
                     return 1;
                 }, true }
             else
-                .{ std.fs.File.stdout(), false };
-            defer if (output_should_close) output_file.close();
+                .{ std.Io.File.stdout(), false };
+            defer if (output_should_close) output_file.close(io);
 
             const file = opened.asFile();
             const stat = file.stat(view);
 
             var out_buf: [4096]u8 = undefined;
-            var output_writer = output_file.writerStreaming(&out_buf);
+            var output_writer = output_file.writerStreaming(io, &out_buf);
             const writer = &output_writer.interface;
 
             try input_reader.interface.discardAll64(stat.offset);
@@ -103,7 +103,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     return 0;
 }
 
-fn dumpDirectory(reader: *std.fs.File.Reader, view: darc.View, darc_dir: darc.View.Directory, dir: std.fs.Dir) !void {
+fn dumpDirectory(reader: *std.Io.File.Reader, view: darc.View, darc_dir: darc.View.Directory, io: std.Io, dir: std.Io.Dir) !void {
     var it = view.iterator(darc_dir);
 
     while (it.next(view)) |entry| {
@@ -116,14 +116,14 @@ fn dumpDirectory(reader: *std.fs.File.Reader, view: darc.View, darc_dir: darc.Vi
                 const file = entry.asFile();
                 const stat = file.stat(view);
 
-                const output_file = dir.createFile(name, .{}) catch |err| {
+                const output_file = dir.createFile(io, name, .{}) catch |err| {
                     log.err("could not create file '{s}': {t}", .{ name, err });
                     continue;
                 };
-                defer output_file.close();
+                defer output_file.close(io);
 
                 var file_buf: [2048]u8 = undefined;
-                var file_writer = output_file.writerStreaming(&file_buf);
+                var file_writer = output_file.writerStreaming(io, &file_buf);
 
                 try reader.seekTo(view.data_offset + stat.offset);
                 try reader.interface.streamExact64(&file_writer.interface, stat.size);
@@ -132,13 +132,13 @@ fn dumpDirectory(reader: *std.fs.File.Reader, view: darc.View, darc_dir: darc.Vi
             .directory => {
                 const directory = entry.asDirectory();
 
-                var output_directory = dir.makeOpenPath(name, .{}) catch |err| {
+                var output_directory = dir.createDirPathOpen(io, name, .{}) catch |err| {
                     log.err("could not make dir '{s}': {t}", .{ name, err });
                     continue;
                 };
-                defer output_directory.close();
+                defer output_directory.close(io);
 
-                try dumpDirectory(reader, view, directory, output_directory);
+                try dumpDirectory(reader, view, directory, io, output_directory);
             },
         }
     }
@@ -149,5 +149,6 @@ const Dump = @This();
 const log = std.log.scoped(.darc);
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 const darc = zitrus.horizon.fmt.archive.darc;

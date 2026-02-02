@@ -2,7 +2,7 @@ pub const description = "Make an executable NCCH (.CXI)";
 
 // TODO: Instead of an argument for each, look for a way to create the ExeFS out of band (How would we set each CodeSet?)
 // If we do that, we could unify both CXI make and (TODO?) CFA make.
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .romfs = "RomFS to embed in the CXI",
     .elf = "Embed code with an ELF executable to the ExeFS",
     .icon = "Embed an icon (SMDH) to the ExeFS",
@@ -12,7 +12,7 @@ pub const descriptions = .{
     .output = "Output filename, if none stdout is used",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .romfs = 'r',
     .elf = 'e',
     .icon = 'i',
@@ -35,12 +35,12 @@ verbose: bool,
 output: ?[]const u8,
 
 // TODO: The refactor will be brutal :wilted_rose:
-pub fn main(args: Cxi, arena: std.mem.Allocator) !u8 {
+pub fn run(args: Cxi, io: std.Io, arena: std.mem.Allocator) !u8 {
     // XXX: We must first parse the IVFC unless we want to suffer.
     if (args.romfs != null) @panic("TODO");
 
-    const cwd = std.fs.cwd();
-    const settings_zon = cwd.readFileAllocOptions(arena, args.settings, std.math.maxInt(u32), null, .@"4", 0) catch |err| {
+    const cwd = std.Io.Dir.cwd();
+    const settings_zon = cwd.readFileAllocOptions(io, args.settings, arena, .unlimited, .@"4", 0) catch |err| {
         log.err("could not open settings '{s}': {t}", .{ args.settings, err });
         return 1;
     };
@@ -48,33 +48,33 @@ pub fn main(args: Cxi, arena: std.mem.Allocator) !u8 {
 
     var diag: std.zon.parse.Diagnostics = .{};
     @setEvalBranchQuota(2000);
-    const settings = std.zon.parse.fromSlice(Settings, arena, settings_zon, &diag, .{}) catch |err| switch (err) {
+    const settings = std.zon.parse.fromSliceAlloc(Settings, arena, settings_zon, &diag, .{}) catch |err| switch (err) {
         error.ParseZon => {
             log.err("could not parse settings:\n {f}", .{diag});
             return 1;
         },
         else => return err,
     };
-    defer settings.deinit(arena);
+    defer std.zon.parse.free(arena, settings);
 
     var exefs_files_buf: [10]ncch.exefs.File = undefined;
     var exefs_files: std.ArrayList(ncch.exefs.File) = .initBuffer(&exefs_files_buf);
 
-    var code_result = makeCode(args.elf, arena) catch |err| {
+    var code_result = makeCode(args.elf, io, arena) catch |err| {
         log.err("could not make code from elf '{s}': {t}", .{ args.elf, err });
         return 1;
     };
     defer code_result.deinit(arena);
     exefs_files.appendAssumeCapacity(.init(".code", code_result.code));
 
-    const smdh_data: []u8 = if (args.icon) |smdh_path| loadEntireFile(smdh_path, arena) catch {
+    const smdh_data: []u8 = if (args.icon) |smdh_path| loadEntireFile(smdh_path, io, arena) catch {
         log.err("could not load SMDH", .{});
         return 1;
     } else &.{};
     defer arena.free(smdh_data);
     if (smdh_data.len > 0) exefs_files.appendAssumeCapacity(.init("icon", smdh_data));
 
-    const cbmd_data: []u8 = if (args.banner) |banner_path| loadEntireFile(banner_path, arena) catch {
+    const cbmd_data: []u8 = if (args.banner) |banner_path| loadEntireFile(banner_path, io, arena) catch {
         log.err("could not load CBMD", .{});
         return 1;
     } else &.{};
@@ -82,7 +82,7 @@ pub fn main(args: Cxi, arena: std.mem.Allocator) !u8 {
     if (cbmd_data.len > 0) exefs_files.appendAssumeCapacity(.init("banner", cbmd_data));
 
     // TODO: Add logo to the NCCH AND/OR ExeFS, when does the logo need to be in the ExeFS or NCCH?
-    const logo_data: []u8 = if (args.logo) |logo_path| loadEntireFile(logo_path, arena) catch {
+    const logo_data: []u8 = if (args.logo) |logo_path| loadEntireFile(logo_path, io, arena) catch {
         log.err("could not load logo", .{});
         return 1;
     } else &.{};
@@ -90,16 +90,16 @@ pub fn main(args: Cxi, arena: std.mem.Allocator) !u8 {
     if (logo_data.len > 0) exefs_files.appendAssumeCapacity(.init("logo", logo_data));
 
     const output_file, const output_should_close = if (args.output) |out|
-        .{ cwd.createFile(out, .{}) catch |err| {
+        .{ cwd.createFile(io, out, .{}) catch |err| {
             log.err("could not open output file '{s}': {t}", .{ out, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdout(), false };
-    defer if (output_should_close) output_file.close();
+        .{ std.Io.File.stdout(), false };
+    defer if (output_should_close) output_file.close(io);
 
     var output_buffer: [4096]u8 = undefined;
-    var output_writer = output_file.writerStreaming(&output_buffer);
+    var output_writer = output_file.writerStreaming(io, &output_buffer);
     const out = &output_writer.interface;
 
     const title_id: horizon.fmt.title.Id = .{
@@ -351,16 +351,16 @@ pub fn main(args: Cxi, arena: std.mem.Allocator) !u8 {
     return 0;
 }
 
-fn loadEntireFile(path: []const u8, gpa: std.mem.Allocator) ![]u8 {
-    const cwd = std.fs.cwd();
+fn loadEntireFile(path: []const u8, io: std.Io, gpa: std.mem.Allocator) ![]u8 {
+    const cwd = std.Io.Dir.cwd();
 
-    const file = cwd.openFile(path, .{ .mode = .read_only }) catch |err| {
+    const file = cwd.openFile(io, path, .{ .mode = .read_only }) catch |err| {
         log.err("could not open input file '{s}': {t}", .{ path, err });
         return error.NotLoaded;
     };
-    defer file.close();
+    defer file.close(io);
 
-    var reader = file.reader(&.{});
+    var reader = file.reader(io, &.{});
     const size = try reader.getSize();
 
     if (size > std.math.maxInt(usize)) {
@@ -388,16 +388,16 @@ const CodeResult = struct {
     }
 };
 
-fn makeCode(path: []const u8, gpa: std.mem.Allocator) !CodeResult {
-    const cwd = std.fs.cwd();
-    const elf_file = cwd.openFile(path, .{ .mode = .read_only }) catch |err| {
+fn makeCode(path: []const u8, io: std.Io, gpa: std.mem.Allocator) !CodeResult {
+    const cwd = std.Io.Dir.cwd();
+    const elf_file = cwd.openFile(io, path, .{ .mode = .read_only }) catch |err| {
         log.err("could not open input elf '{s}': {t}", .{ path, err });
         return error.InvalidCode;
     };
-    defer elf_file.close();
+    defer elf_file.close(io);
 
     var elf_reader_buf: [4096]u8 = undefined;
-    var elf_reader = elf_file.reader(&elf_reader_buf);
+    var elf_reader = elf_file.reader(io, &elf_reader_buf);
 
     var processed = try code.Info.extractStaticElfAlloc(&elf_reader, gpa);
     defer processed.deinit(gpa);
@@ -501,6 +501,7 @@ const Settings = @import("../Settings.zig");
 const log = std.log.scoped(.ncch);
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
 

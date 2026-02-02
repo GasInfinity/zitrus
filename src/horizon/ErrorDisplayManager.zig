@@ -6,7 +6,38 @@ pub const port = "err:f";
 
 pub const Error = ClientSession.RequestError;
 
-pub const FatalErrorInfo = extern struct {
+pub const Exception = extern struct {
+    pub const Type = enum(u8) {
+        prefetch_abort,
+        data_abort,
+        undefined,
+        vfp,
+    };
+
+    pub const Info = extern struct {
+        type: Type,
+        _pad0: [3]u8 = @splat(0),
+        fault: zitrus.hardware.cpu.arm11.Fault,
+        address: u32,
+        fpexc: u32,
+        fpinst: u32,
+        fpinst2: u32,
+    };
+
+    pub const Registers = extern struct {
+        /// r0-r12, sp, lr, pc. See `zitrus.hardware.cpu.Register`
+        gpr: [16]usize,
+        cpsr: usize,
+    };
+
+    info: Info,
+
+    registers: Registers,
+};
+
+pub const Failure = extern struct { message: [0x60]u8 };
+
+pub const FatalError = extern struct {
     pub const ErrorType = enum(u8) {
         generic,
         corrupted,
@@ -26,30 +57,6 @@ pub const FatalErrorInfo = extern struct {
     applet_title_id: u64,
     data: extern union { failure: Failure, exception: Exception },
 
-    pub const Failure = extern struct { message: [0x60]u8 };
-    pub const Exception = extern struct {
-        pub const Type = enum(u8) {
-            prefetch_abort,
-            data_abort,
-            undefined,
-            vfp,
-        };
-
-        pub const Info = extern struct {
-            type: Type,
-            _pad0: [3]u8 = @splat(0),
-            ifsr_dfsr: u32,
-            r15_dfar: u32,
-            fpexc: u32,
-            fpinst: u32,
-            fpinst2: u32,
-        };
-
-        info: Info,
-
-        /// r0-r12, sp, lr, pc, cpsr
-        registers: [17]u32,
-    };
 };
 
 session: ClientSession,
@@ -70,7 +77,7 @@ pub fn sendSetUserString(errdisp: ErrDispManager, str: []const u8) !void {
     };
 }
 
-pub fn sendThrow(errdisp: ErrDispManager, fatal: FatalErrorInfo) !void {
+pub fn sendThrow(errdisp: ErrDispManager, fatal: FatalError) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(errdisp.session, command.Throw, fatal, .{})).cases()) {
         .success => {},
@@ -84,7 +91,7 @@ pub const command = struct {
         set_user_string,
     };
 
-    pub const Throw = ipc.Command(Id, .throw, FatalErrorInfo, struct {});
+    pub const Throw = ipc.Command(Id, .throw, FatalError, struct {});
     pub const SetUserString = ipc.Command(Id, .set_user_string, struct { str_size: usize, str: ipc.Static(0) }, struct {});
 
     comptime {

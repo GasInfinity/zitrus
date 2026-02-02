@@ -612,7 +612,7 @@ pub const View = struct {
     pub fn openAny(view: View, parent: Directory, path: []const u16) OpenError!Entry {
         if (path.len == 0) return error.FileNotFound;
 
-        var it: ComponentIterator = try .init(path);
+        var it: ComponentIterator = .init(path);
 
         var last_parent: Directory = if (it.root()) |_| .root else parent;
         var last: []const u16 = (it.next() orelse (if (it.root() != null) return .initDirectory(.root) else return error.BadPathName)).name;
@@ -766,9 +766,7 @@ pub const View = struct {
 };
 
 test "builder and view are idempotent" {
-    if (builtin.target.os.tag == .other) {
-        return error.SkipZigTest; // cannot use testing.allocator in horizon currently.
-    }
+    if (builtin.target.os.tag == .@"3ds") return error.SkipZigTest; // cannot use testing.allocator in horizon currently.
 
     const gpa = testing.allocator;
 

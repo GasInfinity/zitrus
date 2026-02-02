@@ -10,25 +10,34 @@
 pub const arm9 = @import("cpu/arm9.zig");
 pub const arm11 = @import("cpu/arm11.zig");
 
+pub const Register = enum(u4) {
+    pub const sp: Register = .r13;
+    pub const lr: Register = .r14;
+    pub const pc: Register = .r15;
+
+    r0,
+    r1,
+    r2,
+    r3,
+    r4,
+    r5,
+    r6,
+    r7,
+    r8,
+    r9,
+    r10,
+    r11,
+    r12,
+    r13,
+    r14,
+    r15,
+};
+
 // CP15 c0 c0 0 -> ID
 // CP15 c0 c0 1 -> Cache Type
 
-pub inline fn wfi() void {
+pub inline fn waitForInterrupt() void {
     asm volatile ("mcr p15, 0, %[sbz], c7, c0, 4"
-        :
-        : [sbz] "r" (0),
-    );
-}
-
-pub inline fn dsb() void {
-    asm volatile ("mcr p15, 0, %[sbz], c7, c10, 4"
-        :
-        : [sbz] "r" (0),
-    );
-}
-
-pub inline fn dmb() void {
-    asm volatile ("mcr p15, 0, %[sbz], c7, c10, 5"
         :
         : [sbz] "r" (0),
     );
@@ -117,6 +126,20 @@ pub const cache = struct {
         );
     }
 
+    pub inline fn dataSynchronizationBarrier() void {
+        asm volatile ("mcr p15, 0, %[sbz], c7, c10, 4"
+            :
+            : [sbz] "r" (0),
+        );
+    }
+
+    pub inline fn dataMemoryBarrier() void {
+        asm volatile ("mcr p15, 0, %[sbz], c7, c10, 5"
+            :
+            : [sbz] "r" (0),
+        );
+    }
+
     pub inline fn flushBranchPredictor() void {
         asm volatile ("mcr p15, 0, %[sbz], c7, c5, 6"
             :
@@ -167,4 +190,5 @@ comptime {
     _ = arm9;
 }
 
+const std = @import("std");
 const zitrus = @import("zitrus");

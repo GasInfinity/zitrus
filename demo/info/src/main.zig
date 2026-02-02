@@ -1,3 +1,11 @@
+pub const os = horizon;
+pub const debug = horizon.debug;
+pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_options: std.Options = horizon.default_std_options;
+
+pub const std_options_debug_io: std.Io = horizon.Io.failing;
+comptime { _ = horizon.start; }
+
 pub fn main() !void {
     var app: horizon.application.Software = try .init(.default, horizon.heap.linear_page_allocator);
     defer app.deinit(horizon.heap.linear_page_allocator);
@@ -39,9 +47,9 @@ pub fn main() !void {
     const country_info = try cfg.getConfigUser(.country_info);
     const region = try cfg.sendGetRegion();
 
-    var last_elapsed: f32 = 0.0;
+    var last_elapsed: u96 = 0.0;
     main_loop: while (true) {
-        const start = horizon.getSystemTick();
+        const start = horizon.time.getSystemNanoseconds();
 
         while (try app.pollEvent()) |ev| switch (ev) {
             .jump_home_rejected => {},
@@ -85,8 +93,8 @@ pub fn main() !void {
         soft.swapBuffers(.none);
         try soft.waitVBlank();
 
-        const elapsed_ticks: f32 = @floatFromInt(horizon.getSystemTick() - start);
-        last_elapsed = (elapsed_ticks / 268111856.0);
+        const elapsed: u96 = horizon.time.getSystemNanoseconds() - start;
+        last_elapsed = elapsed;
     }
 }
 
@@ -178,10 +186,5 @@ const Config = horizon.services.Config;
 
 const mango = zitrus.mango;
 
-pub const panic = zitrus.horizon.panic;
 const zitrus = @import("zitrus");
 const std = @import("std");
-
-comptime {
-    _ = zitrus;
-}

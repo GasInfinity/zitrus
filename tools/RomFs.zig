@@ -12,9 +12,9 @@ const Subcommand = enum {
     dump: Dump,
 },
 
-pub fn main(args: RomFs, arena: std.mem.Allocator) !u8 {
+pub fn run(args: RomFs, io: std.Io, arena: std.mem.Allocator) !u8 {
     return switch (args.@"-") {
-        inline else => |sub| sub.main(arena),
+        inline else => |sub| sub.run(io, arena),
     };
 }
 

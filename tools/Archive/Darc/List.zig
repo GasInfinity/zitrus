@@ -1,12 +1,12 @@
 pub const description = "List files in a DARC.";
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .zon = "Output zon instead",
     .minify = "Minify the output if zon",
     .path = "Path inside the DARC to list files from, if none '.' (or root if '.' doesn't exist) is assumed",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .zon = 'z',
     .minify = 'm',
     .path = 'p',
@@ -17,27 +17,27 @@ minify: bool,
 path: ?[]const u8,
 
 @"--": struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .input = "DARC to list files from, if none stdin is used",
     };
 
     input: ?[]const u8,
 },
 
-pub fn main(args: List, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: List, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
 
     const input_file, const input_should_close = if (args.@"--".input) |in|
-        .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
+        .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
             log.err("could not open input file '{s}': {t}", .{ in, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdin(), false };
-    defer if (input_should_close) input_file.close();
+        .{ std.Io.File.stdin(), false };
+    defer if (input_should_close) input_file.close(io);
 
     var input_buffer: [4096]u8 = undefined;
-    var input_reader = input_file.readerStreaming(&input_buffer); // XXX: positional reader hangs in discardRemaining
+    var input_reader = input_file.readerStreaming(io, &input_buffer); // XXX: positional reader hangs in discardRemaining
     const input = &input_reader.interface;
 
     const init = darc.View.initReader(input, arena) catch |err| {
@@ -59,9 +59,9 @@ pub fn main(args: List, arena: std.mem.Allocator) !u8 {
         return 1;
     };
 
-    const tty_conf: std.Io.tty.Config = .detect(std.fs.File.stdout());
+    // const tty_conf: std.Io.Terminal = .init(std.Io.File.stdout());
     var stdout_buffer: [4096]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
     var it = view.iterator(dir);
 
     if (args.zon) {
@@ -88,10 +88,10 @@ pub fn main(args: List, arena: std.mem.Allocator) !u8 {
         while (it.next(view)) |entry| {
             switch (entry.kind) {
                 .directory => {
-                    try tty_conf.setColor(&stdout_writer.interface, .bold);
-                    try tty_conf.setColor(&stdout_writer.interface, .bright_blue);
+                    // try tty_conf.setColor(&stdout_writer.interface, .bold);
+                    // try tty_conf.setColor(&stdout_writer.interface, .bright_blue);
                 },
-                .file => try tty_conf.setColor(&stdout_writer.interface, .reset),
+                .file => {}//try tty_conf.setColor(&stdout_writer.interface, .reset),
             }
 
             try stdout_writer.interface.print("{f}   ", .{std.unicode.fmtUtf16Le(entry.name(view))});
@@ -109,5 +109,6 @@ const List = @This();
 const log = std.log.scoped(.darc);
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 const darc = zitrus.horizon.fmt.archive.darc;

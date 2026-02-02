@@ -133,8 +133,8 @@ pub const Codec = union(enum) {
             .array => |arr| if (arr.len == 0)
                 @compileError("cannot serialize 0-bit arrays")
             else switch (comptime Codec.of(arr.child)) {
-                .raw => |_| .{ .raw = @sizeOf(T) },
-                .handles => |_| .{ .handles = arr.len },
+                .raw => .{ .raw = @sizeOf(T) },
+                .handles => .{ .handles = arr.len },
                 else => @compileError("cannot serialize array of " ++ @typeName(arr.child)),
             },
             .@"struct" => |st| if (comptime isWrappedHandle(T))
@@ -232,7 +232,7 @@ pub const Codec = union(enum) {
     pub fn bufRead(comptime codec: Codec, comptime T: type, buffer: []const u32) !T {
         // TODO: Azahar HLE is not behaving the same as the 3DS, investigate later. For now we'll remove these checks
         return switch (codec) {
-            .raw => |_| @as(*align(@sizeOf(u32)) const T, @ptrCast(buffer)).*,
+            .raw => @as(*align(@sizeOf(u32)) const T, @ptrCast(buffer)).*,
             .static_slice => blk: {
                 const header: Buffer.TranslationDescriptor.StaticBuffer = @bitCast(buffer[0]);
                 //

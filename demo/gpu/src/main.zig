@@ -9,22 +9,13 @@ const simple_vtx = &simple_vtx_storage;
 
 const test_bgr = @embedFile("test.bgr");
 
-pub const os = struct {
-    pub const heap = struct {
-        pub const page_allocator = horizon.heap.page_allocator;
-    };
-};
+pub const os = horizon;
+pub const debug = horizon.debug;
+pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_options: std.Options = horizon.default_std_options;
 
-pub const std_options: std.Options = .{
-    .page_size_min = horizon.heap.page_size_min,
-    .page_size_max = horizon.heap.page_size_max,
-    .logFn = log,
-    .log_level = .debug,
-};
-
-pub fn log(comptime message_level: std.log.Level, comptime scope: @TypeOf(.enum_literal), comptime format: []const u8, args: anytype) void {
-    horizon.debug.print("[" ++ @tagName(message_level) ++ "](" ++ @tagName(scope) ++ "): " ++ format, args);
-}
+pub const std_options_debug_io: std.Io = horizon.Io.failing;
+comptime { _ = horizon.start; }
 
 pub const Scene = struct {
     const Vertex = extern struct {
@@ -822,8 +813,6 @@ pub fn main() !void {
     }
 }
 
-pub const panic = zitrus.horizon.panic;
-
 const zitrus = @import("zitrus");
 
 const horizon = zitrus.horizon;
@@ -832,8 +821,3 @@ const Hid = horizon.services.Hid;
 const mango = zitrus.mango;
 
 const std = @import("std");
-
-comptime {
-    _ = zitrus;
-    // _ = zitrus.c;
-}

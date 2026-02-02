@@ -49,6 +49,7 @@ SECTIONS
 		*(.rodata*)
 	} : rodata
 
+	/* Needed for stack unwinding */
 	.ARM.extab : {
 		*(.ARM.extab*)
 	} : rodata
@@ -56,7 +57,7 @@ SECTIONS
 	.ARM.exidx : {
 		*(.ARM.exidx*)
 	} : rodata
-
+	
 	. = ALIGN(0x1000);
 	.data : {
 		*(.data*)

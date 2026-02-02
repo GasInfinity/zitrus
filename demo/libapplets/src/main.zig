@@ -1,13 +1,10 @@
-pub const std_options: std.Options = .{
-    .page_size_min = horizon.heap.page_size_min,
-    .page_size_max = horizon.heap.page_size_max,
-    .logFn = log,
-    .log_level = .debug,
-};
+pub const os = horizon;
+pub const debug = horizon.debug;
+pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_options: std.Options = horizon.default_std_options;
 
-pub fn log(comptime message_level: std.log.Level, comptime scope: @TypeOf(.enum_literal), comptime format: []const u8, args: anytype) void {
-    horizon.debug.print("[" ++ @tagName(message_level) ++ "](" ++ @tagName(scope) ++ "): " ++ format, args);
-}
+pub const std_options_debug_io: std.Io = horizon.Io.failing;
+comptime { _ = horizon.start; }
 
 pub fn main() !void {
     var app: horizon.application.Software = try .init(.default, horizon.heap.linear_page_allocator);
@@ -90,10 +87,5 @@ const Hid = horizon.services.Hid;
 const Config = horizon.services.Config;
 const Framebuffer = GspGpu.Graphics.Framebuffer;
 
-pub const panic = zitrus.horizon.panic;
 const zitrus = @import("zitrus");
 const std = @import("std");
-
-comptime {
-    _ = zitrus;
-}

@@ -609,7 +609,15 @@ pub const AddressArbiter = packed struct(u32) {
             inline .wait_if_less_than_timeout, .decrement_and_wait_if_less_than_timeout => |timeout_value| .{ timeout_value.value, timeout_value.timeout },
         };
 
-        const code = arbitrateAddress(arbiter, address, std.meta.activeTag(arbitration), value, timeout);
+        // NOTE: The if-else is a workaround for azahar as it doesn't have the same behavior as the Horizon kernel!
+        const code = if (timeout == .none) 
+            switch(arbitration) {
+                .wait_if_less_than_timeout => arbitrateAddress(arbiter, address, .wait_if_less_than, value, timeout),
+                .decrement_and_wait_if_less_than_timeout => arbitrateAddress(arbiter, address, .decrement_and_wait_if_less_than, value, timeout),
+                else => arbitrateAddress(arbiter, address, std.meta.activeTag(arbitration), value, timeout),
+            }
+        else
+            arbitrateAddress(arbiter, address, std.meta.activeTag(arbitration), value, timeout);
 
         return if (code == C.os_timeout) error.Timeout else if (code == C.kernel_unaligned_address) unreachable // NOTE: If you hit this you 100% have IB as the pointer is assumed to be aligned
         else if (code == C.os_invalid_string) unreachable // NOTE: invalid address
@@ -1746,6 +1754,9 @@ pub fn openThread(process: Process, id: Thread.Id) Result(Thread) {
     return .of(code, thread);
 }
 
+/// Only fails with `0xD9001BF7` if `process` is an invalid handle.
+///
+/// Allows the `.current` pseudo-handle
 pub fn getProcessId(process: Process) Result(Process.Id) {
     var id: Process.Id = undefined;
 
@@ -2105,12 +2116,30 @@ fn resultBug(code: result.Code) UnexpectedError {
     return error.Unexpected;
 }
 
+pub const default_std_options: std.Options = .{
+    .page_size_min = heap.page_size_min,
+    .page_size_max = heap.page_size_max,
+    .logFn = defaultLog,
+};
+
+fn defaultLog(comptime message_level: std.log.Level, comptime scope: @TypeOf(.enum_literal), comptime format: []const u8, args: anytype) void {
+    debug.print("[" ++ @tagName(message_level) ++ "](" ++ @tagName(scope) ++ "): " ++ format, args);
+}
+
 comptime {
+    _ = Io;
+    _ = heap;
+    _ = application;
     _ = ipc;
     _ = fmt;
-    _ = services;
     _ = time;
+    _ = services;
+
+    _ = ServiceManager;
+    _ = ErrorDisplayManager;
 }
+
+pub const Io = @import("horizon/Io.zig");
 
 /// Higher-level Application abstraction.
 pub const application = @import("horizon/application.zig");
@@ -2126,14 +2155,16 @@ pub const fmt = @import("horizon/fmt.zig");
 pub const time = @import("horizon/time.zig");
 
 pub const start = @import("horizon/start.zig");
-pub const panic = @import("horizon/panic.zig");
-pub const testing = @import("horizon/testing.zig");
 pub const debug = @import("horizon/debug.zig");
+pub const testing = @import("horizon/testing.zig");
 
 pub const ServiceManager = @import("horizon/ServiceManager.zig");
 pub const ErrorDisplayManager = @import("horizon/ErrorDisplayManager.zig");
 
 pub const services = @import("horizon/services.zig");
+
+pub const PATH_MAX = 255;
+pub const NAME_MAX = 255;
 
 const is_debug = @import("builtin").mode == .Debug;
 const std = @import("std");

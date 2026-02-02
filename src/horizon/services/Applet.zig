@@ -199,7 +199,7 @@ pub fn open(service: Service, srv: ServiceManager) !Applet {
 
         break :lock switch ((try data.ipc.sendRequest(apt_session, command.GetLockHandle, .{ .flags = 0x0 }, .{})).cases()) {
             .success => |s| s.value.lock,
-            .failure => |_| unreachable,
+            .failure => unreachable,
         };
     };
 
@@ -234,7 +234,7 @@ pub fn sendFinalize(apt: Applet, service: Service, srv: ServiceManager, id: AppI
 pub fn sendGetAppletManInfo(apt: Applet, service: Service, srv: ServiceManager, position: Position) !command.GetAppletManInfo.Response {
     return switch ((try apt.lockSendCommand(service, srv, command.GetAppletManInfo, .{ .position = position }, .{})).cases()) {
         .success => |s| s.value,
-        .failure => |_| unreachable,
+        .failure => unreachable,
     };
 }
 
@@ -357,7 +357,7 @@ pub fn sendCloseApplication(apt: Applet, service: Service, srv: ServiceManager, 
 pub fn sendPrepareToJumpToHomeMenu(apt: Applet, service: Service, srv: ServiceManager) !void {
     return switch ((try apt.lockSendCommand(service, srv, command.PrepareToJumpToHomeMenu, .{}, .{})).cases()) {
         .success => {},
-        .failure => |_| unreachable,
+        .failure => unreachable,
     };
 }
 

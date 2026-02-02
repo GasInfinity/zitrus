@@ -1,3 +1,5 @@
+// NOTE: This is bad, needs a small rewrite
+
 const Title = struct {
     title: []const u8,
     description: []const u8,
@@ -23,17 +25,9 @@ const Title = struct {
     pub fn toSmdh(title: Title) !smdh.Title {
         var converted: smdh.Title = std.mem.zeroes(smdh.Title);
 
-        if (try std.unicode.checkUtf8ToUtf16LeOverflow(title.title, &converted.short_description)) {
-            return error.TitleOverflow;
-        }
-
-        if (try std.unicode.checkUtf8ToUtf16LeOverflow(title.description, &converted.long_description)) {
-            return error.DescriptionOverflow;
-        }
-
-        if (try std.unicode.checkUtf8ToUtf16LeOverflow(title.publisher, &converted.publisher)) {
-            return error.PublisherOverflow;
-        }
+        if (try std.unicode.calcUtf16LeLen(title.title) > converted.short_description.len) return error.TitleOverflow;
+        if (try std.unicode.calcUtf16LeLen(title.description) > converted.long_description.len) return error.DescriptionOverflow;
+        if (try std.unicode.calcUtf16LeLen(title.publisher) > converted.publisher.len) return error.PublisherOverflow;
 
         _ = try std.unicode.utf8ToUtf16Le(&converted.short_description, title.title);
         _ = try std.unicode.utf8ToUtf16Le(&converted.long_description, title.description);

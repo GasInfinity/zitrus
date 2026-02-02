@@ -61,7 +61,7 @@ pub const MakeOptions = struct {
 ///
 /// Asserts that the `text` segment address is the base address and entrypoint, the segments are sequential,
 /// and that the only segment with differing file/memory sizes is `data`.
-pub fn make(writer: *std.Io.Writer, reader: *std.fs.File.Reader, info: code.Info, gpa: std.mem.Allocator, options: MakeOptions) !void {
+pub fn make(writer: *std.Io.Writer, reader: *std.Io.File.Reader, info: code.Info, gpa: std.mem.Allocator, options: MakeOptions) !void {
     std.debug.assert(info.findNonSequentialPhysicalSegment(.fromByteUnits(zitrus.horizon.heap.page_size)) == null);
 
     const segments = info.segments;

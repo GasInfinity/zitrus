@@ -109,7 +109,7 @@ pub const Queue = struct {
 
         comptime std.debug.assert(st_ty.is_tuple);
 
-        var needed_fields: [st_ty.fields.len]std.builtin.Type.StructField = undefined;
+        var needed_field_types: [st_ty.fields.len]type = undefined;
 
         @setEvalBranchQuota(st_ty.fields.len * 2000);
         for (st_ty.fields, 0..) |field, i| {
@@ -128,16 +128,10 @@ pub const Queue = struct {
                 comptime std.debug.assert((@intFromEnum(current_id) - @intFromEnum(last_id)) == 1);
             }
 
-            needed_fields[i] = .{
-                .name = std.fmt.comptimePrint("{}", .{i}),
-                .type = f_ty.child,
-                .default_value_ptr = null,
-                .is_comptime = false,
-                .alignment = @alignOf(f_ty.child),
-            };
+            needed_field_types[i] = f_ty.child;
         }
 
-        return @Type(.{ .@"struct" = .{ .layout = .auto, .fields = &needed_fields, .decls = &.{}, .is_tuple = true } });
+        return @Tuple(&needed_field_types);
     }
 
     pub fn addIncremental(queue: *Queue, comptime base: *volatile pica.Graphics, comptime registers: anytype, values: IncrementalWritesTuple(base, registers)) void {

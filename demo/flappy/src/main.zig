@@ -1,3 +1,11 @@
+pub const os = horizon;
+pub const debug = horizon.debug;
+pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_options: std.Options = horizon.default_std_options;
+
+pub const std_options_debug_io: std.Io = horizon.Io.failing;
+comptime { _ = horizon.start; }
+
 // 3 bird images in the sheet
 const bird_sheet = std.mem.bytesAsSlice(Bgr888, @embedFile("bird"));
 const pipes_sheet = std.mem.bytesAsSlice(Bgr888, @embedFile("pipes"));
@@ -335,10 +343,5 @@ const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
 const Framebuffer = GspGpu.Graphics.Framebuffer;
 
-pub const panic = zitrus.horizon.panic;
 const zitrus = @import("zitrus");
 const std = @import("std");
-
-comptime {
-    _ = zitrus;
-}

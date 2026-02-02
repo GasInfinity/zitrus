@@ -1,11 +1,11 @@
 pub const description = "Dump sections of a 3DS firmware file.";
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .section = "Section to dump, if none all sections are dumped",
     .output = "Output directory / file. Directory outputs must be specified, if none stdout is used",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .section = 's',
     .output = 'o',
 };
@@ -14,24 +14,24 @@ section: ?u2,
 output: ?[]const u8,
 
 @"--": struct {
-    pub const descriptions = .{ .input = "Input file, if none stdin is used" };
+    pub const descriptions: plz.Descriptions(@This()) = .{ .input = "Input file, if none stdin is used" };
 
     input: ?[]const u8,
 },
 
-pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
     const input_file, const input_should_close = if (args.@"--".input) |in|
-        .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
+        .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
             log.err("could not open FIRM '{s}': {t}", .{ in, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdin(), false };
-    defer if (input_should_close) input_file.close();
+        .{ std.Io.File.stdin(), false };
+    defer if (input_should_close) input_file.close(io);
 
     var buf: [4096]u8 = undefined;
-    var input_reader = input_file.reader(&buf);
+    var input_reader = input_file.reader(io, &buf);
     const reader = &input_reader.interface;
 
     const header = reader.takeStruct(firm.Header, .little) catch |err| {
@@ -66,16 +66,16 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         }
 
         const output_file, const output_should_close = if (args.output) |out|
-            .{ cwd.createFile(out, .{}) catch |err| {
+            .{ cwd.createFile(io, out, .{}) catch |err| {
                 log.err("could not open output file '{s}': {t}", .{ out, err });
                 return 1;
             }, true }
         else
-            .{ std.fs.File.stdout(), false };
-        defer if (output_should_close) output_file.close();
+            .{ std.Io.File.stdout(), false };
+        defer if (output_should_close) output_file.close(io);
 
         var out_buf: [4096]u8 = undefined;
-        var output_writer = output_file.writerStreaming(&out_buf);
+        var output_writer = output_file.writerStreaming(io, &out_buf);
         const writer = &output_writer.interface;
 
         try writer.writeAll(contents);
@@ -92,27 +92,27 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     }
 
     const output_path = args.output.?;
-    var output_directory = cwd.makeOpenPath(output_path, .{}) catch |err| {
+    var output_directory = cwd.createDirPathOpen(io, output_path, .{}) catch |err| {
         log.err("could not make path '{s}': {t}", .{ output_path, err });
         return 1;
     };
-    defer output_directory.close();
+    defer output_directory.close(io);
 
     var section_name_buf: [128]u8 = undefined;
     for (&header.sections, 0..) |section, i| {
         if (section.size == 0) continue;
 
         const section_name = try std.fmt.bufPrint(&section_name_buf, "{}-{X}", .{ i, section.hash });
-        const new_file = output_directory.createFile(section_name, .{
+        const new_file = output_directory.createFile(io, section_name, .{
             .exclusive = true,
         }) catch |err| {
             log.err("error dumping section {}, '{s}' into '{s}': {t}", .{ i, section_name, output_path, err });
             continue;
         };
-        defer new_file.close();
+        defer new_file.close(io);
 
         var new_writer_buffer: [512]u8 = undefined;
-        var new_writer = new_file.writerStreaming(&new_writer_buffer);
+        var new_writer = new_file.writerStreaming(io, &new_writer_buffer);
 
         try input_reader.seekTo(section.offset);
         try reader.streamExact(&new_writer.interface, section.size);
@@ -126,5 +126,6 @@ const Dump = @This();
 const log = std.log.scoped(.firm);
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 const firm = zitrus.fmt.firm;

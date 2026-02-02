@@ -1,11 +1,11 @@
 pub const description = "List the files of an ExeFS and optionally check their hash.";
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .minify = "Emit the neccesary whitespace only",
     .check_hash = "Check hashes of files inside the ExeFS",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .minify = 'm',
     .check_hash = 'c',
 };
@@ -14,23 +14,23 @@ minify: bool = false,
 check_hash: bool = false,
 
 @"--": struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .input = "ExeFS file, if none stdin is used",
     };
 
     input: ?[]const u8,
 },
 
-pub fn main(args: List, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: List, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
     const input_file, const input_should_close = if (args.@"--".input) |in|
-        .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
+        .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
             log.err("could not open input file '{s}': {t}", .{ in, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdin(), false };
-    defer if (input_should_close) input_file.close();
+        .{ std.Io.File.stdin(), false };
+    defer if (input_should_close) input_file.close(io);
 
     if (!input_should_close and args.check_hash) {
         log.err("cannot check hashes while piping", .{}); // XXX: arbitrary, we could obviously support that by allocating the piped ExeFS contents.
@@ -38,11 +38,11 @@ pub fn main(args: List, arena: std.mem.Allocator) !u8 {
     }
 
     var buf: [4096]u8 = undefined;
-    var input_reader = input_file.readerStreaming(&buf); // XXX: Hangs on positional mode with discardAll
+    var input_reader = input_file.readerStreaming(io, &buf); // XXX: Hangs on positional mode with discardAll
     const reader = &input_reader.interface;
 
     var stdout_buf: [4096]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+    var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buf);
     const writer = &stdout_writer.interface;
 
     var serializer: std.zon.Serializer = .{
@@ -89,5 +89,6 @@ const List = @This();
 const log = std.log.scoped(.exefs);
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 const exefs = zitrus.horizon.fmt.ncch.exefs;

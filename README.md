@@ -1,10 +1,9 @@
 ![Zitrus Logo](https://codeberg.org/GasInfinity/zitrus/raw/branch/main/assets/zitrus-logo.png)
 
 ---
-![Zig support](https://img.shields.io/badge/Zig-0.15.x-color?logo=zig&color=%23f3ab20)
+![Zig support](https://img.shields.io/badge/Zig-0.16.x-color?logo=zig&color=%23f3ab20)
   
 3DS homebrew sdk written entirely in zig.
-
 
 ## Installation
 
@@ -31,7 +30,10 @@ const exe = b.addExecutable(.{
     .name = "panic.elf",
     .root_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
-        .target = b.resolveTargetQuery(zitrus.target.arm11.horizon.query), // zig 0.16.0 will add 'arm-3ds' and this will be deprecated!
+        .target = b.resolveTargetQuery(.{
+            .cpu_arch = .arm,
+            .os_tag = .@"3ds",
+        }),
         .optimize = optimize,
         .single_threaded = true, // XXX: Currently needed for page_allocator.
         .imports = &.{
@@ -61,13 +63,15 @@ const final_3dsx: zitrus.Make3dsx = .init(zitrus_dep, .{ .exe = exe, .smdh = smd
 final_3dsx.install(b, .default);
 ```
 
-In your root file, you must also add this, as there's no way to implicitly tell zig to evaluate/import it automagically:
+In your root file, you must also add this, as there's no way to implicitly tell zig to evaluate/import/use it automagically:
 ```zig
-pub const panic = zitrus.horizon.panic;
+pub const os = horizon;
+pub const debug = horizon.debug;
+pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_options: std.Options = horizon.default_std_options;
 
-comptime {
-    _ = zitrus;
-}
+pub const std_options_debug_io: std.Io = horizon.Io.failing; // XXX: until it's implemented.
+comptime { _ = horizon.start; }
 ```
 
 ## Examples / Demos
@@ -84,7 +88,7 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 
 You can (and are encouraged) to look at the `tools` directory as it is a good example of how to use the API's `zitrus` provides outside (and inside!) of a 3DS environment. Almost all tools are self-contained and span 50-300 LOC.
 
-*[There's also a WIP wiki](https://codeberg.org/GasInfinity/zitrus/wiki)*
+*[There's also a WIP wiki](https://codeberg.org/GasInfinity/zitrus/wiki) (Looks like codeberg errors for some pages?)*
 
 # Coverage
 
@@ -139,8 +143,11 @@ You can (and are encouraged) to look at the `tools` directory as it is a good ex
 
 ### Runtime
 - 🔴 `threadlocal` variables.
-- 🟡⛔🔋 Panic / error reporting and tracing.
-- 🟡⛔🔋 *Application* Test runner.
+- 🟢 Panic / error reporting and tracing. 
+    - *For the full stacktrace check `luma/errdisp.txt` in your SD card (with an emulator check you logs and/or enable application debug logging)*
+    - 🟢 Segfaults (Data Aborts, Prefetch Aborts, ...).
+    - 🔴 "Pretty" stacktraces with DWARF/Symbols
+- 🟡🔋 *Application* Test runner.
 - 🔴⛔🔋 `libc`
 
 ### Services

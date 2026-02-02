@@ -1,18 +1,18 @@
-// export threadlocal var test_tls: usize = 20;
-// export threadlocal var test_tls_bss: usize = undefined;
-// export var test_a: usize = 2200;
+pub const os = horizon;
+pub const debug = horizon.debug;
+pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_options: std.Options = horizon.default_std_options;
 
-pub fn main() !void {
-    // test_tls = 20;
-    // test_a = 500;
-    // asm volatile("" :: [t] "r" (&test_tls), [b] "r" (&test_tls_bss), [e] "r" (&test_a) : .{ .memory = true });
-    @panic("Oops, something went wrong... At least we can report it ;D");
+pub const std_options_debug_io: std.Io = horizon.Io.failing;
+comptime { _ = horizon.start; }
+
+pub fn main(_: std.process.Init.Minimal) !void {
+    if (true) @panic("Oh no!");
+
+    const unmapped_100: *u32 = @ptrFromInt(0x04);
+    unmapped_100.* = 6_7;
 }
 
-pub const panic = zitrus.horizon.panic;
 const zitrus = @import("zitrus");
+const horizon = zitrus.horizon;
 const std = @import("std");
-
-comptime {
-    _ = zitrus;
-}

@@ -1,3 +1,11 @@
+pub const os = horizon;
+pub const debug = horizon.debug;
+pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_options: std.Options = horizon.default_std_options;
+
+pub const std_options_debug_io: std.Io = horizon.Io.failing;
+comptime { _ = horizon.start; }
+
 const top_screen_bitmap = @embedFile("top-screen");
 const bottom_screen_bitmap = @embedFile("bottom-screen");
 
@@ -35,10 +43,5 @@ pub fn main() !void {
 const horizon = zitrus.horizon;
 const GspGpu = horizon.services.GspGpu;
 
-pub const panic = zitrus.horizon.panic;
 const zitrus = @import("zitrus");
 const std = @import("std");
-
-comptime {
-    _ = zitrus;
-}

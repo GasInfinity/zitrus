@@ -1,39 +1,39 @@
 pub const description = "List the sections of a firmware and optionally check their hashes.";
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .minify = "Emit the neccesary whitespace only",
     .check_hash = "Check hashes of files inside the FIRM",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .minify = 'm',
     .check_hash = 'c',
 };
 
-minify: bool = false,
-check_hash: bool = false,
+minify: ?void,
+check_hash: ?void,
 
 @"--": struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .input = "Input file, if none stdin is used",
     };
 
     input: ?[]const u8,
 },
 
-pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: Info, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
     const input_file, const input_should_close = if (args.@"--".input) |in|
-        .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
+        .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
             log.err("could not open FIRM '{s}': {t}", .{ in, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdin(), false };
-    defer if (input_should_close) input_file.close();
+        .{ std.Io.File.stdin(), false };
+    defer if (input_should_close) input_file.close(io);
 
     var buf: [@sizeOf(firm.Header)]u8 = undefined;
-    var input_reader = input_file.reader(&buf);
+    var input_reader = input_file.reader(io, &buf);
     const reader = &input_reader.interface;
 
     const firm_hdr = reader.takeStruct(firm.Header, .little) catch |err| {
@@ -50,12 +50,12 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
     };
 
     var stdout_buf: [4096]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buf);
+    var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buf);
     const writer = &stdout_writer.interface;
 
     var serializer: std.zon.Serializer = .{
         .options = .{
-            .whitespace = !args.minify,
+            .whitespace = args.minify == null,
         },
         .writer = writer,
     };
@@ -82,7 +82,7 @@ pub fn main(args: Info, arena: std.mem.Allocator) !u8 {
             _ => try section_info.field("copy_method", @intFromEnum(section.copy_method), .{}),
         }
 
-        if (args.check_hash) {
+        if (args.check_hash) |_| {
             try input_reader.seekTo(section.offset);
 
             const data = try reader.readAlloc(arena, section.size);
@@ -105,5 +105,6 @@ const Info = @This();
 const log = std.log.scoped(.firm);
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 const firm = zitrus.fmt.firm;

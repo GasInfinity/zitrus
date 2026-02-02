@@ -21,7 +21,7 @@ run: *Build.Step.Run,
 /// directly.
 out: Build.LazyPath,
 
-pub fn init(zitrus_dep: *Build.Dependency, options: Options) AssembleZpsm {
+pub fn init(zitrus_dep: *Build.Dependency, options: Options) AssemblePsm {
     return initInner(zitrus_dep.builder, .{
         .tools_artifact = zitrus_dep.artifact("zitrus"),
     }, options);
@@ -29,9 +29,9 @@ pub fn init(zitrus_dep: *Build.Dependency, options: Options) AssembleZpsm {
 
 /// This is intended to be used by **zitrus** itself,
 /// prefer `init` instead.
-pub fn initInner(b: *Build, config: Config, options: Options) AssembleZpsm {
+pub fn initInner(b: *Build, config: Config, options: Options) AssemblePsm {
     const make = b.addRunArtifact(config.tools_artifact);
-    make.setName(b.fmt("assemble zpsm ({s})", .{options.name}));
+    make.setName(b.fmt("assemble psm ({s})", .{options.name}));
     make.addArgs(&.{ "pica", "asm" });
     make.addFileArg(options.root_source_file);
 
@@ -45,7 +45,7 @@ pub fn initInner(b: *Build, config: Config, options: Options) AssembleZpsm {
     };
 }
 
-const AssembleZpsm = @This();
+const AssemblePsm = @This();
 
 const std = @import("std");
 const Build = std.Build;

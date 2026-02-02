@@ -1,49 +1,50 @@
 pub const description = "Dump a (CTR) Layout Image to a PKM (if ETC1) or to the specified output format.";
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .output = "Output directory / file. Directory outputs must be specified, if none stdout is used",
-    .ofmt = "Output format, it is not guaranteed that all work, support depends on zigimg as-is. PNG is used by default",
+    // .ofmt = "Output format, it is not guaranteed that all work, support depends on zigimg as-is. PNG is used by default",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .output = 'o',
     .verbose = 'v',
 };
 
-pub const OutputFormat = zigimg.Image.Format;
+// pub const OutputFormat = zigimg.Image.Format;
 
 output: ?[]const u8,
-ofmt: OutputFormat = .png,
+// ofmt: OutputFormat = .png,
 verbose: bool,
 
 @"--": struct {
-    pub const descriptions = .{ .input = "Input file, if none stdin is used" };
+    pub const descriptions: plz.Descriptions(@This()) = .{ .input = "Input file, if none stdin is used" };
 
     input: ?[]const u8,
 },
 
-pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
+    if(true) @panic("Regressed, wait for zigimg update"); // XXX: Fix this when zigimg updates
+    const cwd = std.Io.Dir.cwd();
     const input_file, const input_should_close = if (args.@"--".input) |in|
-        .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
+        .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
             log.err("could not open CLIM '{s}': {t}", .{ in, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdin(), false };
-    defer if (input_should_close) input_file.close();
+        .{ std.Io.File.stdin(), false };
+    defer if (input_should_close) input_file.close(io);
 
     const output_file, const output_should_close = if (args.output) |out|
-        .{ cwd.createFile(out, .{}) catch |err| {
+        .{ cwd.createFile(io, out, .{}) catch |err| {
             log.err("could not open output file '{s}': {t}", .{ out, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdout(), false };
-    defer if (output_should_close) output_file.close();
+        .{ std.Io.File.stdout(), false };
+    defer if (output_should_close) output_file.close(io);
 
     var buf: [4096]u8 = undefined;
-    var input_reader = input_file.reader(&buf);
+    var input_reader = input_file.reader(io, &buf);
     const in_reader = &input_reader.interface;
 
     const file_data = try in_reader.allocRemaining(arena, .unlimited);
@@ -52,7 +53,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     var reader: std.Io.Reader = .fixed(file_data);
 
     var out_buf: [4096]u8 = undefined;
-    var output_writer = output_file.writerStreaming(&out_buf);
+    var output_writer = output_file.writerStreaming(io, &out_buf);
     const writer = &output_writer.interface;
 
     reader.seek = reader.end - @sizeOf(clim.Footer);
@@ -112,30 +113,29 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     const untiled_image_data: []u8 = try arena.alloc(u8, tiled_image_data.len);
     defer arena.free(untiled_image_data);
 
-    const default_encoder_opts = switch (args.ofmt) {
-        inline else => |t| @unionInit(zigimg.Image.EncoderOptions, @tagName(t), if (@FieldType(zigimg.Image.EncoderOptions, @tagName(t)) == void) {} else .{}),
-    };
+    // const default_encoder_opts = switch (args.ofmt) {
+    //     inline else => |t| @unionInit(zigimg.Image.EncoderOptions, @tagName(t), if(@FieldType(zigimg.Image.EncoderOptions, @tagName(t)) == void) {} else .{}), 
+    // };
 
     switch (meta.format) {
         .i4, .a4 => {
             @memset(untiled_image_data, 0x00); // NOTE: undefined bits make partial updates impossible, we MUST do this!
             zitrus.hardware.pica.morton.convertNibbles(.untile, 8, width_po2, untiled_image_data, tiled_image_data);
-
-            var img: zigimg.Image = try .create(arena, width_po2, height_po2, .grayscale4);
-            defer img.deinit(arena);
-
-            for (untiled_image_data, 0..) |src, i| {
-                img.pixels.grayscale4[i * 2] = .{ .value = @intCast(src & 0xF) };
-                img.pixels.grayscale4[i * 2 + 1] = .{ .value = @intCast(src >> 4) };
-            }
-
-            try img.writeToFile(arena, output_file, &out_buf, default_encoder_opts);
+            // var img: zigimg.Image = try .create(arena, width_po2, height_po2, .grayscale4);
+            // defer img.deinit(arena);
+            //
+            // for (untiled_image_data, 0..) |src, i| {
+            //     img.pixels.grayscale4[i*2] = .{ .value = @intCast(src & 0xF) };
+            //     img.pixels.grayscale4[i*2+1] = .{ .value = @intCast(src >> 4) };
+            // }
+            //
+            // try img.writeToFile(arena, output_file, &out_buf, default_encoder_opts);
         },
         .ia88 => {
             zitrus.hardware.pica.morton.convert(.untile, 8, width_po2, @sizeOf(u16), untiled_image_data, tiled_image_data);
 
-            const img: zigimg.Image = try .fromRawPixelsOwned(width_po2, height_po2, untiled_image_data, .grayscale8Alpha);
-            try img.writeToFile(arena, output_file, &out_buf, default_encoder_opts);
+            // const img: zigimg.Image = try .fromRawPixelsOwned(width_po2, height_po2, untiled_image_data, .grayscale8Alpha);
+            // try img.writeToFile(arena, output_file, &out_buf, default_encoder_opts);
         },
         .etc1 => {
             // NOTE: Tile size of 2 as each ETC block is 4x4, also as we convert to ETC "pixels" we must divide width/height by 4!
@@ -168,9 +168,10 @@ const Dump = @This();
 const log = std.log.scoped(.clim);
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 
-const zigimg = @import("zigimg");
+// const zigimg = @import("zigimg");
 const etc = zitrus.compress.etc;
 
 const lyt = zitrus.horizon.fmt.layout;

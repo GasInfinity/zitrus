@@ -1,7 +1,7 @@
 pub const description = "Assemble a zitrus PICA200 shader assembly (ZPSM) file";
 
 pub const OutputFormat = enum {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .zpsh = "Simpler shader format which is currently specific to zitrus",
         .dvl = "Shader format used in official and homebrew 3DS titles",
     };
@@ -10,12 +10,12 @@ pub const OutputFormat = enum {
     dvl,
 };
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .ofmt = "Output binary format",
     .output = "Output file, if none stdout is used",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .output = 'o',
 };
 
@@ -23,41 +23,38 @@ ofmt: OutputFormat = .zpsh,
 output: ?[]const u8,
 
 @"--": struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .input = "File to assemble, if none stdin is used",
     };
 
     input: ?[]const u8,
 },
 
-pub fn main(args: Assemble, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: Assemble, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
 
     const input_file, const input_should_close = if (args.@"--".input) |input|
-        .{ cwd.openFile(input, .{ .mode = .read_only }) catch |err| {
+        .{ cwd.openFile(io, input, .{ .mode = .read_only }) catch |err| {
             log.err("could not open input file '{s}': {t}", .{ input, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdin(), false };
-    defer if (input_should_close) input_file.close();
+        .{ std.Io.File.stdin(), false };
+    defer if (input_should_close) input_file.close(io);
 
     const output_file, const output_should_close = if (args.output) |out|
-        .{ cwd.createFile(out, .{}) catch |err| {
+        .{ cwd.createFile(io, out, .{}) catch |err| {
             log.err("could not open output file '{s}': {t}", .{ out, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdout(), false };
-    defer if (output_should_close) output_file.close();
+        .{ std.Io.File.stdout(), false };
+    defer if (output_should_close) output_file.close(io);
 
-    var stderr_buf: [4096]u8 = undefined;
-    var stderr_raw = std.fs.File.stderr().writerStreaming(&stderr_buf);
-    const stderr = &stderr_raw.interface;
-    const tty_cfg: std.Io.tty.Config = .detect(std.fs.File.stderr());
+    // const tty_cfg: std.Io.tty.Config = .detect(std.Io.File.stderr());
 
     const input_source = src: {
-        var input_reader = input_file.readerStreaming(&.{});
+        var input_reader = input_file.readerStreaming(io, &.{});
         var source: std.ArrayList(u8) = .empty;
         try input_reader.interface.appendRemaining(arena, &source, .unlimited);
 
@@ -74,18 +71,22 @@ pub fn main(args: Assemble, arena: std.mem.Allocator) !u8 {
     defer assembled.deinit(arena);
 
     if (assembled.errors.len > 0) {
+        var stderr_buf: [4096]u8 = undefined;
+        const stderr = try io.lockStderr(&stderr_buf, null);
+        defer io.unlockStderr();
+
         for (assembled.errors) |err| {
             const diagnostic: Diagnostic = .fromError(err, assembled);
 
-            try diagnostic.report(stderr, tty_cfg, args.@"--".input orelse "", input_source);
+            try diagnostic.render(stderr.terminal(), args.@"--".input orelse "", input_source);
         }
 
-        try stderr.flush();
+        try stderr.file_writer.interface.flush();
         return 1;
     }
 
     var out_buf: [4096]u8 = undefined;
-    var output_writer = output_file.writer(&out_buf);
+    var output_writer = output_file.writer(io, &out_buf);
     const out = &output_writer.interface;
 
     switch (args.ofmt) {
@@ -271,45 +272,47 @@ const Diagnostic = struct {
         };
     }
 
-    pub fn report(diagnostic: Diagnostic, writer: *std.Io.Writer, tty_cfg: std.io.tty.Config, file_name: []const u8, source: [:0]const u8) !void {
-        try tty_cfg.setColor(writer, .bold);
-        try tty_cfg.setColor(writer, .bright_white);
+    pub fn render(diagnostic: Diagnostic, terminal: std.Io.Terminal, file_name: []const u8, source: [:0]const u8) !void {
+        const w = terminal.writer;
 
-        try writer.print("{s}", .{file_name});
+        try terminal.setColor(.bold);
+        try terminal.setColor(.bright_white);
+
+        try w.print("{s}", .{file_name});
 
         if (diagnostic.loc) |loc| {
             const line = std.mem.count(u8, source[0..loc.start], &.{'\n'}) + 1;
             const column = (loc.start - (std.mem.lastIndexOfScalar(u8, source[0..loc.start], '\n') orelse 0)) + 1;
 
-            try writer.print(":{}:{}: ", .{ line, column });
-        } else try writer.writeAll(": ");
+            try w.print(":{}:{}: ", .{ line, column });
+        } else try w.writeAll(": ");
 
-        try tty_cfg.setColor(writer, .bright_red);
-        try writer.writeAll("error: ");
+        try terminal.setColor(.bright_red);
+        try w.writeAll("error: ");
 
-        try tty_cfg.setColor(writer, .bright_white);
-        try writer.writeAll(diagnostic.message);
+        try terminal.setColor(.bright_white);
+        try w.writeAll(diagnostic.message);
 
         if (diagnostic.tok_ctx) |tag| {
-            _ = try writer.print(" '{s}' ", .{@tagName(tag)});
+            _ = try w.print(" '{s}' ", .{@tagName(tag)});
         }
 
-        _ = try writer.writeByte('\n');
+        _ = try w.writeByte('\n');
 
         if (diagnostic.loc) |loc| {
             const column_start = if (std.mem.lastIndexOfScalar(u8, source[0..loc.start], '\n')) |col_start| col_start + 1 else 0;
             const column_end = (std.mem.indexOfScalarPos(u8, source, loc.start, '\n') orelse (source.len - 1));
 
-            try tty_cfg.setColor(writer, .reset);
-            try writer.print("{s}\n", .{source[column_start..column_end]});
+            try terminal.setColor(.reset);
+            try w.print("{s}\n", .{source[column_start..column_end]});
 
-            try tty_cfg.setColor(writer, .bright_green);
-            try writer.splatByteAll(' ', (loc.start - column_start));
-            try writer.writeByte('^');
-            try writer.writeByte('\n');
+            try terminal.setColor(.bright_green);
+            try w.splatByteAll(' ', (loc.start - column_start));
+            try w.writeByte('^');
+            try w.writeByte('\n');
         }
 
-        try tty_cfg.setColor(writer, .reset);
+        try terminal.setColor(.reset);
     }
 
     pub fn fromError(err: Assembler.Error, assembled: Assembled) Diagnostic {
@@ -373,6 +376,7 @@ const Assemble = @This();
 const log = std.log.scoped(.pica);
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 
 const zpsh = zitrus.fmt.zpsh;

@@ -1,11 +1,11 @@
 pub const description = "Convert a PIE ELF, SMDH and RomFS into a 3DSX";
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .smdh = "SMDH metadata to embed",
     .romfs = "RomFS to embed",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .smdh = 's',
     .romfs = 'r',
     .verbose = 'v',
@@ -13,10 +13,10 @@ pub const switches = .{
 
 smdh: ?[]const u8,
 romfs: ?[]const u8,
-verbose: bool,
+verbose: ?void,
 
 @"--": struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .elf = "ELF PIE to convert",
         .@"3dsx" = "Output filename",
     };
@@ -25,16 +25,16 @@ verbose: bool,
     @"3dsx": []const u8,
 },
 
-pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
-    const elf_file = cwd.openFile(args.@"--".elf, .{ .mode = .read_only }) catch |err| {
+pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
+    const elf_file = cwd.openFile(io, args.@"--".elf, .{ .mode = .read_only }) catch |err| {
         log.err("could not open input file '{s}': {t}", .{ args.@"--".elf, err });
         return 1;
     };
-    defer elf_file.close();
+    defer elf_file.close(io);
 
     var elf_reader_buf: [4096]u8 = undefined;
-    var elf_reader = elf_file.reader(&elf_reader_buf);
+    var elf_reader = elf_file.reader(io, &elf_reader_buf);
 
     var processed = code.Info.extractStaticElfAlloc(&elf_reader, arena) catch |err| switch (err) {
         error.NotElf,
@@ -102,25 +102,25 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
     }
 
     var romfs_buffer: [4096]u8 = undefined;
-    const romfs_file: ?std.fs.File, var romfs_reader: ?std.fs.File.Reader = if (args.romfs) |romfs| blk: {
-        const romfs_file = cwd.openFile(romfs, .{ .mode = .read_only }) catch |err| {
+    const romfs_file: ?std.Io.File, var romfs_reader: ?std.Io.File.Reader = if (args.romfs) |romfs| blk: {
+        const romfs_file = cwd.openFile(io, romfs, .{ .mode = .read_only }) catch |err| {
             log.err("could not open romfs file '{s}': {t}", .{ romfs, err });
             return 1;
         };
 
-        break :blk .{ romfs_file, romfs_file.reader(&romfs_buffer) };
+        break :blk .{ romfs_file, romfs_file.reader(io, &romfs_buffer) };
     } else .{ null, null };
-    defer if (romfs_file) |romfs| romfs.close();
+    defer if (romfs_file) |romfs| romfs.close(io);
 
     const smdh_data = if (args.smdh) |smdh_path| data: {
-        const smdh_file = cwd.openFile(smdh_path, .{ .mode = .read_only }) catch |err| {
+        const smdh_file = cwd.openFile(io, smdh_path, .{ .mode = .read_only }) catch |err| {
             log.err("could not open SMDH file '{s}': {t}", .{ smdh_path, err });
             return 1;
         };
-        defer smdh_file.close();
+        defer smdh_file.close(io);
 
         var buf: [@sizeOf(fmt.smdh.Smdh)]u8 = undefined;
-        var smdh_reader = smdh_file.reader(&buf);
+        var smdh_reader = smdh_file.reader(io, &buf);
         const smdh_data: fmt.smdh.Smdh = smdh_reader.interface.peekStruct(fmt.smdh.Smdh, .little) catch |err| {
             log.err("error reading SMDH file '{s}': {t}", .{ smdh_path, err });
             return 1;
@@ -134,7 +134,7 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
         break :data smdh_data;
     } else null;
 
-    if (args.verbose) {
+    if (args.verbose) |_| {
         log.info("ELF Segments: ", .{});
 
         for (processed.segments) |s| {
@@ -161,14 +161,14 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
         if (romfs_reader) |*romfs| log.info("{} RomFS bytes", .{try romfs.getSize()});
     }
 
-    const output_file = cwd.createFile(args.@"--".@"3dsx", .{}) catch |err| {
+    const output_file = cwd.createFile(io, args.@"--".@"3dsx", .{}) catch |err| {
         log.err("could not create/open output file '{s}' for writing: {t}", .{ args.@"--".@"3dsx", err });
         return 1;
     };
-    defer output_file.close();
+    defer output_file.close(io);
 
     var output_buffer: [8192]u8 = undefined;
-    var output_writer = output_file.writer(&output_buffer);
+    var output_writer = output_file.writer(io, &output_buffer);
 
     try @"3dsx".make(&output_writer.interface, &elf_reader, processed, arena, .{
         .smdh = smdh_data,
@@ -186,6 +186,7 @@ const log = std.log.scoped(.@"3dsx");
 
 const builtin = @import("builtin");
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 
 const fmt = zitrus.horizon.fmt;

@@ -66,31 +66,35 @@ const spirv = struct {
     };
 };
 
-const Arguments = struct {
-    pub const description =
-        \\Source generate SPIR-V structures and enums for reading from the spec. 
-    ;
+pub const description =
+    \\Source generate SPIR-V structures and enums for reading from the spec. 
+;
 
-    @"--": struct {
-        pub const descriptions = .{ .spec = "non-unified SPIR-V specification in JSON", .output = "Filename of the source-generated code" };
+@"--": struct {
+    pub const descriptions: plz.Descriptions(@This()) = .{ .spec = "non-unified SPIR-V specification in JSON", .output = "Filename of the source-generated code" };
 
-        spec: []const u8,
-        output: []const u8,
-    },
-};
+    spec: []const u8,
+    output: []const u8,
+},
 
-pub fn main() !u8 {
-    var gpa_state: std.heap.DebugAllocator(.{}) = .init;
-    defer std.debug.assert(gpa_state.deinit() == .ok);
+pub fn main(init: std.process.Init) !u8 {
+    const arena = init.arena.allocator();
+    const gpa = init.gpa;
+    const io = init.io;
 
-    const gpa = gpa_state.allocator();
+    const args = try init.minimal.args.toSlice(arena);
 
-    const args = try std.process.argsAlloc(gpa);
-    defer std.process.argsFree(gpa, args);
+    var diagnostic: plz.Diagnostic = undefined;
+    const arguments = plz.parseSlice(@This(), "gen-spirv-spec",  &diagnostic, args[1..]) catch {
+        const stderr = try io.lockStderr(&.{}, null); 
+        defer io.unlockStderr();
 
-    const arguments = zdap.Parser.parse(Arguments, "gen-spirv-spec", args, .{});
+        try diagnostic.render(stderr.terminal(), .default); 
+        try stderr.file_writer.interface.flush();
+        return if(diagnostic.kind == .help) 0 else 1;
+    };
 
-    const spec_source = std.fs.cwd().readFileAlloc(gpa, arguments.@"--".spec, std.math.maxInt(usize)) catch |err| {
+    const spec_source = std.Io.Dir.cwd().readFileAlloc(io, arguments.@"--".spec, gpa, .unlimited) catch |err| {
         std.debug.print("could not read spec '{s}': {t}", .{ arguments.@"--".spec, err });
         return 1;
     };
@@ -113,14 +117,14 @@ pub fn main() !u8 {
         return 1;
     };
 
-    const output_file = std.fs.cwd().createFile(arguments.@"--".output, .{}) catch |err| {
+    const output_file = std.Io.Dir.cwd().createFile(io, arguments.@"--".output, .{}) catch |err| {
         std.debug.print("could not open output file '{s}': {t}\n", .{ arguments.@"--".output, err });
         return 1;
     };
-    defer output_file.close();
+    defer output_file.close(io);
 
     var output_buffer: [4096]u8 = undefined;
-    var output_writer = output_file.writer(&output_buffer);
+    var output_writer = output_file.writer(io, &output_buffer);
     try generateSpec(&output_writer.interface, gpa, spec);
     try output_writer.interface.flush();
     return 0;
@@ -247,4 +251,4 @@ fn generateSpec(writer: *std.Io.Writer, gpa: std.mem.Allocator, spec: spirv.Spec
 }
 
 const std = @import("std");
-const zdap = @import("zdap");
+const plz = @import("plz");

@@ -1,7 +1,7 @@
 pub const description = "Dump files from a NCCH.";
 
 const Region = enum {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .settings = "Dump the settings.zon of an NCCH. The NCCH must have an extended header.",
     };
 
@@ -12,13 +12,13 @@ const Region = enum {
     romfs,
 };
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .output = "Output filename. If not specified stdout will be used.",
     .minify = "Emit the neccesary whitespace only",
     .region = "NCCH region to dump",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .output = 'o',
     .minify = 'm',
     .region = 'r',
@@ -26,32 +26,32 @@ pub const switches = .{
 };
 
 output: ?[]const u8 = null,
-minify: bool = false,
+minify: ?void,
 region: Region,
-verbose: bool,
+verbose: ?void,
 
 @"--": struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .input = "The NCCH file, if none stdin is used",
     };
 
     input: ?[]const u8 = null,
 },
 
-pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
 
     const input_file, const input_should_close = if (args.@"--".input) |in|
-        .{ cwd.openFile(in, .{ .mode = .read_only }) catch |err| {
+        .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
             log.err("could not open NCCH '{s}': {t}", .{ in, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdin(), false };
-    defer if (input_should_close) input_file.close();
+        .{ std.Io.File.stdin(), false };
+    defer if (input_should_close) input_file.close(io);
 
     var in_buf: [4096]u8 = undefined;
-    var ncch_reader = input_file.reader(&in_buf);
+    var ncch_reader = input_file.reader(io, &in_buf);
     const reader = &ncch_reader.interface;
 
     const full = try reader.takeStruct(ncch.Header.WithSignature, .little);
@@ -77,7 +77,7 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
         return 1;
     }
 
-    if (args.verbose) {
+    if (args.verbose) |_| {
         log.info("Platform: {t}", .{header.flags.platform});
         log.info("Type: {t} | Form: {t}", .{ header.flags.content.form, header.flags.content.type });
         log.info("Media unit size: 0x{X:0>8}", .{media_unit});
@@ -118,16 +118,16 @@ pub fn main(args: Dump, arena: std.mem.Allocator) !u8 {
     defer arena.free(hashed_region_data);
 
     const output_file, const output_should_close = if (args.output) |out|
-        .{ cwd.createFile(out, .{}) catch |err| {
+        .{ cwd.createFile(io, out, .{}) catch |err| {
             log.err("could not open output file '{s}': {t}", .{ out, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdout(), false };
-    defer if (output_should_close) output_file.close();
+        .{ std.Io.File.stdout(), false };
+    defer if (output_should_close) output_file.close(io);
 
     var out_buf: [4096]u8 = undefined;
-    var output_writer = output_file.writer(&out_buf);
+    var output_writer = output_file.writer(io, &out_buf);
     const writer = &output_writer.interface;
 
     switch (args.region) {
@@ -211,7 +211,7 @@ pub fn dumpSettings(args: Dump, arena: std.mem.Allocator, writer: *std.Io.Writer
     defer settings.deinit(arena);
 
     try std.zon.stringify.serialize(settings, .{
-        .whitespace = !args.minify,
+        .whitespace = args.minify == null,
         .emit_default_optional_fields = false,
     }, writer);
     try writer.writeByte('\n');
@@ -229,6 +229,7 @@ const Settings = @import("Settings.zig");
 
 const builtin = @import("builtin");
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 
 const hfmt = zitrus.horizon.fmt;

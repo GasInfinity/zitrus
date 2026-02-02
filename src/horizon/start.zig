@@ -1,7 +1,9 @@
+//! NOTE: The majority of this code is copy-pasted from the zig stdlib as we want to support the same entrypoints!
+
 comptime {
     _ = root;
 
-    if (builtin.target.os.tag == .other and !@hasDecl(root, "_start") and @hasDecl(root, "main")) {
+    if (builtin.target.os.tag == .@"3ds" and !@hasDecl(root, "_start") and @hasDecl(root, "main")) {
         @export(&_start, .{ .name = "_start" });
 
         // Ensure we export the .prm section
@@ -58,9 +60,21 @@ fn callMainAndExit() callconv(.c) noreturn {
         for (slice) |func| func();
     }
 
-    // TODO: Log to errdisp if return was not 0?
-    _ = callMainWithArgs();
+    horizon.debug.maybeEnableSegfaultHandler();
+    // Maybe log to errdisp if return was not 0?
+    _ = callMain(&.{}, &.{});
     horizon.exit();
+}
+
+inline fn callMain(args: std.process.Args.Vector, environ: std.process.Environ.Block) u8 {
+    const fn_info = @typeInfo(@TypeOf(root.main)).@"fn";
+    if (fn_info.params.len == 0) return wrapMain(root.main());
+    if (fn_info.params[0].type.? == std.process.Init.Minimal) return wrapMain(root.main(.{
+        .args = .{ .vector = args },
+        .environ = .{ .block = environ },
+    }));
+
+    @compileError("Juicy main is currently not available, sorry!");
 }
 
 const bad_main_ret = "expected return type of main to be 'void', '!void', 'noreturn', 'u8', or '!u8'";
@@ -90,7 +104,34 @@ inline fn callMainWithArgs() u8 {
     }
 }
 
+inline fn wrapMain(result: anytype) u8 {
+    const ReturnType = @TypeOf(result);
+    switch (ReturnType) {
+        void => return 0,
+        noreturn => unreachable,
+        u8 => return result,
+        else => {},
+    }
+    if (@typeInfo(ReturnType) != .error_union) @compileError(bad_main_ret);
+
+    const unwrapped_result = result catch |err| {
+        std.log.err("{t}", .{err});
+        if (@errorReturnTrace()) |trace| std.debug.dumpStackTrace(trace);
+        return 1;
+    };
+
+    return switch (@TypeOf(unwrapped_result)) {
+        noreturn => unreachable,
+        void => 0,
+        u8 => unwrapped_result,
+        else => @compileError(bad_main_ret),
+    };
+}
+
 const root = @import("root");
+
+const native_os = builtin.target.os.tag;
+
 const builtin = @import("builtin");
 const std = @import("std");
 const zitrus = @import("zitrus");

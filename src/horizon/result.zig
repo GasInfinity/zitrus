@@ -188,6 +188,14 @@ pub const Description = enum(u10) {
 };
 
 pub const Code = packed struct(i32) {
+    /// Not a real code, it's used to say that a generic failure occurred.
+    pub const failure: Code = .{
+        .description = .no_data,
+        .module = .common,
+        .level = .fatal,
+        .summary = .status_changed,
+    };
+
     pub const success: Code = @bitCast(@as(u32, 0));
 
     // :wilted_rose:

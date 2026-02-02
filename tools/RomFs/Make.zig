@@ -1,49 +1,49 @@
 pub const description = "Make a RomFS";
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .output = "Output file, if none stdout is used.",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .output = 'o',
 };
 
 output: ?[]const u8,
 
 @"--": struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .directory = "Directory to convert",
     };
 
     directory: []const u8,
 },
 
-pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
     const dir_path = args.@"--".directory;
 
-    var root = cwd.openDir(dir_path, .{ .iterate = true }) catch |err| {
+    var root = cwd.openDir(io, dir_path, .{ .iterate = true }) catch |err| {
         log.err("error opening directory '{s}': {t}", .{ dir_path, err });
         return 1;
     };
-    defer root.close();
+    defer root.close(io);
 
     const output_file, const output_should_close = if (args.output) |out|
-        .{ cwd.createFile(out, .{}) catch |err| {
+        .{ cwd.createFile(io, out, .{}) catch |err| {
             log.err("could not open output file '{s}': {t}", .{ out, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdout(), false };
-    defer if (output_should_close) output_file.close();
+        .{ std.Io.File.stdout(), false };
+    defer if (output_should_close) output_file.close(io);
 
     var output_buffer: [4096]u8 = undefined;
-    var output_writer = output_file.writer(&output_buffer);
+    var output_writer = output_file.writer(io, &output_buffer);
 
     var builder: romfs.Builder = try .init(arena);
     defer builder.deinit(arena);
 
-    addDirectory(&builder, arena, &root, &builder.root) catch |err| {
+    addDirectory(&builder, io, arena, &root, &builder.root) catch |err| {
         log.err("couldn't create RomFS: {t}", .{err});
         return 1;
     };
@@ -54,23 +54,23 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
     return 0;
 }
 
-fn addDirectory(builder: *romfs.Builder, gpa: std.mem.Allocator, dir: *std.fs.Dir, b_dir: *romfs.Builder.Directory) !void {
+fn addDirectory(builder: *romfs.Builder, io: std.Io, gpa: std.mem.Allocator, dir: *std.Io.Dir, b_dir: *romfs.Builder.Directory) !void {
     var it = dir.iterate();
 
     const Entry = struct {
         b_dir: romfs.Builder.Directory,
-        dir: std.fs.Dir,
+        dir: std.Io.Dir,
     };
 
     var directories: std.ArrayList(Entry) = .empty;
     defer directories.deinit(gpa);
 
-    while (try it.next()) |entry| {
+    while (try it.next(io)) |entry| {
         if (std.mem.eql(u8, entry.name, ".") or std.mem.eql(u8, entry.name, "..")) continue;
 
         switch (entry.kind) {
             .directory => {
-                const sub = dir.openDir(entry.name, .{ .iterate = true }) catch |err| {
+                const sub = dir.openDir(io, entry.name, .{ .iterate = true }) catch |err| {
                     log.err("error while opening directory '{s}': {t}... skipping", .{ entry.name, err });
                     continue;
                 };
@@ -81,13 +81,13 @@ fn addDirectory(builder: *romfs.Builder, gpa: std.mem.Allocator, dir: *std.fs.Di
                 });
             },
             .file => {
-                const file = dir.openFile(entry.name, .{ .mode = .read_only }) catch |err| {
+                const file = dir.openFile(io, entry.name, .{ .mode = .read_only }) catch |err| {
                     log.err("error while opening file '{s}': {t}... skipping", .{ entry.name, err });
                     continue;
                 };
-                defer file.close();
+                defer file.close(io);
 
-                var reader = file.reader(&.{});
+                var reader = file.reader(io, &.{});
                 const contents = try reader.interface.allocRemaining(gpa, .unlimited);
                 defer gpa.free(contents);
 
@@ -99,9 +99,9 @@ fn addDirectory(builder: *romfs.Builder, gpa: std.mem.Allocator, dir: *std.fs.Di
     }
 
     for (directories.items) |*entry| {
-        defer entry.dir.close();
+        defer entry.dir.close(io);
 
-        try addDirectory(builder, gpa, &entry.dir, &entry.b_dir);
+        try addDirectory(builder, io, gpa, &entry.dir, &entry.b_dir);
     }
 }
 
@@ -110,5 +110,6 @@ const Make = @This();
 const log = std.log.scoped(.romfs);
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 const romfs = zitrus.horizon.fmt.ncch.romfs;

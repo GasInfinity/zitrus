@@ -58,7 +58,7 @@ pub fn atomicStore64(comptime T: type, ptr: *T, value: T) void {
 }
 
 comptime {
-    _ = horizon.start;
+    _ = horizon;
 
     _ = compress;
     _ = fmt;

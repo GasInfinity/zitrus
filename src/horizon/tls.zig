@@ -28,8 +28,8 @@ pub const ThreadLocalStorage = extern struct {
             }
         };
 
-        // TODO: The proper
-        entry: ?*const fn () callconv(.c) noreturn,
+        /// Make sure to flush the prefetch buffer!
+        entry: ?*const fn (*const Exception.Info, *const Exception.Registers) callconv(.c) noreturn,
         /// Stack used when calling the exception entry.
         stack: Stack,
         /// Where to store the exception context.
@@ -91,7 +91,11 @@ export fn __tls_get_addr(index: *const TlsIndex) *anyopaque {
     return @ptrFromInt(@intFromPtr(get().state.tp) + index.offset);
 }
 
-const ipc = @import("ipc.zig");
 
 const builtin = @import("builtin");
 const std = @import("std");
+const zitrus = @import("zitrus");
+const horizon = zitrus.horizon;
+
+const ipc = horizon.ipc;
+const Exception = horizon.ErrorDisplayManager.Exception;

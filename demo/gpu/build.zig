@@ -9,7 +9,7 @@ pub fn build(b: *std.Build) void {
     const zitrus_dep = b.dependency("zitrus", .{});
     const zitrus_mod = zitrus_dep.module("zitrus");
 
-    const simple_shader = zitrus.AssembleZpsm.init(zitrus_dep, .{
+    const simple_shader = zitrus.AssemblePsm.init(zitrus_dep, .{
         .name = "simple.psh",
         .root_source_file = b.path("assets/simple.psm"),
     });
@@ -18,7 +18,10 @@ pub fn build(b: *std.Build) void {
         .name = "gpu.elf",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
-            .target = b.resolveTargetQuery(zitrus.target.arm11.horizon.query),
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .arm,
+                .os_tag = .@"3ds",
+            }),
             .optimize = optimize,
             .single_threaded = true,
             .imports = &.{

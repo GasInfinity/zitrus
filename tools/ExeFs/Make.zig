@@ -1,17 +1,17 @@
 pub const description = "Make an ExeFS.";
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .output = "Output file, if none stdout is used",
     .file = "Add a file to the ExeFS",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .output = 'o',
     .file = 'f',
 };
 
 pub const File = struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .name = "Name stored in the ExeFS, maximum is 8 characters long",
         .path = "Input file to include",
     };
@@ -21,28 +21,28 @@ pub const File = struct {
 };
 
 const ProcessedFile = struct {
-    opened: std.fs.File,
-    reader: std.fs.File.Reader,
+    opened: std.Io.File,
+    reader: std.Io.File.Reader,
 };
 
 output: ?[]const u8,
-file: zdap.BoundedArray(File, exefs.max_files),
+file: plz.Bounded(exefs.max_files, File),
 
-pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
     const output_file, const output_should_close = if (args.output) |out|
-        .{ cwd.createFile(out, .{}) catch |err| {
+        .{ cwd.createFile(io, out, .{}) catch |err| {
             log.err("could not open output file '{s}': {t}", .{ out, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdout(), false };
-    defer if (output_should_close) output_file.close();
+        .{ std.Io.File.stdout(), false };
+    defer if (output_should_close) output_file.close(io);
 
     var output_buffer: [4096]u8 = undefined;
-    var output_writer = output_file.writerStreaming(&output_buffer);
+    var output_writer = output_file.writerStreaming(io, &output_buffer);
 
-    var file_data: zdap.BoundedArray(exefs.File, exefs.max_files) = .empty;
+    var file_data: plz.Bounded(exefs.max_files, exefs.File) = .empty;
     defer for (file_data.constSlice()) |f| arena.free(f.data);
 
     for (args.file.constSlice()) |f| {
@@ -53,12 +53,12 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
     }
 
     for (args.file.constSlice()) |f| {
-        const input_file = cwd.openFile(f.path, .{ .mode = .read_only }) catch |err| {
+        const input_file = cwd.openFile(io, f.path, .{ .mode = .read_only }) catch |err| {
             log.err("could not open input file '{s}': {t}", .{ f.path, err });
             return 1;
         };
 
-        var reader = input_file.readerStreaming(&.{});
+        var reader = input_file.readerStreaming(io, &.{});
         const data = try reader.interface.allocRemaining(arena, .unlimited);
 
         file_data.appendAssumeCapacity(.init(f.name, data));
@@ -77,4 +77,4 @@ const std = @import("std");
 const zitrus = @import("zitrus");
 const exefs = zitrus.horizon.fmt.ncch.exefs;
 
-const zdap = @import("zdap");
+const plz = @import("plz");

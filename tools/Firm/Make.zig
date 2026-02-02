@@ -1,6 +1,6 @@
 pub const description = "Make a 3DS firmware file from 4 raw/elf sections.";
 
-pub const descriptions = .{
+pub const descriptions: plz.Descriptions(@This()) = .{
     .boot_priority = "Higher values have more priority",
     .arm9_entry = "ARM9 entrypoint, if none an arm9 elf must be specified",
     .arm11_entry = "ARM11 entrypoint, if none an arm11 elf must be specified",
@@ -8,7 +8,7 @@ pub const descriptions = .{
     .output = "Output file, if none stdout is used",
 };
 
-pub const switches = .{
+pub const short: plz.Short(@This()) = .{
     .boot_priority = 'p',
     .elf = 'e',
     .section = 's',
@@ -18,9 +18,8 @@ pub const switches = .{
 
 const ElfSection = struct {
     pub const Kind = enum { raw, arm9, arm11 };
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .path = "Path to the file",
-        .kind = "Whether the elf is raw, arm9 or arm11",
         .method = "Copy method to use",
     };
 
@@ -30,10 +29,10 @@ const ElfSection = struct {
 };
 
 pub const Section = struct {
-    pub const descriptions = .{
+    pub const descriptions: plz.Descriptions(@This()) = .{
         .path = "Path to the file",
         .address = "Load address of the file",
-        .method = "Copy method to use when loading",
+        .method = "Copy method to use",
     };
 
     path: []const u8,
@@ -44,25 +43,25 @@ pub const Section = struct {
 boot_priority: u32 = 0,
 arm9_entry: u32 = 0,
 arm11_entry: u32 = 0,
-elf: zdap.BoundedArray(ElfSection, 4) = .empty,
-section: zdap.BoundedArray(Section, 4) = .empty,
-verbose: bool,
+elf: plz.Bounded(4, ElfSection) = .empty,
+section: plz.Bounded(4, Section) = .empty,
+verbose: ?void,
 
 output: ?[]const u8,
 
-pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
-    const cwd = std.fs.cwd();
+pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
+    const cwd = std.Io.Dir.cwd();
     const output_file, const output_should_close = if (args.output) |out|
-        .{ cwd.createFile(out, .{}) catch |err| {
+        .{ cwd.createFile(io, out, .{}) catch |err| {
             log.err("could not open output file '{s}': {t}", .{ out, err });
             return 1;
         }, true }
     else
-        .{ std.fs.File.stdout(), false };
-    defer if (output_should_close) output_file.close();
+        .{ std.Io.File.stdout(), false };
+    defer if (output_should_close) output_file.close(io);
 
     var output_buffer: [4096]u8 = undefined;
-    var output_writer = output_file.writer(&output_buffer);
+    var output_writer = output_file.writer(io, &output_buffer);
     const out = &output_writer.interface;
 
     var current_offset: u32 = @sizeOf(firm.Header);
@@ -74,7 +73,7 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
         .signature = @splat(0),
     };
 
-    var file_data: zdap.BoundedArray([]const u8, 4) = .empty;
+    var file_data: plz.Bounded(4, []const u8) = .empty;
     defer for (file_data.constSlice()) |data| arena.free(data);
 
     if (args.section.len + args.elf.len > 4) {
@@ -105,7 +104,7 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
     for (args.elf.constSlice()) |elf| {
         defer i += 1;
 
-        var elf_result = ElfResult.init(cwd, elf, arena) catch |err| {
+        var elf_result = ElfResult.init(cwd, elf, io, arena) catch |err| {
             log.err("could not process {t} elf '{s}': {t}", .{ elf.kind, elf.path, err });
             return 1;
         };
@@ -135,7 +134,7 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
             else => {},
         }
 
-        if (args.verbose) {
+        if (args.verbose) |_| {
             log.info("ELF", .{});
             log.info("  Entry: 0x{X:0>8} | {t}", .{ elf_result.info.entrypoint, elf.kind });
             log.info("  Loadable segments: {}", .{elf_result.info.segments.len});
@@ -149,13 +148,13 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
 
     for (args.section.constSlice()) |section| {
         defer i += 1;
-        const file = cwd.openFile(section.path, .{ .mode = .read_only }) catch |err| {
+        const file = cwd.openFile(io, section.path, .{ .mode = .read_only }) catch |err| {
             log.err("could not open input file '{s}': {t}", .{ section.path, err });
             return 1;
         };
-        errdefer file.close();
+        errdefer file.close(io);
 
-        var reader = file.reader(&.{});
+        var reader = file.reader(io, &.{});
         const size = try reader.getSize();
 
         // NOTE: Arbitrary, even an u31 is 100% invalid.
@@ -187,7 +186,7 @@ pub fn main(args: Make, arena: std.mem.Allocator) !u8 {
             .hash = undefined,
         };
 
-        if (args.verbose) {
+        if (args.verbose) |_| {
             log.info("RAW", .{});
             log.info("  LMA Base: 0x{X:0>8}", .{hdr.sections[i].address});
             log.info("  LMA Top: 0x{X:0>8}", .{hdr.sections[i].address + hdr.sections[i].size});
@@ -209,12 +208,12 @@ pub const ElfResult = struct {
     info: code.Info,
     data: []const u8,
 
-    pub fn init(cwd: std.fs.Dir, section: ElfSection, gpa: std.mem.Allocator) !ElfResult {
-        const elf_file = try cwd.openFile(section.path, .{ .mode = .read_only });
-        defer elf_file.close();
+    pub fn init(cwd: std.Io.Dir, section: ElfSection, io: std.Io, gpa: std.mem.Allocator) !ElfResult {
+        const elf_file = try cwd.openFile(io, section.path, .{ .mode = .read_only });
+        defer elf_file.close(io);
 
         var elf_reader_buf: [4096]u8 = undefined;
-        var elf_reader = elf_file.reader(&elf_reader_buf);
+        var elf_reader = elf_file.reader(io, &elf_reader_buf);
 
         var info = try code.Info.extractStaticElfAlloc(&elf_reader, gpa);
         errdefer info.deinit(gpa);
@@ -253,7 +252,7 @@ pub const ElfResult = struct {
 const Make = @This();
 const log = std.log.scoped(.firm);
 
-const zdap = @import("zdap");
+const plz = @import("plz");
 
 const std = @import("std");
 const zitrus = @import("zitrus");

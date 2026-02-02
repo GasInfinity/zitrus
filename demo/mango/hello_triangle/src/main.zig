@@ -2,11 +2,13 @@
 const position_vtx_storage align(@sizeOf(u32)) = @embedFile("position.psh").*;
 const position_vtx = &position_vtx_storage;
 
-// XXX: Needed for the page_allocator
-pub const std_options: std.Options = .{
-    .page_size_min = horizon.heap.page_size_min,
-    .page_size_max = horizon.heap.page_size_max,
-};
+pub const os = horizon;
+pub const debug = horizon.debug;
+pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_options: std.Options = horizon.default_std_options;
+
+pub const std_options_debug_io: std.Io = horizon.Io.failing;
+comptime { _ = horizon.start; }
 
 pub fn main() !void {
     // XXX: Zig does not support using the DebugAllocator yet...
@@ -496,10 +498,5 @@ const Applet = horizon.services.Applet;
 const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
 
-pub const panic = zitrus.horizon.panic;
 const zitrus = @import("zitrus");
 const std = @import("std");
-
-comptime {
-    _ = zitrus;
-}

@@ -6,7 +6,7 @@ pub const Result = struct {
     pub const description = "Decompose a result into its components (level, module, summary and description)";
 
     @"--": struct {
-        pub const descriptions = .{
+        pub const descriptions: plz.Descriptions(@This()) = .{
             .result = "The result code to explain",
         };
 
@@ -18,7 +18,7 @@ pub const Result = struct {
     result: Result,
 },
 
-pub fn main(args: Explain, arena: std.mem.Allocator) !u8 {
+pub fn run(args: Explain, io: std.Io, arena: std.mem.Allocator) !u8 {
     _ = arena;
     return switch (args.@"-") {
         .result => |r| {
@@ -37,7 +37,7 @@ pub fn main(args: Explain, arena: std.mem.Allocator) !u8 {
             const result_code: result.Code = @bitCast(result_int);
 
             var stdout_buffer: [256]u8 = undefined;
-            var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+            var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
             const stdout = &stdout_writer.interface;
 
             try stdout.print(
@@ -67,5 +67,6 @@ pub fn main(args: Explain, arena: std.mem.Allocator) !u8 {
 const Explain = @This();
 
 const std = @import("std");
+const plz = @import("plz");
 const zitrus = @import("zitrus");
 const result = zitrus.horizon.result;

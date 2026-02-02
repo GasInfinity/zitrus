@@ -1,3 +1,7 @@
+pub const description =
+    \\Tool suite for working with different 3DS-related things.
+;
+
 const Applets = union(enum) {
     explain: @import("Explain.zig"),
     smdh: @import("Smdh.zig"),
@@ -12,50 +16,50 @@ const Applets = union(enum) {
     layout: @import("Layout.zig"),
 };
 
-const Arguments = struct {
-    pub const description =
-        \\Tool suite for working with different 3DS-related things.
-    ;
-
-    pub const descriptions = .{
-        .version = "Print version number and exit",
-    };
-
-    pub const switches = .{
-        .version = 'v',
-    };
-
-    version: bool,
-    @"-": ?Applets,
+pub const descriptions: plz.Descriptions(Main) = .{
+    .version = "Print version number and exit",
 };
 
-pub fn main() !u8 {
-    var gpa_state: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    const gpa = gpa_state.allocator();
-    defer _ = gpa_state.deinit();
+pub const short: plz.Short(Main) = .{
+    .version = 'v',
+};
 
-    var arena_state = std.heap.ArenaAllocator.init(gpa);
-    const arena = arena_state.allocator();
-    defer arena_state.deinit();
+version: ?void,
+@"-": ?Applets,
 
-    const args = try std.process.argsAlloc(arena);
-    defer std.process.argsFree(arena, args);
+pub fn main(init: std.process.Init) !u8 {
+    const io = init.io;
+    const arena = init.arena.allocator();
 
-    const arguments = zdap.Parser.parse(Arguments, "zitrus", args, .{});
+    const args = try init.minimal.args.toSlice(arena);
 
-    if (arguments.version) {
-        var stdout_writer = std.fs.File.stdout().writerStreaming(&.{});
+    var diagnostic: plz.Diagnostic = undefined;
+    const arguments = plz.parseSlice(Main, "zitrus",  &diagnostic, args[1..]) catch {
+        const stderr = try io.lockStderr(&.{}, null); 
+        defer io.unlockStderr();
+
+        try diagnostic.render(stderr.terminal(), .default); 
+        try stderr.file_writer.interface.flush();
+        return if(diagnostic.kind == .help) 0 else 1;
+    };
+
+    if (arguments.version) |_| {
+        var stdout_writer = std.Io.File.stdout().writer(init.io, &.{});
         try stdout_writer.interface.writeAll(config.version ++ "\n");
         return 0;
     }
 
     if (arguments.@"-" == null) {
-        std.log.info("access the help menu with 'zitrus -h'\n", .{});
+        const stderr = try io.lockStderr(&.{}, null); 
+        defer io.unlockStderr();
+
+        const help: plz.Help = .of(Main, "zitrus");
+        try help.render(stderr.terminal(), .default);
         return 0;
     }
 
     return switch (arguments.@"-".?) {
-        inline else => |a| a.main(arena),
+        inline else => |a| a.run(io, arena),
     };
 }
 
@@ -63,8 +67,12 @@ comptime {
     _ = Applets;
 }
 
+const Main = @This();
+
 const std = @import("std");
-const zdap = @import("zdap");
+const plz = @import("plz");
+
+const Io = std.Io;
 
 const zitrus = @import("zitrus");
 const config = @import("zitrus-config");

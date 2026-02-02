@@ -1,10 +1,10 @@
 comptime {
-    if (!builtin.cpu.arch.isArm() or builtin.os.tag != .other) {
-        @compileError("this test runner is only intended for tests on the Nintendo 3DS OS");
+    if (!builtin.cpu.arch.isArm() or builtin.os.tag != .@"3ds") {
+        @compileError("this test runner is only intended for tests on Horizon!");
     }
 
     // For `_start`
-    _ = zitrus.horizon.start;
+    _ = horizon.start;
 }
 
 pub const std_options: std.Options = .{

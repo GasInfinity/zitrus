@@ -12,13 +12,13 @@
             .url = "git+https://github.com/GasInfinity/zsflt.git#1929cbae9d41c7e1178e494e42aa7b349a68cd8a",
             .hash = "zsflt-0.0.1-_pCibQ4wAABnfZskVOk2Y14F056VNJtuqVpAEzUNBGfl",
         },
-        .zdap = .{
-            .url = "git+https://github.com/GasInfinity/zdap.git#f309c3b5ab2fbd566755a875aa4df5854777709e",
-            .hash = "zdap-0.2.0-wEMl7hKQAACikArFaSMGOBAVu8fxZdV-foNESYqPLBh0",
-        },
         .zigimg = .{
             .url = "git+https://github.com/zigimg/zigimg.git#d7717b3617d58160635623fe86d4bf86065498e0",
             .hash = "zigimg-0.1.0-8_eo2vBrFQAvZmO9NzDP85_qC5JFksuMdyI_KMMEr4bq",
+        },
+        .plz = .{
+            .url = "git+https://codeberg.org/GasInfinity/plz#8e46b75e722599b29ed78e84daf9447e953ac7e9",
+            .hash = "plz-0.0.1-_2WTq0LMAABkuO05fFOBysjGGVWyertKxPgHp9h2VDZR",
         },
     },
     .paths = .{

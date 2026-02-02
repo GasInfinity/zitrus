@@ -178,15 +178,37 @@ pub const DomainAccess = packed struct(u32) {
 
 pub const Fault = packed struct(u32) {
     pub const Kind = enum(u1) { data, instruction };
-    pub const AccessKind = enum(u1) { read, write };
+    pub const Operation = enum(u1) { read, write };
+    pub const Status = enum(u5) {
+        alignment = 0b00001,
+        instruction_cache_maintenance = 0b00100,
+        first_level_external_abort = 0b01100,
+        second_level_external_abort = 0b01110,
+        section_translation = 0b00101,
+        page_translation = 0b00111,
+        section_access = 0b00011,
+        page_access = 0b00110,
+        section_domain = 0b01001,
+        page_domain = 0b01011,
+        section_permission = 0b01101,
+        page_permission = 0b01111,
+        precise_external_abort = 0b01000,
+        imprecise_external_abort = 0b10110,
+        debug = 0b00010,
+        _,
+    };
 
-    status: u4,
+    status_lo: u4,
     domain: u4,
     _reserved0: u2 = 0,
-    extra_status: u1,
-    kind: AccessKind,
+    status_hi: u1,
+    operation: Operation,
     external_abort: bool,
     _reserved1: u19,
+
+    pub fn status(fault: Fault) Status {
+        return @enumFromInt(fault.status_lo | (@as(u5, fault.status_hi) << 4));
+    }
 
     pub inline fn read(comptime kind: Kind) Fault {
         return asm volatile ("mrc p15, 0, %[st], c5, c0, %[kind]"

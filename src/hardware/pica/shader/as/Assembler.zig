@@ -1344,7 +1344,6 @@ fn parseFloat(a: *Assembler) !f32 {
             .tag = .expected_number,
             .tok_i = number_literal_tok,
         }),
-        else => return e,
     });
 }
 

@@ -7,9 +7,9 @@ const Subcommand = enum { make, dump };
     dump: Dump,
 },
 
-pub fn main(args: Smdh, arena: std.mem.Allocator) !u8 {
+pub fn run(args: Smdh, io: std.Io, arena: std.mem.Allocator) !u8 {
     return switch (args.@"-") {
-        inline else => |sub| sub.main(arena),
+        inline else => |sub| sub.run(io, arena),
     };
 }
 
@@ -19,6 +19,4 @@ const Dump = @import("Smdh/Dump.zig");
 const Smdh = @This();
 
 const std = @import("std");
-const zigimg = @import("zigimg");
 const zitrus = @import("zitrus");
-const smdh = zitrus.horizon.fmt.smdh;
