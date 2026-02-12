@@ -2,7 +2,7 @@
     .name = .zitrus,
     .version = "0.0.0",
     .fingerprint = 0xa735bcf8f4b10813, // Changing this has security and trust implications.
-    .minimum_zig_version = "0.15.1",
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .zalloc = .{
             .url = "git+https://github.com/GasInfinity/zalloc.git#14ab564b8683d6e7498ea455e47bd0dd08e4eb76",
@@ -19,6 +19,11 @@
         .plz = .{
             .url = "git+https://codeberg.org/GasInfinity/plz#8e46b75e722599b29ed78e84daf9447e953ac7e9",
             .hash = "plz-0.0.1-_2WTq0LMAABkuO05fFOBysjGGVWyertKxPgHp9h2VDZR",
+        },
+        // Yes, we need our own fork of zig `lib/` as upstream doesn't want to make custom OSes juicier 😭
+        .zig = .{
+            .url = "git+https://codeberg.org/GasInfinity/zig.git#07635173c026724d17395b124373dc076c4342e0",
+            .hash = "zig-0.0.0-Fp4XJEs74g15e5kwjjvhpTRqOaAZGNqg4VQi4ogo3j0n",
         },
     },
     .paths = .{

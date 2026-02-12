@@ -56,7 +56,6 @@ pub const FatalError = extern struct {
     title_id: u64,
     applet_title_id: u64,
     data: extern union { failure: Failure, exception: Exception },
-
 };
 
 session: ClientSession,

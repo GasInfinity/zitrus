@@ -17,8 +17,11 @@ test "created and executed successfully" {
         .result = null,
     };
 
-    var thread_stack: [1024]u8 align(8) = undefined;
-    const thread: Thread = try .create(Data.main, &data, (&thread_stack).ptr + thread_stack.len, .priority(0x30), .default);
+    // NOTE: horizon.testing instead of std.testing is intentional here.
+    const thread_stack = try horizon.testing.allocator.alignedAlloc(u8, .@"8", 8192);
+    defer horizon.testing.allocator.free(thread_stack);
+
+    const thread: Thread = try .create(Data.main, &data, thread_stack.ptr + thread_stack.len, .priority(0x30), .default);
     defer thread.close();
 
     try thread.wait(.fromNanoseconds(5 * std.time.ns_per_s));

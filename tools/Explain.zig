@@ -23,7 +23,7 @@ pub fn run(args: Explain, io: std.Io, arena: std.mem.Allocator) !u8 {
     return switch (args.@"-") {
         .result => |r| {
             const result_str = r.@"--".result;
-            const result_int = std.fmt.parseUnsigned(u32, result_str, 0) catch |err| switch (err) {
+            const result_int = std.fmt.parseInt(u32, result_str, 0) catch |err| switch (err) {
                 error.Overflow => {
                     std.debug.print("integer '{s}' does not fit into an u32\n", .{result_str});
                     return 1;
@@ -34,30 +34,13 @@ pub fn run(args: Explain, io: std.Io, arena: std.mem.Allocator) !u8 {
                 },
             };
 
-            const result_code: result.Code = @bitCast(result_int);
+            const code: result.Code = @bitCast(result_int);
 
             var stdout_buffer: [256]u8 = undefined;
             var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
             const stdout = &stdout_writer.interface;
 
-            try stdout.print(
-                \\.{{
-                \\    .level = .{s}, // ({})
-                \\    .module = .{s}, // ({})
-                \\    .summary = .{s}, // ({})
-                \\    .description = .{s}, // ({})
-                \\}}
-                \\
-            , .{
-                std.enums.tagName(result.Level, result_code.level) orelse "<unknown>",
-                @intFromEnum(result_code.level),
-                std.enums.tagName(result.Module, result_code.module) orelse "<unknown>",
-                @intFromEnum(result_code.module),
-                std.enums.tagName(result.Summary, result_code.summary) orelse "<unknown>",
-                @intFromEnum(result_code.summary),
-                std.enums.tagName(result.Description, result_code.description) orelse "<unknown>",
-                @intFromEnum(result_code.description),
-            });
+            try stdout.print("{f}", .{code});
             try stdout.flush();
             return 0;
         },

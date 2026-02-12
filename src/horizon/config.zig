@@ -39,12 +39,15 @@ pub const Kernel = extern struct {
     unit_info: UnitType,
     previous_firm: PreviousFirmwareType,
     ctr_sdk_version: u32,
+    _unused0: u32,
     firm_launch_flags: u32,
+    _unused1: [3]u32,
     app_memory_type: MemoryType,
-    _padding0: [3]u8,
-    app_memory_alloc: u32,
-    sys_memory_alloc: u32,
-    base_memory_alloc: u32,
+    _unused2: [3]u32,
+    application_total_memory: u32,
+    system_total_memory: u32,
+    base_total_memory: u32,
+    _unused3: [5]u32,
     firm_version: packed struct(u32) { unknown: u8, revision: u8, minor: u8, major: u8 },
     firm_syscore_version: u32,
     firm_ctr_sdk_version: u32,
@@ -53,9 +56,10 @@ pub const Kernel = extern struct {
 pub const HardwareType = enum(u8) { product, devboard, debugger, capture, unknown };
 
 pub const DateTime = extern struct {
-    unix: u64,
-    last_update_tick: u32,
-    _reserved0: [4]u32,
+    ms_since_january_1900: u64,
+    last_update_tick: u64,
+    system_clock_frequency: u64,
+    _reserved0: [2]u32,
 };
 
 pub const WifiLevel = enum(u8) {

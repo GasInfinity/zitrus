@@ -26,14 +26,15 @@ pub fn deinit(input: *Input) void {
     input.* = undefined;
 }
 
+// NOTE: remember to use ATOMICS when retrieving things (this is *shared* memory!)
 pub fn pollPad(input: Input) Hid.Pad.Entry {
     const pad: *const Hid.Pad = &input.shm_memory_data.pad;
-    return pad.entries[pad.index];
+    return pad.entries[@atomicLoad(u32, &pad.index, .acquire)];
 }
 
 pub fn pollTouch(input: Input) Hid.Touch.State {
     const touch: *const Hid.Touch = &input.shm_memory_data.touch;
-    return touch.entries[touch.index];
+    return touch.entries[@atomicLoad(u32, &touch.index, .acquire)];
 }
 
 const Input = @This();

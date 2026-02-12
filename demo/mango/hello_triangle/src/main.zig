@@ -2,25 +2,12 @@
 const position_vtx_storage align(@sizeOf(u32)) = @embedFile("position.psh").*;
 const position_vtx = &position_vtx_storage;
 
-pub const os = horizon;
-pub const debug = horizon.debug;
-pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
 pub const std_options: std.Options = horizon.default_std_options;
+pub const std_options_debug_io: std.Io = horizon.Io.io(undefined); // FIXME: pluh, we may need global state...
 
-pub const std_options_debug_io: std.Io = horizon.Io.failing;
-comptime { _ = horizon.start; }
-
-pub fn main() !void {
-    // XXX: Zig does not support using the DebugAllocator yet...
-    // Instead of using the linear heap, use the normal heap.
-    const gpa = horizon.heap.page_allocator;
-
-    // Initialize average Application state.
-    //
-    // Includes (not exhaustive): connecting to the service manager, registering
-    // the application, ..., creating a `mango.Device` (what we'll use)
-    var app: horizon.application.Accelerated = try .init(.default, gpa);
-    defer app.deinit(gpa);
+pub fn main(init: horizon.Init.Application.Mango) !void {
+    const gpa = init.app.base.gpa;
 
     // Get the application device, it is destroyed automatically
     // when the application is deinitialized as it owns it.
@@ -28,7 +15,7 @@ pub fn main() !void {
     // See `mango.createHorizonBackedDevice`
     //
     // Similar workflow as in Vulkan.
-    const device: mango.Device = app.device;
+    const device: mango.Device = init.device;
 
     // Get the (TODO: allocated, all queues are allocated right now) queues at creation time. We allocate all queues at device creation time.
     const transfer_queue = device.getQueue(.transfer);
@@ -382,19 +369,22 @@ pub fn main() !void {
     };
     defer device.freeCommandBuffers(command_pool, @ptrCast(&cmd));
 
+    const gsp = init.app.gsp;
+    const input = init.app.input;
+
     // Stop filling the LCD with a solid color.
     //
     // Screen contents are undefined until we present the first frame, for simplicity we'll ignore that.
-    try app.gsp.sendSetLcdForceBlack(false);
-    defer if (!app.apt_app.flags.must_close) app.gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
+    try gsp.sendSetLcdForceBlack(false);
+    defer if (!init.app.app.flags.must_close) gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
 
     main_loop: while (true) {
-        while (try app.pollEvent()) |ev| switch (ev) {
+        while (try init.pollEvent()) |ev| switch (ev) {
             .jump_home_rejected => {},
             .quit => break :main_loop,
         };
 
-        const pad = app.input.pollPad();
+        const pad = input.pollPad();
 
         if (pad.current.start) {
             break :main_loop;

@@ -459,12 +459,12 @@ pub fn parental(language: State.Language, features: ParentalFeatures) SoftwareKe
             .version = 5,
         },
         .text = &.{},
-        .text_block = .{ .obj = .null },
+        .text_block = .{ .obj = .none },
     };
 }
 
 pub fn deinit(swkbd: *SoftwareKeyboard, allocator: std.mem.Allocator) void {
-    if (swkbd.text_block.obj != .null) {
+    if (swkbd.text_block.obj != horizon.Object.none) {
         swkbd.text_block.close();
         allocator.free(swkbd.text);
     }
@@ -506,7 +506,7 @@ pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, se
             .must_close => unreachable,
         },
         .message => |params| if (@TypeOf(context) != void) {
-            std.debug.assert(params.handle == .null);
+            std.debug.assert(params.handle == horizon.Object.none);
 
             const result = context.filter(swkbd.writtenText());
             swkbd.state.callback_result = std.meta.activeTag(result);

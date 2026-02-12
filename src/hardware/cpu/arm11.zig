@@ -247,6 +247,73 @@ pub const Fault = packed struct(u32) {
     };
 };
 
+pub fn Monitor(comptime T: type) type {
+    return extern struct {
+        raw: T,
+
+        /// Performs a load, putting the monitor into a exclusive access state.
+        pub fn load(mon: *const MonitorSelf) T {
+            return switch (@bitSizeOf(T)) {
+                8 => @bitCast(asm volatile ("ldrexb %[to], %[ptr]"
+                    : [to] "=r" (-> u8),
+                    : [ptr] "p" (&mon.raw),
+                )),
+                16 => @bitCast(asm volatile ("ldrexh %[to], %[ptr]"
+                    : [to] "=r" (-> u16),
+                    : [ptr] "p" (&mon.raw),
+                )),
+                32 => @bitCast(asm volatile ("ldrex %[to], %[ptr]"
+                    : [to] "=r" (-> u32),
+                    : [ptr] "p" (&mon.raw),
+                )),
+                64 => asm volatile ("ldrexd %[to:Q], %[to:R], %[ptr]"
+                    : [to] "=r" (-> u64),
+                    : [ptr] "p" (&mon.raw),
+                ),
+                else => @compileError("Unsupported Monitor(" ++ @typeName(T) ++ ")"),
+            };
+        }
+
+        /// Tries to perform a store. If the monitor is still in exclusive access after a
+        /// `load`, the store succeeds and returns `false` putting the monitor into an
+        /// open state again.
+        ///
+        /// Spurious changes to an open state may happen.
+        pub fn store(mon: *MonitorSelf, value: T) bool {
+            return switch (@bitSizeOf(T)) {
+                8 => asm volatile ("strexb %[fail], %[value], %[ptr]"
+                    : [fail] "=r" (-> bool),
+                    : [ptr] "p" (&mon.raw),
+                      [value] "r" (value),
+                    : .{ .memory = true }),
+                16 => asm volatile ("strexh %[fail], %[value], %[ptr]"
+                    : [fail] "=r" (-> bool),
+                    : [ptr] "p" (&mon.raw),
+                      [value] "r" (value),
+                    : .{ .memory = true }),
+                32 => asm volatile ("strex %[fail], %[value], %[ptr]"
+                    : [fail] "=r" (-> bool),
+                    : [ptr] "p" (&mon.raw),
+                      [value] "r" (value),
+                    : .{ .memory = true }),
+                64 => asm volatile ("strexd %[fail], %[value:Q], %[value:R], %[ptr]"
+                    : [fail] "=r" (-> bool),
+                    : [ptr] "p" (&mon.raw),
+                      [value] "r" (value),
+                    : .{ .memory = true }),
+                else => @compileError("Unsupported Monitor(" ++ @typeName(T) ++ ")"),
+            };
+        }
+
+        /// Puts the monitor into an open state.
+        pub fn clear(_: *MonitorSelf) void {
+            asm volatile ("clrex");
+        }
+
+        const MonitorSelf = @This();
+    };
+}
+
 const std = @import("std");
 const zitrus = @import("zitrus");
 const hardware = zitrus.hardware;

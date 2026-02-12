@@ -62,6 +62,10 @@ SECTIONS
 	.data : {
 		*(.data*)
 	} : data
+	
+	.got : {
+		*(.got)
+	} : data
 
 	.init_array : {
 		__init_array_start = .;
@@ -71,17 +75,28 @@ SECTIONS
 	} : data
 
 	.tdata : {
+		__zitrus_tls_data_image_start = .;
 		*(.tdata*)
-	} : data : tls
+		__zitrus_tls_data_image_end = .;
+	} : tls
+
+	.tbss : {
+		*(.tbss*)
+	} : tls
+
+	__zitrus_tls_align = MAX(ALIGNOF(.tdata), ALIGNOF(.tbss));
 
 	.bss : {
 		*(.bss*)
 		*(COMMON)
-	} : data
 
-	.tbss : {
-		*(.tbss*)
-	} : data : tls
+		. = ALIGN(ALIGNOF(.tdata));
+		__zitrus_main_tls_start = .;
+		. += SIZEOF(.tdata);
+		. = ALIGN(ALIGNOF(.tbss));
+		. += SIZEOF(.tbss);
+		__zitrus_main_tls_end = .;
+	} : data
 
 	/*
 	* We won't relocate the PIE at run-time.

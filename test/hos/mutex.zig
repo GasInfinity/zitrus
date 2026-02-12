@@ -15,8 +15,10 @@ fn expectLocked(mut: Mutex) !void {
         .result = {},
     };
 
-    var thrd_stack: [256]u8 align(8) = undefined;
-    const thrd: Thread = try .create(ExpectLockedData.main, &expect_locked_data, (&thrd_stack).ptr + (thrd_stack.len - 1), .priority(0x30), .default);
+    const thread_stack = try horizon.testing.allocator.alignedAlloc(u8, .@"8", 8192);
+    defer horizon.testing.allocator.free(thread_stack);
+
+    const thrd: Thread = try .create(ExpectLockedData.main, &expect_locked_data, thread_stack.ptr + thread_stack.len, .priority(0x30), .default);
     defer thrd.close();
 
     try thrd.wait(.none);

@@ -39,18 +39,18 @@ pub fn deinit(fb: *Framebuffer, physical_linear_allocator: std.mem.Allocator) vo
     fb.* = undefined;
 }
 
-pub fn currentFramebuffer(fb: *Framebuffer, side: Side) []u8 {
+pub fn current(fb: *Framebuffer, side: Side) []u8 {
     std.debug.assert((fb.config.mode != .@"3d" and side != .right) or fb.config.mode == .@"3d");
 
     return fb.allocation[(fb.framebuffer_bytes * fb.current_framebuffer) + (@intFromEnum(side) * (fb.framebuffer_bytes >> 1)) ..][0..(fb.framebuffer_bytes >> @intFromBool(fb.config.mode == .@"3d"))];
 }
 
-pub fn flushBuffer(fb: *Framebuffer) void {
+pub fn flush(fb: *Framebuffer) void {
     // TODO: This cannot fail, but we can (and must) introduce an unreachachable for the error code.
     _ = horizon.flushProcessDataCache(.current, fb.allocation);
 }
 
-pub fn swapBuffer(fb: *Framebuffer, gfx: *Graphics, ignore_stereo: IgnoreStereo) void {
+pub fn swap(fb: *Framebuffer, gfx: *Graphics, ignore_stereo: IgnoreStereo) void {
     defer fb.current_framebuffer ^= @intFromBool(fb.config.double_buffer);
     return fb.present(gfx, ignore_stereo);
 }
@@ -58,8 +58,8 @@ pub fn swapBuffer(fb: *Framebuffer, gfx: *Graphics, ignore_stereo: IgnoreStereo)
 pub fn present(fb: *Framebuffer, gfx: *Graphics, ignore_stereo: IgnoreStereo) void {
     _ = gfx.shared_memory.framebuffers[gfx.thread_index][@intFromEnum(fb.config.screen)].update(.{
         .active = @enumFromInt(fb.current_framebuffer),
-        .left_vaddr = fb.currentFramebuffer(.left).ptr,
-        .right_vaddr = (if (fb.config.mode == .@"3d" and (ignore_stereo == .none)) fb.currentFramebuffer(.right) else fb.currentFramebuffer(.left)).ptr,
+        .left_vaddr = fb.current(.left).ptr,
+        .right_vaddr = (if (fb.config.mode == .@"3d" and (ignore_stereo == .none)) fb.current(.right) else fb.current(.left)).ptr,
         .stride = (fb.config.color_format.bytesPerPixel() * fb.config.screen.width()) << @intFromBool(fb.config.mode == .full_resolution),
         .format = .{
             .color_format = fb.config.color_format,

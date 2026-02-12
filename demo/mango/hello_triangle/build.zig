@@ -28,6 +28,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("assets/position.psm"),
     });
 
+    exe.zig_lib_dir = zitrus_dep.builder.dependency("zig", .{}).path("lib/");
     exe.root_module.addAnonymousImport("position.psh", .{ .root_source_file = position_shader.out });
 
     exe.pie = true;

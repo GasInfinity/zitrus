@@ -26,16 +26,9 @@ pub fn printLineFromFile(_: std.Io, _: *std.Io.Writer, _: std.debug.SourceLocati
     return error.Unsupported;
 }
 
-/// Non-zero whenever the program triggered a panic.
-/// The counter is incremented/decremented atomically.
-var panicking = std.atomic.Value(u8).init(0);
-
 /// Counts how many times the panic handler is invoked by this thread.
 /// This is used to catch and handle panics triggered by the panic handler.
-var panic_stage: usize = 0;
-
-/// Stores the panic stacktrace
-var panic_buffer: [1024]u8 = undefined;
+threadlocal var panic_stage: usize = 0;
 
 pub fn defaultPanic(msg: []const u8, first_trace_addr: ?usize) noreturn {
     @branchHint(.cold);
@@ -43,19 +36,18 @@ pub fn defaultPanic(msg: []const u8, first_trace_addr: ?usize) noreturn {
     // If somehow we didn't exit with errdisp (e.g on some emulators)
     // we don't want to return!
     defer while (true) horizon.breakExecution(.panic);
-    
-    var fixed: std.Io.Writer = .fixed(&panic_buffer);
-    const fixed_terminal: std.Io.Terminal = .{
-        .writer = &fixed,
-        .mode = .no_color,
-    };
 
     const unwind_first_trace_addr = first_trace_addr orelse @returnAddress();
 
     switch (panic_stage) {
         0 => {
             panic_stage = 1;
-            _ = panicking.fetchAdd(1, .seq_cst);
+            var panic_buffer: [1024]u8 = undefined;
+            var fixed: std.Io.Writer = .fixed(&panic_buffer);
+            const fixed_terminal: std.Io.Terminal = .{
+                .writer = &fixed,
+                .mode = .no_color,
+            };
 
             trace: {
                 if (builtin.single_threaded) {
@@ -150,13 +142,13 @@ fn handleSegfaultHorizon(info: *const Exception.Info, registers: *const Exceptio
             switch (info.fault.operation) {
                 inline else => |op| switch (info.fault.status()) {
                     _ => std.fmt.comptimePrint("({t}) Data Abort", .{op}),
-                    inline else => |status| std.fmt.comptimePrint("({t}, {t}) Data Abort", .{op, status}),
+                    inline else => |status| std.fmt.comptimePrint("({t}, {t}) Data Abort", .{ op, status }),
                 },
             },
             info.address,
         },
-        .undefined => .{"Illegal Instruction", info.address },
-        .vfp => .{"Arithmetic Exception", info.address },
+        .undefined => .{ "Illegal Instruction", info.address },
+        .vfp => .{ "Arithmetic Exception", info.address },
     };
 
     const opt_ctx: std.debug.cpu_context.Native = .{ .r = registers.gpr };
@@ -177,16 +169,16 @@ pub fn defaultHandleSegfault(addr: ?usize, name: []const u8, opt_ctx: ?std.debug
     // we don't want to return!
     defer while (true) horizon.breakExecution(.panic);
 
-    var fixed: std.Io.Writer = .fixed(&panic_buffer);
-    const fixed_terminal: std.Io.Terminal = .{
-        .writer = &fixed,
-        .mode = .no_color,
-    };
-
     switch (panic_stage) {
         0 => {
             panic_stage = 1;
-            _ = panicking.fetchAdd(1, .seq_cst);
+
+            var panic_buffer: [1024]u8 = undefined;
+            var fixed: std.Io.Writer = .fixed(&panic_buffer);
+            const fixed_terminal: std.Io.Terminal = .{
+                .writer = &fixed,
+                .mode = .no_color,
+            };
 
             trace: {
                 if (addr) |a| {

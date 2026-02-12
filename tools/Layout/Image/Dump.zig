@@ -23,7 +23,7 @@ verbose: bool,
 },
 
 pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
-    if(true) @panic("Regressed, wait for zigimg update"); // XXX: Fix this when zigimg updates
+    if (true) @panic("Regressed, wait for zigimg update"); // XXX: Fix this when zigimg updates
     const cwd = std.Io.Dir.cwd();
     const input_file, const input_should_close = if (args.@"--".input) |in|
         .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
@@ -114,7 +114,7 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
     defer arena.free(untiled_image_data);
 
     // const default_encoder_opts = switch (args.ofmt) {
-    //     inline else => |t| @unionInit(zigimg.Image.EncoderOptions, @tagName(t), if(@FieldType(zigimg.Image.EncoderOptions, @tagName(t)) == void) {} else .{}), 
+    //     inline else => |t| @unionInit(zigimg.Image.EncoderOptions, @tagName(t), if(@FieldType(zigimg.Image.EncoderOptions, @tagName(t)) == void) {} else .{}),
     // };
 
     switch (meta.format) {

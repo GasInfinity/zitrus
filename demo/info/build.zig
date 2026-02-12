@@ -23,6 +23,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    exe.zig_lib_dir = zitrus_dep.builder.dependency("zig", .{}).path("lib/");
     exe.root_module.addAnonymousImport("6x8-font", .{ .root_source_file = b.path("assets/6x8-bitmap-font.gray") });
 
     exe.pie = true;

@@ -1,956 +1,737 @@
-/// An implementation of `Io` which simulates a system supporting no `Io` operations.
-///
-/// This system has the following properties:
-/// * Concurrency is unavailable.
-/// * The stdio handles are pipes whose remote ends are already closed.
-/// * The filesystem is entirely empty, including that the cwd is no longer present.
-/// * The filesystem is full, so attempting to create entries always returns `error.NoSpaceLeft`.
-/// * No entropy source is supported, so `randomSecure` always returns `error.EntropyUnavailable`, and `random` always returns (fills the buffer) with 0.
-/// * No clocks are supported, so `now` and `sleep` always return `error.UnsupportedClock`.
-/// * No network is connected, so network operations always return `error.NetworkDown`.
-pub const failing: std.Io = .{
-    .userdata = null,
-    .vtable = &.{
-        .async = noAsync,
-        .concurrent = failingConcurrent,
-        .await = unreachableAwait,
-        .cancel = unreachableCancel,
+pub const File = struct {
+    pub const Handle = romfs.View.Entry;
+    pub const Flags = void;
 
-        .groupAsync = noGroupAsync,
-        .groupConcurrent = failingGroupConcurrent,
-        .groupAwait = unreachableGroupAwait,
-        .groupCancel = unreachableGroupCancel,
+    pub const Permissions = enum(u0) {
+        default_file = 0,
 
-        .recancel = unreachableRecancel,
-        .swapCancelProtection = unreachableSwapCancelProtection,
-        .checkCancel = unreachableCheckCancel,
+        pub const default_dir: @This() = .default_file;
+        pub const executable_file: @This() = .default_file;
+        pub const has_executable_bit = false;
+    };
 
-        .select = unreachableSelect,
-        .futexWait = noFutexWait,
-        .futexWaitUncancelable = noFutexWaitUncancelable,
-        .futexWake = noFutexWake,
-
-        .dirCreateDir = failingDirCreateDir,
-        .dirCreateDirPath = failingDirCreateDirPath,
-        .dirCreateDirPathOpen = failingDirCreateDirPathOpen,
-        .dirOpenDir = failingDirOpenDir,
-        .dirStat = failingDirStat,
-        .dirStatFile = failingDirStatFile,
-        .dirAccess = failingDirAccess,
-        .dirCreateFile = failingDirCreateFile,
-        .dirCreateFileAtomic = failingDirCreateFileAtomic,
-        .dirOpenFile = failingDirOpenFile,
-        .dirClose = unreachableDirClose,
-        .dirRead = noDirRead,
-        .dirRealPath = failingDirRealPath,
-        .dirRealPathFile = failingDirRealPathFile,
-        .dirDeleteFile = failingDirDeleteFile,
-        .dirDeleteDir = failingDirDeleteDir,
-        .dirRename = failingDirRename,
-        .dirRenamePreserve = failingDirRenamePreserve,
-        .dirSymLink = failingDirSymLink,
-        .dirReadLink = failingDirReadLink,
-        .dirSetOwner = failingDirSetOwner,
-        .dirSetFileOwner = failingDirSetFileOwner,
-        .dirSetPermissions = failingDirSetPermissions,
-        .dirSetFilePermissions = failingDirSetFilePermissions,
-        .dirSetTimestamps = noDirSetTimestamps,
-        .dirHardLink = failingDirHardLink,
-
-        .fileStat = failingFileStat,
-        .fileLength = failingFileLength,
-        .fileClose = unreachableFileClose,
-        .fileWriteStreaming = failingFileWriteStreaming,
-        .fileWritePositional = failingFileWritePositional,
-        .fileWriteFileStreaming = noFileWriteFileStreaming,
-        .fileWriteFilePositional = noFileWriteFilePositional,
-        .fileReadStreaming = failingFileReadStreaming,
-        .fileReadPositional = failingFileReadPositional,
-        .fileSeekBy = failingFileSeekBy,
-        .fileSeekTo = failingFileSeekTo,
-        .fileSync = failingFileSync,
-        .fileIsTty = unreachableFileIsTty,
-        .fileEnableAnsiEscapeCodes = unreachableFileEnableAnsiEscapeCodes,
-        .fileSupportsAnsiEscapeCodes = unreachableFileSupportsAnsiEscapeCodes,
-        .fileSetLength = failingFileSetLength,
-        .fileSetOwner = failingFileSetOwner,
-        .fileSetPermissions = failingFileSetPermissions,
-        .fileSetTimestamps = noFileSetTimestamps,
-        .fileLock = failingFileLock,
-        .fileTryLock = failingFileTryLock,
-        .fileUnlock = unreachableFileUnlock,
-        .fileDowngradeLock = failingFileDowngradeLock,
-        .fileRealPath = failingFileRealPath,
-        .fileHardLink = failingFileHardLink,
-
-        .fileMemoryMapCreate = failingFileMemoryMapCreate,
-        .fileMemoryMapDestroy = unreachableFileMemoryMapDestroy,
-        .fileMemoryMapSetLength = unreachableFileMemoryMapSetLength,
-        .fileMemoryMapRead = unreachableFileMemoryMapRead,
-        .fileMemoryMapWrite = unreachableFileMemoryMapWrite,
-
-        .processExecutableOpen = failingProcessExecutableOpen,
-        .processExecutablePath = failingProcessExecutablePath,
-        .lockStderr = unreachableLockStderr,
-        .tryLockStderr = noTryLockStderr,
-        .unlockStderr = unreachableUnlockStderr,
-        .processCurrentPath = failingProcessCurrentPath,
-        .processSetCurrentDir = failingProcessSetCurrentDir,
-        .processReplace = failingProcessReplace,
-        .processReplacePath = failingProcessReplacePath,
-        .processSpawn = failingProcessSpawn,
-        .processSpawnPath = failingProcessSpawnPath,
-        .childWait = unreachableChildWait,
-        .childKill = unreachableChildKill,
-
-        .progressParentFile = failingProgressParentFile,
-
-        .random = noRandom,
-        .randomSecure = failingRandomSecure,
-
-        .now = failingNow,
-        .sleep = failingSleep,
-
-        .netListenIp = failingNetListenIp,
-        .netAccept = failingNetAccept,
-        .netBindIp = failingNetBindIp,
-        .netConnectIp = failingNetConnectIp,
-        .netListenUnix = failingNetListenUnix,
-        .netConnectUnix = failingNetConnectUnix,
-        // .netSocketCreatePair = failingNetSocketCreatePair,
-        .netSend = failingNetSend,
-        .netReceive = failingNetReceive,
-        .netRead = failingNetRead,
-        .netWrite = failingNetWrite,
-        .netWriteFile = failingNetWriteFile,
-        .netClose = unreachableNetClose,
-        .netShutdown = failingNetShutdown,
-        .netInterfaceNameResolve = failingNetInterfaceNameResolve,
-        .netInterfaceName = unreachableNetInterfaceName,
-        .netLookup = failingNetLookup,
-    },
+    pub const stdin = @compileError("stdin is not supported");
+    pub const stdout = @compileError("stdout is not supported");
+    pub const stderr = @compileError("stderr is not supported");
 };
 
-pub fn noAsync(userdata: ?*anyopaque, result: []u8, result_alignment: std.mem.Alignment, context: []const u8, context_alignment: std.mem.Alignment, start: *const fn (context: *const anyopaque, result: *anyopaque) void) ?*AnyFuture {
-    _ = userdata;
-    _ = result_alignment;
-    _ = context_alignment;
-    start(context.ptr, result.ptr);
-    return null;
-}
+pub const Dir = struct {
+    pub const Handle = romfs.View.Directory;
 
-pub fn failingConcurrent(
-    userdata: ?*anyopaque,
-    result_len: usize,
-    result_alignment: std.mem.Alignment,
-    context: []const u8,
-    context_alignment: std.mem.Alignment,
-    start: *const fn (context: *const anyopaque, result: *anyopaque) void,
-) ConcurrentError!*AnyFuture {
-    _ = userdata;
-    _ = result_len;
-    _ = result_alignment;
-    _ = context;
-    _ = context_alignment;
-    _ = start;
-    return error.ConcurrencyUnavailable;
-}
+    pub const max_path_bytes = 255;
+    pub const max_name_bytes = max_path_bytes;
 
-pub fn unreachableAwait(
-    userdata: ?*anyopaque,
-    any_future: *AnyFuture,
-    result: []u8,
-    result_alignment: std.mem.Alignment,
-) void {
-    _ = userdata;
-    _ = any_future;
-    _ = result;
-    _ = result_alignment;
-    unreachable;
-}
+    pub fn cwd() Io.Dir {
+        return .{ .handle = .root };
+    }
 
-pub fn unreachableCancel(
-    userdata: ?*anyopaque,
-    any_future: *AnyFuture,
-    result: []u8,
-    result_alignment: std.mem.Alignment,
-) void {
-    _ = userdata;
-    _ = any_future;
-    _ = result;
-    _ = result_alignment;
-    unreachable;
-}
+    pub const Reader = struct {
+        pub const Buffer = struct {
+            it: romfs.View.Iterator,
+            name: [max_path_bytes * 4]u8,
+        };
 
-pub fn noGroupAsync(
-    userdata: ?*anyopaque,
-    group: *Group,
-    context: []const u8,
-    context_alignment: std.mem.Alignment,
-    start: *const fn (context: *const anyopaque) Cancelable!void,
-) void {
-    _ = userdata;
-    _ = group;
-    _ = context_alignment;
-    start(context.ptr) catch unreachable;
-}
+        pub const min_buffer_len = @sizeOf(Buffer);
+    };
+};
 
-pub fn failingGroupConcurrent(
-    userdata: ?*anyopaque,
-    group: *Group,
-    context: []const u8,
-    context_alignment: std.mem.Alignment,
-    start: *const fn (context: *const anyopaque) Cancelable!void,
-) ConcurrentError!void {
-    _ = userdata;
-    _ = group;
-    _ = context;
-    _ = context_alignment;
-    _ = start;
-    return error.ConcurrencyUnavailable;
-}
+pub const Operation = struct {
+    pub const DeviceIoControl = noreturn;
+};
 
-pub fn unreachableGroupAwait(userdata: ?*anyopaque, group: *Group, token: *anyopaque) Cancelable!void {
-    _ = userdata;
-    _ = group;
-    _ = token;
-    unreachable;
-}
+pub const net = struct {
+    pub const has_unix_sockets = false;
 
-pub fn unreachableGroupCancel(userdata: ?*anyopaque, group: *Group, token: *anyopaque) void {
-    _ = userdata;
-    _ = group;
-    _ = token;
-    unreachable;
-}
+    pub const Socket = struct {
+        pub const Handle = void;
+    };
+};
 
-pub fn unreachableRecancel(userdata: ?*anyopaque) void {
-    _ = userdata;
-    unreachable;
-}
+pub const LockedStderr = struct {
+    term: Io.Terminal,
 
-pub fn unreachableSwapCancelProtection(userdata: ?*anyopaque, new: CancelProtection) CancelProtection {
-    _ = userdata;
-    _ = new;
-    unreachable;
-}
+    pub fn terminal(ls: LockedStderr) Io.Terminal {
+        return ls.term;
+    }
 
-pub fn unreachableCheckCancel(userdata: ?*anyopaque) Cancelable!void {
-    _ = userdata;
-    unreachable;
-}
+    pub fn clear(_: LockedStderr, _: []u8) Cancelable!void {}
+};
 
-pub fn unreachableSelect(userdata: ?*anyopaque, futures: []const *AnyFuture) Cancelable!usize {
-    _ = userdata;
-    _ = futures;
-    unreachable;
-}
+/// A simple futex implementation based on `AddressArbiter` thread `Parker`s.
+///
+/// Fullfills the futex interface and is adapted from the implementation
+/// in `std.Io.Threaded`. Instead of using multiple buckets we use one as
+/// we know we'll have a very small number of threads, though it can be
+/// incremented if proved wrong.
+const ParkingFutex = struct {
+    pub const init: ParkingFutex = .{};
+    const Waiter = struct {
+        address: usize,
+        parker: AddressArbiter.Parker,
+        node: std.DoublyLinkedList.Node,
+    };
 
-pub fn noFutexWait(userdata: ?*anyopaque, ptr: *const u32, expected: u32, timeout: Timeout) Cancelable!void {
-    _ = userdata;
-    assert(ptr.* == expected or timeout != .none);
-}
+    /// Protects `waiters`
+    mutex: AddressArbiter.Mutex = .{},
+    num_waiters: std.atomic.Value(u32) = .init(0),
+    waiters: std.DoublyLinkedList = .{},
 
-pub fn noFutexWaitUncancelable(userdata: ?*anyopaque, ptr: *const u32, expected: u32) void {
-    _ = userdata;
-    assert(ptr.* == expected);
-}
+    pub fn waitTimeout(fut: *ParkingFutex, arbiter: AddressArbiter, ptr: *const u32, expect: u32, timeout: horizon.Timeout) error{Timeout}!void {
+        var waiter: Waiter = .{
+            .address = @intFromPtr(ptr),
+            .parker = .init,
+            .node = .{},
+        };
 
-pub fn noFutexWake(userdata: ?*anyopaque, ptr: *const u32, max_waiters: u32) void {
-    _ = userdata;
-    _ = ptr;
-    _ = max_waiters;
-    // no-op
-}
+        {
+            fut.mutex.lock(arbiter);
+            defer fut.mutex.unlock(arbiter);
 
-pub fn failingDirCreateDir(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, permissions: Dir.Permissions) Dir.CreateDirError!void {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = permissions;
-    return error.NoSpaceLeft;
-}
+            _ = fut.num_waiters.fetchAdd(1, .acquire);
 
-pub fn failingDirCreateDirPath(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, permissions: Dir.Permissions) Dir.CreateDirPathError!Dir.CreatePathStatus {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = permissions;
-    return error.NoSpaceLeft;
-}
+            if (@atomicLoad(u32, ptr, .monotonic) != expect) {
+                std.debug.assert(fut.num_waiters.fetchSub(1, .monotonic) > 0);
+                return;
+            }
 
-pub fn failingDirCreateDirPathOpen(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, permissions: Dir.Permissions, options: Dir.OpenOptions) Dir.CreateDirPathOpenError!Dir {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = permissions;
-    _ = options;
-    return error.NoSpaceLeft;
-}
+            fut.waiters.append(&waiter.node);
+        }
 
-pub fn failingDirOpenDir(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, options: Dir.OpenOptions) Dir.OpenError!Dir {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = options;
-    return error.FileNotFound;
-}
+        if (waiter.parker.parkTimeout(arbiter, timeout)) {
+            // Nothing more to do, `wake` unparked us successfully and removed us from the waitlist.
+        } else |err| switch (err) {
+            error.Timeout => {
+                if (@atomicLoad(usize, &waiter.address, .monotonic) != 0) {
+                    fut.mutex.lock(arbiter);
+                    defer fut.mutex.unlock(arbiter);
 
-pub fn failingDirStat(userdata: ?*anyopaque, dir: Dir) Dir.StatError!Dir.Stat {
-    _ = userdata;
-    _ = dir;
-    return error.Streaming;
-}
+                    fut.waiters.remove(&waiter.node);
+                    std.debug.assert(fut.num_waiters.fetchSub(1, .monotonic) > 0);
+                    return error.Timeout;
+                }
 
-pub fn failingDirStatFile(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, options: Dir.StatFileOptions) Dir.StatFileError!File.Stat {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = options;
-    return error.FileNotFound;
-}
-
-pub fn failingDirAccess(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, options: Dir.AccessOptions) Dir.AccessError!void {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = options;
-    return error.FileNotFound;
-}
-
-pub fn failingDirCreateFile(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, options: File.CreateFlags) File.OpenError!File {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = options;
-    return error.NoSpaceLeft;
-}
-
-pub fn failingDirCreateFileAtomic(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, options: Dir.CreateFileAtomicOptions) Dir.CreateFileAtomicError!File.Atomic {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = options;
-    return error.NoSpaceLeft;
-}
-
-pub fn failingDirOpenFile(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, flags: File.OpenFlags) File.OpenError!File {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = flags;
-    return error.FileNotFound;
-}
-
-pub fn unreachableDirClose(userdata: ?*anyopaque, dirs: []const Dir) void {
-    _ = userdata;
-    _ = dirs;
-    unreachable;
-}
-
-pub fn noDirRead(userdata: ?*anyopaque, dir_reader: *Dir.Reader, buffer: []Dir.Entry) Dir.Reader.Error!usize {
-    _ = userdata;
-    _ = dir_reader;
-    _ = buffer;
-    return 0;
-}
-
-pub fn failingDirRealPath(userdata: ?*anyopaque, dir: Dir, out_buffer: []u8) Dir.RealPathError!usize {
-    _ = userdata;
-    _ = dir;
-    _ = out_buffer;
-    return error.FileNotFound;
-}
-
-pub fn failingDirRealPathFile(userdata: ?*anyopaque, dir: Dir, path_name: []const u8, out_buffer: []u8) Dir.RealPathFileError!usize {
-    _ = userdata;
-    _ = dir;
-    _ = path_name;
-    _ = out_buffer;
-    return error.FileNotFound;
-}
-
-pub fn failingDirDeleteFile(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8) Dir.DeleteFileError!void {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    return error.FileNotFound;
-}
-
-pub fn failingDirDeleteDir(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8) Dir.DeleteDirError!void {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    return error.FileNotFound;
-}
-
-pub fn failingDirRename(userdata: ?*anyopaque, old_dir: Dir, old_sub_path: []const u8, new_dir: Dir, new_sub_path: []const u8) Dir.RenameError!void {
-    _ = userdata;
-    _ = old_dir;
-    _ = old_sub_path;
-    _ = new_dir;
-    _ = new_sub_path;
-    return error.FileNotFound;
-}
-
-pub fn failingDirRenamePreserve(userdata: ?*anyopaque, old_dir: Dir, old_sub_path: []const u8, new_dir: Dir, new_sub_path: []const u8) Dir.RenamePreserveError!void {
-    _ = userdata;
-    _ = old_dir;
-    _ = old_sub_path;
-    _ = new_dir;
-    _ = new_sub_path;
-    return error.FileNotFound;
-}
-
-pub fn failingDirSymLink(userdata: ?*anyopaque, dir: Dir, target_path: []const u8, sym_link_path: []const u8, flags: Dir.SymLinkFlags) Dir.SymLinkError!void {
-    _ = userdata;
-    _ = dir;
-    _ = target_path;
-    _ = sym_link_path;
-    _ = flags;
-    return error.FileNotFound;
-}
-
-pub fn failingDirReadLink(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, buffer: []u8) Dir.ReadLinkError!usize {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = buffer;
-    return error.FileNotFound;
-}
-
-pub fn failingDirSetOwner(userdata: ?*anyopaque, dir: Dir, owner: ?File.Uid, group: ?File.Gid) Dir.SetOwnerError!void {
-    _ = userdata;
-    _ = dir;
-    _ = owner;
-    _ = group;
-    return error.FileNotFound;
-}
-
-pub fn failingDirSetFileOwner(userdata: ?*anyopaque, dir: std.Io.Dir, sub_path: []const u8, owner: ?File.Uid, group: ?File.Gid, options: Dir.SetFileOwnerOptions) Dir.SetFileOwnerError!void {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = owner;
-    _ = group;
-    _ = options;
-    return error.FileNotFound;
-}
-
-pub fn failingDirSetPermissions(userdata: ?*anyopaque, dir: Dir, permissions: Dir.Permissions) Dir.SetPermissionsError!void {
-    _ = userdata;
-    _ = dir;
-    _ = permissions;
-    return error.FileNotFound;
-}
-
-pub fn failingDirSetFilePermissions(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, permissions: File.Permissions, options: Dir.SetFilePermissionsOptions) Dir.SetFilePermissionsError!void {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = permissions;
-    _ = options;
-    return error.FileNotFound;
-}
-
-pub fn noDirSetTimestamps(userdata: ?*anyopaque, dir: Dir, sub_path: []const u8, options: Dir.SetTimestampsOptions) Dir.SetTimestampsError!void {
-    _ = userdata;
-    _ = dir;
-    _ = sub_path;
-    _ = options;
-    // no-op
-}
-
-pub fn failingDirHardLink(userdata: ?*anyopaque, old_dir: Dir, old_sub_path: []const u8, new_dir: Dir, new_sub_path: []const u8, options: Dir.HardLinkOptions) Dir.HardLinkError!void {
-    _ = userdata;
-    _ = old_dir;
-    _ = old_sub_path;
-    _ = new_dir;
-    _ = new_sub_path;
-    _ = options;
-    return error.FileNotFound;
-}
-
-pub fn failingFileStat(userdata: ?*anyopaque, file: File) File.StatError!File.Stat {
-    _ = userdata;
-    _ = file;
-    return error.Streaming;
-}
-
-pub fn failingFileLength(userdata: ?*anyopaque, file: File) File.LengthError!u64 {
-    _ = userdata;
-    _ = file;
-    return error.Streaming;
-}
-
-pub fn unreachableFileClose(userdata: ?*anyopaque, files: []const File) void {
-    _ = userdata;
-    _ = files;
-    unreachable;
-}
-
-pub fn failingFileWriteStreaming(userdata: ?*anyopaque, file: File, header: []const u8, data: []const []const u8, splat: usize) File.Writer.Error!usize {
-    _ = userdata;
-    _ = file;
-    _ = header;
-    for (data[0 .. data.len - 1]) |item| {
-        if (item.len > 0) {
-            return error.BrokenPipe;
+                // We raced with `wake`, who is going to unpark us right now so wait for that.
+                waiter.parker.park(arbiter) catch |e| switch (e) {
+                    error.Timeout => unreachable,
+                };
+            },
         }
     }
-    if (data[data.len - 1].len != 0 and splat != 0) return error.BrokenPipe;
-    return 0;
-}
 
-pub fn failingFileWritePositional(userdata: ?*anyopaque, file: File, header: []const u8, data: []const []const u8, splat: usize, offset: u64) File.WritePositionalError!usize {
-    _ = userdata;
-    _ = file;
-    _ = header;
-    _ = offset;
-    for (data[0 .. data.len - 1]) |item| {
-        if (item.len > 0) return error.BrokenPipe;
+    pub fn wake(fut: *ParkingFutex, arbiter: AddressArbiter, ptr: *const u32, max_waiters: u32) void {
+        if (max_waiters == 0) return;
+
+        if (fut.num_waiters.fetchAdd(0, .release) == 0) {
+            @branchHint(.likely);
+            return;
+        } 
+
+        // SinglyLinkedList of waiters to be unparked
+        var waiters_head: ?*std.DoublyLinkedList.Node = null; 
+        {
+            fut.mutex.lock(arbiter);
+            defer fut.mutex.unlock(arbiter);
+
+            var removed: u32 = 0;
+            var it: ?*std.DoublyLinkedList.Node = fut.waiters.first;
+            while (removed < max_waiters) {
+                const waiter: *Waiter = @alignCast(@fieldParentPtr("node", it orelse break));
+                it = waiter.node.next;
+                if (waiter.address != @intFromPtr(ptr)) continue;
+                // We're waking this waiter. Remove them from the bucket and add them to our local list.
+                fut.waiters.remove(&waiter.node);
+                waiter.node.next = waiters_head;
+                waiters_head = &waiter.node;
+                removed += 1;
+                // Signal to `waiter` that they're about to be unparked, in case we're racing with their
+                // timeout. See corresponding logic in `wake`.
+                @atomicStore(usize, &waiter.address, 0, .monotonic);
+            }
+
+            _ = fut.num_waiters.fetchSub(removed, .monotonic);
+        }
+
+        while (waiters_head) |unparking| {
+            waiters_head = unparking.next;
+
+            const waiter: *Waiter = @alignCast(@fieldParentPtr("node", unparking));
+            waiter.parker.unpark(arbiter);
+        }
     }
-    if (data[data.len - 1].len != 0 and splat != 0) return error.BrokenPipe;
-    return 0;
+};
+
+gpa: std.mem.Allocator,
+debug_mutex: AddressArbiter.Mutex,
+debug_writer: std.Io.Writer,
+rng: std.Random.DefaultCsprng,
+arbiter: AddressArbiter,
+parking_futex: ParkingFutex,
+storage: Filesystem.RomFs,
+
+/// All handles must live until `deinit`
+pub fn init(
+    gpa: std.mem.Allocator,
+    arbiter: AddressArbiter,
+    storage: Filesystem.RomFs,
+) !HIo {
+    const tick = horizon.getSystemTick();
+    const debug_buffer = try gpa.alloc(u8, 512); 
+    errdefer gpa.free(debug_buffer);
+
+    return .{
+        .gpa = gpa,
+        .debug_mutex = .init,
+        .debug_writer = horizon.outputDebugWriter(debug_buffer),
+        .rng = blk: {
+            var seed: [32]u8 = undefined;
+            var expand: std.Random.SplitMix64 = .init(tick);
+            seed[0..8].* = @bitCast(expand.next());
+            seed[8..16].* = @bitCast(expand.next());
+            seed[16..24].* = @bitCast(expand.next());
+            seed[24..32].* = @bitCast(expand.next());
+            break :blk .init(seed);
+        },
+        .arbiter = arbiter,
+        .parking_futex = .init,
+        .storage = storage,
+    };
 }
 
-pub fn noFileWriteFileStreaming(userdata: ?*anyopaque, file: File, header: []const u8, file_reader: *Io.File.Reader, limit: Io.Limit) File.Writer.WriteFileError!usize {
-    _ = userdata;
-    _ = file;
-    _ = header;
-    _ = file_reader;
-    _ = limit;
-    return error.Unimplemented;
+pub fn deinit(hio: *HIo) void {
+    const gpa = hio.gpa;
+    gpa.free(hio.debug_writer.buffer);
+    hio.* = undefined;
 }
 
-pub fn noFileWriteFilePositional(userdata: ?*anyopaque, file: File, header: []const u8, file_reader: *Io.File.Reader, limit: Io.Limit, offset: u64) File.WriteFilePositionalError!usize {
-    _ = userdata;
-    _ = file;
-    _ = header;
-    _ = file_reader;
-    _ = limit;
-    _ = offset;
-    return error.Unimplemented;
+pub fn io(hio: *HIo) Io {
+    return .{
+        .userdata = hio,
+        .vtable = if (std.Io.VTable == VTable) &.default else comptime unreachable, // We depend on our zig fork currently
+    };
 }
 
-pub fn failingFileReadStreaming(userdata: ?*anyopaque, file: File, data: []const []u8) File.Reader.Error!usize {
-    _ = userdata;
-    _ = file;
-    for (data) |item| {
-        if (item.len > 0) return error.BrokenPipe;
+pub const VTable = enum(u0) {
+    default,
+
+    pub fn recancel(_: VTable, _: ?*anyopaque) void {}
+
+    pub fn swapCancelProtection(_: VTable, _: ?*anyopaque, _: CancelProtection) CancelProtection {
+        return .blocked; // NOTE: We cannot cancel (AFAIK) so we're always blocked
     }
-    return 0;
-}
 
-pub fn failingFileReadPositional(userdata: ?*anyopaque, file: File, data: []const []u8, offset: u64) File.ReadPositionalError!usize {
-    _ = userdata;
-    _ = file;
-    _ = offset;
-    for (data) |item| {
-        if (item.len > 0) return error.BrokenPipe;
+    pub fn checkCancel(_: VTable, _: ?*anyopaque) Cancelable!void {}
+
+    pub fn futexWait(_: VTable, ud: ?*anyopaque, ptr: *const u32, expected: u32, timeout: Io.Timeout) Cancelable!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        const h_timeout: horizon.Timeout = blk: {
+            const duration = timeout.toDurationFromNow(hio.io()) orelse break :blk .none;
+            break :blk .fromNanoseconds(std.math.lossyCast(u63, duration.raw.toNanoseconds()));
+        };
+
+        hio.parking_futex.waitTimeout(hio.arbiter, ptr, expected, h_timeout) catch |err| switch (err) {
+            error.Timeout => {},
+        };
     }
-    return 0;
+
+    pub fn futexWaitUncancelable(_: VTable, ud: ?*anyopaque, ptr: *const u32, expected: u32) void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.parking_futex.waitTimeout(hio.arbiter, ptr, expected, .none) catch |err| switch (err) {
+            error.Timeout => unreachable,
+        };
+    }
+
+    pub fn futexWake(_: VTable, ud: ?*anyopaque, ptr: *const u32, max_waiters: u32) void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.parking_futex.wake(hio.arbiter, ptr, max_waiters);
+    }
+
+    pub fn operate(_: VTable, ud: ?*anyopaque, operation: Io.Operation) Cancelable!Io.Operation.Result {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        _ = hio;
+        _ = operation;
+        unreachable;
+    }
+
+    // TODO: Non ROMFS storage
+    pub fn dirCreateDir(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirError!void {
+        return error.ReadOnlyFileSystem;
+    }
+
+    pub fn dirCreateDirPath(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirPathError!Io.Dir.CreatePathStatus {
+        return error.ReadOnlyFileSystem;
+    }
+
+    pub fn dirCreateDirPathOpen(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir.Permissions, _: Io.Dir.OpenOptions) Io.Dir.CreateDirPathOpenError!Io.Dir {
+        return error.ReadOnlyFileSystem;
+    }
+
+    pub fn dirOpenDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.OpenOptions) Io.Dir.OpenError!Io.Dir {
+        const file = dirOpenFile(.default, ud, dir, path, .{ .follow_symlinks = opts.follow_symlinks }) catch |err| switch (err) {
+            error.BadPathName => return error.BadPathName,
+            error.FileNotFound => return error.FileNotFound,
+            else => unreachable,
+        };
+        
+        return switch (file.handle.kind) {
+            .file => return error.NotDir,
+            .directory => file.handle.asDirectory(),
+        };
+    }
+
+    pub fn dirStat(_: VTable, _: ?*anyopaque, _: Io.Dir) Io.Dir.StatError!Io.Dir.Stat {
+        return .{
+            .inode = {},
+            .nlink = 0,
+            .size = 0,
+            .permissions = .default_file,
+            .kind = .directory,
+            .atime = null,
+            .mtime = .{ .nanoseconds = 0 },
+            .ctime = .{ .nanoseconds = 0 },
+            .block_size = 512,
+        };
+    }
+
+    pub fn dirStatFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.StatFileOptions) Io.Dir.StatFileError!Io.File.Stat {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        const file = try dirOpenFile(.default, ud, dir, path, .{ .follow_symlinks = opts.follow_symlinks });
+
+        return .{
+            .inode = {},
+            .nlink = 0,
+            .size = switch (file.handle.kind) {
+                .file => file.handle.asFile().stat(hio.storage.view).size,
+                .directory => 0,
+            },
+            .permissions = .default_file,
+            .kind = switch (file.handle.kind) {
+                .file => .file,
+                .directory => .directory,
+            },
+            .atime = null,
+            .mtime = .{ .nanoseconds = 0 },
+            .ctime = .{ .nanoseconds = 0 },
+            .block_size = 512,
+        };
+    }
+
+    pub fn dirAccess(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.AccessOptions) Io.Dir.AccessError!void {
+        if (opts.write) return error.ReadOnlyFileSystem;
+        if (opts.execute) return error.PermissionDenied;
+        _ = try dirOpenFile(.default, ud, dir, path, .{ .follow_symlinks = opts.follow_symlinks });
+    }
+
+    pub fn dirCreateFile(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.File.CreateFlags) Io.File.OpenError!Io.File {
+        return error.ReadOnlyFileSystem;
+    }
+
+    pub fn dirCreateFileAtomic(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir.CreateFileAtomicOptions) Io.Dir.CreateFileAtomicError!Io.File.Atomic {
+        return error.ReadOnlyFileSystem;
+    }
+
+    pub fn dirOpenFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.File.OpenFlags) Io.File.OpenError!Io.File {
+        if (path.len > Dir.max_path_bytes) return error.BadPathName;
+
+        var utf16_path: [Dir.max_path_bytes]u16 = undefined;
+        const path_len = std.unicode.utf8ToUtf16Le(&utf16_path, path) catch return error.BadPathName;
+
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        const entry = try hio.storage.openAny(dir.handle, utf16_path[0..path_len]);
+
+        return switch (entry.kind) {
+            .directory => blk: {
+                if (!opts.allow_directory) return error.IsDir;
+                if (opts.isWrite()) return error.IsDir;
+                break :blk .{ .handle = entry, .flags = {} };
+            },
+            .file => blk: {
+                if (opts.isWrite()) return error.PermissionDenied;
+                break :blk .{ .handle = entry, .flags = {} };
+            },
+        };
+    }
+
+    pub fn dirClose(_: VTable, _: ?*anyopaque, _: []const Dir) void {} // We don't have to do anything, handles are just offsets (at least currently)
+
+    pub fn dirRead(_: VTable, ud: ?*anyopaque, r: *Io.Dir.Reader, entries: []Io.Dir.Entry) Io.Dir.Reader.Error!usize {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        const buf: *Dir.Reader.Buffer = @alignCast(@ptrCast(&r.buffer));
+
+        if (r.end < @sizeOf(Dir.Reader.Buffer) or r.state == .reset) {
+            buf.* = .{
+                .it = .init(hio.storage.view, r.dir.handle),
+                .name = undefined,
+            };
+
+            r.end = @sizeOf(Dir.Reader.Buffer);
+            r.index = @sizeOf(Dir.Reader.Buffer);
+            r.state = .reading;
+        }
+        
+        const e = buf.it.next(hio.storage.view) orelse {
+            r.state = .finished;
+            return 0;
+        };
+
+        const name = e.name(hio.storage.view);
+        const name_len = std.unicode.utf16LeToUtf8(&buf.name, name) catch return error.Unexpected;
+
+        entries[0] = .{
+            .name = buf.name[0..name_len],
+            .inode = {},
+            .kind = switch (e.kind) {
+                .file => .file,
+                .directory => .directory,
+            },
+        };
+
+        return 1;
+    }
+
+    pub fn dirRealPath(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []u8) Io.Dir.RealPathError!usize {
+        return error.OperationUnsupported;
+    }
+
+    pub fn dirRealPathFile(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: []u8) Io.Dir.RealPathFileError!usize {
+        return error.OperationUnsupported; // TODO: This *could* be supported
+    }
+
+    pub fn dirDeleteFile(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8) Io.Dir.DeleteFileError!void {
+        return error.ReadOnlyFileSystem;
+    }
+
+    pub fn dirDeleteDir(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8) Io.Dir.DeleteDirError!void {
+        return error.ReadOnlyFileSystem;
+    }
+
+    pub fn dirRename(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir, _: []const u8) Io.Dir.RenameError!void {
+        return error.ReadOnlyFileSystem;
+    }
+
+    pub fn dirRenamePreserve(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir, _: []const u8) Io.Dir.RenamePreserveError!void {
+        return error.ReadOnlyFileSystem;
+    }
+
+    pub fn dirSymLink(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: []const u8, _: Io.Dir.SymLinkFlags) Io.Dir.SymLinkError!void {}
+
+    pub fn dirReadLink(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: []u8) Io.Dir.ReadLinkError!usize {
+        return error.NotLink;
+    }
+
+    pub fn dirSetOwner(_: VTable, _: ?*anyopaque, _: Io.Dir, _: ?Io.File.Uid, _: ?Io.File.Gid) Io.Dir.SetOwnerError!void {
+        return error.PermissionDenied;
+    }
+
+    pub fn dirSetFileOwner(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: ?Io.File.Uid, _: ?Io.File.Gid, _: Io.Dir.SetFileOwnerOptions) Io.Dir.SetFileOwnerError!void {
+        return error.PermissionDenied;
+    }
+
+    pub fn dirSetPermissions(_: VTable, _: ?*anyopaque, _: Io.Dir, _: Io.Dir.Permissions) Io.Dir.SetPermissionsError!void {
+        return error.PermissionDenied;
+    }
+
+    pub fn dirSetFilePermissions(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.File.Permissions, _: Io.Dir.SetFilePermissionsOptions) Io.Dir.SetFilePermissionsError!void {
+        return error.PermissionDenied;
+    }
+
+    pub fn dirSetTimestamps(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir.SetTimestampsOptions) Io.Dir.SetTimestampsError!void {}
+
+    pub fn dirHardLink(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir, _: []const u8, _: Io.Dir.HardLinkOptions) Io.Dir.HardLinkError!void {
+        return error.OperationUnsupported;
+    }
+
+    pub fn fileStat(_: VTable, ud: ?*anyopaque, file: Io.File) Io.File.StatError!Io.File.Stat {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        return .{
+            .inode = {},
+            .nlink = 0,
+            .size = switch (file.handle.kind) {
+                .file => file.handle.asFile().stat(hio.storage.view).size,
+                .directory => 0,
+            },
+            .permissions = .default_file,
+            .kind = switch (file.handle.kind) {
+                .file => .file,
+                .directory => .directory,
+            },
+            .atime = null,
+            .mtime = .{ .nanoseconds = 0 },
+            .ctime = .{ .nanoseconds = 0 },
+            .block_size = 512,
+        };
+    }
+
+    pub fn fileLength(_: VTable, ud: ?*anyopaque, file: Io.File) Io.File.LengthError!u64 {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        return file.handle.stat(hio.storage.view).size;
+    }
+
+    pub fn fileClose(_: VTable, _: ?*anyopaque, _: []const Io.File) void {} // We don't have to do anything, handles are just offsets (at least currently)
+
+    pub fn fileWritePositional(_: VTable, _: ?*anyopaque, file: Io.File, header: []const u8, data: []const []const u8, splat: usize, offset: u64) Io.File.WritePositionalError!usize {
+        _ = file;
+        _ = header;
+        _ = data;
+        _ = splat;
+        _ = offset;
+        return error.NotOpenForWriting;
+    }
+
+    pub fn fileWriteFileStreaming(_: VTable, _: ?*anyopaque, _: Io.File, _: []const u8, _: *Io.File.Reader, _: Io.Limit) Io.File.Writer.WriteFileError!usize {
+        return error.Unimplemented;
+    }
+
+    pub fn fileWriteFilePositional(_: VTable, _: ?*anyopaque, _: Io.File, _: []const u8, _: *Io.File.Reader, _: Io.Limit, _: u64) Io.File.WriteFilePositionalError!usize {
+        return error.Unimplemented;
+    }
+
+    pub fn fileReadPositional(_: VTable, ud: ?*anyopaque, file: Io.File, data: []const []u8, offset: u64) Io.File.ReadPositionalError!usize {
+        if (file.handle.kind == .directory) return error.IsDir;
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+
+        for (data) |buf| {
+            return hio.storage.readPositional(file.handle.asFile(), offset, buf) catch |err| switch(err) {
+                else => error.Unexpected,
+            };
+        }
+
+        return 0;
+    }
+
+    pub fn fileSeekBy(_: VTable, _: ?*anyopaque, _: Io.File, _: i64) Io.File.SeekError!void {
+        return error.Unseekable;
+    }
+
+    pub fn fileSeekTo(_: VTable, _: ?*anyopaque, _: Io.File, _: u64) Io.File.SeekError!void {
+        return error.Unseekable;
+    }
+
+    pub fn fileSync(_: VTable, _: ?*anyopaque, _: Io.File) Io.File.SyncError!void {
+    }
+
+    pub fn fileIsTty(_: VTable, _: ?*anyopaque, _: Io.File) Cancelable!bool {
+        return false; // A file can never be a tty
+    }
+
+    pub fn fileEnableAnsiEscapeCodes(_: VTable, _: ?*anyopaque, _: Io.File) Io.File.EnableAnsiEscapeCodesError!void {
+        return error.NotTerminalDevice;
+    }
+
+    pub fn fileSupportsAnsiEscapeCodes(_: VTable, _: ?*anyopaque, _: Io.File) Cancelable!bool {
+        return false;
+    }
+
+    pub fn fileSetLength(_: VTable, _: ?*anyopaque, _: Io.File, _: u64) Io.File.SetLengthError!void {
+        return error.NotResizable;
+    }
+
+    pub fn fileSetOwner(_: VTable, _: ?*anyopaque, _: Io.File, _: ?Io.File.Uid, _: ?Io.File.Gid) Io.File.SetOwnerError!void {
+        return error.PermissionDenied;
+    }
+
+    pub fn fileSetPermissions(_: VTable, _: ?*anyopaque, _: Io.File, _: Io.File.Permissions) Io.File.SetPermissionsError!void {
+        return error.PermissionDenied;
+    }
+
+    pub fn fileSetTimestamps(_: VTable, _: ?*anyopaque, _: Io.File, _: Io.File.SetTimestampsOptions) Io.File.SetTimestampsError!void {}
+
+    pub fn fileLock(_: VTable, _: ?*anyopaque, _: Io.File, _: Io.File.Lock) Io.File.LockError!void {
+        return error.FileLocksUnsupported;
+    }
+
+    pub fn fileTryLock(_: VTable, _: ?*anyopaque, _: Io.File, _: Io.File.Lock) Io.File.LockError!bool {
+        return error.FileLocksUnsupported;
+    }
+
+    pub fn fileUnlock(_: VTable, _: ?*anyopaque, _: Io.File) void {}
+
+    pub fn fileDowngradeLock(_: VTable, _: ?*anyopaque, _: Io.File) Io.File.DowngradeLockError!void {
+        unreachable;
+    }
+
+    pub fn fileRealPath(_: VTable, _: ?*anyopaque, _: Io.File, _: []u8) Io.File.RealPathError!usize {
+        return error.OperationUnsupported; // TODO: This could be supported.
+    }
+
+    pub fn fileHardLink(_: VTable, _: ?*anyopaque, _: Io.File, _: Io.Dir, _: []const u8, _: Io.File.HardLinkOptions) Io.File.HardLinkError!void {
+        return error.OperationUnsupported;
+    }
+
+    pub fn fileMemoryMapCreate(_: VTable, ud: ?*anyopaque, file: Io.File, options: Io.File.MemoryMap.CreateOptions) Io.File.MemoryMap.CreateError!Io.File.MemoryMap {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        const gpa = hio.gpa;
+
+        const offset = options.offset;
+        const len = options.len;
+
+        const page_size = std.heap.pageSize();
+        const alignment: std.mem.Alignment = .fromByteUnits(page_size);
+        const memory = m: {
+            const ptr = gpa.rawAlloc(len, alignment, @returnAddress()) orelse return error.OutOfMemory;
+            break :m ptr[0..len];
+        };
+        errdefer gpa.rawFree(memory, alignment, @returnAddress());
+
+        if (!options.undefined_contents) try file.readPositionalAll(hio.io(), memory, offset);
+
+        return .{
+            .file = file,
+            .offset = offset,
+            .memory = @alignCast(memory),
+            .section = null,
+        };
+    }
+
+    pub fn fileMemoryMapDestroy(_: VTable, ud: ?*anyopaque, mm: *Io.File.MemoryMap) void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        const gpa = hio.gpa;
+
+        gpa.rawFree(mm.memory, .fromByteUnits(std.heap.pageSize()), @returnAddress());
+        mm.* = undefined;
+    }
+
+    pub fn fileMemoryMapSetLength(_: VTable, _: ?*anyopaque, _: *Io.File.MemoryMap, _: usize) Io.File.MemoryMap.SetLengthError!void {
+        return error.OperationUnsupported;
+    }
+
+    pub fn fileMemoryMapRead(_: VTable, ud: ?*anyopaque, mm: *Io.File.MemoryMap) Io.File.ReadPositionalError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        try mm.file.readPositionalAll(hio.io(), mm.memory, mm.offset);
+    }
+
+    pub fn fileMemoryMapWrite(_: VTable, ud: ?*anyopaque, mm: *Io.File.MemoryMap) Io.File.WritePositionalError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        try mm.file.writePositionalAll(hio.io(), mm.memory, mm.offset);
+    }
+
+    pub fn processExecutableOpen(_: VTable, _: ?*anyopaque, _: Io.File.OpenFlags) std.process.OpenExecutableError!Io.File {
+        return error.OperationUnsupported; // XXX: This could be supported but useless as we're either in a NCCH or 3dsx.
+    }
+
+    pub fn processExecutablePath(_: VTable, _: ?*anyopaque, _: []u8) std.process.ExecutablePathError!usize {
+        return error.OperationUnsupported;
+    }
+
+    pub fn lockStderr(_: VTable, ud: ?*anyopaque, _: ?Io.Terminal.Mode) Cancelable!LockedStderr {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.debug_mutex.lock(hio.arbiter);
+        return .{
+            .term = .{
+                .writer = &hio.debug_writer,
+                .mode = .no_color,
+            },
+        };
+    }
+
+    pub fn tryLockStderr(_: VTable, ud: ?*anyopaque, _: ?Io.Terminal.Mode) Cancelable!?LockedStderr {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        if (!hio.debug_mutex.tryLock()) return null;
+        return .{
+            .term = .{
+                .writer = &hio.debug_writer,
+                .mode = .no_color,
+            },
+        };
+    }
+
+    pub fn unlockStderr(_: VTable, ud: ?*anyopaque) void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.debug_writer.flush() catch unreachable; // NOTE: never fails
+        hio.debug_mutex.unlock(hio.arbiter);
+    }
+
+    pub fn processCurrentPath(_: VTable, _: ?*anyopaque, buffer: []u8) std.process.CurrentPathError!usize {
+        if (buffer.len == 0) return error.NameTooLong;
+        buffer[0] = '/'; // Both RomFS and Archives always have the cwd at root.
+        return 1;
+    }
+
+    pub fn processSetCurrentDir(_: VTable, _: ?*anyopaque, _: Io.Dir) std.process.SetCurrentDirError!void {
+        return error.OperationUnsupported;
+    }
+
+    pub fn processReplace(_: VTable, _: ?*anyopaque, _: std.process.ReplaceOptions) std.process.ReplaceError {
+        return error.OperationUnsupported;
+    }
+
+    pub fn processReplacePath(_: VTable, _: ?*anyopaque, _: Io.Dir, _: std.process.ReplaceOptions) std.process.ReplaceError {
+        return error.OperationUnsupported;
+    }
+
+    pub fn processSpawn(_: VTable, _: ?*anyopaque, _: std.process.SpawnOptions) std.process.SpawnError!std.process.Child {
+        return error.OperationUnsupported;
+    }
+
+    pub fn processSpawnPath(_: VTable, _: ?*anyopaque, _: Io.Dir, _: std.process.SpawnOptions) std.process.SpawnError!std.process.Child {
+        return error.OperationUnsupported;
+    }
+
+    pub fn childWait(_: VTable, _: ?*anyopaque, _: *std.process.Child) std.process.Child.WaitError!std.process.Child.Term {
+        unreachable;
+    }
+
+    pub fn childKill(_: VTable, _: ?*anyopaque, _: *std.process.Child) void {
+        unreachable;
+    }
+
+    pub fn progressParentFile(_: VTable, _: ?*anyopaque) std.Progress.ParentFileError!Io.File {
+        return error.UnsupportedOperation;
+    }
+
+    pub fn now(_: VTable, _: ?*anyopaque, clock: Clock) Io.Timestamp {
+        return switch (clock) {
+            .awake, .boot => .fromNanoseconds(@intCast(horizon.time.getSystemNanoseconds())),
+            .real => @panic("TODO: now(real)"),
+            .cpu_process, .cpu_thread => .fromNanoseconds(0),
+        };
+    }
+
+    pub fn clockResolution(_: ?*anyopaque, clock: Clock) Clock.ResolutionError!Io.Duration {
+        return switch (clock) {
+            .awake, .boot => .fromNanoseconds(1),
+            .real => .fromMilliseconds(1),
+            .cpu_process, .cpu_thread => error.ClockUnavailable,
+        };
+    }
+
+    pub fn sleep(_: VTable, ud: ?*anyopaque, timeout: Io.Timeout) Cancelable!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        if (timeout.toDurationFromNow(hio.io())) |duration| {
+            horizon.sleepThread(std.math.lossyCast(i64, duration.raw.toNanoseconds()));
+        } else horizon.sleepThread(std.math.maxInt(i64));
+    }
+
+    pub fn random(_: VTable, ud: ?*anyopaque, buffer: []u8) void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.rng.fill(buffer);
+    }
+
+    pub fn randomSecure(_: VTable, _: ?*anyopaque, _: []u8) Io.RandomSecureError!void {
+        return error.EntropyUnavailable; // XXX: Is there any truly random entropy source in hos?
+    }
+};
+
+comptime {
+    _ = @import("Io/test.zig");
 }
 
-pub fn failingFileSeekBy(userdata: ?*anyopaque, file: File, relative_offset: i64) File.SeekError!void {
-    _ = userdata;
-    _ = file;
-    _ = relative_offset;
-    return error.Unseekable;
-}
-
-pub fn failingFileSeekTo(userdata: ?*anyopaque, file: File, absolute_offset: u64) File.SeekError!void {
-    _ = userdata;
-    _ = file;
-    _ = absolute_offset;
-    return error.Unseekable;
-}
-
-pub fn failingFileSync(userdata: ?*anyopaque, file: File) File.SyncError!void {
-    _ = userdata;
-    _ = file;
-    return error.NoSpaceLeft;
-}
-
-pub fn unreachableFileIsTty(userdata: ?*anyopaque, file: File) Cancelable!bool {
-    _ = userdata;
-    _ = file;
-    unreachable;
-}
-
-pub fn unreachableFileEnableAnsiEscapeCodes(userdata: ?*anyopaque, file: File) File.EnableAnsiEscapeCodesError!void {
-    _ = userdata;
-    _ = file;
-    unreachable;
-}
-
-pub fn unreachableFileSupportsAnsiEscapeCodes(userdata: ?*anyopaque, file: File) Cancelable!bool {
-    _ = userdata;
-    _ = file;
-    unreachable;
-}
-
-pub fn failingFileSetLength(userdata: ?*anyopaque, file: File, length: u64) File.SetLengthError!void {
-    _ = userdata;
-    _ = file;
-    _ = length;
-    return error.NonResizable;
-}
-
-pub fn failingFileSetOwner(userdata: ?*anyopaque, file: File, owner: ?File.Uid, group: ?File.Gid) File.SetOwnerError!void {
-    _ = userdata;
-    _ = file;
-    _ = owner;
-    _ = group;
-    return error.FileNotFound;
-}
-
-pub fn failingFileSetPermissions(userdata: ?*anyopaque, file: File, permissions: File.Permissions) File.SetPermissionsError!void {
-    _ = userdata;
-    _ = file;
-    _ = permissions;
-    return error.FileNotFound;
-}
-
-pub fn noFileSetTimestamps(userdata: ?*anyopaque, file: File, options: File.SetTimestampsOptions) File.SetTimestampsError!void {
-    _ = userdata;
-    _ = file;
-    _ = options;
-    // no-op
-}
-
-pub fn failingFileLock(userdata: ?*anyopaque, file: File, lock: File.Lock) File.LockError!void {
-    _ = userdata;
-    _ = file;
-    _ = lock;
-    return error.FileLocksUnsupported;
-}
-
-pub fn failingFileTryLock(userdata: ?*anyopaque, file: File, lock: File.Lock) File.LockError!bool {
-    _ = userdata;
-    _ = file;
-    _ = lock;
-    return error.FileLocksUnsupported;
-}
-
-pub fn unreachableFileUnlock(userdata: ?*anyopaque, file: File) void {
-    _ = userdata;
-    _ = file;
-    unreachable;
-}
-
-pub fn failingFileDowngradeLock(userdata: ?*anyopaque, file: File) File.DowngradeLockError!void {
-    _ = userdata;
-    _ = file;
-    // no-op
-}
-
-pub fn failingFileRealPath(userdata: ?*anyopaque, file: File, out_buffer: []u8) File.RealPathError!usize {
-    _ = userdata;
-    _ = file;
-    _ = out_buffer;
-    return error.FileNotFound;
-}
-
-pub fn failingFileHardLink(userdata: ?*anyopaque, file: File, new_dir: Dir, new_sub_path: []const u8, options: File.HardLinkOptions) File.HardLinkError!void {
-    _ = userdata;
-    _ = file;
-    _ = new_dir;
-    _ = new_sub_path;
-    _ = options;
-    return error.FileNotFound;
-}
-
-pub fn failingFileMemoryMapCreate(userdata: ?*anyopaque, file: File, options: File.MemoryMap.CreateOptions) File.MemoryMap.CreateError!File.MemoryMap {
-    _ = userdata;
-    _ = file;
-    _ = options;
-    return error.AccessDenied;
-}
-
-pub fn unreachableFileMemoryMapDestroy(userdata: ?*anyopaque, mm: *File.MemoryMap) void {
-    _ = userdata;
-    _ = mm;
-    unreachable;
-}
-
-pub fn unreachableFileMemoryMapSetLength(userdata: ?*anyopaque, mm: *File.MemoryMap, new_len: usize) File.MemoryMap.SetLengthError!void {
-    _ = userdata;
-    _ = mm;
-    _ = new_len;
-    unreachable;
-}
-
-pub fn unreachableFileMemoryMapRead(userdata: ?*anyopaque, mm: *File.MemoryMap) File.ReadPositionalError!void {
-    _ = userdata;
-    _ = mm;
-    unreachable;
-}
-
-pub fn unreachableFileMemoryMapWrite(userdata: ?*anyopaque, mm: *File.MemoryMap) File.WritePositionalError!void {
-    _ = userdata;
-    _ = mm;
-    unreachable;
-}
-
-pub fn failingProcessCurrentPath(userdata: ?*anyopaque, buffer: []u8) std.process.CurrentPathError!usize {
-    _ = userdata;
-    _ = buffer;
-    return error.CurrentDirUnlinked;
-}
-
-pub fn failingProcessExecutableOpen(userdata: ?*anyopaque, flags: File.OpenFlags) std.process.OpenExecutableError!File {
-    _ = userdata;
-    _ = flags;
-    return error.FileNotFound;
-}
-
-pub fn failingProcessExecutablePath(userdata: ?*anyopaque, buffer: []u8) std.process.ExecutablePathError!usize {
-    _ = userdata;
-    _ = buffer;
-    return error.FileNotFound;
-}
-
-pub fn unreachableLockStderr(userdata: ?*anyopaque, terminal_mode: ?Terminal.Mode) Cancelable!LockedStderr {
-    _ = userdata;
-    _ = terminal_mode;
-    unreachable;
-}
-
-pub fn noTryLockStderr(userdata: ?*anyopaque, terminal_mode: ?Terminal.Mode) Cancelable!?LockedStderr {
-    _ = userdata;
-    _ = terminal_mode;
-    return null;
-}
-
-pub fn unreachableUnlockStderr(userdata: ?*anyopaque) void {
-    _ = userdata;
-    unreachable;
-}
-
-pub fn failingProcessSetCurrentDir(userdata: ?*anyopaque, dir: Dir) std.process.SetCurrentDirError!void {
-    _ = userdata;
-    _ = dir;
-    return error.FileNotFound;
-}
-
-pub fn failingProcessReplace(userdata: ?*anyopaque, options: std.process.ReplaceOptions) std.process.ReplaceError {
-    _ = userdata;
-    _ = options;
-    return error.OperationUnsupported;
-}
-
-pub fn failingProcessReplacePath(userdata: ?*anyopaque, dir: Dir, options: std.process.ReplaceOptions) std.process.ReplaceError {
-    _ = userdata;
-    _ = dir;
-    _ = options;
-    return error.OperationUnsupported;
-}
-
-pub fn failingProcessSpawn(userdata: ?*anyopaque, options: std.process.SpawnOptions) std.process.SpawnError!std.process.Child {
-    _ = userdata;
-    _ = options;
-    return error.OperationUnsupported;
-}
-
-pub fn failingProcessSpawnPath(userdata: ?*anyopaque, dir: Dir, options: std.process.SpawnOptions) std.process.SpawnError!std.process.Child {
-    _ = userdata;
-    _ = dir;
-    _ = options;
-    return error.OperationUnsupported;
-}
-
-pub fn unreachableChildWait(userdata: ?*anyopaque, child: *std.process.Child) std.process.Child.WaitError!std.process.Child.Term {
-    _ = userdata;
-    _ = child;
-    unreachable;
-}
-
-pub fn unreachableChildKill(userdata: ?*anyopaque, child: *std.process.Child) void {
-    _ = userdata;
-    _ = child;
-    unreachable;
-}
-
-pub fn failingProgressParentFile(userdata: ?*anyopaque) std.Progress.ParentFileError!File {
-    _ = userdata;
-    return error.UnsupportedOperation;
-}
-
-pub fn noRandom(userdata: ?*anyopaque, buffer: []u8) void {
-    _ = userdata;
-    @memset(buffer, 0);
-}
-
-pub fn failingRandomSecure(userdata: ?*anyopaque, buffer: []u8) RandomSecureError!void {
-    _ = userdata;
-    _ = buffer;
-    return error.EntropyUnavailable;
-}
-
-pub fn failingNow(userdata: ?*anyopaque, clock: Clock) Clock.Error!Timestamp {
-    _ = userdata;
-    _ = clock;
-    return error.UnsupportedClock;
-}
-
-pub fn failingSleep(userdata: ?*anyopaque, clock: Timeout) SleepError!void {
-    _ = userdata;
-    _ = clock;
-    return error.UnsupportedClock;
-}
-
-pub fn failingNetListenIp(userdata: ?*anyopaque, address: net.IpAddress, options: net.IpAddress.ListenOptions) net.IpAddress.ListenError!net.Server {
-    _ = userdata;
-    _ = address;
-    _ = options;
-    return error.NetworkDown;
-}
-
-pub fn failingNetAccept(userdata: ?*anyopaque, server: net.Socket.Handle) net.Server.AcceptError!net.Stream {
-    _ = userdata;
-    _ = server;
-    return error.NetworkDown;
-}
-
-pub fn failingNetBindIp(userdata: ?*anyopaque, address: *const net.IpAddress, options: net.IpAddress.BindOptions) net.IpAddress.BindError!net.Socket {
-    _ = userdata;
-    _ = address;
-    _ = options;
-    return error.NetworkDown;
-}
-
-pub fn failingNetConnectIp(userdata: ?*anyopaque, address: *const net.IpAddress, options: net.IpAddress.ConnectOptions) net.IpAddress.ConnectError!net.Stream {
-    _ = userdata;
-    _ = address;
-    _ = options;
-    return error.NetworkDown;
-}
-
-pub fn failingNetListenUnix(userdata: ?*anyopaque, address: *const net.UnixAddress, options: net.UnixAddress.ListenOptions) net.UnixAddress.ListenError!net.Socket.Handle {
-    _ = userdata;
-    _ = address;
-    _ = options;
-    return error.NetworkDown;
-}
-
-pub fn failingNetConnectUnix(userdata: ?*anyopaque, address: *const net.UnixAddress) net.UnixAddress.ConnectError!net.Socket.Handle {
-    _ = userdata;
-    _ = address;
-    return error.NetworkDown;
-}
-
-pub fn failingNetSocketCreatePair(userdata: ?*anyopaque, options: net.Socket.CreatePairOptions) net.Socket.CreatePairError![2]net.Socket {
-    _ = userdata;
-    _ = options;
-    return error.OperationUnsupported;
-}
-
-pub fn failingNetSend(userdata: ?*anyopaque, handle: net.Socket.Handle, messages: []net.OutgoingMessage, flags: net.SendFlags) struct { ?net.Socket.SendError, usize } {
-    _ = userdata;
-    _ = handle;
-    _ = messages;
-    _ = flags;
-    return .{ error.NetworkDown, 0 };
-}
-
-pub fn failingNetReceive(userdata: ?*anyopaque, handle: net.Socket.Handle, message_buffer: []net.IncomingMessage, data_buffer: []u8, flags: net.ReceiveFlags, timeout: Timeout) struct { ?net.Socket.ReceiveTimeoutError, usize } {
-    _ = userdata;
-    _ = handle;
-    _ = message_buffer;
-    _ = data_buffer;
-    _ = flags;
-    _ = timeout;
-    return .{ error.NetworkDown, 0 };
-}
-
-pub fn failingNetRead(userdata: ?*anyopaque, src: net.Socket.Handle, data: [][]u8) net.Stream.Reader.Error!usize {
-    _ = userdata;
-    _ = src;
-    _ = data;
-    return error.NetworkDown;
-}
-
-pub fn failingNetWrite(userdata: ?*anyopaque, dest: net.Socket.Handle, header: []const u8, data: []const []const u8, splat: usize) net.Stream.Writer.Error!usize {
-    _ = userdata;
-    _ = dest;
-    _ = header;
-    _ = data;
-    _ = splat;
-    return error.NetworkDown;
-}
-
-pub fn failingNetWriteFile(userdata: ?*anyopaque, handle: net.Socket.Handle, header: []const u8, file_reader: *Io.File.Reader, limit: Io.Limit) net.Stream.Writer.WriteFileError!usize {
-    _ = userdata;
-    _ = handle;
-    _ = header;
-    _ = file_reader;
-    _ = limit;
-    return error.NetworkDown;
-}
-
-pub fn unreachableNetClose(userdata: ?*anyopaque, handle: []const net.Socket.Handle) void {
-    _ = userdata;
-    _ = handle;
-    unreachable;
-}
-
-pub fn failingNetShutdown(userdata: ?*anyopaque, handle: net.Socket.Handle, how: net.ShutdownHow) net.ShutdownError!void {
-    _ = userdata;
-    _ = handle;
-    _ = how;
-    return error.NetworkDown;
-}
-
-pub fn failingNetInterfaceNameResolve(userdata: ?*anyopaque, name: *const net.Interface.Name) net.Interface.Name.ResolveError!net.Interface {
-    _ = userdata;
-    _ = name;
-    return error.InterfaceNotFound;
-}
-
-pub fn unreachableNetInterfaceName(userdata: ?*anyopaque, interface: net.Interface) net.Interface.NameError!net.Interface.Name {
-    _ = userdata;
-    _ = interface;
-    unreachable;
-}
-
-pub fn failingNetLookup(userdata: ?*anyopaque, host_name: net.HostName, resolved: *Queue(net.HostName.LookupResult), options: net.HostName.LookupOptions) net.HostName.LookupError!void {
-    _ = userdata;
-    _ = host_name;
-    _ = resolved;
-    _ = options;
-    return error.NetworkDown;
-}
-
-const HorizonIo = @This();
+// a.k.a "Horizon Io"
+const HIo = @This();
 
 const builtin = @import("builtin");
-const is_debug = builtin.mode == .Debug;
 
-const RandomSecureError = Io.RandomSecureError;
-const SleepError = Io.SleepError;
 const Cancelable = Io.Cancelable;
-const Timeout = Io.Timeout;
-const Queue = Io.Queue;
-const net = Io.net;
-const Dir = Io.Dir;
-const File = Io.File;
-const Terminal = Io.Terminal;
-const AnyFuture = Io.AnyFuture;
-const Group = Io.Group;
-const ConcurrentError = Io.ConcurrentError;
-const assert = std.debug.assert;
 const CancelProtection = Io.CancelProtection;
-const LockedStderr = Io.LockedStderr;
 const Clock = Io.Clock;
-const Timestamp = Io.Timestamp;
 const std = @import("std");
 const Io = std.Io;
 
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
+const romfs = horizon.fmt.ncch.romfs;
+
+const AddressArbiter = horizon.AddressArbiter;
 const services = horizon.services;
 
-const romfs = horizon.fmt.ncch.romfs;
 const Filesystem = services.Filesystem;
 const SocketUser = services.SocketUser;

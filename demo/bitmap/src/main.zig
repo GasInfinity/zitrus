@@ -1,36 +1,28 @@
-pub const os = horizon;
-pub const debug = horizon.debug;
-pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
 pub const std_options: std.Options = horizon.default_std_options;
-
-pub const std_options_debug_io: std.Io = horizon.Io.failing;
-comptime { _ = horizon.start; }
+pub const std_options_debug_io: std.Io = horizon.Io.io(undefined); // FIXME: pluh, we may need global state...
 
 const top_screen_bitmap = @embedFile("top-screen");
 const bottom_screen_bitmap = @embedFile("bottom-screen");
 
-pub fn main() !void {
-    var app: horizon.application.Software = try .init(.default, horizon.heap.linear_page_allocator);
-    defer app.deinit(horizon.heap.linear_page_allocator);
+pub fn main(init: horizon.Init.Application.Software) !void {
+    const input = init.app.input;
+    const soft = init.soft;
 
-    var soft: GspGpu.Graphics.Software = try .init(.{
-        .top_mode = .@"2d",
-        .double_buffer = .initFill(true),
-        .color_format = .initFill(.bgr888),
-        .initial_contents = .init(.{
-            .top = top_screen_bitmap,
-            .bottom = bottom_screen_bitmap,
-        }),
-    }, app.gsp, horizon.heap.linear_page_allocator);
-    defer soft.deinit(app.gsp, horizon.heap.linear_page_allocator, app.apt_app.flags.must_close);
+    @memcpy(soft.current(.top, .left), top_screen_bitmap);
+    @memcpy(soft.current(.bottom, .left), bottom_screen_bitmap);
+
+    soft.flush();
+    soft.swap(.none);
+    try soft.waitVBlank();
 
     main_loop: while (true) {
-        while (try app.pollEvent()) |ev| switch (ev) {
+        while (try init.pollEvent()) |ev| switch (ev) {
             .jump_home_rejected => unreachable,
             .quit => break :main_loop,
         };
 
-        const pad = app.input.pollPad();
+        const pad = input.pollPad();
 
         if (pad.current.start) {
             break :main_loop;
@@ -41,7 +33,5 @@ pub fn main() !void {
 }
 
 const horizon = zitrus.horizon;
-const GspGpu = horizon.services.GspGpu;
-
 const zitrus = @import("zitrus");
 const std = @import("std");

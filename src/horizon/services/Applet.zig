@@ -284,7 +284,7 @@ pub const ParameterResult = struct {
     }
 
     pub fn deinit(parameter: ParameterResult) void {
-        if (parameter.handle != .null) {
+        if (parameter.handle != horizon.Object.none) {
             _ = horizon.closeHandle(parameter.handle);
         }
     }
@@ -381,7 +381,7 @@ pub fn sendJumpToHomeMenu(apt: Applet, service: Service, srv: ServiceManager, pa
         else => .{ 'A', 'S', 'H', 'P', @intFromEnum(params) },
     });
 
-    return switch ((try apt.lockSendCommand(service, srv, command.JumpToHomeMenu, .{ .parameters_size = parameters.len, .parameter_handle = .null, .parameters = .static(parameters) }, .{})).cases()) {
+    return switch ((try apt.lockSendCommand(service, srv, command.JumpToHomeMenu, .{ .parameters_size = parameters.len, .parameter_handle = .none, .parameters = .static(parameters) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };

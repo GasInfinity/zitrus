@@ -3,7 +3,7 @@
 //!
 //! The API can be broken down like this:
 //!
-//! ## `application` - High-level application abstraction
+//! ## `Init` - High-level initialization abstraction
 //!
 //! `zitrus` is architectured as a set of lower-level components which then are
 //! used to make higher-level abstractions.
@@ -11,16 +11,13 @@
 //! If you're only interested in making a normal applications
 //! you have at your disposal:
 //!
-//! * `application.Software` - If you won't be using hardware acceleration.
-//! See `services.GspGpu.Graphics.Software` for the higher-level rendering abstraction.
+//! * `Init.Application.Software` - If you won't be using hardware acceleration.
 //!
-//! * `application.Accelerated` - If you will eventually use hardware acceleration via the `PICA200`.
-//! Creates a `mango.Device` on your behalf and manages average `os` interactions for you with it.
+//! * `Init.Application.Mango` - If you will eventually use hardware acceleration via the `PICA200` with mango, creates a `mango.Device` on your behalf.
 //!
 //! ## Namespaces
 //!
-//! * `heap` - `heap.page_allocator` and `heap.linear_page_allocator` respectively, It is currently
-//! forbidden to use the `heap.page_allocator` with non-linear `controlMemory`.
+//! * `heap` - `heap.CommitAllocator` (for normal heap) and `heap.linear_page_allocator` respectively.
 //!
 //! * `result` - `result.Code` and everything related to `Horizon` result codes,
 //! help wanted for getting all possible `result.Description`s.
@@ -34,7 +31,7 @@
 //!
 //! * `ipc` - Type-safe and declarative `IPC` command handling, see `ipc.Buffer`.
 //!
-//! * `tls` - `tls.ThreadLocalStorage` and `threadlocal` variable support,
+//! * `tls` - `tls.Block` and `threadlocal` variable support,
 //! also where the `ipc.Buffer` is stored for `IPC` communication.
 //!
 //! * `fmt` - Do you need to parse a `fmt.ncch.romfs`? Or maybe a `fmt.smdh`?
@@ -503,14 +500,14 @@ pub const StartupInfo = extern struct {
     envp: [*]i16,
 };
 
-pub const Object = enum(u32) {
+pub const Object = packed struct(u32) {
+    pub const none: Object = .{ ._ = 0 };
     pub const Error = error{
         /// Resource limit for the object reached, out of handles or out of kernel memory.
         SystemResources,
     } || UnexpectedError;
 
-    null = 0,
-    _,
+    _: u32,
 
     pub fn dupe(obj: Object) Error!Object {
         const C = result.Code;
@@ -574,7 +571,84 @@ pub const CodeSet = packed struct(u32) {
     }
 };
 
+/// Spurious wakeups are not possible.
+/// Each arbiter holds a single waitlist.
 pub const AddressArbiter = packed struct(u32) {
+    pub const Mutex = extern struct {
+        pub const init: Mut = .{};
+        pub const State = enum(i32) {
+            unlocked = 0,
+            locked = -1,
+            contended = -2,
+        };
+
+        state: std.atomic.Value(State) = .init(.unlocked),
+
+        pub fn tryLock(mut: *Mut) bool {
+            return mut.state.cmpxchgStrong(.unlocked, .locked, .acquire, .monotonic) == null;
+        }
+
+        pub fn lock(mut: *Mut, arbiter: AddressArbiter) void {
+            if (mut.tryLock()) return;
+
+            if (mut.state.load(.monotonic) == .contended) {
+                arbiter.wait(State, &mut.state.raw, .unlocked);
+            }
+
+            while (mut.state.swap(.contended, .acquire) != .unlocked) {
+                arbiter.wait(State, &mut.state.raw, .unlocked);
+            }
+        }
+
+        pub fn lockTimeout(mut: *Mut, arbiter: AddressArbiter, timeout: Timeout) error{Timeout}!void {
+            if (mut.tryLock()) return;
+
+            if (mut.state.load(.monotonic) == .contended) {
+                arbiter.waitTimeout(State, &mut.state.raw, .unlocked, timeout) catch |err| switch (err) {
+                    error.Timeout => return if (mut.state.swap(.contended, .acquire) != .unlocked) error.Timeout else {},
+                };
+            }
+
+            while (mut.state.swap(.contended, .acquire) != .unlocked) {
+                try arbiter.waitTimeout(State, &mut.state.raw, .unlocked, timeout);
+            }
+        }
+
+        pub fn unlock(mut: *Mut, arbiter: AddressArbiter) void {
+            const last = mut.state.swap(.unlocked, .release);
+            std.debug.assert(last != .unlocked);
+
+            if (last == .contended) arbiter.signal(State, &mut.state.raw, 1);
+        }
+
+        const Mut = @This();
+    };
+
+    /// Similar to an auto-reset Event. Each `Thread` must have a separate `Parker` if needed.
+    pub const Parker = extern struct {
+        pub const init: Parker = .{};
+        pub const State = enum(i32) { resting = 0, alerted };
+
+        state: std.atomic.Value(State) = .init(.resting),
+
+        pub fn park(parker: *Parker, arbiter: AddressArbiter) error{Timeout}!void {
+            if (parker.state.swap(.resting, .acquire) == .alerted) return;
+            arbiter.wait(State, &parker.state.raw, .alerted);
+            std.debug.assert(parker.state.swap(.resting, .monotonic) == .alerted);
+        }
+
+        pub fn parkTimeout(parker: *Parker, arbiter: AddressArbiter, timeout: Timeout) error{Timeout}!void {
+            if (parker.state.swap(.resting, .acquire) == .alerted) return;
+            try arbiter.waitTimeout(State, &parker.state.raw, .alerted, timeout);
+            std.debug.assert(parker.state.swap(.resting, .monotonic) == .alerted);
+        }
+
+        pub fn unpark(parker: *Parker, arbiter: AddressArbiter) void {
+            if (parker.state.swap(.alerted, .release) == .alerted) return;
+            arbiter.signal(State, &parker.state.raw, 1);
+        }
+    };
+
     pub const CreateError = Object.Error;
     pub const ArbitrateError = error{
         /// Only if an arbitration ending with `_timeout` was used.
@@ -610,8 +684,8 @@ pub const AddressArbiter = packed struct(u32) {
         };
 
         // NOTE: The if-else is a workaround for azahar as it doesn't have the same behavior as the Horizon kernel!
-        const code = if (timeout == .none) 
-            switch(arbitration) {
+        const code = if (timeout == .none)
+            switch (arbitration) {
                 .wait_if_less_than_timeout => arbitrateAddress(arbiter, address, .wait_if_less_than, value, timeout),
                 .decrement_and_wait_if_less_than_timeout => arbitrateAddress(arbiter, address, .decrement_and_wait_if_less_than, value, timeout),
                 else => arbitrateAddress(arbiter, address, std.meta.activeTag(arbitration), value, timeout),
@@ -623,6 +697,39 @@ pub const AddressArbiter = packed struct(u32) {
         else if (code == C.os_invalid_string) unreachable // NOTE: invalid address
         else if (!code.isSuccess()) unreachable // NOTE: really unreachable
         else {};
+    }
+
+    /// Waits on the address if `address.* < value` until signaled. The comparison is *signed*.
+    pub fn wait(arbiter: AddressArbiter, comptime T: type, address: *T, value: T) void {
+        comptime std.debug.assert(@bitSizeOf(T) == @bitSizeOf(u32) and @sizeOf(T) == @sizeOf(u32));
+
+        return arbiter.arbitrate(@ptrCast(address), .{
+            .wait_if_less_than = switch (@typeInfo(T)) {
+                .int => @bitCast(value),
+                .@"enum" => @bitCast(@intFromEnum(value)),
+                else => comptime unreachable,
+            },
+        }) catch unreachable;
+    }
+
+    /// Waits on the address if `address.* < value` until signaled or `timeout`. The comparison is *signed*.
+    pub fn waitTimeout(arbiter: AddressArbiter, comptime T: type, address: *T, value: T, timeout: Timeout) error{Timeout}!void {
+        comptime std.debug.assert(@bitSizeOf(T) == @bitSizeOf(u32) and @sizeOf(T) == @sizeOf(u32));
+
+        return try arbiter.arbitrate(@ptrCast(address), .{ .wait_if_less_than_timeout = .{
+            .value = switch (@typeInfo(T)) {
+                .int => @bitCast(value),
+                .@"enum" => @bitCast(@intFromEnum(value)),
+                else => comptime unreachable,
+            },
+            .timeout = timeout,
+        } });
+    }
+
+    /// Signals up to `waiters` threads waiting on the address or all if null.
+    pub fn signal(arbiter: AddressArbiter, comptime T: type, address: *T, waiters: ?u31) void {
+        comptime std.debug.assert(@bitSizeOf(T) == @bitSizeOf(u32) and @sizeOf(T) == @sizeOf(u32));
+        arbiter.arbitrate(@ptrCast(address), .{ .signal = waiters orelse -1 }) catch unreachable;
     }
 
     pub fn close(arbiter: AddressArbiter) void {
@@ -643,7 +750,10 @@ pub const MemoryBlock = packed struct(u32) {
         const C = result.Code;
         return switch (createMemoryBlock(address, size, this, other).cases()) {
             .success => |s| s.value,
-            .failure => |code| if (code == C.fnd_out_of_memory or code == C.os_out_of_memory_blocks or code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory_for_memory_blocks) error.SystemResources else if (code == C.kernel_permission_denied or code == C.os_invalid_combination) error.PermissionDenied else if (code == C.kernel_unaligned_size or code == C.os_unaligned_size or code == C.os_invalid_address) resultBug(code) else unexpectedResult(code),
+            .failure => |code| if (code == C.fnd_out_of_memory or code == C.os_out_of_memory_blocks or code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory_for_memory_blocks) error.SystemResources //
+            else if (code == C.kernel_permission_denied or code == C.os_invalid_combination) error.PermissionDenied //
+            else if (code == C.kernel_unaligned_size or code == C.os_unaligned_size or code == C.os_invalid_address) resultBug(code) //
+            else unexpectedResult(code),
         };
     }
 
@@ -666,6 +776,7 @@ pub const MemoryBlock = packed struct(u32) {
 };
 
 pub const Synchronization = packed struct(u32) {
+    pub const none: Synchronization = .{ .obj = .none };
     pub const WaitError = error{Timeout} || UnexpectedError;
     pub const WaitManyError = WaitError || Object.Error;
 
@@ -688,6 +799,10 @@ pub const Synchronization = packed struct(u32) {
             else if (code == C.kernel_out_of_range) unreachable // invalid timeout
             else if (code == C.kernel_out_of_memory) error.SystemResources else unexpectedResult(code),
         };
+    }
+
+    pub fn dupe(sync: Synchronization) Object.Error!Synchronization {
+        return @bitCast(try sync.obj.dupe());
     }
 
     pub fn close(sync: Synchronization) void {
@@ -812,7 +927,7 @@ pub const Event = packed struct(u32) {
     }
 
     pub fn dupe(ev: Event) Object.Error!Event {
-        return @bitCast(@intFromEnum(try ev.int.sync.obj.dupe()));
+        return @bitCast(try ev.int.sync.dupe());
     }
 
     pub fn wait(ev: Event, timeout: Timeout) WaitError!void {
@@ -856,7 +971,7 @@ pub const Timer = packed struct(u32) {
     }
 
     pub fn dupe(ev: Timer) Object.Error!Timer {
-        return @bitCast(@intFromEnum(try ev.sync.obj.dupe()));
+        return @bitCast(try ev.sync.dupe());
     }
 
     pub fn wait(timer: Timer, timeout: Timeout) WaitError!void {
@@ -881,6 +996,7 @@ pub const ServerSession = packed struct(u32) {
 };
 
 pub const ClientSession = packed struct(u32) {
+    pub const none: ClientSession = @bitCast(@as(u32, 0));
     pub const ConnectionError = error{NotFound} || UnexpectedError;
     pub const RequestError = error{ConnectionClosedByPeer} || UnexpectedError;
 
@@ -997,7 +1113,11 @@ pub const Port = struct {
     }
 };
 
+/// Raw and lean kernel thread, use `std.Thread` instead unless you *really* need this
+/// as it doesn't depend on any runtime thus TLS is NOT handled.
 pub const Thread = packed struct(u32) {
+    pub const Impl = @import("horizon/Thread/Impl.zig");
+
     pub const Id = enum(u32) { _ };
     pub const Priority = enum(u6) {
         pub const highest: Priority = .priority(0x00);
@@ -1034,19 +1154,18 @@ pub const Thread = packed struct(u32) {
     pub fn create(entry: *const fn (ctx: ?*anyopaque) callconv(.c) noreturn, ctx: ?*anyopaque, stack_top: [*]u8, priority: Priority, processor_id: Processor) UnexpectedError!Thread {
         return switch (createThread(entry, ctx, stack_top, priority, processor_id).cases()) {
             .success => |s| s.value,
-            .failure => |code| unexpectedResult(code),
+            .failure => |code| unexpectedResult(code), // TODO: Error codes for this!
         };
     }
-
     pub fn id(thread: Thread) Id {
-        return switch (getThreadId(thread)) {
+        return switch (getThreadId(thread).cases()) {
             .success => |s| s.value,
             .failure => unreachable, // NOTE: basically invalid handle!
         };
     }
 
     pub fn pid(thread: Thread) Process.Id {
-        return switch (getThreadProcessId(thread)) {
+        return switch (getThreadProcessId(thread).cases()) {
             .success => |s| s.value,
             .failure => unreachable, // NOTE: basically invalid handle!
         };
@@ -1066,14 +1185,18 @@ pub const Thread = packed struct(u32) {
 };
 
 pub const Process = packed struct(u32) {
+    pub const none: Process = .{ .sync = .none };
     pub const Id = enum(u32) { _ };
     pub const InfoType = enum(u32) {
         used_heap_memory,
         used_handles = 0x4,
-        highes_used_handles,
+        highest_used_handles,
 
         num_threads = 0x7,
         max_threads,
+
+        /// Gets the `horizon.Process.Capability.KernelFlags` of the process with all zeroed out except `MemoryType`
+        memory_region = 19,
     };
 
     // TODO: Make union(u32) when implemented in zig
@@ -1189,33 +1312,37 @@ pub const Process = packed struct(u32) {
 
     sync: Synchronization,
 
-    pub fn id(process: Process) Process.Id {
-        return switch (getProcessId(process)) {
+    pub fn dupe(proc: Process) Object.Error!Process {
+        return @bitCast(try proc.sync.dupe());
+    }
+
+    pub fn id(prc: Process) Process.Id {
+        return switch (getProcessId(prc)) {
             .success => |s| s.value,
             .failure => unreachable, // NOTE: basically invalid handle!
         };
     }
 
-    pub fn controlMemory(process: Process, operation: MemoryOperation.Kind, addr0: ?*anyopaque, addr1: ?*anyopaque, size: usize, permissions: MemoryPermission) !void {
-        const code = controlProcessMemory(process, operation, addr0, addr1, size, permissions);
+    pub fn controlMemory(prc: Process, operation: MemoryOperation.Kind, addr0: ?*anyopaque, addr1: ?*anyopaque, size: usize, permissions: MemoryPermission) !void {
+        const code = controlProcessMemory(prc, operation, addr0, addr1, size, permissions);
 
         if (!code.isSuccess()) return unexpectedResult(code);
     }
 
-    pub fn mapMemory(process: Process, slice: []align(heap.page_size) u8) !void {
-        const code = mapProcessMemory(process, slice);
+    pub fn mapMemory(prc: Process, slice: []align(heap.page_size) u8) !void {
+        const code = mapProcessMemory(prc, slice);
 
         if (!code.isSuccess()) return unexpectedResult(code);
     }
 
-    pub fn unmapMemory(process: Process, slice: []align(heap.page_size) u8) !void {
-        const code = unmapProcessMemory(process, slice);
+    pub fn unmapMemory(prc: Process, slice: []align(heap.page_size) u8) !void {
+        const code = unmapProcessMemory(prc, slice);
 
         if (!code.isSuccess()) unreachable; // NOTE: programmer error
     }
 
-    pub fn close(process: Process) void {
-        process.sync.close();
+    pub fn close(prc: Process) void {
+        prc.sync.close();
     }
 };
 
@@ -1286,44 +1413,44 @@ pub fn exit() noreturn {
     unreachable;
 }
 
-pub fn getProcessAffinityMask(process: Process, processor_count: i32) Result(u8) {
+pub fn getProcessAffinityMask(prc: Process, processor_count: i32) Result(u8) {
     var affinity_mask: u8 = undefined;
 
     const code = asm volatile ("svc 0x04"
         : [code] "={r0}" (-> result.Code),
         : [affinity_mask] "{r0}" (&affinity_mask),
-          [process] "{r1}" (process),
+          [process] "{r1}" (prc),
           [processor_count] "{r2}" (processor_count),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, affinity_mask);
 }
 
-pub fn setProcessAffinityMask(process: Process, affinity_mask: *const u8, processor_count: i32) result.Code {
+pub fn setProcessAffinityMask(prc: Process, affinity_mask: *const u8, processor_count: i32) result.Code {
     return asm volatile ("svc 0x05"
         : [code] "={r0}" (-> result.Code),
-        : [process] "{r0}" (process),
+        : [process] "{r0}" (prc),
           [affinity_mask] "{r1}" (affinity_mask),
           [processor_count] "{r2}" (processor_count),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn getProcessIdealProcessor(process: Process) Result(i32) {
+pub fn getProcessIdealProcessor(prc: Process) Result(i32) {
     var ideal_processor: i32 = undefined;
 
     const code = asm volatile ("svc 0x06"
         : [code] "={r0}" (-> result.Code),
           [ideal_processor] "={r1}" (ideal_processor),
-        : [process] "{r1}" (process),
+        : [process] "{r1}" (prc),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, ideal_processor);
 }
 
-pub fn setProcessIdealProcessor(process: Process, ideal_processor: i32) result.Code {
+pub fn setProcessIdealProcessor(prc: Process, ideal_processor: i32) result.Code {
     return asm volatile ("svc 0x07"
         : [code] "={r0}" (-> result.Code),
-        : [process] "{r0}" (process),
+        : [process] "{r0}" (prc),
           [ideal_processor] "{r1}" (ideal_processor),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
@@ -1430,10 +1557,10 @@ pub fn getCpuCount() i32 {
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn run(process: Process, startup_info: *const StartupInfo) result.Code {
+pub fn run(prc: Process, startup_info: *const StartupInfo) result.Code {
     return asm volatile ("svc 0x12"
         : [code] "={r0}" (-> result.Code),
-        : [process] "{r0}" (process),
+        : [process] "{r0}" (prc),
           [startup_info] "{r1}" (startup_info),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
@@ -1687,7 +1814,7 @@ pub fn getSystemInfo(info: SystemInfo.Type, param: u32) Result(i64) {
     return .of(code, @bitCast((@as(u64, hi) << 32) | lo));
 }
 
-pub fn getProcessInfo(process: Process, info: Process.InfoType) Result(i64) {
+pub fn getProcessInfo(prc: Process, info: Process.InfoType) Result(i64) {
     var lo: u32 = undefined;
     var hi: u32 = undefined;
 
@@ -1695,7 +1822,7 @@ pub fn getProcessInfo(process: Process, info: Process.InfoType) Result(i64) {
         : [code] "={r0}" (-> result.Code),
           [lo] "={r1}" (lo),
           [hi] "={r2}" (hi),
-        : [process] "{r1}" (process),
+        : [process] "{r1}" (prc),
           [type] "{r2}" (info),
         : .{ .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
@@ -1730,40 +1857,40 @@ pub fn sendSyncRequest(session: ClientSession) result.Code {
 }
 
 pub fn openProcess(id: Process.Id) Result(Process) {
-    var process: Process = undefined;
+    var prc: Process = undefined;
 
     const code = asm volatile ("svc 0x33"
         : [code] "={r0}" (-> result.Code),
-          [process] "={r1}" (process),
+          [process] "={r1}" (prc),
         : [id] "{r1}" (@intFromEnum(id)),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
-    return .of(code, process);
+    return .of(code, prc);
 }
 
-pub fn openThread(process: Process, id: Thread.Id) Result(Thread) {
+pub fn openThread(prc: Process, id: Thread.Id) Result(Thread) {
     var thread: Thread = undefined;
 
     const code = asm volatile ("svc 0x34"
         : [code] "={r0}" (-> result.Code),
           [thread] "={r1}" (thread),
-        : [process] "{r1}" (process),
+        : [process] "{r1}" (prc),
           [id] "{r2}" (@intFromEnum(id)),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, thread);
 }
 
-/// Only fails with `0xD9001BF7` if `process` is an invalid handle.
+/// Only fails with `0xD9001BF7` if `prc` is an invalid handle.
 ///
 /// Allows the `.current` pseudo-handle
-pub fn getProcessId(process: Process) Result(Process.Id) {
+pub fn getProcessId(prc: Process) Result(Process.Id) {
     var id: Process.Id = undefined;
 
     const code = asm volatile ("svc 0x35"
         : [code] "={r0}" (-> result.Code),
           [id] "={r1}" (id),
-        : [process] "{r1}" (process),
+        : [process] "{r1}" (prc),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, id);
@@ -1793,13 +1920,13 @@ pub fn getThreadId(thread: Thread) Result(Thread.Id) {
     return .of(code, id);
 }
 
-pub fn getResourceLimit(process: Process) Result(ResourceLimit) {
+pub fn getResourceLimit(prc: Process) Result(ResourceLimit) {
     var resource_limit: ResourceLimit = undefined;
 
     const code = asm volatile ("svc 0x38"
         : [code] "={r0}" (-> result.Code),
           [resource_limit] "={r1}" (resource_limit),
-        : [process] "{r1}" (process),
+        : [process] "{r1}" (prc),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, resource_limit);
@@ -1947,28 +2074,28 @@ pub fn unbindInterrupt(id: InterruptId, int: Interruptable) result.Code {
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn invalidateProcessDataCache(process: Process, data: []u8) result.Code {
+pub fn invalidateProcessDataCache(prc: Process, data: []u8) result.Code {
     return asm volatile ("svc 0x52"
         : [code] "={r0}" (-> result.Code),
-        : [process] "{r0}" (process),
+        : [process] "{r0}" (prc),
           [data_ptr] "{r1}" (data.ptr),
           [data_len] "{r2}" (data.len),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn storeProcessDataCache(process: Process, data: []const u8) result.Code {
+pub fn storeProcessDataCache(prc: Process, data: []const u8) result.Code {
     return asm volatile ("svc 0x53"
         : [code] "={r0}" (-> result.Code),
-        : [process] "{r0}" (process),
+        : [process] "{r0}" (prc),
           [data_ptr] "{r1}" (data.ptr),
           [data_len] "{r2}" (data.len),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn flushProcessDataCache(process: Process, data: []const u8) result.Code {
+pub fn flushProcessDataCache(prc: Process, data: []const u8) result.Code {
     return asm volatile ("svc 0x54"
         : [code] "={r0}" (-> result.Code),
-        : [process] "{r0}" (process),
+        : [process] "{r0}" (prc),
           [data_ptr] "{r1}" (data.ptr),
           [data_len] "{r2}" (data.len),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
@@ -1981,10 +2108,10 @@ pub fn flushProcessDataCache(process: Process, data: []const u8) result.Code {
 
 // TODO: debug svc's 0x60-0x6D
 
-pub fn controlProcessMemory(process: Process, operation: MemoryOperation.Kind, addr0: ?*anyopaque, addr1: ?*anyopaque, size: usize, permissions: MemoryPermission) result.Code {
+pub fn controlProcessMemory(prc: Process, operation: MemoryOperation.Kind, addr0: ?*anyopaque, addr1: ?*anyopaque, size: usize, permissions: MemoryPermission) result.Code {
     return asm volatile ("svc 0x70"
         : [code] "={r0}" (-> result.Code),
-        : [process] "{r0}" (process),
+        : [process] "{r0}" (prc),
           [addr0] "{r1}" (addr0),
           [addr1] "{r2}" (addr1),
           [size] "{r3}" (size),
@@ -1993,19 +2120,19 @@ pub fn controlProcessMemory(process: Process, operation: MemoryOperation.Kind, a
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn mapProcessMemory(process: Process, slice: []align(heap.page_size) u8) result.Code {
+pub fn mapProcessMemory(prc: Process, slice: []align(heap.page_size) u8) result.Code {
     return asm volatile ("svc 0x71"
         : [code] "={r0}" (-> result.Code),
-        : [process] "{r0}" (process),
+        : [process] "{r0}" (prc),
           [addr] "{r1}" (slice.ptr),
           [size] "{r2}" (slice.len),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn unmapProcessMemory(process: Process, slice: []align(heap.page_size) u8) result.Code {
+pub fn unmapProcessMemory(prc: Process, slice: []align(heap.page_size) u8) result.Code {
     return asm volatile ("svc 0x72"
         : [code] "={r0}" (-> result.Code),
-        : [process] "{r0}" (process),
+        : [process] "{r0}" (prc),
           [addr] "{r1}" (slice.ptr),
           [size] "{r2}" (slice.len),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
@@ -2029,30 +2156,30 @@ pub fn createCodeSet(info: CodeSet.Info, text: [*]align(heap.page_size) const u8
 // svc stubbed 0x74
 
 pub fn createProcess(code_set: CodeSet, capabilities: []const Process.Capability) Result(Process) {
-    var process: Process = undefined;
+    var prc: Process = undefined;
 
     const code = asm volatile ("svc 0x75"
         : [code] "={r0}" (-> result.Code),
-          [session] "={r1}" (process),
+          [session] "={r1}" (prc),
         : [code_set] "{r1}" (code_set),
           [capabilities_ptr] "{r2}" (capabilities.ptr),
           [capabilities_len] "{r3}" (capabilities.len),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
-    return .of(code, process);
+    return .of(code, prc);
 }
 
-pub fn terminateProcess(process: Process) result.Code {
+pub fn terminateProcess(prc: Process) result.Code {
     return asm volatile ("svc 0x76"
         : [code] "={r0}" (-> result.Code),
-        : [process] "{r0}" (process),
+        : [process] "{r0}" (prc),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn setProcessResourceLimit(process: Process, resource_limit: ResourceLimit) result.Code {
+pub fn setProcessResourceLimit(prc: Process, resource_limit: ResourceLimit) result.Code {
     return asm volatile ("svc 0x77"
         : [code] "={r0}" (-> result.Code),
-        : [process] "{r0}" (process),
+        : [process] "{r0}" (prc),
           [resource_limit] "{r1}" (resource_limit),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
@@ -2088,63 +2215,63 @@ pub fn breakpoint() void {
     asm volatile ("svc 0xFF" ::: .{ .r0 = true, .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-var sbrk_heap_top: usize = memory.heap_begin;
-
-pub fn sbrk(n: usize) usize {
-    const aligned_n = std.mem.alignForward(usize, n, heap.page_size);
-    const current_heap_top = sbrk_heap_top;
-
-    sbrk_heap_top += aligned_n;
-    return switch (controlMemory(.{
-        .area = .all,
-        .kind = .commit,
-        .linear = false,
-    }, @ptrFromInt(current_heap_top), null, aligned_n, .rw).cases()) {
-        .failure => 0,
-        .success => current_heap_top,
-    };
-}
-
 pub const UnexpectedError = error{Unexpected};
 pub fn unexpectedResult(code: result.Code) UnexpectedError {
-    debug.print("unexpected result: 0x{X:0>8} ({}, {}, {}, {})", .{ @as(u32, @bitCast(code)), code.level, code.module, code.summary, code.description });
+    debug.print("unexpected result: {f} (0x{X:0>8})\n", .{ code, @as(u32, @bitCast(code)) });
     return error.Unexpected;
 }
 
-fn resultBug(code: result.Code) UnexpectedError {
-    if (is_debug) std.debug.panic("programmer bug caused result: 0x{X:0>8} ({}, {}, {}, {})", .{ @as(u32, @bitCast(code)), code.level, code.module, code.summary, code.description });
+pub fn resultBug(code: result.Code) UnexpectedError {
+    if (is_debug) std.debug.panic("programmer bug caused result {f} (0x{X:0>8})\n", .{ code, @as(u32, @bitCast(code)) });
     return error.Unexpected;
 }
+
+pub const default_std_os_options: std.Options.OperatingSystem = .{
+    .start = start,
+    .debug = debug,
+    .heap = heap,
+    .Thread = Thread.Impl,
+    .process = process,
+    .Io = Io,
+    .testing = testing,
+};
 
 pub const default_std_options: std.Options = .{
-    .page_size_min = heap.page_size_min,
-    .page_size_max = heap.page_size_max,
     .logFn = defaultLog,
 };
 
 fn defaultLog(comptime message_level: std.log.Level, comptime scope: @TypeOf(.enum_literal), comptime format: []const u8, args: anytype) void {
-    debug.print("[" ++ @tagName(message_level) ++ "](" ++ @tagName(scope) ++ "): " ++ format, args);
+    debug.print("[" ++ @tagName(message_level) ++ "](" ++ @tagName(scope) ++ "): " ++ format ++ "\n", args);
 }
 
 comptime {
+    _ = start;
+
     _ = Io;
     _ = heap;
-    _ = application;
+    _ = process;
+    _ = result;
+    _ = environment;
+    _ = memory;
+    _ = config;
     _ = ipc;
     _ = fmt;
     _ = time;
     _ = services;
 
+    _ = Init;
+    _ = AddressArbiter;
+    _ = AddressArbiter.Mutex;
     _ = ServiceManager;
     _ = ErrorDisplayManager;
 }
 
 pub const Io = @import("horizon/Io.zig");
 
-/// Higher-level Application abstraction.
-pub const application = @import("horizon/application.zig");
+pub const Init = @import("horizon/Init.zig");
 
 pub const heap = @import("horizon/heap.zig");
+pub const process = @import("horizon/process.zig");
 pub const result = @import("horizon/result.zig");
 pub const environment = @import("horizon/environment.zig");
 pub const memory = @import("horizon/memory.zig");
@@ -2162,9 +2289,6 @@ pub const ServiceManager = @import("horizon/ServiceManager.zig");
 pub const ErrorDisplayManager = @import("horizon/ErrorDisplayManager.zig");
 
 pub const services = @import("horizon/services.zig");
-
-pub const PATH_MAX = 255;
-pub const NAME_MAX = 255;
 
 const is_debug = @import("builtin").mode == .Debug;
 const std = @import("std");

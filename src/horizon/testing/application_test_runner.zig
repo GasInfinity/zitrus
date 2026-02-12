@@ -2,21 +2,34 @@ comptime {
     if (!builtin.cpu.arch.isArm() or builtin.os.tag != .@"3ds") {
         @compileError("this test runner is only intended for tests on Horizon!");
     }
-
-    // For `_start`
-    _ = horizon.start;
 }
 
+pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
+pub const std_options_debug_io: std.Io = hio.io();
 pub const std_options: std.Options = .{
     .logFn = log,
+    .allow_stack_tracing = true,
 };
 
+var hio: horizon.Io = undefined;
 var debug_buffer: [8 * 1024]u8 = undefined;
 var debug_writer: std.Io.Writer = horizon.outputDebugWriter(&debug_buffer);
 var log_err_count: usize = 0;
 
-pub fn main() void {
+pub fn main() !void {
     @disableInstrumentation();
+
+    const arbiter = horizon.AddressArbiter.create() catch @panic("Error creating address arbiter");
+    defer arbiter.close();
+
+    horizon.testing.arbiter = arbiter;
+    defer horizon.testing.arbiter = undefined;
+
+    var common_allocator: horizon.heap.CommitAllocator = .init(arbiter, horizon.memory.heap_begin);
+    defer common_allocator.deinit();
+
+    hio = try .init(common_allocator.allocator(), arbiter);
+    defer hio.deinit();
 
     const srv = horizon.ServiceManager.open() catch @panic("Error opening connection to srv:");
     defer srv.close();
@@ -41,12 +54,6 @@ pub fn main() void {
     horizon.testing.gsp = gsp;
     defer horizon.testing.gsp = undefined;
 
-    const arbiter = horizon.AddressArbiter.create() catch @panic("Error creating address arbiter");
-    defer arbiter.close();
-
-    horizon.testing.arbiter = arbiter;
-    defer horizon.testing.arbiter = undefined;
-
     var app = horizon.services.Applet.Application.init(apt, .app, srv) catch @panic("Error initializing Application");
     defer app.deinit(apt, .app, srv);
 
@@ -56,27 +63,36 @@ pub fn main() void {
     var ok_count: usize = 0;
     var skip_count: usize = 0;
     var fail_count: usize = 0;
+    var leaks: usize = 0;
 
     for (test_fn_list, 0..) |test_fn, i| {
-        // FIXME: Upstream blocker, cannot use DebugAllocator
-        // testing.allocator_instance
-
         testing.log_level = .warn;
+
+        horizon.testing.allocator_instance = .{ .backing_allocator = common_allocator.allocator() };
+        horizon.testing.io_instance = try .init(horizon.testing.allocator, arbiter);
+
+        defer {
+            horizon.testing.io_instance.deinit();
+            if (horizon.testing.allocator_instance.deinit() == .leak) leaks += 1;
+        }
+
+        debug_writer.print("{d}/{d} {s}... ", .{ i + 1, test_fn_list.len, test_fn.name }) catch {};
+        debug_writer.flush() catch {};
 
         if (test_fn.func()) |_| {
             ok_count += 1;
-            debug_writer.print("{d}/{d} {s}... OK\n", .{ i + 1, test_fn_list.len, test_fn.name }) catch {};
+            debug_writer.writeAll("OK\n") catch {};
         } else |err| switch (err) {
             error.SkipZigTest => {
                 skip_count += 1;
-                debug_writer.print("{d}/{d} {s}... SKIP\n", .{ i + 1, test_fn_list.len, test_fn.name }) catch {};
+                debug_writer.writeAll("SKIP\n") catch {};
             },
             else => {
                 fail_count += 1;
-                debug_writer.print("{d}/{d} {s}... FAIL\n", .{ i + 1, test_fn_list.len, test_fn.name }) catch {};
+                debug_writer.print("FAIL ({t})\n", .{err}) catch {};
 
-                if (@errorReturnTrace()) |_| {
-                    // FIXME: Upstream blocker, dump trace / debug info
+                if (@errorReturnTrace()) |trace| {
+                    std.debug.writeStackTrace(trace, .{ .writer = &debug_writer, .mode = .no_color }) catch {};
                 }
             },
         }
@@ -92,6 +108,10 @@ pub fn main() void {
 
     if (log_err_count != 0) {
         debug_writer.print("{d} errors were logged.\n", .{log_err_count}) catch {};
+    }
+
+    if (leaks != 0) {
+        debug_writer.print("{d} tests leaked memory.\n", .{leaks}) catch {};
     }
 
     debug_writer.flush() catch {};

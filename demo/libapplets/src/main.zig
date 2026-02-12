@@ -1,27 +1,15 @@
-pub const os = horizon;
-pub const debug = horizon.debug;
-pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
 pub const std_options: std.Options = horizon.default_std_options;
+pub const std_options_debug_io: std.Io = horizon.Io.io(undefined); // FIXME: pluh, we may need global state...
 
-pub const std_options_debug_io: std.Io = horizon.Io.failing;
-comptime { _ = horizon.start; }
-
-pub fn main() !void {
-    var app: horizon.application.Software = try .init(.default, horizon.heap.linear_page_allocator);
-    defer app.deinit(horizon.heap.linear_page_allocator);
-
-    var soft: GspGpu.Graphics.Software = try .init(.{
-        .top_mode = .@"2d",
-        .double_buffer = .initFill(true),
-        .color_format = .initFill(.bgr888),
-        .initial_contents = .initFill(null),
-    }, app.gsp, horizon.heap.linear_page_allocator);
-    defer soft.deinit(app.gsp, horizon.heap.linear_page_allocator, app.apt_app.flags.must_close);
+pub fn main(init: horizon.Init.Application.Software) !void {
+    const gpa = init.app.base.gpa;
+    const app = init.app;
 
     {
         var initial: Applet.Application.Error = .textUtf8(.success, "All your codebase are belong to us?", .none);
 
-        switch (try initial.start(&app.apt_app, app.apt, .app, app.srv, app.gsp)) {
+        switch (try initial.start(app.app, app.apt, .app, app.srv, app.gsp)) {
             .none,
             .action_performed,
             => {},
@@ -43,8 +31,8 @@ pub fn main() !void {
         .dictionary = &.{
             .word(.utf8("shrug"), .utf8("¯\\_(ツ)_/¯"), .independent),
         },
-    }, horizon.heap.page_allocator);
-    defer swkbd.deinit(horizon.heap.page_allocator);
+    }, gpa);
+    defer swkbd.deinit(gpa);
 
     const CallbackContext = struct {
         pub fn filter(_: @This(), text: [:0]const u16) Applet.Application.SoftwareKeyboard.CallbackResult {
@@ -56,7 +44,7 @@ pub fn main() !void {
         }
     };
 
-    switch (try swkbd.startContext(&app.apt_app, app.apt, .app, app.srv, app.gsp, CallbackContext{})) {
+    switch (try swkbd.startContext(app.app, app.apt, .app, app.srv, app.gsp, CallbackContext{})) {
         else => |e| switch (e) {
             .left, .right => {},
             else => unreachable,
@@ -66,7 +54,7 @@ pub fn main() !void {
     {
         var initial: Applet.Application.Error = .textUtf8(.success, "Correct! Have a great day :D", .none);
 
-        switch (try initial.start(&app.apt_app, app.apt, .app, app.srv, app.gsp)) {
+        switch (try initial.start(app.app, app.apt, .app, app.srv, app.gsp)) {
             .none,
             .action_performed,
             => {},

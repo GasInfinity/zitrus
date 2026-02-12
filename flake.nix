@@ -3,14 +3,12 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    # XXX: Broken :(
-    # zig.url = "github:silversquirl/zig-flake/compat";
-    zig.url = "github:mitchellh/zig-overlay";
-    zls.url = "github:jozip/zls";
+    zig.url = "github:NicoElbers/zig-flake/updated";
+    zls.url = "github:zigtools/zls";
 
     zig.inputs.nixpkgs.follows = "nixpkgs";
     zls.inputs.nixpkgs.follows = "nixpkgs";
-    zls.inputs.zig-overlay.follows = "zig";
+    # zls.inputs.zig-overlay.follows = "zig";
   };
 
   outputs = { nixpkgs, zig, zls, ... }:
@@ -27,7 +25,7 @@
       devShells = forEachSupportedSystem ({ pkgs, zpkgs, zlspkgs }: {
         default = pkgs.mkShell {
           packages = with pkgs; [
-            zpkgs.master
+            zpkgs.zig_0_16_0_dev_2535
             zlspkgs.zls 
             lldb
           ];

@@ -2,7 +2,7 @@
 ///
 /// `zitrus` reserves some needed state and storage
 /// for some features.
-pub const ThreadLocalStorage = extern struct {
+pub const Block = extern struct {
     pub const ExceptionHandler = extern struct {
         pub const Stack = enum(u32) {
             /// Inherit the faulting stack
@@ -37,7 +37,6 @@ pub const ThreadLocalStorage = extern struct {
     };
 
     pub const State = extern struct {
-        /// `$tp` used for software/emulated TLS if not using `tpidrurw`.
         tp: [*]u8,
         _: [0x30]u8,
 
@@ -46,13 +45,8 @@ pub const ThreadLocalStorage = extern struct {
         }
     };
 
-    /// When TLS variables fit into `(0x40 - 8)` bytes,
-    /// this location will be used for the storage.
-    ///
-    /// TODO: Introduce an option to always allocate (if there are TLS variables)
-    /// so the app is allowed to use this location.
+    /// Currently unused by zitrus.
     storage: [0x40]u8,
-    // TODO: panic on exception
     /// Function to call when an user-mode exception happens.
     exception: ExceptionHandler,
     /// Stores runtime state such as the `$tp` location.
@@ -61,20 +55,66 @@ pub const ThreadLocalStorage = extern struct {
     ipc: ipc.Buffer,
 };
 
-/// Gets the `ThreadLocalStorage` of the current thread.
+/// Initializes the static TLS section and sets the main thread $tp.
+pub fn initStatic() void {
+    @setRuntimeSafety(false); // We don't want to panic as it depends on TLS
+    @disableInstrumentation();
+    @export(&__aeabi_read_tp, .{ .name = "__aeabi_read_tp" });
+
+    const data_image = dataImage();
+
+    const opt_tls_start: ?[*]u8 = @extern(?[*]u8, .{ .name = "__zitrus_main_tls_start" });
+    const opt_tls_end: ?[*]u8 = @extern(?[*]u8, .{ .name = "__zitrus_main_tls_end" });
+
+    if (opt_tls_start) |tls_start| {
+        const tls_end = opt_tls_end.?;
+        const static_tls = tls_start[0..(tls_end - tls_start)];
+
+        @memcpy(static_tls[0..data_image.len], data_image);
+        get().state.tp = @ptrFromInt(@intFromPtr(tls_start) - 8); // NOTE: Yes, the ABI says data starts at $tp + 8
+    }
+}
+
+/// Returns the image of non-bss TLS data, may be empty.
+pub fn dataImage() []const u8 {
+    const opt_tdata_start = @extern(?[*]u8, .{ .name = "__zitrus_tls_data_image_start" });
+    const opt_tdata_end = @extern(?[*]u8, .{ .name = "__zitrus_tls_data_image_end" });
+
+    if (opt_tdata_start) |tdata_start| {
+        const tdata_end = opt_tdata_end.?;
+        return tdata_start[0..(tdata_end - tdata_start)];
+    }
+
+    return &.{};
+}
+
+/// Returns the minimum alignment of TLS data.
+pub fn alignment() usize {
+    if (@extern(?*anyopaque, .{ .name = "__zitrus_tls_align" })) |tls_align| return @intFromPtr(tls_align);
+    return 1;
+}
+
+/// Returns the size of TLS data.
+pub fn size() usize {
+    const opt_tls_start: ?[*]u8 = @extern(?[*]u8, .{ .name = "__zitrus_main_tls_start" });
+    const opt_tls_end: ?[*]u8 = @extern(?[*]u8, .{ .name = "__zitrus_main_tls_end" });
+
+    if (opt_tls_start) |tls_start| return opt_tls_end.? - tls_start;
+    return 0;
+}
+
+/// Gets the `Block` of the current thread.
 ///
 /// `zitrus` reserves some needed state and storage
 /// for some features.
-pub inline fn get() *ThreadLocalStorage {
+pub inline fn get() *Block {
     return asm volatile ("mrc p15, 0, %[tls], cr13, cr0, 3"
-        : [tls] "=r" (-> *ThreadLocalStorage),
+        : [tls] "=r" (-> *Block),
     );
 }
 
-// TODO: only export this when not using tpidrurw as it wouldn't be needed.
-
-export fn __aeabi_read_tp() callconv(.naked) void {
-    const tp_offset = (@offsetOf(ThreadLocalStorage, "state") + @offsetOf(ThreadLocalStorage.State, "tp"));
+fn __aeabi_read_tp() callconv(.naked) void {
+    const tp_offset = (@offsetOf(Block, "state") + @offsetOf(Block.State, "tp"));
 
     // NOTE: ABI mandates to only clobber `r0`.
     asm volatile (
@@ -86,16 +126,17 @@ export fn __aeabi_read_tp() callconv(.naked) void {
         : .{ .r0 = true });
 }
 
-const TlsIndex = extern struct { module: usize, offset: usize };
-export fn __tls_get_addr(index: *const TlsIndex) *anyopaque {
+const Index = extern struct { module: usize, offset: usize };
+
+export fn __tls_get_addr(index: *const Index) *anyopaque {
     return @ptrFromInt(@intFromPtr(get().state.tp) + index.offset);
 }
-
 
 const builtin = @import("builtin");
 const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
+const AddressArbiter = horizon.AddressArbiter;
 
 const ipc = horizon.ipc;
 const Exception = horizon.ErrorDisplayManager.Exception;

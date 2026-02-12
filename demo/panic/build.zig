@@ -16,13 +16,13 @@ pub fn build(b: *std.Build) void {
                 .os_tag = .@"3ds",
             }),
             .optimize = optimize,
-            .single_threaded = true,
             .imports = &.{
                 .{ .name = "zitrus", .module = zitrus_mod },
             },
         }),
     });
 
+    exe.zig_lib_dir = zitrus_dep.builder.dependency("zig", .{}).path("lib/");
     exe.pie = true;
     exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
     b.installArtifact(exe);

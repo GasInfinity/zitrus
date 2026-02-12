@@ -102,7 +102,7 @@ pub fn deinit(app: *Application, apt: Applet, service: Applet.Service, srv: Serv
 
     if (perform_apt_exit) {
         apt.sendPrepareToCloseApplication(service, srv, true) catch {};
-        apt.sendCloseApplication(service, srv, &.{}, .null) catch {};
+        apt.sendCloseApplication(service, srv, &.{}, .none) catch {};
     }
 
     app.notification_event.close();
@@ -298,7 +298,7 @@ pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, s
         horizon.sleepThread(1000000);
     }
 
-    try apt.sendSendParameter(service, srv, environment.program_meta.app_id, target_app_id, if (is_library_applet) .request else .request_for_sys_applet, .null, std.mem.asBytes(&apt_capture_info));
+    try apt.sendSendParameter(service, srv, environment.program_meta.app_id, target_app_id, if (is_library_applet) .request else .request_for_sys_applet, .none, std.mem.asBytes(&apt_capture_info));
 
     try app.parameters_event.wait(.none);
     var parameters = try apt.sendReceiveParameter(service, srv, environment.program_meta.app_id, &.{});

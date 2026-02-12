@@ -9,7 +9,7 @@ pub fn initUrl(url: [:0]const u8) InternetBrowser {
 }
 
 pub fn start(internet: *InternetBrowser, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu) !Application.ExecutionResult {
-    return app.launchSystemApplet(apt, srv, service, gsp, .internet_browser, .null, internet.url);
+    return app.launchSystemApplet(apt, srv, service, gsp, .internet_browser, .none, internet.url);
 }
 
 const InternetBrowser = @This();

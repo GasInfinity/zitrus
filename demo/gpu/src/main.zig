@@ -9,13 +9,9 @@ const simple_vtx = &simple_vtx_storage;
 
 const test_bgr = @embedFile("test.bgr");
 
-pub const os = horizon;
-pub const debug = horizon.debug;
-pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
 pub const std_options: std.Options = horizon.default_std_options;
-
-pub const std_options_debug_io: std.Io = horizon.Io.failing;
-comptime { _ = horizon.start; }
+pub const std_options_debug_io: std.Io = horizon.Io.io(undefined); // FIXME: pluh, we may need global state...
 
 pub const Scene = struct {
     const Vertex = extern struct {
@@ -764,18 +760,10 @@ pub const Mesh = struct {
     }
 };
 
-var last: i128 = 0;
-var elapsed: i128 = 0;
-pub fn main() !void {
-    // var gpa_state: std.heap.DebugAllocator(.{}) = .init;
-    // defer _ = gpa_state.deinit();
-
-    const gpa = horizon.heap.page_allocator; //gpa_state.allocator();
-
-    var app: horizon.application.Accelerated = try .init(.default, gpa);
-    defer app.deinit(gpa);
-
-    const device: mango.Device = app.device;
+pub fn main(init: horizon.Init.Application.Mango) !void {
+    const gpa = init.app.base.gpa;
+    const app = init.app;
+    const device: mango.Device = init.device;
 
     const top_swap: DoubleBufferedSwapchain = try .initBgr888(device, .top_240x400, gpa);
     defer top_swap.deinit(device, gpa);
@@ -790,10 +778,10 @@ pub fn main() !void {
 
     // TODO: unfill lcds when swapchains have at least 1 present instead of here.
     try app.gsp.sendSetLcdForceBlack(false);
-    defer if (!app.apt_app.flags.must_close) app.gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
+    defer if (!app.app.flags.must_close) app.gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
 
     main_loop: while (true) {
-        while (try app.pollEvent()) |ev| switch (ev) {
+        while (try init.pollEvent()) |ev| switch (ev) {
             .jump_home_rejected => {},
             .quit => break :main_loop,
         };

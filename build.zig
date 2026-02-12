@@ -322,7 +322,45 @@ const standalone_tests: []const StandaloneTest = &.{
 };
 
 fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Compile) void {
+    const zig_dep = b.dependency("zig", .{});
     const build_tests_step = b.step("build-tests", "Builds tests for running on the 3DS");
+
+    const mod_tests_3ds = b.addTest(.{
+        .name = "zitrus-mod-tests",
+        .test_runner = .{ .mode = .simple, .path = b.path(target.arm11.horizon.application_test_runner) },
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/zitrus.zig"),
+            .optimize = .Debug,
+            .target = b.resolveTargetQuery(.{
+                .cpu_arch = .arm,
+                .os_tag = .@"3ds",
+            }),
+            .imports = &.{
+                .{ .name = "zalloc", .module = zitrus.import_table.get("zalloc").? },
+                .{ .name = "zsflt", .module = zitrus.import_table.get("zsflt").? },
+            },
+        }),
+    });
+    mod_tests_3ds.zig_lib_dir = zig_dep.path("lib");
+    mod_tests_3ds.pie = true;
+    mod_tests_3ds.setLinkerScript(b.path(target.arm11.horizon.linker_script));
+    mod_tests_3ds.root_module.addImport("zitrus", mod_tests_3ds.root_module);
+
+    const mod_tests_3dsx = Make3dsx.initInner(b, .{
+        .tools_artifact = zitrus_tools,
+    }, .{
+        .name = "zitrus-tests",
+        .exe = mod_tests_3ds,
+    });
+
+    const build_mod_test_step = b.step("build-zitrus-test", "Builds 'zitrus' tests for running on the 3DS");
+
+    const install_mod_test = b.addInstallArtifact(mod_tests_3ds, .{ .dest_sub_path = "tests/zitrus.elf" });
+    const install_mod_3dsx_test = b.addInstallBinFile(mod_tests_3dsx.out, "tests/zitrus.3dsx");
+
+    build_mod_test_step.dependOn(&install_mod_test.step);
+    build_mod_test_step.dependOn(&install_mod_3dsx_test.step);
+    build_tests_step.dependOn(build_mod_test_step);
 
     inline for (standalone_tests) |standalone_test| {
         const tests_exe = b.addTest(.{
@@ -334,12 +372,13 @@ fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Com
                     .cpu_arch = .arm,
                     .os_tag = .@"3ds",
                 }),
-                .optimize = .ReleaseSafe,
+                .optimize = .Debug,
                 .imports = &.{
                     .{ .name = "zitrus", .module = zitrus },
                 },
             }),
         });
+        tests_exe.zig_lib_dir = zig_dep.path("lib");
         tests_exe.pie = true;
         tests_exe.setLinkerScript(b.path(target.arm11.horizon.linker_script));
 

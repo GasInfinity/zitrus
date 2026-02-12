@@ -411,6 +411,7 @@ pub const Builder = struct {
 
 /// RomFS view, doesn't allow modifications.
 pub const View = struct {
+    pub const empty: View = .init(.init(&.{}), .init(&.{}), &.{}, &.{});
     pub const Directory = enum(u32) {
         root = 0x00,
         _,
@@ -444,37 +445,40 @@ pub const View = struct {
         }
     };
 
-    pub const Entry = struct {
-        pub const Kind = enum(u8) { directory, file };
-        pub const Handle = enum(u32) { _ };
+    pub const Entry = packed struct(u32) {
+        pub const Kind = enum(u1) { directory, file };
+        // NOTE: We know entries will always be aligned to 4 bytes.
+        pub const Handle = enum(u30) { _ };
 
         kind: Kind,
+        _: u1 = 0,
+        /// The real handle is this << 2
         handle: Handle,
 
         pub fn initDirectory(directory: Directory) Entry {
             return .{
                 .kind = .directory,
-                .handle = @enumFromInt(@intFromEnum(directory)),
+                .handle = @enumFromInt(@intFromEnum(directory) >> 2),
             };
         }
 
         pub fn initFile(file: File) Entry {
             return .{
                 .kind = .file,
-                .handle = @enumFromInt(@intFromEnum(file)),
+                .handle = @enumFromInt(@intFromEnum(file) >> 2),
             };
         }
 
         pub fn name(entry: Entry, view: View) []const u16 {
             return switch (entry.kind) {
-                .directory => view.directories.getName(@enumFromInt(@intFromEnum(entry.handle))),
-                .file => view.files.getName(@enumFromInt(@intFromEnum(entry.handle))),
+                .directory => view.directories.getName(@enumFromInt(@intFromEnum(entry.asDirectory()))),
+                .file => view.files.getName(@enumFromInt(@intFromEnum(entry.asFile()))),
             };
         }
 
         pub fn asDirectory(entry: Entry) Directory {
             return switch (entry.kind) {
-                .directory => @enumFromInt(@intFromEnum(entry.handle)),
+                .directory => @enumFromInt(@intFromEnum(entry.handle) << 2),
                 .file => unreachable,
             };
         }
@@ -482,7 +486,7 @@ pub const View = struct {
         pub fn asFile(entry: Entry) File {
             return switch (entry.kind) {
                 .directory => unreachable,
-                .file => @enumFromInt(@intFromEnum(entry.handle)),
+                .file => @enumFromInt(@intFromEnum(entry.handle) << 2),
             };
         }
     };
@@ -610,7 +614,7 @@ pub const View = struct {
 
     pub const OpenError = error{ BadPathName, FileNotFound };
     pub fn openAny(view: View, parent: Directory, path: []const u16) OpenError!Entry {
-        if (path.len == 0) return error.FileNotFound;
+        if (path.len == 0 or view.directories.data.len == 0) return error.FileNotFound;
 
         var it: ComponentIterator = .init(path);
 
@@ -643,6 +647,8 @@ pub const View = struct {
     }
 
     pub fn findFile(view: View, parent: Directory, name: []const u16) ?File {
+        if (view.directories.data.len == 0) return null;
+
         const name_hash = meta.hash(name, @enumFromInt(@intFromEnum(parent)));
         const first_offset: meta.FileOffset = view.file_hashes[name_hash % view.file_hashes.len];
 
@@ -662,6 +668,8 @@ pub const View = struct {
     }
 
     pub fn findDirectory(view: View, parent: Directory, name: []const u16) ?Directory {
+        if (view.directories.data.len == 0) return null;
+
         const name_hash = meta.hash(name, @enumFromInt(@intFromEnum(parent)));
         const first_offset: meta.DirectoryOffset = view.directory_hashes[name_hash % view.directory_hashes.len];
 
@@ -766,8 +774,6 @@ pub const View = struct {
 };
 
 test "builder and view are idempotent" {
-    if (builtin.target.os.tag == .@"3ds") return error.SkipZigTest; // cannot use testing.allocator in horizon currently.
-
     const gpa = testing.allocator;
 
     var builder: Builder = try .init(gpa);
@@ -780,10 +786,6 @@ test "builder and view are idempotent" {
 
     try builder.addFile(gpa, &a, .utf8("ソウル・ソサエティ"), "Ahh yes, japanese\n");
     try builder.addFile(gpa, &bc, .utf8("¿qué?"), "Spanish or english, decide please\n");
-
-    var backed_writer: std.Io.Writer.Allocating = .init(gpa);
-    defer backed_writer.deinit();
-
     try builder.rehash(gpa);
 
     var view: View = .init(builder.directories.toView(), builder.files.toView(), builder.directory_hashes.items, builder.file_hashes.items);
@@ -791,7 +793,7 @@ test "builder and view are idempotent" {
     {
         const jp = try view.openFile(.root, std.unicode.utf8ToUtf16LeStringLiteral("A/ソウル・ソサエティ"));
         const jp_stat = jp.stat(view);
-        const jp_data = builder.file_data.items[jp_stat.offset..][0..jp_stat.size];
+        const jp_data = builder.file_data.items[@intCast(jp_stat.offset)..][0..@intCast(jp_stat.size)];
 
         try testing.expectEqualSlices(u8, "Ahh yes, japanese\n", jp_data);
     }
@@ -799,7 +801,7 @@ test "builder and view are idempotent" {
     {
         const sp = try view.openFile(.root, std.unicode.utf8ToUtf16LeStringLiteral("A/BC/¿qué?"));
         const sp_stat = sp.stat(view);
-        const sp_data = builder.file_data.items[sp_stat.offset..][0..sp_stat.size];
+        const sp_data = builder.file_data.items[@intCast(sp_stat.offset)..][0..@intCast(sp_stat.size)];
 
         try testing.expectEqualSlices(u8, "Spanish or english, decide please\n", sp_data);
     }

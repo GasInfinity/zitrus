@@ -1,10 +1,6 @@
-pub const os = horizon;
-pub const debug = horizon.debug;
-pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
 pub const std_options: std.Options = horizon.default_std_options;
-
-pub const std_options_debug_io: std.Io = horizon.Io.failing;
-comptime { _ = horizon.start; }
+pub const std_options_debug_io: std.Io = horizon.Io.io(undefined); // FIXME: pluh, we may need global state...
 
 // 3 bird images in the sheet
 const bird_sheet = std.mem.bytesAsSlice(Bgr888, @embedFile("bird"));
@@ -251,32 +247,22 @@ const AppState = struct {
     }
 };
 
-pub fn main() !void {
-    var app: horizon.application.Software = try .init(.default, horizon.heap.linear_page_allocator);
-    defer app.deinit(horizon.heap.linear_page_allocator);
+pub fn main(init: horizon.Init.Application.Software) !void {
+    const input = init.app.input;
+    const soft = init.soft;
 
-    var soft: GspGpu.Graphics.Software = try .init(.{
-        .top_mode = .@"2d",
-        .double_buffer = .init(.{
-            .top = true,
-            .bottom = false,
-        }),
-        .color_format = .initFill(.bgr888),
-        .initial_contents = .initFill(null),
-    }, app.gsp, horizon.heap.linear_page_allocator);
-    defer soft.deinit(app.gsp, horizon.heap.linear_page_allocator, app.apt_app.flags.must_close);
-
-    {
-        const bottom_fb = std.mem.bytesAsSlice(Bgr888, soft.currentFramebuffer(.bottom, .left));
+    // We're double buffered!
+    for (0..2) |_| {
+        const bottom_fb = std.mem.bytesAsSlice(Bgr888, soft.current(.bottom, .left));
         @memset(bottom_fb, ground_color);
 
         const bottom = ScreenCtx.init(bottom_fb, Screen.bottom.width());
         bottom.drawSprite(.transparent_bitmap, 2 * (Screen.bottom.width() / 3), (Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ .transparent = transparent_color }, .{});
-    }
 
-    soft.flushBuffers();
-    soft.swapBuffers(.none);
-    try soft.waitVBlank();
+        soft.flush();
+        soft.swap(.none);
+        try soft.waitVBlank();
+    }
 
     var app_state: AppState = .{};
 
@@ -290,12 +276,12 @@ pub fn main() !void {
     var delta: f32 = 0;
 
     main_loop: while (true) {
-        while (try app.pollEvent()) |ev| switch (ev) {
+        while (try init.pollEvent()) |ev| switch (ev) {
             .jump_home_rejected => {},
             .quit => break :main_loop,
         };
 
-        const pad = app.input.pollPad();
+        const pad = input.pollPad();
         const changed = pad.current.changed(last_current);
         last_current = pad.current;
 
@@ -305,18 +291,18 @@ pub fn main() !void {
             break :main_loop;
         }
 
-        const touch = app.input.pollTouch();
+        const touch = input.pollTouch();
         const touch_changed = touch.pressed ^ last_pressed;
         const touch_pressed = touch.pressed and touch_changed;
 
         last_pressed = touch.pressed;
-        const top = ScreenCtx.initBuffer(soft.currentFramebuffer(.top, .left), Screen.top.width());
+        const top = ScreenCtx.initBuffer(soft.current(.top, .left), Screen.top.width());
 
         app_state.update(delta, pressed, touch_pressed, random);
         app_state.draw(top);
 
-        soft.flushBuffers();
-        soft.swapBuffers(.none);
+        soft.flush();
+        soft.swap(.none);
         try soft.waitVBlank();
 
         const end: u64 = @truncate(horizon.time.getSystemNanoseconds());

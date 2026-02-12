@@ -72,7 +72,7 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
         _ = icon_size;
         _ = icon;
         _ = path;
-        if(true) @panic("Regressed until zigimg updates"); // XXX: Wait until zigimg updates
+        if (true) @panic("Regressed until zigimg updates"); // XXX: Wait until zigimg updates
         // var out = try zigimg.Image.create(arena, icon_size, icon_size, .rgb565);
         // defer out.deinit(arena);
         //

@@ -127,20 +127,17 @@ pub const FramebufferInfo = extern struct {
     _unused0: u32 = 0,
 
     pub fn update(info: *FramebufferInfo, new_framebuffer: Framebuffer) bool {
-        const initial_hdr: Header = @atomicLoad(Header, &info.header, .monotonic);
+        const hdr: Header = @atomicLoad(Header, &info.header, .monotonic);
 
-        const next_active = initial_hdr.index +% 1;
+        const next_active = hdr.index +% 1;
         info.framebuffers[next_active] = new_framebuffer;
 
-        var hdr = initial_hdr;
-        while (@cmpxchgWeak(Header, &info.header, hdr, .{
+        @atomicStore(Header, &info.header, .{
             .index = next_active,
             .flags = .{ .new_data = true },
-        }, .release, .monotonic)) |_| {
-            hdr = @atomicLoad(Header, &info.header, .monotonic);
-        }
+        }, .release);
 
-        return initial_hdr.flags.new_data;
+        return hdr.flags.new_data;
     }
 
     comptime {

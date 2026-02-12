@@ -88,7 +88,7 @@ pub fn run(args: List, io: std.Io, arena: std.mem.Allocator) !u8 {
                     // try tty_conf.setColor(&stdout_writer.interface, .bold);
                     // try tty_conf.setColor(&stdout_writer.interface, .bright_blue);
                 },
-                .file => {}//try tty_conf.setColor(&stdout_writer.interface, .reset),
+                .file => {}, //try tty_conf.setColor(&stdout_writer.interface, .reset),
             }
 
             try stdout_writer.interface.print("{f}   ", .{std.unicode.fmtUtf16Le(entry.name(view))});

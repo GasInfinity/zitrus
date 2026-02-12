@@ -135,11 +135,49 @@ pub const Module = enum(u8) {
     application = 254,
     invalid_result_value,
     _,
+
+    pub fn SpecificDescription(comptime module: Module) type {
+        return switch (module) {
+            .fs => Description.Filesystem,
+            else => Description,
+        };
+    }
 };
 
 // TODO: fill this table by testing each error condition.
 // NOTE: we will have to split this into multiple (one for each module), it looks like different modules reuse the same description.
 pub const Description = enum(u10) {
+    pub const Filesystem = enum(u10) {
+        file_already_exists = 190,
+        invalid_open_flags = 230,
+
+        invalid_selection = 1000,
+        too_large,
+        permission_denied,
+        already_done,
+        invalid_size,
+        invalid_enum_value,
+        invalid_combination,
+        no_data,
+        busy,
+        unaligned_address,
+        unaligned_size,
+        out_of_memory,
+        not_implemented,
+        invalid_address,
+        invalid_pointer,
+        invalid_handle,
+        not_initialized,
+        already_initialized,
+        not_found,
+        cancel_requested,
+        already_exists,
+        out_of_range,
+        timeout,
+        invalid_result_value,
+        _,
+    };
+
     success,
 
     out_of_kernel_memory = 1,
@@ -197,6 +235,7 @@ pub const Code = packed struct(i32) {
     };
 
     pub const success: Code = @bitCast(@as(u32, 0));
+    pub const not_implemented: Code = @bitCast(@as(u32, 0xE0E01BF4));
 
     // :wilted_rose:
     pub const fnd_out_of_memory: Code = @bitCast(@as(u32, 0xD86093F3));
@@ -256,6 +295,30 @@ pub const Code = packed struct(i32) {
 
     pub inline fn isSuccess(code: Code) bool {
         return @as(i32, @bitCast(code)) >= 0;
+    }
+
+    pub fn format(code: Code, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        const known_description = switch (code.module) {
+            inline else => |mod| std.enums.tagName(mod.SpecificDescription(), @enumFromInt(@intFromEnum(code.description))),
+            _ => std.enums.tagName(Description, code.description),
+        };
+
+        if (std.enums.tagName(Level, code.level)) |tag| {
+            try writer.writeAll(tag);
+        } else try writer.print("{d}", .{@intFromEnum(code.level)});
+        try writer.writeByte('(');
+        if (std.enums.tagName(Module, code.module)) |tag| {
+            try writer.writeAll(tag);
+        } else try writer.print("{d}", .{@intFromEnum(code.module)});
+        try writer.writeAll("): ");
+        if (known_description) |tag| {
+            try writer.writeAll(tag);
+        } else try writer.print("{d}", .{@intFromEnum(code.description)});
+        try writer.writeAll(" (");
+        if (std.enums.tagName(Summary, code.summary)) |tag| {
+            try writer.writeAll(tag);
+        } else try writer.print("{d}", .{@intFromEnum(code.summary)});
+        try writer.writeByte(')');
     }
 };
 

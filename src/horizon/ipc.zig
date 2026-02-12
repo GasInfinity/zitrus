@@ -477,7 +477,7 @@ pub const Codec = union(enum) {
     test bufRead {
         const Foo = struct { u8: u8, u16: u16, obj: horizon.Object };
 
-        try testExpectRead(Foo, .{ .u8 = 42, .u16 = 69, .obj = @enumFromInt(0x200) }, &.{ 42, 69, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(1)), 0x200 });
+        try testExpectRead(Foo, .{ .u8 = 42, .u16 = 69, .obj = @bitCast(@as(u32, 0x200)) }, &.{ 42, 69, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(1)), 0x200 });
     }
 };
 
@@ -742,7 +742,6 @@ fn isValidMoveHandlesType(comptime T: type) bool {
     return switch (@typeInfo(T)) {
         .@"struct" => isWrappedHandle(T) or isHandleArray(T),
         .array => |a| isWrappedHandle(a.child),
-        .@"enum" => T == horizon.Object,
         else => false,
     };
 }
@@ -756,7 +755,6 @@ fn isValidHandleArrayType(comptime T: type) bool {
         .@"struct" => |st| for (st.fields) |f| switch (@typeInfo(f.type)) {
             .@"struct" => if (!isWrappedHandle(f.type)) return false,
             .array => |arr| if (!isWrappedHandle(arr.child)) return false,
-            .@"enum" => if (f.type != horizon.Object) return false,
             else => return false,
         } else true,
         else => false,
@@ -773,8 +771,7 @@ fn isMapped(comptime T: type) bool {
 
 fn isWrappedHandle(comptime T: type) bool {
     return switch (@typeInfo(T)) {
-        .@"struct" => |s| s.layout == .@"packed" and s.fields.len == 1 and isWrappedHandle(s.fields[0].type),
-        .@"enum" => T == horizon.Object,
+        .@"struct" => |s| s.layout == .@"packed" and s.fields.len == 1 and (T == horizon.Object or isWrappedHandle(s.fields[0].type)),
         else => false,
     };
 }

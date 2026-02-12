@@ -34,13 +34,13 @@ pub fn main(init: std.process.Init) !u8 {
     const args = try init.minimal.args.toSlice(arena);
 
     var diagnostic: plz.Diagnostic = undefined;
-    const arguments = plz.parseSlice(Main, "zitrus",  &diagnostic, args[1..]) catch {
-        const stderr = try io.lockStderr(&.{}, null); 
+    const arguments = plz.parseSlice(Main, "zitrus", &diagnostic, args[1..]) catch {
+        const stderr = try io.lockStderr(&.{}, null);
         defer io.unlockStderr();
 
-        try diagnostic.render(stderr.terminal(), .default); 
+        try diagnostic.render(stderr.terminal(), .default);
         try stderr.file_writer.interface.flush();
-        return if(diagnostic.kind == .help) 0 else 1;
+        return if (diagnostic.kind == .help) 0 else 1;
     };
 
     if (arguments.version) |_| {
@@ -50,7 +50,7 @@ pub fn main(init: std.process.Init) !u8 {
     }
 
     if (arguments.@"-" == null) {
-        const stderr = try io.lockStderr(&.{}, null); 
+        const stderr = try io.lockStderr(&.{}, null);
         defer io.unlockStderr();
 
         const help: plz.Help = .of(Main, "zitrus");

@@ -1,28 +1,11 @@
-pub const os = horizon;
-pub const debug = horizon.debug;
-pub const panic = std.debug.FullPanic(debug.defaultPanic);
+pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
 pub const std_options: std.Options = horizon.default_std_options;
+pub const std_options_debug_io: std.Io = hio.io();
 
-pub const std_options_debug_io: std.Io = horizon.Io.failing;
-comptime { _ = horizon.start; }
-
-pub fn main() !void {
-    var app: horizon.application.Software = try .init(.default, horizon.heap.linear_page_allocator);
-    defer app.deinit(horizon.heap.linear_page_allocator);
-
-    var soft: GspGpu.Graphics.Software = try .init(.{
-        .top_mode = .@"2d",
-        .double_buffer = .init(.{
-            .top = true,
-            .bottom = false,
-        }),
-        .color_format = .initFill(.bgr888),
-        .initial_contents = .initFill(null),
-    }, app.gsp, horizon.heap.linear_page_allocator);
-    defer soft.deinit(app.gsp, horizon.heap.linear_page_allocator, app.apt_app.flags.must_close);
-
-    const cfg = try Config.open(.user, app.srv);
-    defer cfg.close();
+var hio: horizon.Io = undefined;
+pub fn main(init: horizon.Init.Application.Software) !void {
+    const app = init.app;
+    const soft = init.soft;
 
     const fs = try Filesystem.open(.user, app.srv);
     defer fs.close();
@@ -32,10 +15,22 @@ pub fn main() !void {
     var romfs: Filesystem.RomFs = try .initSelf(fs, horizon.heap.linear_page_allocator);
     defer romfs.deinit(horizon.heap.linear_page_allocator);
 
-    const test_file = try romfs.openFile(.root, std.unicode.utf8ToUtf16LeStringLiteral("test.txt"));
+    hio = try .init(app.base.gpa, app.base.arbiter, romfs);
+    defer hio.deinit();
+
+    const io = hio.io();
+
+    const cfg = try Config.open(.user, app.srv);
+    defer cfg.close();
+
+    const test_file = try std.Io.Dir.cwd().openFile(io, "test.txt", .{ .mode = .read_only });
+    defer test_file.close(io);
 
     var buf: [1024]u8 = undefined;
-    const read = try romfs.readPositional(test_file, 0, &buf);
+    var fixed: std.Io.Writer = .fixed(&buf);
+
+    var test_reader = test_file.reader(io, &.{});
+    _ = try test_reader.interface.streamRemaining(&fixed);
 
     const model = try cfg.sendGetSystemModel();
 
@@ -51,7 +46,7 @@ pub fn main() !void {
     main_loop: while (true) {
         const start = horizon.time.getSystemNanoseconds();
 
-        while (try app.pollEvent()) |ev| switch (ev) {
+        while (try init.pollEvent()) |ev| switch (ev) {
             .jump_home_rejected => {},
             .quit => break :main_loop,
         };
@@ -62,8 +57,9 @@ pub fn main() !void {
             break :main_loop;
         }
 
-        const top = ScreenCtx.initBuffer(soft.currentFramebuffer(.top, .left), Screen.top.width());
+        const top = ScreenCtx.initBuffer(soft.current(.top, .left), Screen.top.width());
         @memset(top.framebuffer, std.mem.zeroes(Bgr888));
+        @memset(soft.current(.bottom, .left), 0x00);
 
         var fmt_buffer: [512]u8 = undefined;
         drawString(top, 0, 0, try std.fmt.bufPrint(&fmt_buffer, "Model: {s} ({s})", .{ @tagName(model), model.description() }), .{});
@@ -74,8 +70,9 @@ pub fn main() !void {
         drawString(top, 4 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Birthday: {}/{}", .{ birthday.day, birthday.month }), .{});
         drawString(top, 5 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Country: {}/{}", .{ country_info.province_code, country_info.country_code }), .{});
         drawString(top, 6 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Last elapsed: {}", .{last_elapsed}), .{});
+        drawString(top, 7 * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "Base: {} | Total: {!}", .{ std.process.getBaseAddress(), std.process.totalSystemMemory() }), .{});
 
-        var current_line: isize = 7;
+        var current_line: isize = 8;
 
         var arg_it = environment.program_meta.argumentListIterator();
 
@@ -87,10 +84,10 @@ pub fn main() !void {
         current_line += 1;
         drawString(top, current_line * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "3DSX?: {}", .{environment.program_meta.is3dsx()}), .{});
         current_line += 1;
-        drawString(top, current_line * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "RomFS 'test.txt': {s}", .{buf[0..read]}), .{});
+        drawString(top, current_line * (font_width + 1), 0, try std.fmt.bufPrint(&fmt_buffer, "RomFS 'test.txt': {s}", .{fixed.buffered()}), .{});
 
-        soft.flushBuffers();
-        soft.swapBuffers(.none);
+        soft.flush();
+        soft.swap(.none);
         try soft.waitVBlank();
 
         const elapsed: u96 = horizon.time.getSystemNanoseconds() - start;

@@ -1,6 +1,5 @@
 const std = @import("std");
 const zitrus = @import("zitrus");
-const dvui = @import("dvui");
 
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
@@ -23,7 +22,6 @@ pub fn build(b: *std.Build) void {
                 .os_tag = .@"3ds",
             }),
             .optimize = optimize,
-            .single_threaded = true,
             .imports = &.{
                 .{ .name = "zitrus", .module = zitrus_mod },
             },
@@ -33,6 +31,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addAnonymousImport("simple.psh", .{ .root_source_file = simple_shader.out });
     exe.root_module.addAnonymousImport("test.bgr", .{ .root_source_file = b.path("assets/test.bgr") });
 
+    exe.zig_lib_dir = zitrus_dep.builder.dependency("zig", .{}).path("lib/");
     exe.pie = true;
     exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
 

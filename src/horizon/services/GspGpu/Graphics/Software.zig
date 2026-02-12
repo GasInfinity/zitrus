@@ -43,12 +43,12 @@ pub fn init(config: Config, gsp: GspGpu, physical_linear_allocator: std.mem.Allo
     errdefer bottom.deinit(physical_linear_allocator);
 
     if (config.initial_contents.get(.top)) |initial| {
-        @memcpy(top.currentFramebuffer(.left), initial);
-    } else @memset(top.currentFramebuffer(.left), 0x00);
+        @memcpy(top.current(.left), initial);
+    } else @memset(top.current(.left), 0x00);
 
     if (config.initial_contents.get(.bottom)) |initial| {
-        @memcpy(bottom.currentFramebuffer(.left), initial);
-    } else @memset(bottom.currentFramebuffer(.left), 0x00);
+        @memcpy(bottom.current(.left), initial);
+    } else @memset(bottom.current(.left), 0x00);
 
     var soft: Software = .{
         .gfx = gfx,
@@ -56,8 +56,8 @@ pub fn init(config: Config, gsp: GspGpu, physical_linear_allocator: std.mem.Allo
         .bottom = bottom,
     };
 
-    soft.flushBuffers();
-    soft.swapBuffers(.ignore_stereo);
+    soft.flush();
+    soft.swap(.ignore_stereo);
     try soft.waitVBlank();
     try gsp.sendSetLcdForceBlack(false);
 
@@ -79,21 +79,21 @@ pub fn deinit(soft: *Software, gsp: GspGpu, physical_linear_allocator: std.mem.A
 /// Flushes both framebuffers
 ///
 /// Must be called after modifying backbuffer contents.
-pub fn flushBuffers(soft: *Software) void {
-    soft.top.flushBuffer();
-    soft.bottom.flushBuffer();
+pub fn flush(soft: *Software) void {
+    soft.top.flush();
+    soft.bottom.flush();
 }
 
 /// Updates the next presentation at VBlank and swaps buffers (if double-buffered).
-pub fn swapBuffers(soft: *Software, ignore_stereo: Framebuffer.IgnoreStereo) void {
-    soft.top.swapBuffer(&soft.gfx, ignore_stereo);
-    soft.bottom.swapBuffer(&soft.gfx, ignore_stereo);
+pub fn swap(soft: *Software, ignore_stereo: Framebuffer.IgnoreStereo) void {
+    soft.top.swap(&soft.gfx, ignore_stereo);
+    soft.bottom.swap(&soft.gfx, ignore_stereo);
 }
 
-pub fn currentFramebuffer(soft: *Software, screen: pica.Screen, side: Framebuffer.Side) []u8 {
+pub fn current(soft: *Software, screen: pica.Screen, side: Framebuffer.Side) []u8 {
     return switch (screen) {
-        .top => soft.top.currentFramebuffer(side),
-        .bottom => soft.bottom.currentFramebuffer(.left),
+        .top => soft.top.current(side),
+        .bottom => soft.bottom.current(.left),
     };
 }
 
