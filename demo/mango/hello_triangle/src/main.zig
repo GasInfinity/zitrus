@@ -3,8 +3,6 @@ const position_vtx_storage align(@sizeOf(u32)) = @embedFile("position.psh").*;
 const position_vtx = &position_vtx_storage;
 
 pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
-pub const std_options: std.Options = horizon.default_std_options;
-pub const std_options_debug_io: std.Io = horizon.Io.io(undefined); // FIXME: pluh, we may need global state...
 
 pub fn main(init: horizon.Init.Application.Mango) !void {
     const gpa = init.app.base.gpa;

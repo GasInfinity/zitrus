@@ -168,6 +168,8 @@ pub const SpecialContentType = enum(u8) {
 };
 
 pub const File = packed struct(u32) {
+    pub const none: File = .{ .session = .none };
+
     session: ClientSession,
 
     pub fn close(file: File) void {

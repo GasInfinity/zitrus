@@ -1,0 +1,46 @@
+name: CD
+on:
+  push:
+    branches:
+      - main
+permissions:
+  contents: write
+jobs:
+  release-dev:
+    needs: build-test
+    runs-on: ubuntu-latest-aarch64-tiny
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup zig
+        uses: https://codeberg.org/mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+
+      - name: Build development release
+        run: zig build release -Doptimize=ReleaseSafe
+
+      - name: Package development release
+        working-directory: zig-out
+        run: |
+          set -e
+          for artifact in *; do 
+            if [[ $artifact == *"-windows-"* ]]; then
+              zip -q -r "$artifact.zip" "$artifact"/*
+            else 
+              tar -czf "$artifact.tar.gz" "$artifact"/*
+            fi
+            rm -r -- $artifact
+          done
+
+      - name: Development release
+        uses: actions/forgejo-release@v2.7.3
+        with:
+          tag: dev
+          override: true
+          prerelease: true
+          direction: upload
+          release-notes: Latest unstripped `ReleaseSafe` development version.
+          release-dir: zig-out/

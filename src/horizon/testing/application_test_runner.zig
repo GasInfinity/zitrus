@@ -5,31 +5,23 @@ comptime {
 }
 
 pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
-pub const std_options_debug_io: std.Io = hio.io();
 pub const std_options: std.Options = .{
     .logFn = log,
     .allow_stack_tracing = true,
 };
 
-var hio: horizon.Io = undefined;
 var debug_buffer: [8 * 1024]u8 = undefined;
 var debug_writer: std.Io.Writer = horizon.outputDebugWriter(&debug_buffer);
 var log_err_count: usize = 0;
 
-pub fn main() !void {
+pub fn main(init: horizon.Init) !void {
     @disableInstrumentation();
 
-    const arbiter = horizon.AddressArbiter.create() catch @panic("Error creating address arbiter");
-    defer arbiter.close();
+    const arbiter = init.arbiter;
+    const gpa = init.gpa;
 
     horizon.testing.arbiter = arbiter;
     defer horizon.testing.arbiter = undefined;
-
-    var common_allocator: horizon.heap.CommitAllocator = .init(arbiter, horizon.memory.heap_begin);
-    defer common_allocator.deinit();
-
-    hio = try .init(common_allocator.allocator(), arbiter);
-    defer hio.deinit();
 
     const srv = horizon.ServiceManager.open() catch @panic("Error opening connection to srv:");
     defer srv.close();
@@ -68,8 +60,8 @@ pub fn main() !void {
     for (test_fn_list, 0..) |test_fn, i| {
         testing.log_level = .warn;
 
-        horizon.testing.allocator_instance = .{ .backing_allocator = common_allocator.allocator() };
-        horizon.testing.io_instance = try .init(horizon.testing.allocator, arbiter);
+        horizon.testing.allocator_instance = .{ .backing_allocator = gpa };
+        horizon.testing.io_instance = try .init(horizon.testing.allocator, arbiter, .empty);
 
         defer {
             horizon.testing.io_instance.deinit();

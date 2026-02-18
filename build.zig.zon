@@ -20,10 +20,10 @@
             .url = "git+https://codeberg.org/GasInfinity/plz#8e46b75e722599b29ed78e84daf9447e953ac7e9",
             .hash = "plz-0.0.1-_2WTq0LMAABkuO05fFOBysjGGVWyertKxPgHp9h2VDZR",
         },
-        // Yes, we need our own fork of zig `lib/` as upstream doesn't want to make custom OSes juicier 😭
-        .zig = .{
-            .url = "git+https://codeberg.org/GasInfinity/zig.git#07635173c026724d17395b124373dc076c4342e0",
-            .hash = "zig-0.0.0-Fp4XJEs74g15e5kwjjvhpTRqOaAZGNqg4VQi4ogo3j0n",
+        // Yes, we need our own fork of zig `lib/` until upstream merges it (if they merge it).
+        .@"zig-lib" = .{
+            .url = "git+https://codeberg.org/GasInfinity/zig.git?ref=the-os-independence-day-lib-only#4794400cdd7aa37fa6fbd1513df637b63829b109",
+            .hash = "N-V-__8AAD69ygt9jE3XwDumM9nUjOixzRh1OPIYmjLPmntM",
         },
     },
     .paths = .{

@@ -367,18 +367,6 @@ pub const SystemCall = enum(u8) {
     breakpoint,
 };
 
-pub const LimitableResource = enum(u32) {
-    commit,
-    thread,
-    event,
-    mutex,
-    semaphore,
-    timer,
-    shared_memory,
-    address_arbiter,
-    cpu_time,
-};
-
 pub const MemoryPermission = packed struct(u32) {
     pub const r: MemoryPermission = .{ .read = true };
     pub const w: MemoryPermission = .{ .write = true };
@@ -527,6 +515,18 @@ pub const Object = packed struct(u32) {
 };
 
 pub const ResourceLimit = packed struct(u32) {
+    pub const Kind = enum(u32) {
+        commit,
+        thread,
+        event,
+        mutex,
+        semaphore,
+        timer,
+        shared_memory,
+        address_arbiter,
+        cpu_time,
+    };
+
     pub const CreateError = Object.Error;
 
     obj: Object,
@@ -539,7 +539,7 @@ pub const ResourceLimit = packed struct(u32) {
         };
     }
 
-    pub fn setLimitValues(resource_limit: ResourceLimit, resources: []const LimitableResource, amount: []const i64) !void {
+    pub fn setLimitValues(resource_limit: ResourceLimit, resources: []const Kind, amount: []const i64) !void {
         std.debug.assert(resources.len == amount.len);
 
         const code = setResourceLimitLimitValues(resource_limit, resources, amount, resources.len);
@@ -574,6 +574,7 @@ pub const CodeSet = packed struct(u32) {
 /// Spurious wakeups are not possible.
 /// Each arbiter holds a single waitlist.
 pub const AddressArbiter = packed struct(u32) {
+    pub const none: AddressArbiter = .{ .obj = .none };
     pub const Mutex = extern struct {
         pub const init: Mut = .{};
         pub const State = enum(i32) {
@@ -996,7 +997,7 @@ pub const ServerSession = packed struct(u32) {
 };
 
 pub const ClientSession = packed struct(u32) {
-    pub const none: ClientSession = @bitCast(@as(u32, 0));
+    pub const none: ClientSession = .{ .sync = .none };
     pub const ConnectionError = error{NotFound} || UnexpectedError;
     pub const RequestError = error{ConnectionClosedByPeer} || UnexpectedError;
 
@@ -1932,7 +1933,7 @@ pub fn getResourceLimit(prc: Process) Result(ResourceLimit) {
     return .of(code, resource_limit);
 }
 
-pub fn getResourceLimitLimitValues(values: []i64, resource_limit: ResourceLimit, names: []LimitableResource) result.Code {
+pub fn getResourceLimitLimitValues(values: []i64, resource_limit: ResourceLimit, names: []ResourceLimit.Kind) result.Code {
     std.debug.assert(values.len == names.len);
 
     return asm volatile ("svc 0x39"
@@ -1944,7 +1945,7 @@ pub fn getResourceLimitLimitValues(values: []i64, resource_limit: ResourceLimit,
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn getResourceLimitCurrentValues(values: []i64, resource_limit: ResourceLimit, names: []LimitableResource) result.Code {
+pub fn getResourceLimitCurrentValues(values: []i64, resource_limit: ResourceLimit, names: []ResourceLimit.Kind) result.Code {
     std.debug.assert(values.len == names.len);
 
     return asm volatile ("svc 0x3A"
@@ -2196,7 +2197,7 @@ pub fn createResourceLimit() Result(ResourceLimit) {
     return .of(code, resource_limit);
 }
 
-pub fn setResourceLimitLimitValues(resource_limit: ResourceLimit, resources: [*]const LimitableResource, amount: [*]const i64, count: u32) result.Code {
+pub fn setResourceLimitLimitValues(resource_limit: ResourceLimit, resources: [*]const ResourceLimit.Kind, amount: [*]const i64, count: u32) result.Code {
     return asm volatile ("svc 0x79"
         : [code] "={r0}" (-> result.Code),
         : [resource_limit] "{r0}" (resource_limit),
@@ -2236,14 +2237,6 @@ pub const default_std_os_options: std.Options.OperatingSystem = .{
     .testing = testing,
 };
 
-pub const default_std_options: std.Options = .{
-    .logFn = defaultLog,
-};
-
-fn defaultLog(comptime message_level: std.log.Level, comptime scope: @TypeOf(.enum_literal), comptime format: []const u8, args: anytype) void {
-    debug.print("[" ++ @tagName(message_level) ++ "](" ++ @tagName(scope) ++ "): " ++ format ++ "\n", args);
-}
-
 comptime {
     _ = start;
 
@@ -2262,6 +2255,7 @@ comptime {
     _ = Init;
     _ = AddressArbiter;
     _ = AddressArbiter.Mutex;
+    _ = AddressArbiter.Parker;
     _ = ServiceManager;
     _ = ErrorDisplayManager;
 }

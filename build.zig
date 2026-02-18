@@ -12,34 +12,20 @@ pub const MakeRomFs = @import("build/MakeRomFs.zig");
 pub const AssemblePsm = @import("build/AssemblePsm.zig");
 
 pub const target = struct {
-    pub const arm11 = struct {
-        pub const horizon = struct {
-            /// Default linkerscript for ARM11 code executing in HOS userspace.
-            pub const linker_script = "build/ld/arm-3ds.ld";
-
-            /// Default test runner running in HOS as an application.
-            pub const application_test_runner = "src/horizon/testing/application_test_runner.zig";
-        };
-
-        pub const freestanding = struct {
-            pub const query: std.Target.Query = .{
-                .cpu_arch = .arm,
-                .cpu_model = .{ .explicit = &std.Target.arm.cpu.mpcore },
-                .abi = .eabihf,
-                .os_tag = .freestanding,
-            };
-        };
+    /// Freestanding target query, use `arm-3ds` to target the horizon (a.k.a the 3DS OS) userland instead 
+    pub const arm11: std.Target.Query = .{
+        .cpu_arch = .arm,
+        .cpu_model = .{ .explicit = &std.Target.arm.cpu.mpcore },
+        .abi = .eabihf,
+        .os_tag = .freestanding,
     };
 
-    pub const arm9 = struct {
-        pub const freestanding = struct {
-            pub const query: std.Target.Query = .{
-                .cpu_arch = .arm,
-                .cpu_model = .{ .explicit = &std.Target.arm.cpu.arm946e_s },
-                .abi = .eabi,
-                .os_tag = .freestanding,
-            };
-        };
+    /// Freestanding target query
+    pub const arm9: std.Target.Query = .{
+        .cpu_arch = .arm,
+        .cpu_model = .{ .explicit = &std.Target.arm.cpu.arm946e_s },
+        .abi = .eabi,
+        .os_tag = .freestanding,
     };
 };
 
@@ -47,21 +33,28 @@ pub fn build(b: *Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const tools_target = b.standardTargetOptions(.{});
 
-    const zalloc_dep = b.dependency("zalloc", .{});
-    const zalloc = zalloc_dep.module("zalloc");
+    const juicy_zig_lib_dep = b.dependency("zig-lib", .{});
 
-    const zsflt_dep = b.dependency("zsflt", .{});
-    const zsflt = zsflt_dep.module("zsflt");
+    b.addNamedLazyPath("juice/zig_lib", juicy_zig_lib_dep.path("."));
+    b.addNamedLazyPath("horizon/ld", b.path("build/ld/arm-3ds.ld"));
+    b.addNamedLazyPath("horizon/test-runner/app-minimal", b.path("src/horizon/testing/application_test_runner.zig"));
 
     const plz_dep = b.dependency("plz", .{});
     const plz = plz_dep.module("plz");
+
+    // TODO: Remove this dep, deprecate and archive it.
+    const zalloc_dep = b.dependency("zalloc", .{});
+    const zalloc = zalloc_dep.module("zalloc");
+
+    // TODO: Move this one to codeberg
+    const zsflt_dep = b.dependency("zsflt", .{});
+    const zsflt = zsflt_dep.module("zsflt");
 
     const zigimg_dep = b.dependency("zigimg", .{});
     const zigimg = zigimg_dep.module("zigimg");
 
     const config = b.addOptions();
-
-    const version_slice = buildVersion(b);
+    const version_slice = queryBuildVersion(b);
 
     config.addOption([]const u8, "version", version_slice);
 
@@ -143,7 +136,7 @@ pub fn build(b: *Build) void {
 }
 
 // NOTE: This literally what zig does, almost 1:1 but we have prereleases so we have to work with that.
-fn buildVersion(b: *Build) []const u8 {
+fn queryBuildVersion(b: *Build) []const u8 {
     const maybe_version = b.option([]const u8, "version-string", "Override zitrus version");
 
     if (maybe_version) |ver| return ver;
@@ -322,12 +315,11 @@ const standalone_tests: []const StandaloneTest = &.{
 };
 
 fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Compile) void {
-    const zig_dep = b.dependency("zig", .{});
     const build_tests_step = b.step("build-tests", "Builds tests for running on the 3DS");
 
     const mod_tests_3ds = b.addTest(.{
         .name = "zitrus-mod-tests",
-        .test_runner = .{ .mode = .simple, .path = b.path(target.arm11.horizon.application_test_runner) },
+        .test_runner = .{ .mode = .simple, .path = b.named_lazy_paths.get("horizon/test-runner/app-minimal").? },
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/zitrus.zig"),
             .optimize = .Debug,
@@ -340,10 +332,10 @@ fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Com
                 .{ .name = "zsflt", .module = zitrus.import_table.get("zsflt").? },
             },
         }),
+        .zig_lib_dir = b.named_lazy_paths.get("juice/zig_lib").?,
     });
-    mod_tests_3ds.zig_lib_dir = zig_dep.path("lib");
+    mod_tests_3ds.setLinkerScript(b.named_lazy_paths.get("horizon/ld").?);
     mod_tests_3ds.pie = true;
-    mod_tests_3ds.setLinkerScript(b.path(target.arm11.horizon.linker_script));
     mod_tests_3ds.root_module.addImport("zitrus", mod_tests_3ds.root_module);
 
     const mod_tests_3dsx = Make3dsx.initInner(b, .{
@@ -365,7 +357,7 @@ fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Com
     inline for (standalone_tests) |standalone_test| {
         const tests_exe = b.addTest(.{
             .name = standalone_test.name,
-            .test_runner = .{ .mode = .simple, .path = b.path(target.arm11.horizon.application_test_runner) },
+            .test_runner = .{ .mode = .simple, .path = b.named_lazy_paths.get("horizon/test-runner/app-minimal").? },
             .root_module = b.createModule(.{
                 .root_source_file = b.path(standalone_test.path),
                 .target = b.resolveTargetQuery(.{
@@ -377,10 +369,10 @@ fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Com
                     .{ .name = "zitrus", .module = zitrus },
                 },
             }),
+            .zig_lib_dir = b.named_lazy_paths.get("juice/zig_lib").?,
         });
-        tests_exe.zig_lib_dir = zig_dep.path("lib");
         tests_exe.pie = true;
-        tests_exe.setLinkerScript(b.path(target.arm11.horizon.linker_script));
+        tests_exe.setLinkerScript(b.named_lazy_paths.get("horizon/ld").?);
 
         const tests_3dsx = Make3dsx.initInner(b, .{
             .tools_artifact = zitrus_tools,

@@ -1,10 +1,9 @@
 pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
-pub const std_options: std.Options = horizon.default_std_options;
-pub const std_options_debug_io: std.Io = hio.io();
 
-var hio: horizon.Io = undefined;
 pub fn main(init: horizon.Init.Application.Software) !void {
     const app = init.app;
+    const gpa = app.base.gpa;
+    const io = app.base.io;
     const soft = init.soft;
 
     const fs = try Filesystem.open(.user, app.srv);
@@ -12,13 +11,11 @@ pub fn main(init: horizon.Init.Application.Software) !void {
 
     try fs.sendInitialize();
 
-    var romfs: Filesystem.RomFs = try .initSelf(fs, horizon.heap.linear_page_allocator);
-    defer romfs.deinit(horizon.heap.linear_page_allocator);
+    var romfs: Filesystem.RomFs = try .initSelf(fs, gpa);
+    defer romfs.deinit(gpa);
 
-    hio = try .init(app.base.gpa, app.base.arbiter, romfs);
-    defer hio.deinit();
-
-    const io = hio.io();
+    // XXX: Temporal
+    horizon.Io.global.storage = romfs;
 
     const cfg = try Config.open(.user, app.srv);
     defer cfg.close();

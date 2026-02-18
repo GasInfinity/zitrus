@@ -1,6 +1,4 @@
 pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
-pub const std_options: std.Options = horizon.default_std_options;
-pub const std_options_debug_io: std.Io = horizon.Io.io(undefined); // FIXME: pluh, we may need global state...
 
 const top_screen_bitmap = @embedFile("top-screen");
 const bottom_screen_bitmap = @embedFile("bottom-screen");

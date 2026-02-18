@@ -1,4 +1,4 @@
-//! A `std.Thread`-compatible API
+//! A `std.Thread`-compatible API, if you want your code to be portable, use std.Thread instead.
 pub const default_stack_size = 16 * 1024;
 pub const Id = u32;
 

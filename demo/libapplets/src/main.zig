@@ -1,6 +1,4 @@
 pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
-pub const std_options: std.Options = horizon.default_std_options;
-pub const std_options_debug_io: std.Io = horizon.Io.io(undefined); // FIXME: pluh, we may need global state...
 
 pub fn main(init: horizon.Init.Application.Software) !void {
     const gpa = init.app.base.gpa;

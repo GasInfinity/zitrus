@@ -452,20 +452,20 @@ pub const View = struct {
 
         kind: Kind,
         _: u1 = 0,
-        /// The real handle is this << 2
-        handle: Handle,
+        /// The real handle is this << 2 as it will always be aligned.
+        shifted_handle: Handle,
 
         pub fn initDirectory(directory: Directory) Entry {
             return .{
                 .kind = .directory,
-                .handle = @enumFromInt(@intFromEnum(directory) >> 2),
+                .shifted_handle = @enumFromInt(@intFromEnum(directory) >> 2),
             };
         }
 
         pub fn initFile(file: File) Entry {
             return .{
                 .kind = .file,
-                .handle = @enumFromInt(@intFromEnum(file) >> 2),
+                .shifted_handle = @enumFromInt(@intFromEnum(file) >> 2),
             };
         }
 
@@ -478,7 +478,7 @@ pub const View = struct {
 
         pub fn asDirectory(entry: Entry) Directory {
             return switch (entry.kind) {
-                .directory => @enumFromInt(@intFromEnum(entry.handle) << 2),
+                .directory => @enumFromInt(@intFromEnum(entry.shifted_handle) << 2),
                 .file => unreachable,
             };
         }
@@ -486,7 +486,7 @@ pub const View = struct {
         pub fn asFile(entry: Entry) File {
             return switch (entry.kind) {
                 .directory => unreachable,
-                .file => @enumFromInt(@intFromEnum(entry.handle) << 2),
+                .file => @enumFromInt(@intFromEnum(entry.shifted_handle) << 2),
             };
         }
     };
@@ -597,7 +597,7 @@ pub const View = struct {
         const opened = try view.openAny(parent, path);
 
         return switch (opened.kind) {
-            .file => @enumFromInt(@intFromEnum(opened.handle)),
+            .file => opened.asFile(),
             .directory => error.IsDir,
         };
     }
@@ -608,7 +608,7 @@ pub const View = struct {
 
         return switch (opened.kind) {
             .file => error.NotDir,
-            .directory => @enumFromInt(@intFromEnum(opened.handle)),
+            .directory => opened.asDirectory(),
         };
     }
 
@@ -800,6 +800,7 @@ test "builder and view are idempotent" {
 
     {
         const sp = try view.openFile(.root, std.unicode.utf8ToUtf16LeStringLiteral("A/BC/¿qué?"));
+        std.log.debug("{}", .{sp});
         const sp_stat = sp.stat(view);
         const sp_data = builder.file_data.items[@intCast(sp_stat.offset)..][0..@intCast(sp_stat.size)];
 

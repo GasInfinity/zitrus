@@ -110,6 +110,7 @@ fn UnwrapError(comptime T: type) type {
 inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !UnwrapError(@typeInfo(@TypeOf(root.main)).@"fn".return_type.?) {
     const First = @typeInfo(@TypeOf(root.main)).@"fn".params[0].type.?; // NOTE: We already know we have 1 parameter.
     const Init = horizon.Init;
+    const services = horizon.services;
 
     const arbiter: horizon.AddressArbiter = try .create();
     defer arbiter.close();
@@ -119,13 +120,17 @@ inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !U
     defer allocator_instance.deinit();
 
     const gpa = allocator_instance.allocator();
+    horizon.Io.global.* = try .init(gpa, arbiter, .empty);
 
-    const base: Init = .{ .arbiter = arbiter, .gpa = gpa };
+    const base: Init = .{
+        .arbiter = arbiter,
+        .gpa = gpa,
+        .io = horizon.Io.debug_io,
+    };
 
     if (First == Init) return root.main(base);
+    
     if (comptime std.mem.findScalar(type, application_juice, First)) |_| {
-        const services = horizon.services;
-
         const srv = try horizon.ServiceManager.open();
         defer srv.close();
 

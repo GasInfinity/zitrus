@@ -11,6 +11,12 @@
 //! If we're in a 3DSX environment (e.g: when loaded with Luma3DS) we must load
 //! the 'Self3DSX' by hand, if not we must open it from SelfNCCH.
 
+pub const empty: RomFs = .{
+    .view = .empty,
+    .data_offset = 0,
+    .file = .none,
+};
+
 view: romfs.View,
 data_offset: u32,
 file: Filesystem.File,
@@ -83,7 +89,7 @@ pub fn openDir(fs: RomFs, parent: romfs.View.Directory, path: []const u16) !romf
 
 /// Initializes a RomFS from the base RomFS of the current NCCH.
 pub fn initSelfBase(fs: Filesystem, gpa: std.mem.Allocator) !RomFs {
-    return .initFile(try fs.sendOpenFileDirectly(0, .self_ncch, .empty, &.{0}, .binary, @ptrCast(&Filesystem.PathType.SelfNcch.romfs_base), .r, .{}), gpa);
+    return .initFile(fs.sendOpenFileDirectly(0, .self_ncch, .empty, &.{0}, .binary, @ptrCast(&Filesystem.PathType.SelfNcch.romfs_base), .r, .{}) catch return error.NoRomFs, gpa);
 }
 
 fn initSelf3dsx(fs: Filesystem, gpa: std.mem.Allocator) !RomFs {
@@ -115,7 +121,7 @@ fn initSelf3dsx(fs: Filesystem, gpa: std.mem.Allocator) !RomFs {
 
     const file: Filesystem.File = switch (location) {
         // TODO: I think I must convert to utf16 just in case?
-        .sdmc => try fs.sendOpenFileDirectly(0, .sdmc, .empty, &.{}, .ascii, path[0 .. path.len + 1], .r, .{}),
+        .sdmc => fs.sendOpenFileDirectly(0, .sdmc, .empty, &.{}, .ascii, path[0 .. path.len + 1], .r, .{}) catch return error.NoRomFs,
     };
     defer file.sendClose();
 

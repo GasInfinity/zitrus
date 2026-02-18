@@ -57,6 +57,39 @@ pub const LockedStderr = struct {
     pub fn clear(_: LockedStderr, _: []u8) Cancelable!void {}
 };
 
+var global_backing: horizon.Io = .{
+    .gpa = .failing,
+    .arbiter = .none,
+    .debug_mutex_lock_count = 0,
+    .debug_mutex_holder = std.math.maxInt(u32),
+    .debug_mutex = .init,
+    .debug_writer = horizon.outputDebugWriter(&.{}),
+    .rng_mutex = .init,
+    .rng = blk: { 
+        @setEvalBranchQuota(8000);
+        break :blk .init(@splat(6_7));
+    },
+    .parking_futex = .init,
+    .storage = .empty, 
+};
+
+/// When using the horizon juicy main, this will be the backing memory of the `std.Io`
+/// you and `std.debug` will get (via `debug_io`), as such you SHOULD initialize it if not using juicy main.
+///
+/// Not initializing it means calling any function is allowed to cause IB with these exceptions:
+/// 
+/// These functions are safe:
+///     - tryLockStderr
+///     - now, clockResolution, sleep
+///
+/// These functions are safe with caveats:
+///     - lockStderr, unlockStderr -> IB if contended, as we do not have an `AddressArbiter`
+///     - random -> seed is a known constant (67), IB if contended, as we do not have an `AddressArbiter`
+pub const global: *horizon.Io = &global_backing;
+
+/// See the doc-comment in `global`, same restrictions apply!
+pub const debug_io = global.io();
+
 /// A simple futex implementation based on `AddressArbiter` thread `Parker`s.
 ///
 /// Fullfills the futex interface and is adapted from the implementation
@@ -161,11 +194,18 @@ const ParkingFutex = struct {
 };
 
 gpa: std.mem.Allocator,
+arbiter: AddressArbiter,
+
+debug_mutex_lock_count: usize,
+debug_mutex_holder: horizon.Thread.Impl.Id,
 debug_mutex: AddressArbiter.Mutex,
 debug_writer: std.Io.Writer,
+
+rng_mutex: AddressArbiter.Mutex,
 rng: std.Random.DefaultCsprng,
-arbiter: AddressArbiter,
+
 parking_futex: ParkingFutex,
+/// Could be `empty`
 storage: Filesystem.RomFs,
 
 /// All handles must live until `deinit`
@@ -175,13 +215,15 @@ pub fn init(
     storage: Filesystem.RomFs,
 ) !HIo {
     const tick = horizon.getSystemTick();
-    const debug_buffer = try gpa.alloc(u8, 512); 
-    errdefer gpa.free(debug_buffer);
 
     return .{
         .gpa = gpa,
+        .arbiter = arbiter,
+        .debug_mutex_lock_count = 0,
+        .debug_mutex_holder = std.math.maxInt(u32),
         .debug_mutex = .init,
-        .debug_writer = horizon.outputDebugWriter(debug_buffer),
+        .debug_writer = horizon.outputDebugWriter(&.{}),
+        .rng_mutex = .init,
         .rng = blk: {
             var seed: [32]u8 = undefined;
             var expand: std.Random.SplitMix64 = .init(tick);
@@ -191,7 +233,6 @@ pub fn init(
             seed[24..32].* = @bitCast(expand.next());
             break :blk .init(seed);
         },
-        .arbiter = arbiter,
         .parking_futex = .init,
         .storage = storage,
     };
@@ -614,7 +655,15 @@ pub const VTable = enum(u0) {
 
     pub fn lockStderr(_: VTable, ud: ?*anyopaque, _: ?Io.Terminal.Mode) Cancelable!LockedStderr {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.debug_mutex.lock(hio.arbiter);
+        const current_id = horizon.Thread.Impl.getCurrentId();
+
+        if (@atomicLoad(horizon.Thread.Impl.Id, &hio.debug_mutex_holder, .unordered) != current_id) {
+            hio.debug_mutex.lock(hio.arbiter);
+            std.debug.assert(hio.debug_mutex_lock_count == 0);
+            @atomicStore(horizon.Thread.Impl.Id, &hio.debug_mutex_holder, current_id, .unordered);
+        }
+        hio.debug_mutex_lock_count += 1;
+
         return .{
             .term = .{
                 .writer = &hio.debug_writer,
@@ -625,7 +674,16 @@ pub const VTable = enum(u0) {
 
     pub fn tryLockStderr(_: VTable, ud: ?*anyopaque, _: ?Io.Terminal.Mode) Cancelable!?LockedStderr {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        if (!hio.debug_mutex.tryLock()) return null;
+        const current_id = horizon.Thread.Impl.getCurrentId();
+
+        if (@atomicLoad(horizon.Thread.Impl.Id, &hio.debug_mutex_holder, .unordered) != current_id) {
+            if (!hio.debug_mutex.tryLock()) return null;
+            std.debug.assert(hio.debug_mutex_lock_count == 0);
+            @atomicStore(horizon.Thread.Impl.Id, &hio.debug_mutex_holder, current_id, .unordered);
+        }
+        hio.debug_mutex_lock_count += 1;
+        hio.debug_writer.flush() catch unreachable; // NOTE: never fails
+
         return .{
             .term = .{
                 .writer = &hio.debug_writer,
@@ -636,8 +694,12 @@ pub const VTable = enum(u0) {
 
     pub fn unlockStderr(_: VTable, ud: ?*anyopaque) void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.debug_writer.flush() catch unreachable; // NOTE: never fails
-        hio.debug_mutex.unlock(hio.arbiter);
+
+        hio.debug_mutex_lock_count -= 1;
+        if (hio.debug_mutex_lock_count == 0) {
+            @atomicStore(horizon.Thread.Impl.Id, &hio.debug_mutex_holder, std.math.maxInt(u32), .unordered);
+            hio.debug_mutex.unlock(hio.arbiter);
+        }
     }
 
     pub fn processCurrentPath(_: VTable, _: ?*anyopaque, buffer: []u8) std.process.CurrentPathError!usize {
@@ -703,6 +765,9 @@ pub const VTable = enum(u0) {
 
     pub fn random(_: VTable, ud: ?*anyopaque, buffer: []u8) void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.rng_mutex.lock(hio.arbiter);
+        defer hio.rng_mutex.unlock(hio.arbiter);
+
         hio.rng.fill(buffer);
     }
 

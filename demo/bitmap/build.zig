@@ -21,14 +21,14 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "zitrus", .module = zitrus_mod },
             },
         }),
+        .zig_lib_dir = zitrus_dep.namedLazyPath("juice/zig_lib"),
     });
 
     exe.root_module.addAnonymousImport("top-screen", .{ .root_source_file = b.path("assets/top.bgr") });
     exe.root_module.addAnonymousImport("bottom-screen", .{ .root_source_file = b.path("assets/bottom.bgr") });
 
-    exe.zig_lib_dir = zitrus_dep.builder.dependency("zig", .{}).path("lib/");
     exe.pie = true;
-    exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
+    exe.setLinkerScript(zitrus_dep.namedLazyPath("horizon/ld"));
     b.installArtifact(exe);
 
     const smdh = zitrus.MakeSmdh.init(zitrus_dep, .{

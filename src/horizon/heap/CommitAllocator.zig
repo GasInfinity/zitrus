@@ -49,7 +49,7 @@ pub fn init(arbiter: AddressArbiter, heap_begin: usize) CommitAllocator {
     };
 }
 
-/// Decommits all the memory used by this allocator
+/// Decommits all the memory used by this allocator.
 pub fn deinit(cma: *CommitAllocator) void {
     _ = horizon.controlMemory(.{
         .kind = .free,
@@ -69,7 +69,7 @@ pub fn allocator(cma: *CommitAllocator) Allocator {
 fn alloc(ctx: *anyopaque, len: usize, alignment: mem.Alignment, _: usize) ?[*]u8 {
     switch (alignment.order(.fromByteUnits(bigpage_size))) {
         .eq, .lt => {},
-        .gt => return null, // We don't support alignments buffer than 64KB!
+        .gt => return null, // We don't support alignments higher than 64KB!
     }
 
     const cma: *CommitAllocator = @ptrCast(@alignCast(ctx));

@@ -10,8 +10,6 @@ const simple_vtx = &simple_vtx_storage;
 const test_bgr = @embedFile("test.bgr");
 
 pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
-pub const std_options: std.Options = horizon.default_std_options;
-pub const std_options_debug_io: std.Io = horizon.Io.io(undefined); // FIXME: pluh, we may need global state...
 
 pub const Scene = struct {
     const Vertex = extern struct {
