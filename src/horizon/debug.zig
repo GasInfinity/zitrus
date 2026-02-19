@@ -19,7 +19,7 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
 pub const SelfInfo = @import("debug/SelfInfo.zig");
 
 pub fn getDebugInfoAllocator() std.mem.Allocator {
-    return .failing;
+    return horizon.Io.global.gpa;
 }
 
 pub fn printLineFromFile(_: std.Io, _: *std.Io.Writer, _: std.debug.SourceLocation) !void {

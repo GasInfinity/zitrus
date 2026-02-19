@@ -1,6 +1,6 @@
 // NOTE: We could support debug info by embedding the dwarf data into the 3dsx and/or
 // inside the RomFS (split dwarf debug info is mandatory here!)
-// We could also store the ELF in the RomFS instead, but we literally double executable size.
+// We could also store the ELF in the RomFS instead, but we literally double the executable size.
 
 pub const init: SelfInfo = .{};
 

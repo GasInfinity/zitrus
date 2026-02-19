@@ -7,7 +7,6 @@ permissions:
   contents: write
 jobs:
   release-dev:
-    needs: build-test
     runs-on: ubuntu-latest-aarch64-tiny
     steps:
       - uses: actions/checkout@v6

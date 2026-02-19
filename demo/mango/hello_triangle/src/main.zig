@@ -270,7 +270,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
                 .offset = 0,
             },
         }, &.{}),
-        // This must be a 'ZPSH' shader binary assembled by zitrus.
+        // This must be a 'PSH' shader binary assembled by zitrus.
         .vertex_shader_state = &.init(position_vtx, "main"),
         .geometry_shader_state = null,
         .input_assembly_state = &.{

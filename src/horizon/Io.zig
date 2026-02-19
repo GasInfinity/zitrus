@@ -205,7 +205,7 @@ rng_mutex: AddressArbiter.Mutex,
 rng: std.Random.DefaultCsprng,
 
 parking_futex: ParkingFutex,
-/// Could be `empty`
+/// Could be `empty`, NOTE: fs is not final and will be replaced eventually tm
 storage: Filesystem.RomFs,
 
 /// All handles must live until `deinit`
@@ -239,8 +239,6 @@ pub fn init(
 }
 
 pub fn deinit(hio: *HIo) void {
-    const gpa = hio.gpa;
-    gpa.free(hio.debug_writer.buffer);
     hio.* = undefined;
 }
 
@@ -253,6 +251,53 @@ pub fn io(hio: *HIo) Io {
 
 pub const VTable = enum(u0) {
     default,
+
+    pub fn async(
+        _: VTable,
+        _: ?*anyopaque,
+        result: []u8,
+        _: std.mem.Alignment,
+        context: []const u8,
+        _: std.mem.Alignment,
+        start: *const fn (context: *const anyopaque, result: *anyopaque) void,
+    ) ?*Io.AnyFuture {
+        start(context.ptr, result.ptr);
+        return null;
+    }
+
+    pub fn concurrent(
+        _: VTable,
+        _: ?*anyopaque,
+        _: usize,
+        _: std.mem.Alignment,
+        _: []const u8,
+        _: std.mem.Alignment,
+        _: *const fn (context: *const anyopaque, result: *anyopaque) void,
+    ) Io.ConcurrentError!*Io.AnyFuture {
+        return error.ConcurrencyUnavailable;
+    }
+
+    pub fn await(
+        _: VTable,
+        _: ?*anyopaque,
+        _: *Io.AnyFuture,
+        _: []u8,
+        _: std.mem.Alignment,
+    ) void {
+        unreachable; // TODO: Nothing to await
+    }
+
+    pub fn cancel(
+        _: VTable,
+        _: ?*anyopaque,
+        _: *Io.AnyFuture,
+        _: []u8,
+        _: std.mem.Alignment,
+    ) void {
+        unreachable; // TODO: Nothing to cancel
+    }
+
+    // TODO: group* not implemented
 
     pub fn recancel(_: VTable, _: ?*anyopaque) void {}
 
@@ -286,14 +331,15 @@ pub const VTable = enum(u0) {
         hio.parking_futex.wake(hio.arbiter, ptr, max_waiters);
     }
 
-    pub fn operate(_: VTable, ud: ?*anyopaque, operation: Io.Operation) Cancelable!Io.Operation.Result {
-        const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        _ = hio;
-        _ = operation;
-        unreachable;
+    pub fn operate(_: VTable, _: ?*anyopaque, operation: Io.Operation) Cancelable!Io.Operation.Result {
+        return switch (operation) {
+            .file_read_streaming => .{ .file_read_streaming = error.InputOutput },
+            .file_write_streaming => .{ .file_write_streaming = error.InputOutput },
+            .device_io_control => unreachable,
+        };
     }
 
-    // TODO: Non ROMFS storage
+    // TODO: Non ROMFS storage with fs:USER
     pub fn dirCreateDir(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirError!void {
         return error.ReadOnlyFileSystem;
     }
@@ -729,11 +775,11 @@ pub const VTable = enum(u0) {
     }
 
     pub fn childWait(_: VTable, _: ?*anyopaque, _: *std.process.Child) std.process.Child.WaitError!std.process.Child.Term {
-        unreachable;
+        unreachable; // No child to wait
     }
 
     pub fn childKill(_: VTable, _: ?*anyopaque, _: *std.process.Child) void {
-        unreachable;
+        unreachable; // No child to kill
     }
 
     pub fn progressParentFile(_: VTable, _: ?*anyopaque) std.Progress.ParentFileError!Io.File {
@@ -773,6 +819,73 @@ pub const VTable = enum(u0) {
 
     pub fn randomSecure(_: VTable, _: ?*anyopaque, _: []u8) Io.RandomSecureError!void {
         return error.EntropyUnavailable; // XXX: Is there any truly random entropy source in hos?
+    }
+
+    // TODO: network with soc:U
+    pub fn netListenIp(_: VTable, _: ?*anyopaque, _: Io.net.IpAddress, _: Io.net.IpAddress.ListenOptions) Io.net.IpAddress.ListenError!Io.net.Server {
+        return error.NetworkDown;
+    }
+
+    pub fn netAccept(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle) Io.net.Server.AcceptError!Io.net.Stream {
+        return error.NetworkDown;
+    }
+
+    pub fn netBindIp(_: VTable, _: ?*anyopaque, _: *const Io.net.IpAddress, _: Io.net.IpAddress.BindOptions) Io.net.IpAddress.BindError!Io.net.Socket {
+        return error.NetworkDown;
+    }
+
+    pub fn netConnectIp(_: VTable, _: ?*anyopaque, _: *const Io.net.IpAddress, _: Io.net.IpAddress.ConnectOptions) Io.net.IpAddress.ConnectError!Io.net.Stream {
+        return error.NetworkDown;
+    }
+
+    pub fn netListenUnix(_: VTable, _: ?*anyopaque, _: *const Io.net.UnixAddress, _: Io.net.UnixAddress.ListenOptions) Io.net.UnixAddress.ListenError!Io.net.Socket.Handle {
+        return error.AddressFamilyUnsupported;
+    }
+
+    pub fn netConnectUnix(_: VTable, _: ?*anyopaque, _: *const Io.net.UnixAddress) Io.net.UnixAddress.ConnectError!Io.net.Socket.Handle {
+        return error.AddressFamilyUnsupported;
+    }
+
+    pub fn netSocketCreatePair(_: VTable, _: ?*anyopaque, _: Io.net.Socket.CreatePairOptions) Io.net.Socket.CreatePairError![2]Io.net.Socket {
+        return error.NetworkDown;
+    }
+
+    pub fn netSend(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: []Io.net.OutgoingMessage, _: Io.net.SendFlags) struct { ?Io.net.Socket.SendError, usize } {
+        return .{ error.NetworkDown, 0 };
+    }
+
+    pub fn netReceive(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: []Io.net.IncomingMessage, _: []u8, _: Io.net.ReceiveFlags, _: Io.Timeout) struct { ?Io.net.Socket.ReceiveTimeoutError, usize } {
+        return .{ error.NetworkDown, 0 };
+    }
+
+    pub fn netRead(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: [][]u8) Io.net.Stream.Reader.Error!usize {
+        return error.NetworkDown;
+    }
+
+    pub fn netWrite(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: []const u8, _: []const []const u8, _: usize) Io.net.Stream.Writer.Error!usize {
+        return error.NetworkDown;
+    }
+
+    pub fn netWriteFile(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: []const u8, _: *Io.File.Reader, _: Io.Limit) Io.net.Stream.Writer.WriteFileError!usize {
+        return error.NetworkDown;
+    }
+
+    pub fn netClose(_: VTable, _: ?*anyopaque, _: []const Io.net.Socket.Handle) void {}
+
+    pub fn netShutdown(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: Io.net.ShutdownHow) Io.net.ShutdownError!void {
+        return error.NetworkDown;
+    }
+
+    pub fn netInterfaceNameResolve(_: VTable, _: ?*anyopaque, _: *const Io.net.Interface.Name) Io.net.Interface.Name.ResolveError!Io.net.Interface {
+        return error.NetworkDown;
+    }
+
+    pub fn netInterfaceName(_: VTable, _: ?*anyopaque, _: Io.net.Interface) Io.net.Interface.NameError!Io.net.Interface.Name {
+        return error.NetworkDown;
+    }
+
+    pub fn netLookup(_: VTable, _: ?*anyopaque, _: Io.net.HostName, _: *Io.Queue(Io.net.HostName.LookupResult), _: Io.net.HostName.LookupOptions) Io.net.HostName.LookupError!void {
+        return error.NetworkDown;
     }
 };
 
