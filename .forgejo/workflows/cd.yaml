@@ -16,7 +16,7 @@ jobs:
       - name: Setup zig
         uses: https://codeberg.org/mlugg/setup-zig@v2
         with:
-          version: 0.15.2
+          version: master
 
       - name: Build development release
         run: zig build release -Doptimize=ReleaseSafe
