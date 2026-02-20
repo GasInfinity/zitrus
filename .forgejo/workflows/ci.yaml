@@ -6,10 +6,7 @@ on:
       - main
 jobs:
   build-test:
-    strategy:
-      matrix:
-        os: [ubuntu-latest-aarch64-tiny]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest-x86_64-medium
     steps:
       - uses: actions/checkout@v6
         with:

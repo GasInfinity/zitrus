@@ -7,7 +7,7 @@ permissions:
   contents: write
 jobs:
   release-dev:
-    runs-on: ubuntu-latest-aarch64-tiny
+    runs-on: ubuntu-latest-x86_64-medium
     steps:
       - uses: actions/checkout@v6
         with:
