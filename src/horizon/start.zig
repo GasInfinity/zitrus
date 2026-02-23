@@ -120,7 +120,9 @@ inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !U
     defer allocator_instance.deinit();
 
     const gpa = allocator_instance.allocator();
-    horizon.Io.global.* = try .init(gpa, arbiter, .empty);
+
+    horizon.Io.global.* = try .init(gpa, arbiter);
+    defer horizon.Io.global.deinit();
 
     const base: Init = .{
         .arbiter = arbiter,

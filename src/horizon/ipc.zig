@@ -610,7 +610,8 @@ pub const Buffer = extern struct {
     packed_command: PackedCommand,
     static_buffers: [32]u32,
 
-    pub fn sendRequest(buffer: *Buffer, session: ClientSession, comptime DefinedCommand: type, request: DefinedCommand.Request, static_output: DefinedCommand.RequestStaticOutput) !Result(DefinedCommand.Response) {
+    pub const SendRequestError = ClientSession.RequestError || ReadError;
+    pub fn sendRequest(buffer: *Buffer, session: ClientSession, comptime DefinedCommand: type, request: DefinedCommand.Request, static_output: DefinedCommand.RequestStaticOutput) SendRequestError!Result(DefinedCommand.Response) {
         buffer.writeRequest(DefinedCommand, request, static_output);
         try session.sendRequest();
         return try buffer.readResponse(DefinedCommand);

@@ -56,6 +56,13 @@
     - 🟢 Segfaults (Data Aborts, Prefetch Aborts, ...).
     - 🔴 "Pretty" stacktraces with DWARF/Symbols
 - 🟢 *Application* Test runner.
+- 🟢 `std.Io`
+    - 🟢 Synchronization through futexes
+    - 🟡 POSIX'Y fd layer
+        - 🟢 RomFS
+        - 🟢 Sdmc
+        - 🔴 Networking
+    - 🔴 Concurrency
 - 🔴⛔🔋 `libc`
 
 ### Services

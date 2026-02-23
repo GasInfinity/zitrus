@@ -1,39 +1,5 @@
 {
   "nodes": {
-    "flake-compat": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1696426674,
-        "narHash": "sha256-kvjfFW7WAETZlt09AgDn1MrtKzP7t90Vf7vypd3OL1U=",
-        "owner": "edolstra",
-        "repo": "flake-compat",
-        "rev": "0f9255e01c2351cc7d116c072cb317785dd33b33",
-        "type": "github"
-      },
-      "original": {
-        "owner": "edolstra",
-        "repo": "flake-compat",
-        "type": "github"
-      }
-    },
-    "flake-utils": {
-      "inputs": {
-        "systems": "systems"
-      },
-      "locked": {
-        "lastModified": 1705309234,
-        "narHash": "sha256-uNRRNRKmJyCRC/8y1RqBkqWBLM034y4qN7EprSdmgyA=",
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "rev": "1ef2e671c3b0c19053962c07dbda38332dcebf26",
-        "type": "github"
-      },
-      "original": {
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1771369470,
@@ -57,21 +23,6 @@
         "zls": "zls"
       }
     },
-    "systems": {
-      "locked": {
-        "lastModified": 1681028828,
-        "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",
-        "owner": "nix-systems",
-        "repo": "default",
-        "rev": "da67096a3b9bf56a91d16901293e51ba5b49a27e",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nix-systems",
-        "repo": "default",
-        "type": "github"
-      }
-    },
     "zig": {
       "inputs": {
         "nixpkgs": [
@@ -79,40 +30,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1771387023,
-        "narHash": "sha256-XODCQAmLwDk1/NYGWDvmYW3VxFpMWzPmnXKvEDmaMSM=",
-        "owner": "NicoElbers",
+        "lastModified": 1771471480,
+        "narHash": "sha256-L1pLlgKqsE4JbkqVMC+uCKuQEQo6cKS1fmyQq2R4Rk0=",
+        "owner": "silversquirl",
         "repo": "zig-flake",
-        "rev": "8a4fc0256c486a6ca8e18a49b4975207ad5b6c3c",
+        "rev": "96895f13263b44bbb728e7278ae3e69795e0138c",
         "type": "github"
       },
       "original": {
-        "owner": "NicoElbers",
-        "ref": "updated",
+        "owner": "silversquirl",
+        "ref": "compat",
         "repo": "zig-flake",
-        "type": "github"
-      }
-    },
-    "zig-overlay": {
-      "inputs": {
-        "flake-compat": "flake-compat",
-        "flake-utils": "flake-utils",
-        "nixpkgs": [
-          "zls",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1770598090,
-        "narHash": "sha256-k+82IDgTd9o5sxHIqGlvfwseKln3Ejx1edGtDltuPXo=",
-        "owner": "mitchellh",
-        "repo": "zig-overlay",
-        "rev": "142495696982c88edddc8e17e4da90d8164acadf",
-        "type": "github"
-      },
-      "original": {
-        "owner": "mitchellh",
-        "repo": "zig-overlay",
         "type": "github"
       }
     },
@@ -121,7 +49,9 @@
         "nixpkgs": [
           "nixpkgs"
         ],
-        "zig-overlay": "zig-overlay"
+        "zig-overlay": [
+          "zig"
+        ]
       },
       "locked": {
         "lastModified": 1771432678,

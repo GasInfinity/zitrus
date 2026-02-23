@@ -506,11 +506,8 @@ pub const Object = packed struct(u32) {
     }
 
     pub fn close(obj: Object) void {
-        const C = result.Code;
         const code = closeHandle(obj);
-
-        return if (code == C.kernel_invalid_handle) unreachable // NOTE: Always a programmer error
-        else if (!code.isSuccess()) unreachable; // NOTE: Truly unreachable
+        if (!code.isSuccess()) resultBug(code) catch {};
     }
 };
 
@@ -1358,11 +1355,14 @@ pub fn outputDebugWriter(buffer: []u8) std.Io.Writer {
 }
 
 fn outputDebugDrain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
-    outputDebugString(w.buffered());
+    const buffered = w.buffered();
+    if (buffered.len > 0) outputDebugString(buffered);
     w.end = 0;
 
     var n: usize = 0;
     for (data[0 .. data.len - 1]) |slice| {
+        if (slice.len == 0) continue;
+
         outputDebugString(slice);
         n += slice.len;
     }
@@ -2216,7 +2216,7 @@ pub fn breakpoint() void {
     asm volatile ("svc 0xFF" ::: .{ .r0 = true, .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub const UnexpectedError = error{Unexpected};
+pub const UnexpectedError = std.Io.UnexpectedError;
 pub fn unexpectedResult(code: result.Code) UnexpectedError {
     debug.print("unexpected result: {f} (0x{X:0>8})\n", .{ code, @as(u32, @bitCast(code)) });
     return error.Unexpected;

@@ -27,7 +27,7 @@ const zitrus_dep = b.dependency("zitrus", .{});
 const zitrus_mod = zitrus_dep.module("zitrus");
 
 const exe = b.addExecutable(.{
-    .name = "panic.elf",
+    .name = "app.elf",
     .root_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = b.resolveTargetQuery(.{
@@ -35,10 +35,10 @@ const exe = b.addExecutable(.{
             .os_tag = .@"3ds",
         }),
         .optimize = optimize,
-        .single_threaded = true, // XXX: Currently needed for page_allocator.
         .imports = &.{
             .{ .name = "zitrus", .module = zitrus_mod },
         },
+        .zig_lib_dir = zitrus_dep.namedLazyPath("juice/zig_lib"),
     }),
 });
 
@@ -46,7 +46,7 @@ const exe = b.addExecutable(.{
 exe.pie = true;
 
 // Needed for any binary which targets the 3DS
-exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
+exe.setLinkerScript(zitrus_dep.namedLazyPath("horizon/ld"));
 
 // You can skip installing the elf but it is recommended to keep it for debugging purposes
 b.installArtifact(exe);
@@ -65,13 +65,7 @@ final_3dsx.install(b, .default);
 
 In your root file, you must also add this, as there's no way to implicitly tell zig to evaluate/import/use it automagically:
 ```zig
-pub const os = horizon;
-pub const debug = horizon.debug;
-pub const panic = std.debug.FullPanic(debug.defaultPanic);
-pub const std_options: std.Options = horizon.default_std_options;
-
-pub const std_options_debug_io: std.Io = horizon.Io.failing; // XXX: until it's implemented.
-comptime { _ = horizon.start; }
+pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
 ```
 
 ## Examples / Demos

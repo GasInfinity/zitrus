@@ -251,6 +251,10 @@ pub fn Monitor(comptime T: type) type {
     return extern struct {
         raw: T,
 
+        pub fn init(value: T) MonitorSelf {
+            return .{ .raw = value };
+        }
+
         /// Performs a load, putting the monitor into a exclusive access state.
         pub fn load(mon: *const MonitorSelf) T {
             return switch (@bitSizeOf(T)) {

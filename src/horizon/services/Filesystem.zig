@@ -118,7 +118,14 @@ pub const ArchiveId = enum(u32) {
     // TODO: finish this with fs accesible archives
 };
 
-pub const Archive = enum(u64) { _ };
+pub const Archive = enum(u64) {
+    none = 0,
+    _,
+
+    pub fn close(archive: Archive, fs: Filesystem) void {
+        fs.sendCloseArchive(archive);
+    }
+};
 
 pub const ArchiveResource = extern struct {
     sector_byte_size: usize,
@@ -173,7 +180,9 @@ pub const File = packed struct(u32) {
     session: ClientSession,
 
     pub fn close(file: File) void {
-        file.session.close();
+        defer file.session.close();
+
+        _ = tls.get().ipc.sendRequest(file.session, File.command.Close, .{}, .{}) catch {};
     }
 
     pub fn sendOpenSubFile(file: File, offset: u64, size: u64) !File {
@@ -230,14 +239,6 @@ pub const File = packed struct(u32) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
         };
-    }
-
-    pub fn sendClose(file: File) void {
-        const data = tls.get();
-        switch ((data.ipc.sendRequest(file.session, File.command.Close, .{}, .{}) catch unreachable).cases()) {
-            .success => {},
-            .failure => unreachable,
-        }
     }
 
     pub fn sendFlush(file: File) !void {
@@ -329,7 +330,9 @@ pub const Directory = packed struct(u32) {
     session: ClientSession,
 
     pub fn close(dir: Directory) void {
-        dir.session.close();
+        defer dir.session.close();
+
+        _ = tls.get().ipc.sendRequest(dir.session, Directory.command.Close, .{}, .{}) catch {};
     }
 
     pub fn sendRead(dir: Directory, entries: []Entry) !usize {
@@ -338,14 +341,6 @@ pub const Directory = packed struct(u32) {
             .success => |s| s.value.actual_entries,
             .failure => |code| horizon.unexpectedResult(code),
         };
-    }
-
-    pub fn sendClose(dir: Directory) void {
-        const data = tls.get();
-        switch ((data.ipc.sendRequest(dir.session, Directory.command.Close, .{}, .{}) catch unreachable).cases()) {
-            .success => {},
-            .failure => unreachable,
-        }
     }
 
     pub fn sendGetPriority(dir: Directory) !u32 {
@@ -399,6 +394,11 @@ pub fn sendInitialize(fs: Filesystem) !void {
     };
 }
 
+pub const SendOpenFileError = ipc.Buffer.SendRequestError || error{
+    FileNotFound,
+    IsDir,
+};
+
 pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, flags: OpenFlags, attributes: Attributes) !File {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.OpenFile, .{
@@ -411,7 +411,12 @@ pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_t
         .path = .static(path),
     }, .{})).cases()) {
         .success => |s| s.value.file.wrapped,
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if (code == Code.fs.entry_not_found)
+            error.FileNotFound
+        else if (code == Code.fs.unexpected_entry_kind)
+            error.IsDir
+        else
+            horizon.unexpectedResult(code),
     };
 }
 
@@ -543,17 +548,22 @@ pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Arch
     };
 }
 
-pub fn sendOpenDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !Directory {
+pub const SendOpenDirectoryError = ipc.Buffer.SendRequestError || error{
+    FileNotFound,
+};
+pub fn sendOpenDirectory(fs: Filesystem, archive: Archive, path_type: PathType, path: []const u8) SendOpenDirectoryError!Directory {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.OpenDirectory, .{
-        .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
         .path_size = path.len,
         .path = .static(path),
     }, .{})).cases()) {
         .success => |s| s.value.directory.wrapped,
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if (code == Code.fs.entry_not_found or code == Code.fs.unexpected_entry_kind) 
+            error.FileNotFound
+        else
+            horizon.unexpectedResult(code),
     };
 }
 
@@ -586,13 +596,7 @@ pub fn sendControlArchive(fs: Filesystem, archive: Archive, action: ControlArchi
 }
 
 pub fn sendCloseArchive(fs: Filesystem, archive: Archive) void {
-    const data = tls.get();
-    return switch ((data.ipc.sendRequest(fs.session, command.CloseArchive, .{
-        .archive = archive,
-    }, .{}) catch return).cases()) { // FIXME: catch return? who are we, C programmers?
-        .success => {},
-        .failure => |code| horizon.unexpectedResult(code) catch {},
-    };
+    _ = tls.get().ipc.sendRequest(fs.session, command.CloseArchive, .{ .archive = archive }, .{}) catch {};
 }
 
 pub const command = struct {
@@ -679,7 +683,6 @@ pub const command = struct {
         destination_path: ipc.Static(2),
     }, struct {});
     pub const OpenDirectory = ipc.Command(Id, .open_directory, struct {
-        transaction: usize,
         archive: Archive,
         path_type: PathType,
         path_size: usize,
@@ -887,11 +890,11 @@ const Filesystem = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
+const Code = horizon.result.Code;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
 
 const ncch = horizon.fmt.ncch;
 
-const ResultCode = horizon.result.Code;
 const ClientSession = horizon.ClientSession;
 const ServiceManager = horizon.ServiceManager;

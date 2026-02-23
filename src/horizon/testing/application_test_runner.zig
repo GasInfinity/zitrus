@@ -61,7 +61,7 @@ pub fn main(init: horizon.Init) !void {
         testing.log_level = .warn;
 
         horizon.testing.allocator_instance = .{ .backing_allocator = gpa };
-        horizon.testing.io_instance = try .init(horizon.testing.allocator, arbiter, .empty);
+        horizon.testing.io_instance = try .init(horizon.testing.allocator, arbiter);
 
         defer {
             horizon.testing.io_instance.deinit();

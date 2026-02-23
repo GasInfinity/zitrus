@@ -1,5 +1,5 @@
 pub const File = struct {
-    pub const Handle = romfs.View.Entry;
+    pub const Handle = Storage.Descriptor;
     pub const Flags = void;
 
     pub const Permissions = enum(u0) {
@@ -16,13 +16,13 @@ pub const File = struct {
 };
 
 pub const Dir = struct {
-    pub const Handle = romfs.View.Directory;
+    pub const Handle = Storage.Descriptor;
 
     pub const max_path_bytes = 255;
     pub const max_name_bytes = max_path_bytes;
 
     pub fn cwd() Io.Dir {
-        return .{ .handle = .root };
+        return .{ .handle = .cwd };
     }
 
     pub const Reader = struct {
@@ -43,7 +43,7 @@ pub const net = struct {
     pub const has_unix_sockets = false;
 
     pub const Socket = struct {
-        pub const Handle = void;
+        pub const Handle = Storage.Descriptor;
     };
 };
 
@@ -193,6 +193,9 @@ const ParkingFutex = struct {
     }
 };
 
+/// Implements a POSIXY file descriptor layer.
+pub const Storage = @import("Io/Storage.zig");
+
 gpa: std.mem.Allocator,
 arbiter: AddressArbiter,
 
@@ -205,14 +208,12 @@ rng_mutex: AddressArbiter.Mutex,
 rng: std.Random.DefaultCsprng,
 
 parking_futex: ParkingFutex,
-/// Could be `empty`, NOTE: fs is not final and will be replaced eventually tm
-storage: Filesystem.RomFs,
+storage: Storage,
 
 /// All handles must live until `deinit`
 pub fn init(
     gpa: std.mem.Allocator,
     arbiter: AddressArbiter,
-    storage: Filesystem.RomFs,
 ) !HIo {
     const tick = horizon.getSystemTick();
 
@@ -234,11 +235,17 @@ pub fn init(
             break :blk .init(seed);
         },
         .parking_futex = .init,
-        .storage = storage,
+        .storage = .empty,
     };
 }
 
+/// This `std.Io` instance now owns `fs`, will be closed on deinit
+pub fn initStorage(hio: *HIo, fs: Filesystem) void {
+    hio.storage = .init(fs);
+}
+
 pub fn deinit(hio: *HIo) void {
+    hio.storage.deinit(hio.gpa);
     hio.* = undefined;
 }
 
@@ -331,15 +338,38 @@ pub const VTable = enum(u0) {
         hio.parking_futex.wake(hio.arbiter, ptr, max_waiters);
     }
 
-    pub fn operate(_: VTable, _: ?*anyopaque, operation: Io.Operation) Cancelable!Io.Operation.Result {
+    pub fn operate(_: VTable, ud: ?*anyopaque, operation: Io.Operation) Cancelable!Io.Operation.Result {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        hio.storage.lock.unlockShared(hio.io());
+
         return switch (operation) {
-            .file_read_streaming => .{ .file_read_streaming = error.InputOutput },
-            .file_write_streaming => .{ .file_write_streaming = error.InputOutput },
+            .file_read_streaming => |op| blk: {
+                for(op.data) |buf| {
+                    if (buf.len == 0) continue;
+
+                    break :blk .{ .file_read_streaming = hio.storage.readStreaming(op.file.handle, buf) };
+                }
+
+                break :blk .{ .file_read_streaming = 0 };
+            },
+            .file_write_streaming => |op| blk: {
+                const buf = if (op.header.len != 0)
+                    op.header
+                else buf: for (op.data[0..op.data.len - 1]) |buf| {
+                    if (buf.len == 0) continue;
+                    break :buf buf;
+                } else if (op.data[op.data.len - 1].len > 0 and op.splat > 0)
+                    op.data[op.data.len - 1]
+                else 
+                    break :blk .{ .file_write_streaming = 0 };
+
+                break :blk .{ .file_write_streaming = hio.storage.writeStreaming(op.file.handle, buf) };
+            },
             .device_io_control => unreachable,
         };
     }
 
-    // TODO: Non ROMFS storage with fs:USER
     pub fn dirCreateDir(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirError!void {
         return error.ReadOnlyFileSystem;
     }
@@ -353,15 +383,19 @@ pub const VTable = enum(u0) {
     }
 
     pub fn dirOpenDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.OpenOptions) Io.Dir.OpenError!Io.Dir {
-        const file = dirOpenFile(.default, ud, dir, path, .{ .follow_symlinks = opts.follow_symlinks }) catch |err| switch (err) {
-            error.BadPathName => return error.BadPathName,
-            error.FileNotFound => return error.FileNotFound,
-            else => unreachable,
-        };
-        
-        return switch (file.handle.kind) {
-            .file => return error.NotDir,
-            .directory => file.handle.asDirectory(),
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockUncancelable(hio.io());
+        defer hio.storage.lock.unlock(hio.io());
+        _ = opts;
+
+        return .{
+            .handle = hio.storage.openPath(hio.gpa, dir.handle, path, .{
+                .mode = .read_only,
+                .allow = .directory,
+            }) catch |err| switch(err) {
+                error.IsDir => unreachable,
+                else => |e| return e,
+            },
         };
     }
 
@@ -403,9 +437,9 @@ pub const VTable = enum(u0) {
     }
 
     pub fn dirAccess(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.AccessOptions) Io.Dir.AccessError!void {
-        if (opts.write) return error.ReadOnlyFileSystem;
         if (opts.execute) return error.PermissionDenied;
-        _ = try dirOpenFile(.default, ud, dir, path, .{ .follow_symlinks = opts.follow_symlinks });
+        if (opts.write) return error.ReadOnlyFileSystem;
+        _ = try dirOpenFile(.default, ud, dir, path, .{});
     }
 
     pub fn dirCreateFile(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.File.CreateFlags) Io.File.OpenError!Io.File {
@@ -417,62 +451,38 @@ pub const VTable = enum(u0) {
     }
 
     pub fn dirOpenFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.File.OpenFlags) Io.File.OpenError!Io.File {
-        if (path.len > Dir.max_path_bytes) return error.BadPathName;
-
-        var utf16_path: [Dir.max_path_bytes]u16 = undefined;
-        const path_len = std.unicode.utf8ToUtf16Le(&utf16_path, path) catch return error.BadPathName;
+        if (opts.lock == .exclusive) return error.FileLocksUnsupported;
 
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        const entry = try hio.storage.openAny(dir.handle, utf16_path[0..path_len]);
+        hio.storage.lock.lockUncancelable(hio.io());
+        defer hio.storage.lock.unlock(hio.io());
 
-        return switch (entry.kind) {
-            .directory => blk: {
-                if (!opts.allow_directory) return error.IsDir;
-                if (opts.isWrite()) return error.IsDir;
-                break :blk .{ .handle = entry, .flags = {} };
+        return .{
+            .handle = hio.storage.openPath(hio.gpa, dir.handle, path, .{
+                .mode = opts.mode,
+                .allow = if (opts.allow_directory) .any else .file,
+            }) catch |err| switch (err) {
+                error.NotDir => unreachable,
+                else => |e| return e,
             },
-            .file => blk: {
-                if (opts.isWrite()) return error.PermissionDenied;
-                break :blk .{ .handle = entry, .flags = {} };
-            },
+            .flags = {},
         };
     }
 
-    pub fn dirClose(_: VTable, _: ?*anyopaque, _: []const Dir) void {} // We don't have to do anything, handles are just offsets (at least currently)
+    pub fn dirClose(_: VTable, ud: ?*anyopaque, dirs: []const Io.Dir) void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+
+        hio.storage.lock.lockUncancelable(hio.io());
+        defer hio.storage.lock.unlock(hio.io());
+
+        for (dirs) |dir| hio.storage.close(dir.handle); 
+    }
 
     pub fn dirRead(_: VTable, ud: ?*anyopaque, r: *Io.Dir.Reader, entries: []Io.Dir.Entry) Io.Dir.Reader.Error!usize {
-        const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        const buf: *Dir.Reader.Buffer = @alignCast(@ptrCast(&r.buffer));
-
-        if (r.end < @sizeOf(Dir.Reader.Buffer) or r.state == .reset) {
-            buf.* = .{
-                .it = .init(hio.storage.view, r.dir.handle),
-                .name = undefined,
-            };
-
-            r.end = @sizeOf(Dir.Reader.Buffer);
-            r.index = @sizeOf(Dir.Reader.Buffer);
-            r.state = .reading;
-        }
-        
-        const e = buf.it.next(hio.storage.view) orelse {
-            r.state = .finished;
-            return 0;
-        };
-
-        const name = e.name(hio.storage.view);
-        const name_len = std.unicode.utf16LeToUtf8(&buf.name, name) catch return error.Unexpected;
-
-        entries[0] = .{
-            .name = buf.name[0..name_len],
-            .inode = {},
-            .kind = switch (e.kind) {
-                .file => .file,
-                .directory => .directory,
-            },
-        };
-
-        return 1;
+        _ = ud;
+        _ = r;
+        _ = entries;
+        @panic("TODO"); 
     }
 
     pub fn dirRealPath(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []u8) Io.Dir.RealPathError!usize {
@@ -529,39 +539,45 @@ pub const VTable = enum(u0) {
 
     pub fn fileStat(_: VTable, ud: ?*anyopaque, file: Io.File) Io.File.StatError!Io.File.Stat {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        return .{
-            .inode = {},
-            .nlink = 0,
-            .size = switch (file.handle.kind) {
-                .file => file.handle.asFile().stat(hio.storage.view).size,
-                .directory => 0,
-            },
-            .permissions = .default_file,
-            .kind = switch (file.handle.kind) {
-                .file => .file,
-                .directory => .directory,
-            },
-            .atime = null,
-            .mtime = .{ .nanoseconds = 0 },
-            .ctime = .{ .nanoseconds = 0 },
-            .block_size = 512,
-        };
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        hio.storage.lock.unlockShared(hio.io());
+
+        return hio.storage.stat(file.handle);
     }
 
     pub fn fileLength(_: VTable, ud: ?*anyopaque, file: Io.File) Io.File.LengthError!u64 {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        return file.handle.stat(hio.storage.view).size;
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        hio.storage.lock.unlockShared(hio.io());
+
+        return hio.storage.length(file.handle);
     }
 
-    pub fn fileClose(_: VTable, _: ?*anyopaque, _: []const Io.File) void {} // We don't have to do anything, handles are just offsets (at least currently)
+    pub fn fileClose(_: VTable, ud: ?*anyopaque, files: []const Io.File) void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
-    pub fn fileWritePositional(_: VTable, _: ?*anyopaque, file: Io.File, header: []const u8, data: []const []const u8, splat: usize, offset: u64) Io.File.WritePositionalError!usize {
-        _ = file;
-        _ = header;
-        _ = data;
-        _ = splat;
-        _ = offset;
-        return error.NotOpenForWriting;
+        hio.storage.lock.lockUncancelable(hio.io());
+        defer hio.storage.lock.unlock(hio.io());
+
+        for (files) |file| hio.storage.close(file.handle);
+    }
+
+    pub fn fileWritePositional(_: VTable, ud: ?*anyopaque, file: Io.File, header: []const u8, data: []const []const u8, splat: usize, offset: u64) Io.File.WritePositionalError!usize {
+        const buf = if (header.len != 0)
+            header
+        else buf: for (data[0..data.len - 1]) |buf| {
+            if (buf.len == 0) continue;
+            break :buf buf;
+        } else if (data[data.len - 1].len > 0 and splat > 0)
+            data[data.len - 1]
+        else 
+            return 0;
+
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
+
+        return hio.storage.writePositional(file.handle, buf, offset);
     }
 
     pub fn fileWriteFileStreaming(_: VTable, _: ?*anyopaque, _: Io.File, _: []const u8, _: *Io.File.Reader, _: Io.Limit) Io.File.Writer.WriteFileError!usize {
@@ -573,24 +589,33 @@ pub const VTable = enum(u0) {
     }
 
     pub fn fileReadPositional(_: VTable, ud: ?*anyopaque, file: Io.File, data: []const []u8, offset: u64) Io.File.ReadPositionalError!usize {
-        if (file.handle.kind == .directory) return error.IsDir;
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
 
         for (data) |buf| {
-            return hio.storage.readPositional(file.handle.asFile(), offset, buf) catch |err| switch(err) {
-                else => error.Unexpected,
-            };
+            if (buf.len == 0) continue;
+
+            return try hio.storage.readPositional(file.handle, buf, offset);
         }
 
         return 0;
     }
 
-    pub fn fileSeekBy(_: VTable, _: ?*anyopaque, _: Io.File, _: i64) Io.File.SeekError!void {
-        return error.Unseekable;
+    pub fn fileSeekBy(_: VTable, ud: ?*anyopaque, file: Io.File, offset: i64) Io.File.SeekError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
+
+        return hio.storage.seekBy(file.handle, offset);
     }
 
-    pub fn fileSeekTo(_: VTable, _: ?*anyopaque, _: Io.File, _: u64) Io.File.SeekError!void {
-        return error.Unseekable;
+    pub fn fileSeekTo(_: VTable, ud: ?*anyopaque, file: Io.File, offset: u64) Io.File.SeekError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
+
+        return hio.storage.seekTo(file.handle, offset);
     }
 
     pub fn fileSync(_: VTable, _: ?*anyopaque, _: Io.File) Io.File.SyncError!void {
@@ -608,8 +633,12 @@ pub const VTable = enum(u0) {
         return false;
     }
 
-    pub fn fileSetLength(_: VTable, _: ?*anyopaque, _: Io.File, _: u64) Io.File.SetLengthError!void {
-        return error.NotResizable;
+    pub fn fileSetLength(_: VTable, ud: ?*anyopaque, file: Io.File, new_length: u64) Io.File.SetLengthError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
+
+        return hio.storage.setLength(file.handle, new_length);
     }
 
     pub fn fileSetOwner(_: VTable, _: ?*anyopaque, _: Io.File, _: ?Io.File.Uid, _: ?Io.File.Gid) Io.File.SetOwnerError!void {
@@ -677,8 +706,24 @@ pub const VTable = enum(u0) {
         mm.* = undefined;
     }
 
-    pub fn fileMemoryMapSetLength(_: VTable, _: ?*anyopaque, _: *Io.File.MemoryMap, _: usize) Io.File.MemoryMap.SetLengthError!void {
-        return error.OperationUnsupported;
+    pub fn fileMemoryMapSetLength(_: VTable, ud: ?*anyopaque, mm: *Io.File.MemoryMap, new_len: usize) Io.File.MemoryMap.SetLengthError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        const gpa = hio.gpa;
+        const page_size = std.heap.pageSize();
+        const alignment: std.mem.Alignment = .fromByteUnits(page_size);
+        const old_memory = mm.memory;
+
+        if (gpa.rawRemap(old_memory, alignment, new_len, @returnAddress())) |new_ptr| {
+            mm.memory = @alignCast(new_ptr[0..new_len]);
+        } else {
+            const new_ptr: [*]align(horizon.heap.page_size) u8 = @alignCast(
+                gpa.rawAlloc(new_len, alignment, @returnAddress()) orelse return error.OutOfMemory,
+            );
+            const copy_len = @min(new_len, old_memory.len);
+            @memcpy(new_ptr[0..copy_len], old_memory[0..copy_len]);
+            mm.memory = new_ptr[0..new_len];
+            gpa.rawFree(old_memory, alignment, @returnAddress());
+        }
     }
 
     pub fn fileMemoryMapRead(_: VTable, ud: ?*anyopaque, mm: *Io.File.MemoryMap) Io.File.ReadPositionalError!void {
@@ -750,12 +795,15 @@ pub const VTable = enum(u0) {
 
     pub fn processCurrentPath(_: VTable, _: ?*anyopaque, buffer: []u8) std.process.CurrentPathError!usize {
         if (buffer.len == 0) return error.NameTooLong;
-        buffer[0] = '/'; // Both RomFS and Archives always have the cwd at root.
-        return 1;
+        return error.CurrentDirUnlinked; // TODO: We can support this!
     }
 
-    pub fn processSetCurrentDir(_: VTable, _: ?*anyopaque, _: Io.Dir) std.process.SetCurrentDirError!void {
-        return error.OperationUnsupported;
+    pub fn processSetCurrentDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir) std.process.SetCurrentDirError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockUncancelable(hio.io());
+        defer hio.storage.lock.unlock(hio.io());
+
+        return hio.storage.setCurrentDir(dir.handle);
     }
 
     pub fn processReplace(_: VTable, _: ?*anyopaque, _: std.process.ReplaceOptions) std.process.ReplaceError {
@@ -890,6 +938,8 @@ pub const VTable = enum(u0) {
 };
 
 comptime {
+    _ = Storage;
+    _ = ParkingFutex;
     _ = @import("Io/test.zig");
 }
 

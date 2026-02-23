@@ -46,10 +46,10 @@ pub fn initFile(file: Filesystem.File, gpa: std.mem.Allocator) !RomFs {
     const file_hashes = try gpa.alloc(romfs.meta.FileOffset, @divExact(hdr.file_info.hash_table_size, @sizeOf(u32)));
     errdefer gpa.free(file_hashes);
 
-    if (try file.sendRead(hdr.directory_info.hash_table_offset, std.mem.sliceAsBytes(directory_hashes)) != hdr.directory_info.hash_table_size) return error.InvalidRomFs;
-    if (try file.sendRead(hdr.file_info.hash_table_offset, std.mem.sliceAsBytes(file_hashes)) != hdr.file_info.hash_table_size) return error.InvalidRomFs;
-    if (try file.sendRead(hdr.directory_info.meta_table_offset, std.mem.sliceAsBytes(directories)) != hdr.directory_info.meta_table_size) return error.InvalidRomFs;
-    if (try file.sendRead(hdr.file_info.meta_table_offset, std.mem.sliceAsBytes(files)) != hdr.file_info.meta_table_size) return error.InvalidRomFs;
+    if (try file.sendRead(hdr.directory_info.hash_table_offset, std.mem.sliceAsBytes(directory_hashes)) != hdr.directory_info.hash_table_size) return error.EndOfStream;
+    if (try file.sendRead(hdr.file_info.hash_table_offset, std.mem.sliceAsBytes(file_hashes)) != hdr.file_info.hash_table_size) return error.EndOfStream;
+    if (try file.sendRead(hdr.directory_info.meta_table_offset, std.mem.sliceAsBytes(directories)) != hdr.directory_info.meta_table_size) return error.EndOfStream;
+    if (try file.sendRead(hdr.file_info.meta_table_offset, std.mem.sliceAsBytes(files)) != hdr.file_info.meta_table_size) return error.EndOfStream;
 
     return .{
         .view = .init(.init(directories), .init(files), directory_hashes, file_hashes),
@@ -60,7 +60,7 @@ pub fn initFile(file: Filesystem.File, gpa: std.mem.Allocator) !RomFs {
 
 pub fn deinit(fs: RomFs, gpa: std.mem.Allocator) void {
     fs.view.deinit(gpa);
-    fs.file.sendClose();
+    if (fs.file != Filesystem.File.none) fs.file.close();
 }
 
 pub fn openHorizonSubFile(fs: RomFs, file: romfs.View.File) !Filesystem.File {
@@ -72,18 +72,18 @@ pub fn readPositional(fs: RomFs, file: romfs.View.File, position: u64, buffer: [
     const stat = file.stat(fs.view);
     const read_buffer = if (position + buffer.len >= stat.size) buffer[0..@intCast(stat.size - position)] else buffer;
 
-    return fs.file.sendRead(fs.data_offset + stat.offset, read_buffer);
+    return fs.file.sendRead(fs.data_offset + stat.offset + position, read_buffer);
 }
 
-pub fn openAny(fs: RomFs, parent: romfs.View.Directory, path: []const u16) !romfs.View.Entry {
+pub fn openAny(fs: RomFs, parent: romfs.View.Directory, path: []const u16) romfs.View.OpenError!romfs.View.Entry {
     return fs.view.openAny(parent, path);
 }
 
-pub fn openFile(fs: RomFs, parent: romfs.View.Directory, path: []const u16) !romfs.View.File {
+pub fn openFile(fs: RomFs, parent: romfs.View.Directory, path: []const u16) romfs.View.OpenFileError!romfs.View.File {
     return fs.view.openFile(parent, path);
 }
 
-pub fn openDir(fs: RomFs, parent: romfs.View.Directory, path: []const u16) !romfs.View.File {
+pub fn openDir(fs: RomFs, parent: romfs.View.Directory, path: []const u16) romfs.View.OpenDirError!romfs.View.File {
     return fs.view.openFile(parent, path);
 }
 
@@ -123,7 +123,7 @@ fn initSelf3dsx(fs: Filesystem, gpa: std.mem.Allocator) !RomFs {
         // TODO: I think I must convert to utf16 just in case?
         .sdmc => fs.sendOpenFileDirectly(0, .sdmc, .empty, &.{}, .ascii, path[0 .. path.len + 1], .r, .{}) catch return error.NoRomFs,
     };
-    defer file.sendClose();
+    defer file.close();
 
     var hdr_3dsx: extern struct {
         hdr: @"3dsx".Header,

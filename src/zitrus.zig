@@ -21,39 +21,24 @@ pub const ZitrusOptions = struct {
 };
 
 // XXX: Remove this when zig finally supports 64-bit atomics in ARMv6K+
+
+/// Monotonic
 pub fn atomicLoad64(comptime T: type, ptr: *T) T {
     if (@sizeOf(T) != 8) @compileError("only supported with 64-bit types");
 
-    var lo: u32 = undefined;
-    var hi: u32 = undefined;
-
-    asm volatile ("ldrexd %[lo], %[hi], [%[ptr]]"
-        : [lo] "={r0}" (lo),
-          [hi] "={r1}" (hi),
-        : [ptr] "{r0}" (ptr),
-    );
-
-    return @bitCast((@as(u64, hi) << 32) | @as(u64, lo));
+    const monitor: *hardware.cpu.arm11.Monitor(T) = @ptrCast(ptr);
+    return monitor.load();
 }
 
+/// Monotonic
 pub fn atomicStore64(comptime T: type, ptr: *T, value: T) void {
     if (@sizeOf(T) != 8) @compileError("only supported with 64-bit types");
 
-    const value_u64: u64 = @bitCast(value);
+    const monitor: *hardware.cpu.arm11.Monitor(T) = @ptrCast(ptr);
 
     while (true) {
-        asm volatile ("ldrexd r4, r5, [%[ptr]]"
-            :
-            : [ptr] "{r0}" (ptr),
-            : .{ .r4 = true, .r5 = true, .memory = true });
-
-        if (asm volatile ("strexd %[fail], %[lo], %[hi], [%[ptr]]"
-            : [fail] "={r1}" (-> u32),
-            : [lo] "{r2}" (@as(u32, @truncate(value_u64))),
-              [hi] "{r3}" (@as(u32, @truncate(value_u64 >> 32))),
-              [ptr] "{r0}" (ptr),
-            : .{ .memory = true }) == 0)
-            break;
+        _ = monitor.load();
+        if (!monitor.store(value)) break;
     }
 }
 

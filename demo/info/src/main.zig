@@ -2,25 +2,17 @@ pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_o
 
 pub fn main(init: horizon.Init.Application.Software) !void {
     const app = init.app;
-    const gpa = app.base.gpa;
+    // const gpa = app.base.gpa;
     const io = app.base.io;
     const soft = init.soft;
 
     const fs = try Filesystem.open(.user, app.srv);
-    defer fs.close();
+    // XXX: :mmmhhmmmm:
+    horizon.Io.global.storage = .init(fs);
 
     try fs.sendInitialize();
 
-    var romfs: Filesystem.RomFs = try .initSelf(fs, gpa);
-    defer romfs.deinit(gpa);
-
-    // XXX: Temporal
-    horizon.Io.global.storage = romfs;
-
-    const cfg = try Config.open(.user, app.srv);
-    defer cfg.close();
-
-    const test_file = try std.Io.Dir.cwd().openFile(io, "test.txt", .{ .mode = .read_only });
+    const test_file = try std.Io.Dir.cwd().openFile(io, "sdmc:/afolder/test.txt", .{ .mode = .read_only, .allow_directory = false });
     defer test_file.close(io);
 
     var buf: [1024]u8 = undefined;
@@ -28,6 +20,9 @@ pub fn main(init: horizon.Init.Application.Software) !void {
 
     var test_reader = test_file.reader(io, &.{});
     _ = try test_reader.interface.streamRemaining(&fixed);
+
+    const cfg = try Config.open(.user, app.srv);
+    defer cfg.close();
 
     const model = try cfg.sendGetSystemModel();
 

@@ -148,8 +148,12 @@ pub const Module = enum(u8) {
 // NOTE: we will have to split this into multiple (one for each module), it looks like different modules reuse the same description.
 pub const Description = enum(u10) {
     pub const Filesystem = enum(u10) {
+        file_not_found = 120,
         file_already_exists = 190,
         invalid_open_flags = 230,
+        entry_not_of_kind = 250,
+
+        invalid_path = 720,
 
         invalid_selection = 1000,
         too_large,
@@ -232,6 +236,11 @@ pub const Code = packed struct(i32) {
         .module = .common,
         .level = .fatal,
         .summary = .status_changed,
+    };
+
+    pub const fs = struct {
+        pub const entry_not_found: Code = @bitCast(@as(u32, 0xC8804478));
+        pub const unexpected_entry_kind: Code = @bitCast(@as(u32, 0xC92044FA));
     };
 
     pub const success: Code = @bitCast(@as(u32, 0));
