@@ -455,15 +455,16 @@ pub fn sendDeleteFile(fs: Filesystem, transaction: usize, archive: Archive, path
     }, .{})).cases()) {
         .success => {},
         .failure => |code| if (code == Code.fs.entry_not_found)
-            return error.FileNotFound
+            error.FileNotFound
         else if (code == Code.fs.unexpected_entry_kind)
-            return error.IsDir
+            error.IsDir
         else
             horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) !void {
+pub const RenameFileError = ipc.Buffer.SendRequestError || error{FileNotFound,PathAlreadyExists};
+pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) RenameFileError!void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.RenameFile, .{
         .transaction = transaction,
@@ -472,12 +473,17 @@ pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, 
         .source_path_size = src_path.len,
         .destination_archive = dst_archive,
         .destination_path_type = dst_path_type,
-        .destination_path_size = dst_path,
+        .destination_path_size = dst_path.len,
         .source_path = .static(src_path),
         .destination_path = .static(dst_path),
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if (code == Code.fs.entry_already_exists)
+            error.PathAlreadyExists
+        else if (code == Code.fs.entry_not_found)
+            error.FileNotFound
+        else
+            horizon.unexpectedResult(code),
     };
 }
 
@@ -496,9 +502,9 @@ pub fn sendDeleteDirectory(fs: Filesystem, transaction: usize, archive: Archive,
     }, .{})).cases()) {
         .success => {},
         .failure => |code| if (code == Code.fs.entry_not_found)
-            return error.FileNotFound
+            error.FileNotFound
         else if (code == Code.fs.unexpected_entry_kind)
-            return error.NotDir
+            error.NotDir
         else
             horizon.unexpectedResult(code),
     };
@@ -536,9 +542,9 @@ pub fn sendCreateFile(fs: Filesystem, transaction: usize, archive: Archive, path
     }, .{})).cases()) {
         .success => {},
         .failure => |code| if (code == Code.fs.entry_not_found)
-            return error.FileNotFound
-        else if (code == Code.fs.file_already_exists) 
-            return error.PathAlreadyExists
+            error.FileNotFound
+        else if (code == Code.fs.entry_already_exists) 
+            error.PathAlreadyExists
         else 
             horizon.unexpectedResult(code),
     };
@@ -561,21 +567,22 @@ pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive,
     }, .{})).cases()) {
         .success => {},
         .failure => |code| if (code == Code.fs.entry_not_found)
-            return error.FileNotFound
-        else if (code == Code.fs.file_already_exists) 
-            return error.PathAlreadyExists
+            error.FileNotFound
+        else if (code == Code.fs.entry_already_exists) 
+            error.PathAlreadyExists
         else
             horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) !void {
+pub const RenameDirectoryError = ipc.Buffer.SendRequestError || error{FileNotFound,PathAlreadyExists};
+pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) RenameDirectoryError!void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.RenameDirectory, .{
         .transaction = transaction,
         .source_archive = src_archive,
         .source_path_type = src_path_type,
-        .soruce_path_size = src_path.len,
+        .source_path_size = src_path.len,
         .destination_archive = dst_archive,
         .destination_path_type = dst_path_type,
         .destination_path_size = dst_path.len,
@@ -583,7 +590,12 @@ pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Arch
         .destination_path = .static(dst_path),
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if (code == Code.fs.entry_not_found)
+            error.FileNotFound
+        else if (code == Code.fs.entry_already_exists)
+            error.PathAlreadyExists
+        else
+            horizon.unexpectedResult(code),
     };
 }
 

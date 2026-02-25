@@ -1,4 +1,5 @@
 pub const empty: Storage = .init(.{ .session = .none });
+pub const separator = '/';
 
 pub const Descriptor = enum(u32) {
     invalid = std.math.maxInt(u32),
@@ -52,6 +53,7 @@ pub const Builder = struct {
     buf: [Io.Dir.max_path_bytes + 1]u16,
     end: usize,
 
+    
     /// It is asserted that `path` is valid
     pub fn appendRaw(builder: *Builder, sub_path: []const u16) error{NameTooLong}!void {
         if (builder.end + sub_path.len > builder.buf.len) return error.NameTooLong;
@@ -302,25 +304,12 @@ pub fn openPath(storage: *Storage, gpa: std.mem.Allocator, parent_dir: Descripto
                 };
             },
             .sdmc => {
+                // NOTE: We already check in tryMount that fs is valid and we've opened the archive.
                 const fs = storage.fs;
-                const parent: []const u16 = if (Io.Dir.path.isAbsolutePosix(device_path))
-                    Builder.root
-                else switch (maybe_dir_desc.?.stored.path) { // We already return NoDevice above
-                    .invalid => Builder.root,
-                    _ => |open| storage.paths.list.items[@intFromEnum(open)].value,
-                };
-
-                // + 1 for the NUL-terminator
-                if (parent.len + device_path.len + 1 > Io.Dir.max_path_bytes) return error.SystemResources;
-
-                var builder: Builder = .init;
-                try builder.appendRaw(parent[0..parent.len - 1]); // Remove the NULL terminator as we don't need it
-                try builder.append(device_path);
-
-                const path_z = try builder.nullTerminate();
                 const archive = storage.device.archive(device).?.*;
 
-                // NOTE: We already check in tryMount that fs is valid and we've opened the archive.
+                var builder: Builder = .init;
+                const path_z = try storage.buildPath(&builder, device_path, maybe_dir_desc);
 
                 if (std.mem.eql(u16, path_z, Builder.root)) break :des .{
                     .ref = .init(1),
@@ -395,6 +384,121 @@ pub fn openPath(storage: *Storage, gpa: std.mem.Allocator, parent_dir: Descripto
     return fd;
 }
 
+pub fn createFileAtomic(io: std.Io, dir: Io.Dir, sub_path: []const u8, opts: Io.Dir.CreateFileAtomicOptions) Io.Dir.CreateFileAtomicError!Io.File.Atomic {
+    _, const device_path = try splitParsePath(sub_path);
+
+    const target_dir, const dest_path, const close_on_deinit = if (Io.Dir.path.dirnamePosix(device_path)) |dirname| blk: {
+        const new_dir = if (opts.make_path)
+            dir.createDirPathOpen(io, dirname, .{}) catch |err| switch (err) {
+                // None of these make sense in this context.
+                error.IsDir,
+                error.Streaming,
+                error.DiskQuota,
+                error.PathAlreadyExists,
+                error.LinkQuotaExceeded,
+                error.PipeBusy,
+                error.FileTooBig,
+                error.FileLocksUnsupported,
+                error.DeviceBusy,
+                => return error.Unexpected,
+
+                else => |e| return e,
+            }
+        else
+            try dir.openDir(io, dirname, .{});
+
+        break :blk .{ new_dir, Io.Dir.path.basename(device_path), true };
+    } else .{ dir, sub_path, false };
+
+    while (true) {
+        var random_integer: u64 = undefined;
+        io.random(@ptrCast(&random_integer));
+        const tmp_sub_path = std.fmt.hex(random_integer);
+        const file = target_dir.createFile(io, &tmp_sub_path, .{
+            .permissions = opts.permissions,
+            .exclusive = true,
+        }) catch |err| switch (err) {
+            error.PathAlreadyExists => continue,
+            error.DeviceBusy => continue,
+            error.FileBusy => continue,
+
+            error.IsDir => return error.Unexpected, // No path components.
+            error.FileTooBig => return error.Unexpected, // Creating, not opening.
+            error.FileLocksUnsupported => return error.Unexpected, // Not asking for locks.
+            error.PipeBusy => return error.Unexpected, // Not opening a pipe.
+
+            else => |e| return e,
+        };
+        return .{
+            .file = file,
+            .file_basename_hex = random_integer,
+            .dest_sub_path = dest_path,
+            .file_open = true,
+            .file_exists = true,
+            .close_dir_on_deinit = close_on_deinit,
+            .dir = target_dir,
+        };
+    }
+}
+
+pub const AccessPathError = TryMountError || error{
+    ReadOnlyFileSystem,
+    FileNotFound,
+    NameTooLong,
+    BadPathName,
+    AccessDenied,
+};
+
+/// Assumes `lock` is held as non-shareable.
+pub fn accessPath(storage: *Storage, gpa: std.mem.Allocator, parent_dir: Descriptor, sub_path: []const u8, read: bool, write: bool) AccessPathError!void {
+    if (sub_path.len > Io.Dir.max_path_bytes) return error.NameTooLong;
+    if (sub_path.len == 0) return error.BadPathName;
+    
+    const maybe_device, const device_path = try splitParsePath(sub_path);
+    const maybe_dir_desc = try storage.getDirectoryDescription(parent_dir); 
+    const device = maybe_device orelse if (maybe_dir_desc) |desc| 
+        desc.flags.device
+    else
+        return error.NoDevice;
+
+    try storage.tryMount(gpa, device); 
+
+    switch (device) {
+        .romfs => {
+            const parent: romfs.View.Directory = if (Io.Dir.path.isAbsolutePosix(device_path)) 
+                .root
+            else maybe_dir_desc.?.stored.romfs.asDirectory(); // We already return NoDevice above
+
+            var utf16_device_path_buffer: [Io.Dir.max_path_bytes]u16 = undefined;
+            const utf16_device_path = utf16_device_path_buffer[0..std.unicode.utf8ToUtf16Le(&utf16_device_path_buffer, device_path) catch return error.BadPathName];
+            _ = try storage.device.romfs.openAny(parent, utf16_device_path);
+
+            if (write) return error.ReadOnlyFileSystem;
+        },
+        .sdmc => {
+            const fs = storage.fs;
+            const archive = storage.device.archive(device).?.*;
+
+            var builder: Builder = .init;
+            const path_z = try storage.buildPath(&builder, device_path, maybe_dir_desc);
+
+            // NOTE: We already check in tryMount that fs is valid and we've opened the archive.
+            if (std.mem.eql(u16, path_z, Builder.root)) return if (write) error.AccessDenied;
+
+            (fs.sendOpenFile(0, archive, .utf16, @ptrCast(path_z), .{
+                .read = read,
+                .write = write,
+                .create = false,
+            }, .{}) catch |err| switch (err) {
+                error.IsDir => return if (write) error.AccessDenied,
+                error.FileNotFound => |e| return e,
+                else => return error.Unexpected,
+                // TODO: We have to map the errors in OpenFile
+            }).close();
+        },
+    }
+}
+
 pub const ModifyPathOperation = enum {
     create_dir,
     delete_dir,
@@ -411,7 +515,7 @@ pub const ModifyError = TryMountError || error{
     NotDir,
 };
 
-/// Assumes `lock` is held as shareable.
+/// Assumes `lock` is held as non-shareable.
 pub fn modifyPath(storage: *Storage, gpa: std.mem.Allocator, parent_dir: Descriptor, sub_path: []const u8, operation: ModifyPathOperation) ModifyError!void {
     if (sub_path.len > Io.Dir.max_path_bytes) return error.NameTooLong;
     if (sub_path.len == 0) return error.BadPathName;
@@ -429,22 +533,10 @@ pub fn modifyPath(storage: *Storage, gpa: std.mem.Allocator, parent_dir: Descrip
         .romfs => return error.ReadOnlyFileSystem,
         .sdmc => {
             const fs = storage.fs;
-            const parent: []const u16 = if (Io.Dir.path.isAbsolutePosix(device_path))
-                Builder.root
-            else switch (maybe_dir_desc.?.stored.path) { // We already return NoDevice above
-                .invalid => Builder.root,
-                _ => |open| storage.paths.list.items[@intFromEnum(open)].value,
-            };
-
-            // + 1 for the NUL-terminator
-            if (parent.len + device_path.len + 1 > Io.Dir.max_path_bytes) return error.SystemResources;
+            const archive = storage.device.archive(device).?.*;
 
             var builder: Builder = .init;
-            try builder.appendRaw(parent[0..parent.len - 1]); // Remove the NULL terminator as we don't need it here.
-            try builder.append(device_path);
-
-            const path_z = try builder.nullTerminate();
-            const archive = storage.device.archive(device).?.*;
+            const path_z = try storage.buildPath(&builder, device_path, maybe_dir_desc);
 
             switch (operation) {
                 .create_dir => fs.sendCreateDirectory(0, archive, .utf16, @ptrCast(path_z), .{}) catch |err| switch(err) {
@@ -464,7 +556,90 @@ pub fn modifyPath(storage: *Storage, gpa: std.mem.Allocator, parent_dir: Descrip
     }
 }
 
-/// Assumes `lock` is held as shareable.
+/// Assumes `lock` is held as non-shareable.
+pub fn renamePath(storage: *Storage, gpa: std.mem.Allocator, src_parent_dir: Descriptor, src_path: []const u8, dst_parent_dir: Descriptor, dst_path: []const u8, preserve: bool) Io.Dir.RenamePreserveError!void {
+    if (src_path.len > Io.Dir.max_path_bytes) return error.NameTooLong;
+    if (src_path.len == 0) return error.BadPathName;
+    if (dst_path.len > Io.Dir.max_path_bytes) return error.NameTooLong;
+    if (dst_path.len == 0) return error.BadPathName;
+
+    const maybe_src_dir_desc = try storage.getDirectoryDescription(src_parent_dir); 
+    const maybe_dst_dir_desc = try storage.getDirectoryDescription(dst_parent_dir); 
+
+    const maybe_src_device, const src_device_path = try splitParsePath(src_path);
+    const src_device = maybe_src_device orelse if (maybe_src_dir_desc) |desc| 
+        desc.flags.device
+    else
+        return error.NoDevice;
+
+    const maybe_dst_device, const dst_device_path = try splitParsePath(dst_path);
+    const dst_device = maybe_dst_device orelse if (maybe_dst_dir_desc) |desc| 
+        desc.flags.device
+    else
+        return error.NoDevice;
+
+    if (src_device != dst_device) return error.CrossDevice;
+
+    try storage.tryMount(gpa, src_device);
+    try storage.tryMount(gpa, dst_device);
+
+    switch (dst_device) {
+        .romfs => return error.ReadOnlyFileSystem,
+        .sdmc => {
+            const fs = storage.fs;
+            const src_archive = storage.device.archive(src_device).?.*;
+            const dst_archive = storage.device.archive(dst_device).?.*;
+
+            var src_builder: Builder = .init;
+            const src_path_z = try storage.buildPath(&src_builder, src_device_path, maybe_src_dir_desc);
+            
+            var dst_builder: Builder = .init;
+            const dst_path_z = try storage.buildPath(&dst_builder, dst_device_path, maybe_dst_dir_desc);
+
+            rename_file: while (true) {
+                if (fs.sendRenameFile(0, src_archive, dst_archive, .utf16, @ptrCast(src_path_z), .utf16, @ptrCast(dst_path_z))) |_| {
+                    return;
+                } else |err| switch (err) {
+                    error.PathAlreadyExists => |e| {
+                        if (preserve) return e;
+
+                        if (fs.sendDeleteFile(0, dst_archive, .utf16, @ptrCast(dst_path_z))) |_| {
+                            continue :rename_file;
+                        } else |del_err| switch (del_err) {
+                            error.IsDir => |de| return de,
+                            else => return error.Unexpected,
+                        }
+                    },
+                    // This can also happen in src_path points to a directory so lets try to delete it.
+                    error.FileNotFound => break :rename_file,
+                    else => return error.Unexpected,
+                }
+            }
+
+            rename_dir: while (true) {
+                if (fs.sendRenameDirectory(0, src_archive, dst_archive, .utf16, @ptrCast(src_path_z), .utf16, @ptrCast(dst_path_z))) |_| {
+                    return;
+                } else |err| switch (err) {
+                    error.PathAlreadyExists => |e| {
+                        if (preserve) return e;
+
+                        if (fs.sendDeleteDirectory(0, dst_archive, .utf16, @ptrCast(dst_path_z))) |_| {
+                            continue :rename_dir;
+                        } else |del_err| switch (del_err) {
+                            error.NotDir => |de| return de,
+                            else => return error.Unexpected,
+                        }
+                    },
+                    // src_path truly doesn't exist, we've already tried files
+                    error.FileNotFound => |e| return e,
+                    else => return error.Unexpected,
+                }
+            }
+        },
+    }
+}
+
+/// Assumes `lock` is held as non-shareable.
 pub fn createDirPath(storage: *Storage, gpa: std.mem.Allocator, parent_dir: Descriptor, sub_path: []const u8) Io.Dir.CreateDirPathError!Io.Dir.CreatePathStatus {
     if (sub_path.len > Io.Dir.max_path_bytes) return error.NameTooLong;
     if (sub_path.len == 0) return error.BadPathName;
@@ -482,24 +657,24 @@ pub fn createDirPath(storage: *Storage, gpa: std.mem.Allocator, parent_dir: Desc
         .romfs => return error.ReadOnlyFileSystem,
         .sdmc => {
             const fs = storage.fs;
+            const archive = storage.device.archive(device).?.*;
+
             const parent: []const u16 = if (Io.Dir.path.isAbsolutePosix(device_path))
                 Builder.root
             else switch (maybe_dir_desc.?.stored.path) { // We already return NoDevice above
                 .invalid => Builder.root,
                 _ => |open| storage.paths.list.items[@intFromEnum(open)].value,
-            }; 
+            };
 
             // + 1 for the NUL-terminator
-            if (parent.len + device_path.len + 1 > Io.Dir.max_path_bytes) return error.SystemResources;
+            if (parent.len + device_path.len + 1 > Io.Dir.max_path_bytes) return error.NameTooLong;
 
             var builder: Builder = .init;
-            try builder.appendRaw(parent[0..parent.len - 1]); // Remove the NULL terminator as we don't need it
-
+            try builder.appendRaw(parent[0..parent.len - 1]); // Remove the NULL terminator as we don't need it here.
             const parent_end = builder.end;
             try builder.append(device_path);
 
-            const archive = storage.device.archive(device).?.*;
-            const path_z: []u16 = try builder.nullTerminate();
+            const path_z = try builder.nullTerminate();
             const path: []const u16 = builder.path();
 
             var it: Io.Dir.path.ComponentIterator(.posix, u16) = .init(path[parent_end..]);
@@ -620,7 +795,14 @@ pub fn readDir(storage: *Storage, r: *Io.Dir.Reader, entries: []Io.Dir.Entry) Io
                 }
 
                 if (dir.* == Filesystem.Directory.none) {
-                    dir.* = fs.sendOpenDirectory(archive, .utf16, @ptrCast(path_z)) catch return error.Unexpected;
+                    dir.* = fs.sendOpenDirectory(archive, .utf16, @ptrCast(path_z)) catch |err| switch (err) {
+                        // This can happen if the directory is deleted while iterating.
+                        error.FileNotFound => {
+                            r.state = .finished;
+                            return 0;
+                        },
+                        else => return error.Unexpected,
+                    };
                 }
                 
                 const bytes = r.buffer[0..@sizeOf(Description.Extra.Directory.NameBuffer)];
@@ -920,6 +1102,24 @@ fn splitParsePath(path: []const u8) error{BadPathName}!struct { ?Device.Kind, []
             break :dev .{ std.meta.stringToEnum(Device.Kind, path[0..first_colon]) orelse return error.BadPathName, path[(first_colon + 1)..] };
         } else .{ null, path };
     } else .{ null, path };
+}
+
+/// Buils a full path, returns the final path from `Builder.nullTerminator`
+fn buildPath(storage: *Storage, builder: *Builder, device_path: []const u8, maybe_desc: ?*Description) error{NameTooLong, BadPathName}![]u16 {
+    const parent: []const u16 = if (Io.Dir.path.isAbsolutePosix(device_path))
+        Builder.root
+    else switch (maybe_desc.?.stored.path) { // We already return NoDevice above
+        .invalid => Builder.root,
+        _ => |open| storage.paths.list.items[@intFromEnum(open)].value,
+    };
+
+    // + 1 for the NUL-terminator
+    if (parent.len + device_path.len + 1 > Io.Dir.max_path_bytes) return error.NameTooLong;
+
+    try builder.appendRaw(parent[0..parent.len - 1]); // Remove the NULL terminator as we don't need it
+    try builder.append(device_path);
+
+    return try builder.nullTerminate();
 }
 
 fn getDescription(storage: *Storage, handle: Descriptor) Io.UnexpectedError!*Description {
