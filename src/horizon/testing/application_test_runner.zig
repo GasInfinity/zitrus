@@ -15,8 +15,6 @@ var debug_writer: std.Io.Writer = horizon.outputDebugWriter(&debug_buffer);
 var log_err_count: usize = 0;
 
 pub fn main(init: horizon.Init) !void {
-    @disableInstrumentation();
-
     const arbiter = init.arbiter;
     const gpa = init.gpa;
 
@@ -46,6 +44,7 @@ pub fn main(init: horizon.Init) !void {
     horizon.testing.gsp = gsp;
     defer horizon.testing.gsp = undefined;
 
+
     var app = horizon.services.Applet.Application.init(apt, .app, srv) catch @panic("Error initializing Application");
     defer app.deinit(apt, .app, srv);
 
@@ -62,6 +61,19 @@ pub fn main(init: horizon.Init) !void {
 
         horizon.testing.allocator_instance = .{ .backing_allocator = gpa };
         horizon.testing.io_instance = try .init(horizon.testing.allocator, arbiter);
+        
+        {
+            const fs = horizon.services.Filesystem.open(.user, srv) catch @panic("Error opening connection to fs:USER");
+            horizon.testing.io_instance.storage = .init(fs);
+            try fs.sendInitialize();
+
+            const t_io = horizon.testing.io_instance.io();
+
+            const sdmc_root = try std.Io.Dir.cwd().openDir(t_io, "sdmc:/", .{});
+            defer sdmc_root.close(t_io);
+
+            try std.process.setCurrentDir(t_io, sdmc_root);
+        }
 
         defer {
             horizon.testing.io_instance.deinit();

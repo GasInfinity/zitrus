@@ -317,6 +317,7 @@ pub const File = packed struct(u32) {
 };
 
 pub const Directory = packed struct(u32) {
+    pub const none: Directory = .{ .session = .none };
     pub const Entry = extern struct {
         utf16_name: [262]u16,
         short_name: [10]u8,
@@ -335,9 +336,9 @@ pub const Directory = packed struct(u32) {
         _ = tls.get().ipc.sendRequest(dir.session, Directory.command.Close, .{}, .{}) catch {};
     }
 
-    pub fn sendRead(dir: Directory, entries: []Entry) !usize {
+    pub fn sendRead(dir: Directory, entries: []align(1) Entry) !usize {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(dir.session, Directory.command.Read, .{ .count = entries.len, .buffer = .mapped(std.mem.asBytes(entries)) }, .{})).cases()) {
+        return switch ((try data.ipc.sendRequest(dir.session, Directory.command.Read, .{ .count = entries.len, .entries_bytes = .mapped(@ptrCast(entries)) }, .{})).cases()) {
             .success => |s| s.value.actual_entries,
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -360,7 +361,7 @@ pub const Directory = packed struct(u32) {
     }
 
     pub const command = struct {
-        pub const Read = ipc.Command(Id, .read, struct { count: usize, entries_bytes: ipc.Mapped(.w) }, struct { actual_entries: usize });
+        pub const Read = ipc.Command(Id, .read, struct { count: usize, entries_bytes: ipc.Mapped(.w) }, struct { actual_entries: usize, entries_bytes: ipc.Mapped(.w) });
         pub const Close = ipc.Command(Id, .close, struct {}, struct {});
         pub const SetPriority = ipc.Command(Id, .set_priority, struct { priority: u32 }, struct {});
         pub const GetPriority = ipc.Command(Id, .get_priority, struct {}, struct { priority: u32 });
@@ -399,7 +400,7 @@ pub const SendOpenFileError = ipc.Buffer.SendRequestError || error{
     IsDir,
 };
 
-pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, flags: OpenFlags, attributes: Attributes) !File {
+pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, flags: OpenFlags, attributes: Attributes) SendOpenFileError!File {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.OpenFile, .{
         .transaction = transaction,
@@ -439,17 +440,26 @@ pub fn sendOpenFileDirectly(fs: Filesystem, transaction: usize, archive_id: Arch
     };
 }
 
-pub fn sendDeleteFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
+pub const DeleteFileError = ipc.Buffer.SendRequestError || error{
+    FileNotFound,
+    IsDir,
+};
+pub fn sendDeleteFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) DeleteFileError!void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.DeleteFile, .{
         .transaction = transaction,
         .archive = archive,
         .path_type = path_type,
         .path_size = path.len,
-        .path = .static(path.ptr[0..(path.len + 1)]),
+        .path = .static(path),
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if (code == Code.fs.entry_not_found)
+            return error.FileNotFound
+        else if (code == Code.fs.unexpected_entry_kind)
+            return error.IsDir
+        else
+            horizon.unexpectedResult(code),
     };
 }
 
@@ -471,6 +481,10 @@ pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, 
     };
 }
 
+pub const DeleteDirError = ipc.Buffer.SendRequestError || error{
+    FileNotFound,
+    NotDir,
+};
 pub fn sendDeleteDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.DeleteDirectory, .{
@@ -481,7 +495,12 @@ pub fn sendDeleteDirectory(fs: Filesystem, transaction: usize, archive: Archive,
         .path = .static(path),
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if (code == Code.fs.entry_not_found)
+            return error.FileNotFound
+        else if (code == Code.fs.unexpected_entry_kind)
+            return error.NotDir
+        else
+            horizon.unexpectedResult(code),
     };
 }
 
@@ -499,6 +518,11 @@ pub fn sendDeleteDirectoryRecursively(fs: Filesystem, transaction: usize, archiv
     };
 }
 
+pub const CreateFileError = ipc.Buffer.SendRequestError || error{
+    FileNotFound,
+    PathAlreadyExists,
+};
+
 pub fn sendCreateFile(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, attributes: Attributes, size: u64) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.CreateFile, .{
@@ -511,11 +535,21 @@ pub fn sendCreateFile(fs: Filesystem, transaction: usize, archive: Archive, path
         .path = .static(path),
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if (code == Code.fs.entry_not_found)
+            return error.FileNotFound
+        else if (code == Code.fs.file_already_exists) 
+            return error.PathAlreadyExists
+        else 
+            horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, attributes: Attributes) !void {
+pub const CreateDirectoryError = ipc.Buffer.SendRequestError || error{
+    FileNotFound,
+    PathAlreadyExists,
+};
+
+pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive, path_type: PathType, path: []const u8, attributes: Attributes) CreateDirectoryError!void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.CreateDirectory, .{
         .transaction = transaction,
@@ -526,7 +560,12 @@ pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive,
         .path = .static(path),
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| horizon.unexpectedResult(code),
+        .failure => |code| if (code == Code.fs.entry_not_found)
+            return error.FileNotFound
+        else if (code == Code.fs.file_already_exists) 
+            return error.PathAlreadyExists
+        else
+            horizon.unexpectedResult(code),
     };
 }
 

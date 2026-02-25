@@ -1005,9 +1005,12 @@ pub const ClientSession = packed struct(u32) {
         std.debug.assert(port.len < 12);
         return switch (connectToPort(port).cases()) {
             .success => |s| s.value,
-            .failure => |code| if (code == C.kernel_not_found) error.NotFound else if (code == C.os_invalid_string) unreachable // invalid port.ptr
-            else if (code == C.os_string_too_big) unreachable // we already assert port.len < 12
-            else unexpectedResult(code),
+            .failure => |code| if (code == C.kernel_not_found) 
+                error.NotFound 
+            else if (code == C.os_invalid_string or code == C.os_string_too_big)
+                resultBug(code) // invalid port.ptr and we already assert port.len < 12
+            else
+                unexpectedResult(code),
         };
     }
 
@@ -1015,7 +1018,14 @@ pub const ClientSession = packed struct(u32) {
         const C = result.Code;
         const code = sendSyncRequest(session);
 
-        return if (code == C.kernel_invalid_handle) unreachable else if (code == C.os_session_closed_by_remote) error.ConnectionClosedByPeer else if (!code.isSuccess()) unexpectedResult(code) else {};
+        return if (code == C.kernel_invalid_handle)
+            resultBug(code)
+        else if (code == C.os_session_closed_by_remote) 
+            error.ConnectionClosedByPeer
+        else if (!code.isSuccess()) 
+            unexpectedResult(code) 
+        else 
+            {};
     }
 
     pub fn close(session: ClientSession) void {

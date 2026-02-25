@@ -9,10 +9,11 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     const fs = try Filesystem.open(.user, app.srv);
     // XXX: :mmmhhmmmm:
     horizon.Io.global.storage = .init(fs);
-
     try fs.sendInitialize();
 
-    const test_file = try std.Io.Dir.cwd().openFile(io, "sdmc:/afolder/test.txt", .{ .mode = .read_only, .allow_directory = false });
+    const test_file = try std.Io.Dir.cwd().openFile(io, "romfs:/test.txt", .{
+        .mode = .read_only,
+    });
     defer test_file.close(io);
 
     var buf: [1024]u8 = undefined;

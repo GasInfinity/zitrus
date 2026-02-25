@@ -20,28 +20,6 @@ pub const ZitrusOptions = struct {
     stack_size: u32,
 };
 
-// XXX: Remove this when zig finally supports 64-bit atomics in ARMv6K+
-
-/// Monotonic
-pub fn atomicLoad64(comptime T: type, ptr: *T) T {
-    if (@sizeOf(T) != 8) @compileError("only supported with 64-bit types");
-
-    const monitor: *hardware.cpu.arm11.Monitor(T) = @ptrCast(ptr);
-    return monitor.load();
-}
-
-/// Monotonic
-pub fn atomicStore64(comptime T: type, ptr: *T, value: T) void {
-    if (@sizeOf(T) != 8) @compileError("only supported with 64-bit types");
-
-    const monitor: *hardware.cpu.arm11.Monitor(T) = @ptrCast(ptr);
-
-    while (true) {
-        _ = monitor.load();
-        if (!monitor.store(value)) break;
-    }
-}
-
 comptime {
     _ = horizon;
 

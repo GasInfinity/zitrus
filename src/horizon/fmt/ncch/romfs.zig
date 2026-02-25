@@ -419,6 +419,10 @@ pub const View = struct {
         pub fn name(directory: Directory, view: View) []const u16 {
             return view.directories.getName(@enumFromInt(@intFromEnum(directory)));
         }
+
+        pub fn iterator(directory: Directory, view: View) Iterator {
+            return view.iterator(directory);
+        }
     };
 
     pub const File = enum(u32) {
@@ -705,7 +709,7 @@ pub const View = struct {
         return .init(view, parent);
     }
 
-    pub const Iterator = struct {
+    pub const Iterator = extern struct {
         directory: DirectoryIterator,
         file: FileIterator,
 
@@ -726,7 +730,7 @@ pub const View = struct {
         }
     };
 
-    pub const FileIterator = struct {
+    pub const FileIterator = extern struct {
         current: meta.FileOffset,
 
         pub fn init(view: View, parent: Directory) FileIterator {
@@ -748,7 +752,7 @@ pub const View = struct {
         }
     };
 
-    pub const DirectoryIterator = struct {
+    pub const DirectoryIterator = extern struct {
         current: meta.DirectoryOffset,
 
         pub fn init(view: View, parent: Directory) DirectoryIterator {

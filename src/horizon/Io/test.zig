@@ -1,5 +1,152 @@
 //! std.Io tests ~yoinked~ imported from std (as we can't test it directly)
 
+test "write a file, read it, then delete it" {
+    const io = testing.io;
+
+    var tmp = tmpDir(.{});
+    defer tmp.cleanup();
+
+    var data: [1024]u8 = undefined;
+    var prng = std.Random.DefaultPrng.init(testing.random_seed);
+    const random = prng.random();
+    random.bytes(data[0..]);
+    const tmp_file_name = "temp_test_file.txt";
+    {
+        var file = try tmp.dir.createFile(io, tmp_file_name, .{});
+        defer file.close(io);
+
+        var file_writer = file.writer(io, &.{});
+        const st = &file_writer.interface;
+        try st.print("begin", .{});
+        try st.writeAll(&data);
+        try st.print("end", .{});
+        try st.flush();
+    }
+
+    {
+        // Make sure the exclusive flag is honored.
+        try expectError(Io.File.OpenError.PathAlreadyExists, tmp.dir.createFile(io, tmp_file_name, .{ .exclusive = true }));
+    }
+
+    {
+        var file = try tmp.dir.openFile(io, tmp_file_name, .{});
+        defer file.close(io);
+
+        const file_size = try file.length(io);
+        const expected_file_size: u64 = "begin".len + data.len + "end".len;
+        try expectEqual(expected_file_size, file_size);
+
+        var file_buffer: [1024]u8 = undefined;
+        var file_reader = file.reader(io, &file_buffer);
+        const contents = try file_reader.interface.allocRemaining(testing.allocator, .limited(2 * 1024));
+        defer testing.allocator.free(contents);
+
+        try expect(mem.eql(u8, contents[0.."begin".len], "begin"));
+        try expect(mem.eql(u8, contents["begin".len .. contents.len - "end".len], &data));
+        try expect(mem.eql(u8, contents[contents.len - "end".len ..], "end"));
+    }
+    try tmp.dir.deleteFile(io, tmp_file_name);
+}
+
+test "File.Writer.seekTo" {
+    var tmp = tmpDir(.{});
+    defer tmp.cleanup();
+
+    const io = testing.io;
+
+    var data: [8192]u8 = undefined;
+    @memset(&data, 0x55);
+
+    const tmp_file_name = "temp_test_file.txt";
+    var file = try tmp.dir.createFile(io, tmp_file_name, .{ .read = true });
+    defer file.close(io);
+
+    var fw = file.writerStreaming(io, &.{});
+
+    try fw.interface.writeAll(&data);
+    try expect(fw.logicalPos() == try file.length(io));
+    try fw.seekTo(1234);
+    try expect(fw.logicalPos() == 1234);
+}
+
+test "File.setLength" {
+    const io = testing.io;
+
+    var tmp = tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_file_name = "temp_test_file.txt";
+    var file = try tmp.dir.createFile(io, tmp_file_name, .{ .read = true });
+    defer file.close(io);
+
+    var fw = file.writerStreaming(io, &.{});
+
+    // Verify that the file size changes and the file offset is not moved
+    try expect((try file.length(io)) == 0);
+    try expect(fw.logicalPos() == 0);
+    try file.setLength(io, 8192);
+    try expect((try file.length(io)) == 8192);
+    try expect(fw.logicalPos() == 0);
+    try fw.seekTo(100);
+    try file.setLength(io, 4096);
+    try expect((try file.length(io)) == 4096);
+    try expect(fw.logicalPos() == 100);
+    try file.setLength(io, 0);
+    try expect((try file.length(io)) == 0);
+    try expect(fw.logicalPos() == 100);
+}
+
+test "legacy setLength" {
+    // https://github.com/ziglang/zig/issues/20747 (open fd does not have write permission)
+    if (builtin.os.tag == .wasi and builtin.link_libc) return error.SkipZigTest;
+    if (builtin.cpu.arch.isMIPS64() and (builtin.abi == .gnuabin32 or builtin.abi == .muslabin32)) return error.SkipZigTest; // https://github.com/ziglang/zig/issues/23806
+
+    const io = testing.io;
+
+    var tmp = tmpDir(.{});
+    defer tmp.cleanup();
+
+    const file_name = "afile.txt";
+    try tmp.dir.writeFile(io, .{ .sub_path = file_name, .data = "ninebytes" });
+    const f = try tmp.dir.openFile(io, file_name, .{ .mode = .read_write });
+    defer f.close(io);
+
+    const initial_size = try f.length(io);
+    var buffer: [32]u8 = undefined;
+    var reader = f.reader(io, &.{});
+
+    {
+        try f.setLength(io, initial_size);
+        try expectEqual(initial_size, try f.length(io));
+        try reader.seekTo(0);
+        try expectEqual(initial_size, try reader.interface.readSliceShort(&buffer));
+        try expectEqualStrings("ninebytes", buffer[0..@intCast(initial_size)]);
+    }
+
+    {
+        const larger = initial_size + 4;
+        try f.setLength(io, larger);
+        try expectEqual(larger, try f.length(io));
+        try reader.seekTo(0);
+        try expectEqual(larger, try reader.interface.readSliceShort(&buffer));
+        // NOTE: Horizon fills the length with 0x55 so this is not portable!
+        // try expectEqualStrings("ninebytes\x00\x00\x00\x00", buffer[0..@intCast(larger)]);
+    }
+
+    {
+        const smaller = initial_size - 5;
+        try f.setLength(io, smaller);
+        try expectEqual(smaller, try f.length(io));
+        try reader.seekTo(0);
+        try expectEqual(smaller, try reader.interface.readSliceShort(&buffer));
+        try expectEqualStrings("nine", buffer[0..@intCast(smaller)]);
+    }
+
+    try f.setLength(io, 0);
+    try expectEqual(0, try f.length(io));
+    try reader.seekTo(0);
+    try expectEqual(0, try reader.interface.readSliceShort(&buffer));
+}
 test "random" {
     const io = testing.io;
 
@@ -389,9 +536,12 @@ const testing = std.testing;
 const expect = testing.expect;
 const expectEqual  = testing.expectEqual;
 const expectError = testing.expectError;
+const expectEqualStrings = std.testing.expectEqualStrings;
+const tmpDir = std.testing.tmpDir;
 
 const builtin = @import("builtin");
 const std = @import("std");
+const mem = std.mem;
 const Io = std.Io;
 
 const Semaphore = Io.Semaphore;

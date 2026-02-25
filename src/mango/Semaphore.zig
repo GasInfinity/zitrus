@@ -5,24 +5,28 @@ pub const Handle = enum(u32) {
     _,
 };
 
-/// DO NOT ACCESS THIS FIELD LIKE THIS!!! ACCESSES MUST BE ATOMIC, USE value()!
-raw_value: u64,
+// TODO: Use atomics when zig supports them
+value: zitrus.hardware.cpu.arm11.Monitor(u64),
 
 /// Wake cookie.
 wake: std.atomic.Value(i32) = .init(0),
 
 pub fn init(create_info: mango.SemaphoreCreateInfo) Semaphore {
     return .{
-        .raw_value = create_info.initial_value,
+        .value = .init(create_info.initial_value),
     };
 }
 
 pub fn counterValue(sema: *Semaphore) u64 {
-    return zitrus.atomicLoad64(u64, &sema.raw_value);
+    return sema.value.load();
 }
 
 pub fn signal(sema: *Semaphore, value: u64) bool {
-    zitrus.atomicStore64(u64, &sema.raw_value, value);
+    while (true) {
+        _ = sema.value.load();
+        if (!sema.value.store(value)) break;
+    }
+
     return sema.wake.swap(0, .monotonic) < 0;
 }
 

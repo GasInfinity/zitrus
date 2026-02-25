@@ -241,6 +241,7 @@ pub const Code = packed struct(i32) {
     pub const fs = struct {
         pub const entry_not_found: Code = @bitCast(@as(u32, 0xC8804478));
         pub const unexpected_entry_kind: Code = @bitCast(@as(u32, 0xC92044FA));
+        pub const file_already_exists: Code = @bitCast(@as(u32, 0xC82044BE));
     };
 
     pub const success: Code = @bitCast(@as(u32, 0));

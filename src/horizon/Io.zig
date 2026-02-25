@@ -26,12 +26,7 @@ pub const Dir = struct {
     }
 
     pub const Reader = struct {
-        pub const Buffer = struct {
-            it: romfs.View.Iterator,
-            name: [max_path_bytes * 4]u8,
-        };
-
-        pub const min_buffer_len = @sizeOf(Buffer);
+        pub const min_buffer_len = Storage.Description.Extra.Directory.min_reader_buffer_len;
     };
 };
 
@@ -239,11 +234,6 @@ pub fn init(
     };
 }
 
-/// This `std.Io` instance now owns `fs`, will be closed on deinit
-pub fn initStorage(hio: *HIo, fs: Filesystem) void {
-    hio.storage = .init(fs);
-}
-
 pub fn deinit(hio: *HIo) void {
     hio.storage.deinit(hio.gpa);
     hio.* = undefined;
@@ -341,7 +331,7 @@ pub const VTable = enum(u0) {
     pub fn operate(_: VTable, ud: ?*anyopaque, operation: Io.Operation) Cancelable!Io.Operation.Result {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
         hio.storage.lock.lockSharedUncancelable(hio.io());
-        hio.storage.lock.unlockShared(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
 
         return switch (operation) {
             .file_read_streaming => |op| blk: {
@@ -370,16 +360,26 @@ pub const VTable = enum(u0) {
         };
     }
 
-    pub fn dirCreateDir(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirError!void {
-        return error.ReadOnlyFileSystem;
+    pub fn dirCreateDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
+
+        return try hio.storage.modifyPath(hio.gpa, dir.handle, path, .create_dir);
     }
 
-    pub fn dirCreateDirPath(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirPathError!Io.Dir.CreatePathStatus {
-        return error.ReadOnlyFileSystem;
+    pub fn dirCreateDirPath(_: VTable, ud: ?*anyopaque, dir: Io.Dir, sub_path: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirPathError!Io.Dir.CreatePathStatus {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
+
+        return try hio.storage.createDirPath(hio.gpa, dir.handle, sub_path);
     }
 
-    pub fn dirCreateDirPathOpen(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir.Permissions, _: Io.Dir.OpenOptions) Io.Dir.CreateDirPathOpenError!Io.Dir {
-        return error.ReadOnlyFileSystem;
+    pub fn dirCreateDirPathOpen(_: VTable, ud: ?*anyopaque, dir: Io.Dir, sub_path: []const u8, _: Io.Dir.Permissions, opts: Io.Dir.OpenOptions) Io.Dir.CreateDirPathOpenError!Io.Dir {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        try dir.createDirPath(hio.io(), sub_path);
+        return try dir.openDir(hio.io(), sub_path, opts);
     }
 
     pub fn dirOpenDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.OpenOptions) Io.Dir.OpenError!Io.Dir {
@@ -393,47 +393,27 @@ pub const VTable = enum(u0) {
                 .mode = .read_only,
                 .allow = .directory,
             }) catch |err| switch(err) {
-                error.IsDir => unreachable,
+                error.IsDir, error.PathAlreadyExists => unreachable,
+                error.ReadOnlyFileSystem => return error.AccessDenied, // XXX: see dirOpenFile
                 else => |e| return e,
             },
         };
     }
 
-    pub fn dirStat(_: VTable, _: ?*anyopaque, _: Io.Dir) Io.Dir.StatError!Io.Dir.Stat {
-        return .{
-            .inode = {},
-            .nlink = 0,
-            .size = 0,
-            .permissions = .default_file,
-            .kind = .directory,
-            .atime = null,
-            .mtime = .{ .nanoseconds = 0 },
-            .ctime = .{ .nanoseconds = 0 },
-            .block_size = 512,
-        };
+    pub fn dirStat(_: VTable, ud: ?*anyopaque, dir: Io.Dir) Io.Dir.StatError!Io.Dir.Stat {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        hio.storage.lock.unlockShared(hio.io());
+
+        return hio.storage.stat(dir.handle);
     }
 
     pub fn dirStatFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.StatFileOptions) Io.Dir.StatFileError!Io.File.Stat {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        const file = try dirOpenFile(.default, ud, dir, path, .{ .follow_symlinks = opts.follow_symlinks });
+        const file = try dir.openFile(hio.io(), ud, dir, path, .{ .follow_symlinks = opts.follow_symlinks });
+        defer file.close(hio.io());
 
-        return .{
-            .inode = {},
-            .nlink = 0,
-            .size = switch (file.handle.kind) {
-                .file => file.handle.asFile().stat(hio.storage.view).size,
-                .directory => 0,
-            },
-            .permissions = .default_file,
-            .kind = switch (file.handle.kind) {
-                .file => .file,
-                .directory => .directory,
-            },
-            .atime = null,
-            .mtime = .{ .nanoseconds = 0 },
-            .ctime = .{ .nanoseconds = 0 },
-            .block_size = 512,
-        };
+        return file.stat(hio.io());
     }
 
     pub fn dirAccess(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.AccessOptions) Io.Dir.AccessError!void {
@@ -442,8 +422,34 @@ pub const VTable = enum(u0) {
         _ = try dirOpenFile(.default, ud, dir, path, .{});
     }
 
-    pub fn dirCreateFile(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.File.CreateFlags) Io.File.OpenError!Io.File {
-        return error.ReadOnlyFileSystem;
+    pub fn dirCreateFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.File.CreateFlags) Io.File.OpenError!Io.File {
+        if (opts.lock == .exclusive) return error.FileLocksUnsupported;
+
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        const file: Io.File = blk: {
+            hio.storage.lock.lockUncancelable(hio.io());
+            defer hio.storage.lock.unlock(hio.io());
+
+            break :blk .{
+                .handle = hio.storage.openPath(hio.gpa, dir.handle, path, .{
+                    .mode = if (opts.read) .read_write else .write_only,
+                    .create = if (opts.exclusive) .exclusive else .create,
+                    .allow = .file,
+                }) catch |err| switch (err) {
+                    error.NotDir => unreachable,
+                    error.ReadOnlyFileSystem => return error.AccessDenied,
+                    else => |e| return e,
+                },
+                .flags = {},
+            };
+        };
+        errdefer file.close(hio.io());
+
+        if (opts.truncate) file.setLength(hio.io(), 0) catch |err| switch(err) {
+            error.NonResizable, error.InputOutput => unreachable, // NOTE: we never return these for writeable files
+            else => |e| return e,
+        };
+        return file;
     }
 
     pub fn dirCreateFileAtomic(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir.CreateFileAtomicOptions) Io.Dir.CreateFileAtomicError!Io.File.Atomic {
@@ -463,6 +469,7 @@ pub const VTable = enum(u0) {
                 .allow = if (opts.allow_directory) .any else .file,
             }) catch |err| switch (err) {
                 error.NotDir => unreachable,
+                error.ReadOnlyFileSystem => return error.AccessDenied, // XXX: ... we should have this in OpenError
                 else => |e| return e,
             },
             .flags = {},
@@ -471,18 +478,18 @@ pub const VTable = enum(u0) {
 
     pub fn dirClose(_: VTable, ud: ?*anyopaque, dirs: []const Io.Dir) void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-
         hio.storage.lock.lockUncancelable(hio.io());
         defer hio.storage.lock.unlock(hio.io());
 
-        for (dirs) |dir| hio.storage.close(dir.handle); 
+        for (dirs) |dir| hio.storage.close(hio.gpa, dir.handle); 
     }
 
     pub fn dirRead(_: VTable, ud: ?*anyopaque, r: *Io.Dir.Reader, entries: []Io.Dir.Entry) Io.Dir.Reader.Error!usize {
-        _ = ud;
-        _ = r;
-        _ = entries;
-        @panic("TODO"); 
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
+
+        return hio.storage.readDir(r, entries);
     }
 
     pub fn dirRealPath(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []u8) Io.Dir.RealPathError!usize {
@@ -493,12 +500,29 @@ pub const VTable = enum(u0) {
         return error.OperationUnsupported; // TODO: This *could* be supported
     }
 
-    pub fn dirDeleteFile(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8) Io.Dir.DeleteFileError!void {
-        return error.ReadOnlyFileSystem;
+    pub fn dirDeleteFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, sub_path: []const u8) Io.Dir.DeleteFileError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
+
+        return hio.storage.modifyPath(hio.gpa, dir.handle, sub_path, .delete_file) catch |err| switch (err) {
+            error.PathAlreadyExists => unreachable,
+            error.NoDevice => return error.FileSystem,
+            else => |e| return e,
+        };
     }
 
-    pub fn dirDeleteDir(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8) Io.Dir.DeleteDirError!void {
-        return error.ReadOnlyFileSystem;
+    pub fn dirDeleteDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir, sub_path: []const u8) Io.Dir.DeleteDirError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
+
+        return hio.storage.modifyPath(hio.gpa, dir.handle, sub_path, .delete_dir) catch |err| switch (err) {
+            error.PathAlreadyExists => unreachable,
+            error.NoDevice => return error.FileSystem,
+            error.IsDir => unreachable,
+            else => |e| return e,
+        };
     }
 
     pub fn dirRename(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: Io.Dir, _: []const u8) Io.Dir.RenameError!void {
@@ -540,7 +564,7 @@ pub const VTable = enum(u0) {
     pub fn fileStat(_: VTable, ud: ?*anyopaque, file: Io.File) Io.File.StatError!Io.File.Stat {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
         hio.storage.lock.lockSharedUncancelable(hio.io());
-        hio.storage.lock.unlockShared(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
 
         return hio.storage.stat(file.handle);
     }
@@ -548,7 +572,7 @@ pub const VTable = enum(u0) {
     pub fn fileLength(_: VTable, ud: ?*anyopaque, file: Io.File) Io.File.LengthError!u64 {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
         hio.storage.lock.lockSharedUncancelable(hio.io());
-        hio.storage.lock.unlockShared(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
 
         return hio.storage.length(file.handle);
     }
@@ -559,7 +583,7 @@ pub const VTable = enum(u0) {
         hio.storage.lock.lockUncancelable(hio.io());
         defer hio.storage.lock.unlock(hio.io());
 
-        for (files) |file| hio.storage.close(file.handle);
+        for (files) |file| hio.storage.close(hio.gpa, file.handle);
     }
 
     pub fn fileWritePositional(_: VTable, ud: ?*anyopaque, file: Io.File, header: []const u8, data: []const []const u8, splat: usize, offset: u64) Io.File.WritePositionalError!usize {
@@ -803,7 +827,7 @@ pub const VTable = enum(u0) {
         hio.storage.lock.lockUncancelable(hio.io());
         defer hio.storage.lock.unlock(hio.io());
 
-        return hio.storage.setCurrentDir(dir.handle);
+        return try hio.storage.setCurrentDir(hio.gpa, dir.handle);
     }
 
     pub fn processReplace(_: VTable, _: ?*anyopaque, _: std.process.ReplaceOptions) std.process.ReplaceError {
