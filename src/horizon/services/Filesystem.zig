@@ -396,6 +396,7 @@ pub fn sendInitialize(fs: Filesystem) !void {
 }
 
 pub const SendOpenFileError = ipc.Buffer.SendRequestError || error{
+    UnexpectedOpenFlags,
     FileNotFound,
     IsDir,
 };
@@ -416,6 +417,8 @@ pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_t
             error.FileNotFound
         else if (code == Code.fs.unexpected_entry_kind)
             error.IsDir
+        else if (code == Code.fs.unexpected_open_flags)
+            error.UnexpectedOpenFlags
         else
             horizon.unexpectedResult(code),
     };

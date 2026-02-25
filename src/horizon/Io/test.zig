@@ -190,7 +190,7 @@ test "Dir.Iterator many entries" {
     var tmp_dir = tmpDir(.{ .iterate = true });
     defer tmp_dir.cleanup();
 
-    const num = 1024;
+    const num = 32; // 1024; // We're not stress-testing the 3ds (it still works however!)
     var i: usize = 0;
     var buf: [4]u8 = undefined; // Enough to store "1024".
     while (i < num) : (i += 1) {

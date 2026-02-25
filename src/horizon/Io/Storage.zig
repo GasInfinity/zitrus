@@ -485,16 +485,28 @@ pub fn accessPath(storage: *Storage, gpa: std.mem.Allocator, parent_dir: Descrip
             // NOTE: We already check in tryMount that fs is valid and we've opened the archive.
             if (std.mem.eql(u16, path_z, Builder.root)) return if (write) error.AccessDenied;
 
-            (fs.sendOpenFile(0, archive, .utf16, @ptrCast(path_z), .{
-                .read = read,
-                .write = write,
-                .create = false,
-            }, .{}) catch |err| switch (err) {
-                error.IsDir => return if (write) error.AccessDenied,
-                error.FileNotFound => |e| return e,
-                else => return error.Unexpected,
-                // TODO: We have to map the errors in OpenFile
-            }).close();
+            var current_read = read;
+
+            while (true) {
+                if(fs.sendOpenFile(0, archive, .utf16, @ptrCast(path_z), .{
+                    .read = current_read,
+                    .write = write,
+                    .create = false,
+                }, .{})) |file| {
+                    file.close();
+                    return;
+                } else |err| switch (err) {
+                    error.IsDir => return if (write) error.AccessDenied,
+                    error.FileNotFound => |e| return e,
+                    // NOTE: It seems we can't access a file sometimes without `read`
+                    error.UnexpectedOpenFlags => {
+                        if (current_read) return error.Unexpected;
+                        current_read = true;
+                    },
+                    else => return error.Unexpected,
+                    // TODO: We have to map the errors in OpenFile
+                }
+            }
         },
     }
 }
