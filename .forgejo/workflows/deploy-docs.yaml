@@ -1,0 +1,28 @@
+name: Deploy Docs
+on:
+  push:
+    branches:
+      - main
+jobs:
+  deploy:
+    runs-on: ubuntu-latest-x86_64-medium
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Setup zig
+        uses: https://codeberg.org/mlugg/setup-zig@v2
+        with:
+          version: master
+          
+      - name: Build
+        run: zig build docs
+          
+      - name: Deploy
+        # FIXME: Pinning is not great but we don't have node20 in the image
+        uses: https://github.com/cloudflare/wrangler-action@v3.12.0
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy ./zig-out/docs --project-name=zitrus-docs

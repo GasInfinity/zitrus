@@ -85,6 +85,7 @@ pub fn build(b: *Build) void {
             },
         }),
         .linkage = .static,
+        .zig_lib_dir = b.named_lazy_paths.get("juice/zig_lib").?,
     });
 
     zitrus_lib.root_module.addImport("zitrus", zitrus_lib.root_module);
