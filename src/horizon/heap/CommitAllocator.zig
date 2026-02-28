@@ -210,7 +210,7 @@ fn freeBigPages(cma: *CommitAllocator, address: [*]align(horizon.heap.page_size)
     const pow2_pages = std.math.ceilPowerOfTwoAssert(usize, n);
     const big_class = std.math.log2(pow2_pages);
 
-    log.info("freed {} bytes at {*} (big)", .{ pow2_pages * bigpage_size, address });
+    log.debug("freed {} bytes at {*} (big)", .{ pow2_pages * bigpage_size, address });
     const node: *Node = @ptrCast(address);
     node.next = cma.big_frees[big_class];
     cma.big_frees[big_class] = node;

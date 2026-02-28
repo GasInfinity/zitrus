@@ -235,50 +235,50 @@ pub const Codec = union(enum) {
             .raw => @as(*align(@sizeOf(u32)) const T, @ptrCast(buffer)).*,
             .static_slice => blk: {
                 const header: Buffer.TranslationDescriptor.StaticBuffer = @bitCast(buffer[0]);
-                //
-                // if(header.type != .static_buffer) return error.BadTranslationHeader;
-                // if(header.index != T.index) return error.BadTranslationHeader;
+
+                if(header.type != .static_buffer) return error.BadTranslationHeader;
+                if(header.index != T.index) return error.BadTranslationHeader;
 
                 if (header.size == 0) return .static(&.{});
                 break :blk .static(@as([*]u8, @ptrFromInt(buffer[1]))[0..header.size]);
             },
             .mapped_slice => blk: {
                 const header: Buffer.TranslationDescriptor.MappedBuffer = @bitCast(buffer[0]);
-                //
-                // if(header.type != 1) return error.BadTranslationHeader;
-                // if(header.read != T.permissions.read) return error.BadTranslationHeader;
-                // if(header.write != T.permissions.write) return error.BadTranslationHeader;
+
+                if(header.type != 1) return error.BadTranslationHeader;
+                if(header.read != T.permissions.read) return error.BadTranslationHeader;
+                if(header.write != T.permissions.write) return error.BadTranslationHeader;
 
                 if (header.size == 0) return .mapped(&.{});
                 break :blk .mapped(@as([*]u8, @ptrFromInt(buffer[1]))[0..header.size]);
             },
             .replace_by_process_id => blk: {
-                // const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
-                //
-                // if(header.type != .handle) return error.BadTranslationHeader;
-                // if(header.extra_handles > 0) return error.BadTranslationHeader;
-                // if(!header.replace_by_process_id) return error.BadTranslationHeader;
+                const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
+
+                if(header.type != .handle) return error.BadTranslationHeader;
+                if(header.extra_handles > 0) return error.BadTranslationHeader;
+                if(!header.replace_by_process_id) return error.BadTranslationHeader;
 
                 break :blk @enumFromInt(buffer[1]);
             },
             .handles, .move_handles => |amount| blk: {
-                // const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
-                //
-                // if(header.type != .handle) return error.BadTranslationHeader;
-                // if(header.extra_handles != amount-1) return error.BadTranslationHeader;
-                // if(header.move_handles != (codec == .move_handles)) return error.BadTranslationHeader;
+                const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
+
+                if(header.type != .handle) return error.BadTranslationHeader;
+                if(header.extra_handles != amount-1) return error.BadTranslationHeader;
+                if(header.move_handles != (codec == .move_handles)) return error.BadTranslationHeader;
 
                 var result: T = undefined;
                 @as(*[amount]u32, @ptrCast(&result)).* = buffer[1..][0..amount].*;
                 break :blk result;
             },
             .handle_array, .move_handle_array => |flds| blk: {
-                // const sz = codec.size();
-                // const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
+                const sz = codec.size();
+                const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
 
-                // if(header.type != .handle) return error.BadTranslationHeader;
-                // if(header.extra_handles != (sz-2)) return error.BadTranslationHeader;
-                // if(header.move_handles != (codec == .move_handle_array)) return error.BadTranslationHeader;
+                if(header.type != .handle) return error.BadTranslationHeader;
+                if(header.extra_handles != (sz-2)) return error.BadTranslationHeader;
+                if(header.move_handles != (codec == .move_handle_array)) return error.BadTranslationHeader;
 
                 const WrappedType = T.Wrapped;
                 var result: WrappedType = undefined;
@@ -357,7 +357,7 @@ pub const Codec = union(enum) {
 
         try testExpect(.{ .handles = 1 }, .of(horizon.Object));
         try testExpect(.{ .handles = 5 }, .of([5]horizon.Object));
-        try testExpect(.{ .handles = 10 }, .of([10]horizon.ClientSession));
+        try testExpect(.{ .handles = 10 }, .of([10]horizon.Session.Client));
         try testExpect(.{ .move_handles = 1 }, .of(MoveHandles(horizon.Object)));
         try testExpect(.{ .move_handles = 4 }, .of(MoveHandles([4]horizon.Object)));
         try testExpect(.{ .move_handles = 2 }, .of(MoveHandles([2]horizon.Process)));
@@ -631,7 +631,7 @@ pub const Buffer = extern struct {
             const static_buffer: []u8 = @ptrCast(@field(static_output, f.name));
 
             buffer.static_buffers[i << 1] = @bitCast(TranslationDescriptor.StaticBuffer.init(@intCast(static_buffer.len), @intCast(i)));
-            buffer.static_buffers[i << 1 + 1] = @intCast(@intFromPtr(static_buffer.ptr));
+            buffer.static_buffers[(i << 1) + 1] = @intCast(@intFromPtr(static_buffer.ptr));
         }
     }
 
@@ -788,6 +788,6 @@ const std = @import("std");
 
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
-const ClientSession = horizon.ClientSession;
+const ClientSession = horizon.Session.Client;
 const ResultCode = horizon.result.Code;
 const Result = horizon.Result;

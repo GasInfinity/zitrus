@@ -49,7 +49,10 @@ pub const LockedStderr = struct {
         return ls.term;
     }
 
-    pub fn clear(_: LockedStderr, _: []u8) Cancelable!void {}
+    pub fn clear(ls: LockedStderr, _: []u8) Cancelable!void {
+        ls.term.writer.flush() catch unreachable; // NOTE: Uncancelable & never fails
+        // ls.term.writer.buffer = buffer;
+    }
 };
 
 var global_backing: horizon.Io = .{
@@ -295,6 +298,25 @@ pub const VTable = enum(u0) {
     }
 
     // TODO: group* not implemented
+
+    pub fn groupAsync(
+        _: VTable,
+        _: ?*anyopaque,
+        _: *Io.Group,
+        context: []const u8,
+        _: std.mem.Alignment,
+        start: *const fn (context: *const anyopaque) Cancelable!void,
+    ) void {
+        start(context.ptr) catch {}; // FIXME: cancelation?
+    }
+
+    pub fn groupAwait(_: VTable, _: ?*anyopaque, _: *Io.Group, _: *anyopaque) Cancelable!void {
+        // TODO: Nothing to cancel
+    }
+
+    pub fn groupCancel(_: VTable, _: ?*anyopaque, _: *Io.Group, _: *anyopaque) void {
+        // TODO: Nothing to cancel
+    }
 
     pub fn recancel(_: VTable, _: ?*anyopaque) void {}
 
@@ -821,7 +843,6 @@ pub const VTable = enum(u0) {
             @atomicStore(horizon.Thread.Impl.Id, &hio.debug_mutex_holder, current_id, .unordered);
         }
         hio.debug_mutex_lock_count += 1;
-        hio.debug_writer.flush() catch unreachable; // NOTE: never fails
 
         return .{
             .term = .{
@@ -917,21 +938,32 @@ pub const VTable = enum(u0) {
         return error.EntropyUnavailable; // XXX: Is there any truly random entropy source in hos?
     }
 
-    // TODO: network with soc:U
-    pub fn netListenIp(_: VTable, _: ?*anyopaque, _: Io.net.IpAddress, _: Io.net.IpAddress.ListenOptions) Io.net.IpAddress.ListenError!Io.net.Server {
-        return error.NetworkDown;
+    pub fn netListenIp(_: VTable, ud: ?*anyopaque, address: Io.net.IpAddress, opts: Io.net.IpAddress.ListenOptions) Io.net.IpAddress.ListenError!Io.net.Server {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockUncancelable(hio.io());
+        defer hio.storage.lock.unlock(hio.io());
+
+        return try hio.storage.netListen(hio.gpa, address, opts);
     }
 
-    pub fn netAccept(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle) Io.net.Server.AcceptError!Io.net.Stream {
-        return error.NetworkDown;
+    pub fn netAccept(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle) Io.net.Server.AcceptError!Io.net.Stream {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockUncancelable(hio.io());
+        defer hio.storage.lock.unlock(hio.io());
+
+        return try hio.storage.netAccept(hio.gpa, handle);
     }
 
     pub fn netBindIp(_: VTable, _: ?*anyopaque, _: *const Io.net.IpAddress, _: Io.net.IpAddress.BindOptions) Io.net.IpAddress.BindError!Io.net.Socket {
         return error.NetworkDown;
     }
 
-    pub fn netConnectIp(_: VTable, _: ?*anyopaque, _: *const Io.net.IpAddress, _: Io.net.IpAddress.ConnectOptions) Io.net.IpAddress.ConnectError!Io.net.Stream {
-        return error.NetworkDown;
+    pub fn netConnectIp(_: VTable, ud: ?*anyopaque, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.ConnectOptions) Io.net.IpAddress.ConnectError!Io.net.Stream {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockUncancelable(hio.io());
+        defer hio.storage.lock.unlock(hio.io());
+
+        return try hio.storage.netConnect(hio.gpa, address, opts);
     }
 
     pub fn netListenUnix(_: VTable, _: ?*anyopaque, _: *const Io.net.UnixAddress, _: Io.net.UnixAddress.ListenOptions) Io.net.UnixAddress.ListenError!Io.net.Socket.Handle {
@@ -943,7 +975,7 @@ pub const VTable = enum(u0) {
     }
 
     pub fn netSocketCreatePair(_: VTable, _: ?*anyopaque, _: Io.net.Socket.CreatePairOptions) Io.net.Socket.CreatePairError![2]Io.net.Socket {
-        return error.NetworkDown;
+        return error.OperationUnsupported;
     }
 
     pub fn netSend(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: []Io.net.OutgoingMessage, _: Io.net.SendFlags) struct { ?Io.net.Socket.SendError, usize } {
@@ -954,34 +986,73 @@ pub const VTable = enum(u0) {
         return .{ error.NetworkDown, 0 };
     }
 
-    pub fn netRead(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: [][]u8) Io.net.Stream.Reader.Error!usize {
-        return error.NetworkDown;
+    pub fn netRead(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle, data: [][]u8) Io.net.Stream.Reader.Error!usize {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
+
+        for(data) |buf| {
+            if (buf.len == 0) continue;
+
+            return hio.storage.netRead(handle, buf);
+        }
+
+        return 0;
     }
 
-    pub fn netWrite(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: []const u8, _: []const []const u8, _: usize) Io.net.Stream.Writer.Error!usize {
-        return error.NetworkDown;
+    pub fn netWrite(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle, header: []const u8, data: []const []const u8, splat: usize) Io.net.Stream.Writer.Error!usize {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
+
+        const buf = if (header.len != 0)
+            header
+        else buf: for (data[0..data.len - 1]) |buf| {
+            if (buf.len == 0) continue;
+            break :buf buf;
+        } else if (data[data.len - 1].len > 0 and splat > 0)
+            data[data.len - 1]
+        else 
+            return 0;
+
+        return try hio.storage.netWrite(handle, buf);
     }
 
     pub fn netWriteFile(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: []const u8, _: *Io.File.Reader, _: Io.Limit) Io.net.Stream.Writer.WriteFileError!usize {
-        return error.NetworkDown;
+        @panic("TODO");
     }
 
-    pub fn netClose(_: VTable, _: ?*anyopaque, _: []const Io.net.Socket.Handle) void {}
+    pub fn netClose(_: VTable, ud: ?*anyopaque, sockets: []const Io.net.Socket.Handle) void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockUncancelable(hio.io());
+        defer hio.storage.lock.unlock(hio.io());
 
-    pub fn netShutdown(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: Io.net.ShutdownHow) Io.net.ShutdownError!void {
-        return error.NetworkDown;
+        for (sockets) |handle| hio.storage.close(hio.gpa, handle);
     }
 
-    pub fn netInterfaceNameResolve(_: VTable, _: ?*anyopaque, _: *const Io.net.Interface.Name) Io.net.Interface.Name.ResolveError!Io.net.Interface {
-        return error.NetworkDown;
+    pub fn netShutdown(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle, how: Io.net.ShutdownHow) Io.net.ShutdownError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.storage.lock.lockSharedUncancelable(hio.io());
+        defer hio.storage.lock.unlockShared(hio.io());
+
+        return try hio.storage.netShutdown(handle, how);
     }
 
-    pub fn netInterfaceName(_: VTable, _: ?*anyopaque, _: Io.net.Interface) Io.net.Interface.NameError!Io.net.Interface.Name {
-        return error.NetworkDown;
+    pub fn netInterfaceNameResolve(_: VTable, _: ?*anyopaque, name: *const Io.net.Interface.Name) Io.net.Interface.Name.ResolveError!Io.net.Interface {
+        return if (std.mem.eql(u8, name.bytes[0..std.mem.findScalar(u8, name.bytes, 0) orelse name.bytes.len], "wlan0"))
+            .{ .index = 1 } 
+        else 
+            error.InterfaceNotFound;
     }
 
-    pub fn netLookup(_: VTable, _: ?*anyopaque, _: Io.net.HostName, _: *Io.Queue(Io.net.HostName.LookupResult), _: Io.net.HostName.LookupOptions) Io.net.HostName.LookupError!void {
-        return error.NetworkDown;
+    pub fn netInterfaceName(_: VTable, _: ?*anyopaque, iface: Io.net.Interface) Io.net.Interface.NameError!Io.net.Interface.Name {
+        std.debug.assert(iface.index == 1);
+        return .fromSliceUnchecked("wlan0");
+    }
+
+    pub fn netLookup(_: VTable, ud: ?*anyopaque, host_name: Io.net.HostName, results: *Io.Queue(Io.net.HostName.LookupResult), opts: Io.net.HostName.LookupOptions) Io.net.HostName.LookupError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        return try hio.storage.netLookup(hio.io(), hio.gpa, host_name, results, opts);
     }
 };
 

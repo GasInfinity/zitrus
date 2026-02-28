@@ -257,6 +257,6 @@ const ipc = horizon.ipc;
 const hardware = zitrus.hardware;
 const csnd = hardware.csnd;
 
-const ClientSession = horizon.ClientSession;
+const ClientSession = horizon.Session.Client;
 const MemoryBlock = horizon.MemoryBlock;
 const ServiceManager = horizon.ServiceManager;

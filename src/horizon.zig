@@ -69,7 +69,7 @@
 //! * `Event` - `Mutex` ditto. They can be signaled and cleared, their behavior changes depending on `ResetType`.
 //! * `Timer` - `Mutex` ditto. Their behavior changes depending on `ResetType`.
 //! * `MemoryBlock` - For inter-process shared memory creation and mapping.
-//! * `ClientSession` - An `ipc` session to `ClientSession.sendRequest`s and get resposes from.
+//! * `Session.Client` - An `ipc` session to `Session.Client.sendRequest`s and get resposes from.
 //! * `Thread` - self-explanatory, you can get the current thread via `Thread.current`.
 //! * `Process` - self-explanatory, you can get the current process via `Process.current`.
 //!
@@ -368,6 +368,7 @@ pub const SystemCall = enum(u8) {
 };
 
 pub const MemoryPermission = packed struct(u32) {
+    pub const none: MemoryPermission = .{};
     pub const r: MemoryPermission = .{ .read = true };
     pub const w: MemoryPermission = .{ .write = true };
     pub const x: MemoryPermission = .{ .execute = true };
@@ -985,54 +986,6 @@ pub const Timer = packed struct(u32) {
     }
 };
 
-pub const ServerSession = packed struct(u32) {
-    sync: Synchronization,
-
-    pub fn close(session: ServerSession) void {
-        session.sync.close();
-    }
-};
-
-pub const ClientSession = packed struct(u32) {
-    pub const none: ClientSession = .{ .sync = .none };
-    pub const ConnectionError = error{NotFound} || UnexpectedError;
-    pub const RequestError = error{ConnectionClosedByPeer} || UnexpectedError;
-
-    sync: Synchronization,
-
-    pub fn connect(port: [:0]const u8) ConnectionError!ClientSession {
-        const C = result.Code;
-        std.debug.assert(port.len < 12);
-        return switch (connectToPort(port).cases()) {
-            .success => |s| s.value,
-            .failure => |code| if (code == C.kernel_not_found) 
-                error.NotFound 
-            else if (code == C.os_invalid_string or code == C.os_string_too_big)
-                resultBug(code) // invalid port.ptr and we already assert port.len < 12
-            else
-                unexpectedResult(code),
-        };
-    }
-
-    pub fn sendRequest(session: ClientSession) RequestError!void {
-        const C = result.Code;
-        const code = sendSyncRequest(session);
-
-        return if (code == C.kernel_invalid_handle)
-            resultBug(code)
-        else if (code == C.os_session_closed_by_remote) 
-            error.ConnectionClosedByPeer
-        else if (!code.isSuccess()) 
-            unexpectedResult(code) 
-        else 
-            {};
-    }
-
-    pub fn close(session: ClientSession) void {
-        session.sync.close();
-    }
-};
-
 pub const Debug = packed struct(u32) {
     sync: Synchronization,
 
@@ -1042,8 +995,56 @@ pub const Debug = packed struct(u32) {
 };
 
 pub const Session = struct {
-    server: ServerSession,
-    client: ClientSession,
+    pub const Client = packed struct(u32) {
+        pub const none: Client = .{ .sync = .none };
+        pub const ConnectionError = error{NotFound} || UnexpectedError;
+        pub const RequestError = error{ConnectionClosedByPeer} || UnexpectedError;
+
+        sync: Synchronization,
+
+        pub fn connect(port: [:0]const u8) ConnectionError!Session.Client {
+            const C = result.Code;
+            std.debug.assert(port.len < 12);
+            return switch (connectToPort(port).cases()) {
+                .success => |s| s.value,
+                .failure => |code| if (code == C.kernel_not_found) 
+                    error.NotFound 
+                else if (code == C.os_invalid_string or code == C.os_string_too_big)
+                    resultBug(code) // invalid port.ptr and we already assert port.len < 12
+                else
+                    unexpectedResult(code),
+            };
+        }
+
+        pub fn sendRequest(session: Session.Client) RequestError!void {
+            const C = result.Code;
+            const code = sendSyncRequest(session);
+
+            return if (code == C.kernel_invalid_handle)
+                resultBug(code)
+            else if (code == C.os_session_closed_by_remote) 
+                error.ConnectionClosedByPeer
+            else if (!code.isSuccess()) 
+                unexpectedResult(code) 
+            else 
+                {};
+        }
+
+        pub fn close(session: Session.Client) void {
+            session.sync.close();
+        }
+    };
+
+    pub const Server = packed struct(u32) {
+        sync: Synchronization,
+
+        pub fn close(session: Session.Server) void {
+            session.sync.close();
+        }
+    };
+
+    server: Server,
+    client: Client,
 
     pub fn create() UnexpectedError!Session {
         return switch (createSession()) {
@@ -1061,7 +1062,7 @@ pub const Session = struct {
 pub const ServerPort = packed struct(u32) {
     sync: Synchronization,
 
-    pub fn accept(port: ServerPort) UnexpectedError!ServerSession {
+    pub fn accept(port: ServerPort) UnexpectedError!Session.Server {
         return switch (acceptSession(port)) {
             .success => |s| s.value,
             .failure => |code| unexpectedResult(code),
@@ -1083,7 +1084,7 @@ pub const ClientPort = packed struct(u32) {
 
     sync: Synchronization,
 
-    pub fn createSession(port: ClientPort) CreateSessionError!ClientSession {
+    pub fn createSession(port: ClientPort) CreateSessionError!Session.Client {
         const C = result.Code;
         return switch (createSessionToPort(port)) {
             .success => |s| s.value,
@@ -1842,9 +1843,9 @@ pub fn getProcessInfo(prc: Process, info: Process.InfoType) Result(i64) {
 
 // svc getThreadInfo() stubbed 0x2C
 
-pub fn connectToPort(port: [:0]const u8) Result(ClientSession) {
+pub fn connectToPort(port: [:0]const u8) Result(Session.Client) {
     std.debug.assert(port.len < 12);
-    var session: ClientSession = undefined;
+    var session: Session.Client = undefined;
 
     const code = asm volatile ("svc 0x2D"
         : [code] "={r0}" (-> result.Code),
@@ -1860,7 +1861,7 @@ pub fn connectToPort(port: [:0]const u8) Result(ClientSession) {
 // svc sendSyncRequest3() stubbed 0x30
 // svc sendSyncRequest4() stubbed 0x31
 
-pub fn sendSyncRequest(session: ClientSession) result.Code {
+pub fn sendSyncRequest(session: Session.Client) result.Code {
     return asm volatile ("svc 0x32"
         : [code] "={r0}" (-> result.Code),
         : [session] "{r0}" (session),
@@ -2010,8 +2011,8 @@ pub fn createPort(name: [:0]const u8, max_sessions: i16) Result(Port) {
     return .of(code, .{ .server = server_port, .client = client_port });
 }
 
-pub fn createSessionToPort(port: ClientPort) Result(ClientSession) {
-    var session: ClientSession = undefined;
+pub fn createSessionToPort(port: ClientPort) Result(Session.Client) {
+    var session: Session.Client = undefined;
 
     const code = asm volatile ("svc 0x48"
         : [code] "={r0}" (-> result.Code),
@@ -2023,8 +2024,8 @@ pub fn createSessionToPort(port: ClientPort) Result(ClientSession) {
 }
 
 pub fn createSession() Result(Session) {
-    var server_session: ServerSession = undefined;
-    var client_session: ClientSession = undefined;
+    var server_session: Session.Server = undefined;
+    var client_session: Session.Client = undefined;
 
     const code = asm volatile ("svc 0x49"
         : [code] "={r0}" (-> result.Code),
@@ -2036,8 +2037,8 @@ pub fn createSession() Result(Session) {
     return .of(code, .{ .server = server_session, .client = client_session });
 }
 
-pub fn acceptSession(port: ServerPort) Result(ServerSession) {
-    var session: ServerSession = undefined;
+pub fn acceptSession(port: ServerPort) Result(Session.Server) {
+    var session: Session.Server = undefined;
 
     const code = asm volatile ("svc 0x4A"
         : [code] "={r0}" (-> result.Code),
@@ -2053,7 +2054,7 @@ pub fn acceptSession(port: ServerPort) Result(ServerSession) {
 // svc replyAndReceive3() stubbed 0x4D
 // svc replyAndReceive4() stubbed 0x4E
 
-pub fn replyAndReceive(port_sessions: []Object, reply_target: ServerSession) Result(i32) {
+pub fn replyAndReceive(port_sessions: []Object, reply_target: Session.Server) Result(i32) {
     var index: i32 = undefined;
 
     const code = asm volatile ("svc 0x4F"

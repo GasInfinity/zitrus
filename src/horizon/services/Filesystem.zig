@@ -950,5 +950,5 @@ const ipc = horizon.ipc;
 
 const ncch = horizon.fmt.ncch;
 
-const ClientSession = horizon.ClientSession;
+const ClientSession = horizon.Session.Client;
 const ServiceManager = horizon.ServiceManager;

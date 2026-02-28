@@ -236,5 +236,5 @@ const ResultCode = horizon.result.Code;
 const Object = horizon.Object;
 const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;
-const ClientSession = horizon.ClientSession;
+const ClientSession = horizon.Session.Client;
 const ServiceManager = zitrus.horizon.ServiceManager;

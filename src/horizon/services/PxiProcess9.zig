@@ -107,5 +107,5 @@ const horizon = zitrus.horizon;
 const tls = horizon.tls;
 const ipc = horizon.ipc;
 
-const ClientSession = horizon.ClientSession;
+const ClientSession = horizon.Session.Client;
 const ServiceManager = horizon.ServiceManager;

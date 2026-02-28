@@ -2,14 +2,57 @@ pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_o
 
 pub fn main(init: horizon.Init.Application.Software) !void {
     const app = init.app;
-    // const gpa = app.base.gpa;
+    const gpa = app.base.gpa;
     const io = app.base.io;
     const soft = init.soft;
 
-    const fs = try Filesystem.open(.user, app.srv);
+    const soc_buffer = try gpa.alignedAlloc(u8, .fromByteUnits(horizon.heap.page_size), 4 * 1024 * 1024);
+    defer gpa.free(soc_buffer);
+
+    const soc_shm: horizon.MemoryBlock = try .create(soc_buffer.ptr, soc_buffer.len, .none, .rw);
+    defer soc_shm.close();
+
+    const fs, const soc = blk: {
+        const fs = try Filesystem.open(.user, app.srv);
+        errdefer fs.close();
+        try fs.sendInitialize();
+
+        const soc = try SocketUser.open(app.srv);
+        errdefer soc.close();
+
+        try soc.sendInitialize(soc_shm, soc_buffer.len);
+
+        break :blk .{ fs, soc };
+    };
+    defer soc.sendDeinitialize() catch {};
+
     // XXX: :mmmhhmmmm:
-    horizon.Io.global.storage = .init(fs);
-    try fs.sendInitialize();
+    // TODO: Refactor this, there is a better way to initialize this 100%
+    horizon.Io.global.storage = .init(fs, soc);
+
+    const connected = try std.Io.net.HostName.connect(try .init("google.com"), io, 80, .{
+        .mode = .stream,
+    });
+    defer connected.close(io);
+
+    // It seems lines can be *really* long.
+    const in_buf = try gpa.alloc(u8, 64 * 1024);
+    defer gpa.free(in_buf);
+
+    var out_buf: [4096]u8 = undefined;
+
+    var in = connected.reader(io, in_buf);
+    var out = connected.writer(io, &out_buf);
+
+    try out.interface.print("GET / HTTP/1.0\r\n\r\n", .{});
+    try out.interface.flush();
+
+    while (true) {
+        const line = try in.interface.takeDelimiter('\n') orelse break;
+        std.log.info("{s}", .{line});
+    }
+
+    if (true) return;
 
     const test_file = try std.Io.Dir.cwd().openFile(io, "romfs:/test.txt", .{
         .mode = .read_only,
@@ -171,6 +214,7 @@ const horizon = zitrus.horizon;
 const environment = zitrus.horizon.environment;
 const GspGpu = horizon.services.GspGpu;
 
+const SocketUser = horizon.services.SocketUser;
 const Filesystem = horizon.services.Filesystem;
 const Config = horizon.services.Config;
 

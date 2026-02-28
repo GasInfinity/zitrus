@@ -110,5 +110,5 @@ const ipc = horizon.ipc;
 
 const Event = horizon.Event;
 const Semaphore = horizon.Semaphore;
-const ClientSession = horizon.ClientSession;
+const ClientSession = horizon.Session.Client;
 const ResultCode = horizon.result.Code;

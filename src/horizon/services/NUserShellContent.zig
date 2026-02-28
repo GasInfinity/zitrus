@@ -53,5 +53,5 @@ const tls = horizon.tls;
 const ipc = horizon.ipc;
 
 const Filesystem = horizon.services.Filesystem;
-const ClientSession = horizon.ClientSession;
+const ClientSession = horizon.Session.Client;
 const ServiceManager = horizon.ServiceManager;

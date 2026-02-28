@@ -64,7 +64,7 @@ pub fn main(init: horizon.Init) !void {
         
         {
             const fs = horizon.services.Filesystem.open(.user, srv) catch @panic("Error opening connection to fs:USER");
-            horizon.testing.io_instance.storage = .init(fs);
+            horizon.testing.io_instance.storage = .init(fs, null);
             try fs.sendInitialize();
 
             const t_io = horizon.testing.io_instance.io();

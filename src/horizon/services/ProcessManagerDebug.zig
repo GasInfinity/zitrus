@@ -65,6 +65,6 @@ const ipc = horizon.ipc;
 const Filesystem = horizon.services.Filesystem;
 const PmApp = horizon.services.ProcessManagerApplication;
 
-const ClientSession = horizon.ClientSession;
+const ClientSession = horizon.Session.Client;
 const Debug = horizon.Debug;
 const ServiceManager = horizon.ServiceManager;

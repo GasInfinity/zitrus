@@ -77,7 +77,7 @@ const tls = horizon.tls;
 const ipc = horizon.ipc;
 const config = horizon.config;
 
-const ClientSession = horizon.ClientSession;
+const ClientSession = horizon.Session.Client;
 const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;
 

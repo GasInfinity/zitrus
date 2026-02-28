@@ -73,5 +73,5 @@ const ipc = horizon.ipc;
 
 const PxiProcess9 = horizon.services.PxiProcess9;
 
-const ClientSession = horizon.ClientSession;
+const ClientSession = horizon.Session.Client;
 const ServiceManager = horizon.ServiceManager;

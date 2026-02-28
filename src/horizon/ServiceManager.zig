@@ -408,7 +408,7 @@ const ipc = horizon.ipc;
 
 const Event = horizon.Event;
 const Semaphore = horizon.Semaphore;
-const ClientSession = horizon.ClientSession;
+const ClientSession = horizon.Session.Client;
 const ServerPort = horizon.ServerPort;
 const ClientPort = horizon.ClientPort;
 const ResultCode = horizon.result.Code;
