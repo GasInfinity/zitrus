@@ -45,7 +45,7 @@ completion: *Completion,
 const bad_fn_ret = "expected return type of startFn to be 'u8', 'noreturn', '!noreturn', 'void', or '!void'";
 
 pub fn spawn(config: std.Thread.SpawnConfig, comptime f: anytype, args: anytype) !Impl {
-    const gpa = config.allocator orelse @panic("We need an allocator to spawn a Thread!");
+    const gpa = config.allocator orelse return error.OutOfMemory;
 
     const Args = @TypeOf(args);
     const Instance = struct {
@@ -75,7 +75,7 @@ pub fn spawn(config: std.Thread.SpawnConfig, comptime f: anytype, args: anytype)
                     if (info.payload != void) @compileError(bad_fn_ret);
 
                     @call(.auto, f, inst.fn_args) catch |err| {
-                        std.debug.print("error: {s}\n", .{@errorName(err)});
+                        std.debug.print("thread {d} error: {s}\n", .{getCurrentId(), @errorName(err)});
                         if (@errorReturnTrace()) |trace| std.debug.dumpStackTrace(trace);
                     };
                 },

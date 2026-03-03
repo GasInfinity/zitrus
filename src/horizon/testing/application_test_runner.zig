@@ -10,6 +10,8 @@ pub const std_options: std.Options = .{
     .allow_stack_tracing = true,
 };
 
+const testing_soc_buffer_len = 4 * 1024 * 1024;
+
 var debug_buffer: [8 * 1024]u8 = undefined;
 var debug_writer: std.Io.Writer = horizon.outputDebugWriter(&debug_buffer);
 var log_err_count: usize = 0;
@@ -44,6 +46,22 @@ pub fn main(init: horizon.Init) !void {
     horizon.testing.gsp = gsp;
     defer horizon.testing.gsp = undefined;
 
+    const fs = horizon.services.Filesystem.open(.user, srv) catch @panic("Error opening connection to fs:USER");
+    defer fs.close();
+
+    try fs.sendInitialize();
+
+    const soc = horizon.services.SocketUser.open(srv) catch @panic("Error opening connection to soc:U");
+    defer soc.close();
+    
+    const soc_buffer = try gpa.alignedAlloc(u8, .fromByteUnits(horizon.heap.page_size), testing_soc_buffer_len);
+    defer gpa.free(soc_buffer);
+
+    const soc_shm: horizon.MemoryBlock = try .create(soc_buffer.ptr, soc_buffer.len, .none, .rw);
+    defer soc_shm.close();
+
+    try soc.sendInitialize(soc_shm, soc_buffer.len);
+    defer soc.sendDeinitialize();
 
     var app = horizon.services.Applet.Application.init(apt, .app, srv) catch @panic("Error initializing Application");
     defer app.deinit(apt, .app, srv);
@@ -60,24 +78,20 @@ pub fn main(init: horizon.Init) !void {
         testing.log_level = .warn;
 
         horizon.testing.allocator_instance = .{ .backing_allocator = gpa };
-        horizon.testing.io_instance = try .init(horizon.testing.allocator, arbiter);
-        
-        {
-            const fs = horizon.services.Filesystem.open(.user, srv) catch @panic("Error opening connection to fs:USER");
-            horizon.testing.io_instance.storage = .init(fs, null);
-            try fs.sendInitialize();
+        horizon.testing.io_instance = .init(horizon.testing.allocator, arbiter);
+        horizon.testing.io_instance.storage = .init(false, fs, soc, soc_buffer, soc_shm);
+        defer {
+            horizon.testing.io_instance.deinit();
+            if (horizon.testing.allocator_instance.deinit() == .leak) leaks += 1;
+        } 
 
+        {
             const t_io = horizon.testing.io_instance.io();
 
             const sdmc_root = try std.Io.Dir.cwd().openDir(t_io, "sdmc:/", .{});
             defer sdmc_root.close(t_io);
 
             try std.process.setCurrentDir(t_io, sdmc_root);
-        }
-
-        defer {
-            horizon.testing.io_instance.deinit();
-            if (horizon.testing.allocator_instance.deinit() == .leak) leaks += 1;
         }
 
         debug_writer.print("{d}/{d} {s}... ", .{ i + 1, test_fn_list.len, test_fn.name }) catch {};

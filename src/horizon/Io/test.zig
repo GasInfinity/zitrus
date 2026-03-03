@@ -1,6 +1,6 @@
 //! std.Io and std.fs tests ~yoinked~ imported from std (as we can't test it directly)
 //!
-//! omits tests which will always be skipped (e.g we don't have symlinks)
+//! omits tests which will always be skipped (e.g we don't have symlinks) or are irrelevant.
 
 // NOTE: INode is void but it seems zig expects that it is an integer, wouldn't it be better for it to be an u0?
 
@@ -1398,6 +1398,10 @@ test "RwLock concurrent access" {
 
     try testing.expect(run.writes == num_writes);
     try testing.expect(run.reads.raw >= num_reads);
+}
+
+comptime {
+    _ = @import("net/test.zig");
 }
 
 const testing = std.testing;

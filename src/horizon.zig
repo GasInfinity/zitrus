@@ -737,6 +737,7 @@ pub const AddressArbiter = packed struct(u32) {
 };
 
 pub const MemoryBlock = packed struct(u32) {
+    pub const none: MemoryBlock = .{ .obj = .none };
     pub const CreateError = error{
         /// Tried to allocate a `linear` memory block as an application or invalid permissions specified.
         PermissionDenied,

@@ -1,4 +1,9 @@
 //! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/Socket_Services
+//!
+//! soc:U has a fatal flaw, it blocks completely on a blocking call. For example calling
+//! `recvfrom` with no data available in a blocking socket won't allow the progress of other
+//! threads calling any soc:U IPC. Maybe a workaround for this flaw is using multiple sessions if
+//! allowed or using non-blocking sockets in a busy-loop.
 
 // TODO : Missing methods and check of parameters
 
@@ -108,7 +113,7 @@ pub const Family = enum(u8) {
 pub const Type = enum(u32) {
     any = 0,
     stream = 1,
-    dgram,
+    dgram = 2,
     _,
 };
 
@@ -152,7 +157,7 @@ pub const DatagramFlags = packed struct(u8) {
 };
 
 pub const ShutdownHow = enum(u8) {
-    recv = 1,
+    recv = 0,
     send,
     both,
 };
@@ -209,7 +214,7 @@ pub const SocketOption = packed union {
 
 pub const Descriptor = enum(u32) {
     pub const Command = enum(u32) {
-        pub const Arg = packed union {
+        pub const Arg = extern union {
             flags: Flags,
             none: void,
         };
@@ -238,7 +243,7 @@ pub const Descriptor = enum(u32) {
 
         fd: Descriptor,
         poll: Events,
-        received: Events,
+        events: Events,
     };
 
     _,
@@ -272,7 +277,7 @@ pub fn sendInitialize(soc: SocketUser, buffer: horizon.MemoryBlock, buffer_len: 
     };
 }
 
-pub fn sendDeinitialize(soc: SocketUser) !void {
+pub fn sendDeinitialize(soc: SocketUser) void {
     _ = tls.get().ipc.sendRequest(soc.session, command.Deinitialize, .{}, .{}) catch {};
 }
 
@@ -332,7 +337,7 @@ pub fn sendBind(soc: SocketUser, socket: Descriptor, address: *const IpAddress) 
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(soc.session, command.Bind, .{
         .socket = socket,
-        .address_len = @sizeOf(IpAddress),
+        .address_len = address.header.len,
         .address = .static(@ptrCast(address)),
     }, .{})).cases()) {
         .success => |s| s.value.errno,
@@ -352,9 +357,10 @@ pub fn sendConnect(soc: SocketUser, socket: Descriptor, address: *const IpAddres
     };
 }
 
-pub fn sendReceiveFromOther(soc: SocketUser, socket: Descriptor, flags: DatagramFlags, output: []u8, src_address: ?*IpAddress) !E.Maybe {
+/// Same as `sendReceiveFrom` but the `output` is mapped, thus handling sizes larger than `0x2000` bytes.
+pub fn sendReceiveFromMapped(soc: SocketUser, socket: Descriptor, flags: DatagramFlags, output: []u8, src_address: ?*IpAddress) !E.Maybe {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(soc.session, command.ReceiveFromOther, .{
+    return switch ((try data.ipc.sendRequest(soc.session, command.ReceiveFromMapped, .{
         .socket = socket,
         .output_len = output.len,
         .flags = flags,
@@ -382,13 +388,14 @@ pub fn sendReceiveFrom(soc: SocketUser, socket: Descriptor, flags: DatagramFlags
     };
 }
 
-pub fn sendSendToOther(soc: SocketUser, socket: Descriptor, flags: DatagramFlags, input: []const u8, dest_address: ?*const IpAddress) !E.Maybe {
+/// Same as `sendSendTo` but the `input` is mapped, thus handling sizes larger than `0x2000` bytes.
+pub fn sendSendToMapped(soc: SocketUser, socket: Descriptor, flags: DatagramFlags, input: []const u8, dest_address: ?*const IpAddress) !E.Maybe {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(soc.session, command.SendToOther, .{
+    return switch ((try data.ipc.sendRequest(soc.session, command.SendToMapped, .{
         .socket = socket,
         .input_len = input.len,
         .flags = flags,
-        .dest_address_len = if (dest_address) |_| @sizeOf(IpAddress) else 0,
+        .dest_address_len = if (dest_address) |addr| addr.header.len else 0,
         .dest_address = .static(if (dest_address) |addr| @ptrCast(addr) else &.{}),
         .input = .mapped(input),
     }, .{})).cases()) {
@@ -406,7 +413,7 @@ pub fn sendSendTo(soc: SocketUser, socket: Descriptor, flags: DatagramFlags, inp
         .socket = socket,
         .input_len = input.len,
         .flags = flags,
-        .dest_address_len = if (dest_address) |_| @sizeOf(IpAddress) else 0,
+        .dest_address_len = if (dest_address) |addr| addr.header.len else 0,
         .input = .static(input),
         .dest_address = .static(if (dest_address) |addr| @ptrCast(addr) else &.{}),
     }, .{})).cases()) {
@@ -467,6 +474,19 @@ pub fn sendSetSockOpt(soc: SocketUser, socket: Descriptor, level: SocketLevel, n
         .opt_len = opt.len,
         .opt = .static(opt),
     }, .{})).cases()) {
+        .success => |s| s.value.errno,
+        .failure => |code| horizon.unexpectedResult(code), 
+    };
+}
+
+pub fn sendGetSockOpt(soc: SocketUser, socket: Descriptor, level: SocketLevel, name: SocketOption, opt: []u8) !struct { E.Maybe, u32 } {
+    const data = tls.get();
+    return switch ((try data.ipc.sendRequest(soc.session, command.GetSockOpt, .{
+        .socket = socket,
+        .level = level,
+        .name = name,
+        .opt_len = opt.len,
+    }, .{ .opt = opt })).cases()) {
         .success => |s| s.value.errno,
         .failure => |code| horizon.unexpectedResult(code), 
     };
@@ -551,7 +571,7 @@ pub const command = struct {
         process_id: ipc.ReplaceByProcessId = .replace,
         address: ipc.Static(0),
     }, struct { errno: E.Maybe });
-    pub const ReceiveFromOther = ipc.Command(Id, .recvfrom_other, struct {
+    pub const ReceiveFromMapped = ipc.Command(Id, .recvfrom_mapped, struct {
         pub const StaticOutput = struct { src_address: []u8 };
 
         socket: Descriptor,
@@ -573,7 +593,7 @@ pub const command = struct {
         src_address_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
     }, struct { errno: E.Maybe, total_received: u32, output: ipc.Static(0), src_address: ipc.Static(1) });
-    pub const SendToOther = ipc.Command(Id, .sendto_other, struct {
+    pub const SendToMapped = ipc.Command(Id, .sendto_mapped, struct {
         socket: Descriptor,
         input_len: u32,
         flags: DatagramFlags,
@@ -641,9 +661,9 @@ pub const command = struct {
         socket: Descriptor,
         level: SocketLevel,
         name: SocketOption,
-        len: u32,
+        opt_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-    }, struct { errno: E.Maybe, opt_len: u32 });
+    }, struct { errno: E.Maybe, opt_len: u32, opt: ipc.Static(0) });
     pub const SetSockOpt = ipc.Command(Id, .setsockopt, struct {
         socket: Descriptor,
         level: SocketLevel,
@@ -665,7 +685,7 @@ pub const command = struct {
         timeout: i32,
         process_id: ipc.ReplaceByProcessId = .replace,
         poll: ipc.Static(10),
-    }, struct { errno: E.Maybe });
+    }, struct { errno: E.Maybe, polls: ipc.Static(0) });
     pub const SockAtMark = ipc.Command(Id, .sockatmark, struct {
         socket: Descriptor,
         process_id: ipc.ReplaceByProcessId = .replace,
@@ -711,9 +731,9 @@ pub const command = struct {
         accept,
         bind,
         connect,
-        recvfrom_other,
+        recvfrom_mapped,
         recvfrom,
-        sendto_other,
+        sendto_mapped,
         sendto,
         close,
         shutdown,

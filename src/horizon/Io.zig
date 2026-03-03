@@ -212,7 +212,7 @@ storage: Storage,
 pub fn init(
     gpa: std.mem.Allocator,
     arbiter: AddressArbiter,
-) !HIo {
+) HIo {
     const tick = horizon.getSystemTick();
 
     return .{
@@ -237,8 +237,38 @@ pub fn init(
     };
 }
 
+/// Initializes `hio.storage` with the specified backends, will be closed on `deinit`.
+pub fn initStorage(hio: *HIo, srv: horizon.ServiceManager, backends: enum { fs, soc, both }, soc_buffer_len: usize) !void {
+    const gpa = hio.gpa;
+    const maybe_fs = if (backends == .soc) null else blk: {
+        const fs = try Filesystem.open(.user, srv);
+        errdefer fs.close();
+
+        try fs.sendInitialize();
+        break :blk fs;
+    };
+    errdefer if (maybe_fs) |fs| fs.close();
+
+    const maybe_soc, const soc_buffer: []align(horizon.heap.page_size) u8, const soc_shm: horizon.MemoryBlock = if (backends == .fs) .{ null, &.{}, .none } else blk: {
+        const soc = try SocketUser.open(srv);
+
+        const soc_buffer = try gpa.alignedAlloc(u8, .fromByteUnits(horizon.heap.page_size), soc_buffer_len);
+        errdefer gpa.free(soc_buffer);
+
+        const soc_shm: horizon.MemoryBlock = try .create(soc_buffer.ptr, soc_buffer.len, .none, .rw);
+        errdefer soc_shm.close();
+
+        try soc.sendInitialize(soc_shm, soc_buffer.len);
+        break :blk .{ soc, soc_buffer, soc_shm };
+    };
+    errdefer if(maybe_soc) |soc| soc.close();
+
+
+    hio.storage = .init(true, maybe_fs, maybe_soc, soc_buffer, soc_shm);
+}
+
 pub fn deinit(hio: *HIo) void {
-    hio.storage.deinit(hio.gpa);
+    hio.storage.deinit(hio.io(), hio.gpa);
     hio.* = undefined;
 }
 
@@ -252,6 +282,8 @@ pub fn io(hio: *HIo) Io {
 pub const VTable = enum(u0) {
     default,
 
+    // TODO: async will always be run synchronously, spawning threads here doesn't make much sense.
+    // We don't want a lot of context switches unless it's necessary (concurrent!)
     pub fn async(
         _: VTable,
         _: ?*anyopaque,
@@ -305,9 +337,9 @@ pub const VTable = enum(u0) {
         _: *Io.Group,
         context: []const u8,
         _: std.mem.Alignment,
-        start: *const fn (context: *const anyopaque) Cancelable!void,
+        start: *const fn (context: *const anyopaque) void,
     ) void {
-        start(context.ptr) catch {}; // FIXME: cancelation?
+        start(context.ptr);
     }
 
     pub fn groupAwait(_: VTable, _: ?*anyopaque, _: *Io.Group, _: *anyopaque) Cancelable!void {
@@ -352,15 +384,13 @@ pub const VTable = enum(u0) {
 
     pub fn operate(_: VTable, ud: ?*anyopaque, operation: Io.Operation) Cancelable!Io.Operation.Result {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
 
         return switch (operation) {
             .file_read_streaming => |op| blk: {
                 for(op.data) |buf| {
                     if (buf.len == 0) continue;
 
-                    break :blk .{ .file_read_streaming = hio.storage.readStreaming(op.file.handle, buf) };
+                    break :blk .{ .file_read_streaming = hio.storage.readStreaming(hio.io(), op.file.handle, buf) };
                 }
 
                 break :blk .{ .file_read_streaming = 0 };
@@ -376,7 +406,7 @@ pub const VTable = enum(u0) {
                 else 
                     break :blk .{ .file_write_streaming = 0 };
 
-                break :blk .{ .file_write_streaming = hio.storage.writeStreaming(op.file.handle, buf) };
+                break :blk .{ .file_write_streaming = hio.storage.writeStreaming(hio.io(), op.file.handle, buf) };
             },
             .device_io_control => unreachable,
         };
@@ -384,10 +414,8 @@ pub const VTable = enum(u0) {
 
     pub fn dirCreateDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        return hio.storage.modifyPath(hio.gpa, dir.handle, path, .create_dir) catch |err| switch(err) {
+        return hio.storage.modifyPath(hio.io(), hio.gpa, dir.handle, path, .create_dir) catch |err| switch(err) {
             error.IsDir => unreachable,
             else => |e| return e,
         };
@@ -395,10 +423,8 @@ pub const VTable = enum(u0) {
 
     pub fn dirCreateDirPath(_: VTable, ud: ?*anyopaque, dir: Io.Dir, sub_path: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirPathError!Io.Dir.CreatePathStatus {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        return try hio.storage.createDirPath(hio.gpa, dir.handle, sub_path);
+        return try hio.storage.createDirPath(hio.io(), hio.gpa, dir.handle, sub_path);
     }
 
     pub fn dirCreateDirPathOpen(_: VTable, ud: ?*anyopaque, dir: Io.Dir, sub_path: []const u8, _: Io.Dir.Permissions, opts: Io.Dir.OpenOptions) Io.Dir.CreateDirPathOpenError!Io.Dir {
@@ -409,12 +435,10 @@ pub const VTable = enum(u0) {
 
     pub fn dirOpenDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.OpenOptions) Io.Dir.OpenError!Io.Dir {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
         _ = opts;
 
         return .{
-            .handle = hio.storage.openPath(hio.gpa, dir.handle, path, .{
+            .handle = hio.storage.openPath(hio.io(), hio.gpa, dir.handle, path, .{
                 .mode = .read_only,
                 .allow = .directory,
             }) catch |err| switch(err) {
@@ -427,10 +451,8 @@ pub const VTable = enum(u0) {
 
     pub fn dirStat(_: VTable, ud: ?*anyopaque, dir: Io.Dir) Io.Dir.StatError!Io.Dir.Stat {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
 
-        return hio.storage.stat(dir.handle);
+        return hio.storage.stat(hio.io(), dir.handle);
     }
 
     pub fn dirStatFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.StatFileOptions) Io.Dir.StatFileError!Io.File.Stat {
@@ -444,10 +466,8 @@ pub const VTable = enum(u0) {
     pub fn dirAccess(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.AccessOptions) Io.Dir.AccessError!void {
         if (opts.execute) return error.PermissionDenied;
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        return hio.storage.accessPath(hio.gpa, dir.handle, path, opts.read, opts.write) catch |err| switch (err) {
+        return hio.storage.accessPath(hio.io(), hio.gpa, dir.handle, path, opts.read, opts.write) catch |err| switch (err) {
             error.NoDevice => return error.InputOutput,
             else => |e| return e,
         };
@@ -457,22 +477,17 @@ pub const VTable = enum(u0) {
         if (opts.lock == .exclusive) return error.FileLocksUnsupported;
 
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        const file: Io.File = blk: {
-            hio.storage.lock.lockUncancelable(hio.io());
-            defer hio.storage.lock.unlock(hio.io());
-
-            break :blk .{
-                .handle = hio.storage.openPath(hio.gpa, dir.handle, path, .{
-                    .mode = if (opts.read) .read_write else .write_only,
-                    .create = if (opts.exclusive) .exclusive else .create,
-                    .allow = .file,
-                }) catch |err| switch (err) {
-                    error.NotDir => unreachable,
-                    error.ReadOnlyFileSystem => return error.AccessDenied,
-                    else => |e| return e,
-                },
-                .flags = {},
-            };
+        const file: Io.File = .{
+            .handle = hio.storage.openPath(hio.io(), hio.gpa, dir.handle, path, .{
+                .mode = if (opts.read) .read_write else .write_only,
+                .create = if (opts.exclusive) .exclusive else .create,
+                .allow = .file,
+            }) catch |err| switch (err) {
+                error.NotDir => unreachable,
+                error.ReadOnlyFileSystem => return error.AccessDenied,
+                else => |e| return e,
+            },
+            .flags = {},
         };
         errdefer file.close(hio.io());
 
@@ -494,11 +509,9 @@ pub const VTable = enum(u0) {
         if (opts.lock == .exclusive) return error.FileLocksUnsupported;
 
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
         return .{
-            .handle = hio.storage.openPath(hio.gpa, dir.handle, path, .{
+            .handle = hio.storage.openPath(hio.io(), hio.gpa, dir.handle, path, .{
                 .mode = opts.mode,
                 .allow = if (opts.allow_directory) .any else .file,
             }) catch |err| switch (err) {
@@ -512,18 +525,13 @@ pub const VTable = enum(u0) {
 
     pub fn dirClose(_: VTable, ud: ?*anyopaque, dirs: []const Io.Dir) void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        for (dirs) |dir| hio.storage.close(hio.gpa, dir.handle); 
+        for (dirs) |dir| hio.storage.close(hio.io(), hio.gpa, dir.handle); 
     }
 
     pub fn dirRead(_: VTable, ud: ?*anyopaque, r: *Io.Dir.Reader, entries: []Io.Dir.Entry) Io.Dir.Reader.Error!usize {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
-
-        return hio.storage.readDir(r, entries);
+        return try hio.storage.readDir(hio.io(), r, entries);
     }
 
     pub fn dirRealPath(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []u8) Io.Dir.RealPathError!usize {
@@ -536,10 +544,8 @@ pub const VTable = enum(u0) {
 
     pub fn dirDeleteFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, sub_path: []const u8) Io.Dir.DeleteFileError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        return hio.storage.modifyPath(hio.gpa, dir.handle, sub_path, .delete_file) catch |err| switch (err) {
+        return hio.storage.modifyPath(hio.io(), hio.gpa, dir.handle, sub_path, .delete_file) catch |err| switch (err) {
             error.PathAlreadyExists => unreachable,
             error.NoDevice => return error.FileSystem,
             else => |e| return e,
@@ -548,10 +554,8 @@ pub const VTable = enum(u0) {
 
     pub fn dirDeleteDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir, sub_path: []const u8) Io.Dir.DeleteDirError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        return hio.storage.modifyPath(hio.gpa, dir.handle, sub_path, .delete_dir) catch |err| switch (err) {
+        return hio.storage.modifyPath(hio.io(), hio.gpa, dir.handle, sub_path, .delete_dir) catch |err| switch (err) {
             error.PathAlreadyExists => unreachable,
             error.NoDevice => return error.FileSystem,
             error.IsDir => unreachable,
@@ -561,10 +565,8 @@ pub const VTable = enum(u0) {
 
     pub fn dirRename(_: VTable, ud: ?*anyopaque, src_dir: Io.Dir, src_path: []const u8, dst_dir: Io.Dir, dst_path: []const u8) Io.Dir.RenameError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        return hio.storage.renamePath(hio.gpa, src_dir.handle, src_path, dst_dir.handle, dst_path, false) catch |err| switch (err) {
+        return hio.storage.renamePath(hio.io(), hio.gpa, src_dir.handle, src_path, dst_dir.handle, dst_path, false) catch |err| switch (err) {
             error.PathAlreadyExists, error.OperationUnsupported, error.AccessDenied => unreachable,
             else => |e| return e,
         };
@@ -572,10 +574,8 @@ pub const VTable = enum(u0) {
 
     pub fn dirRenamePreserve(_: VTable, ud: ?*anyopaque, src_dir: Io.Dir, src_path: []const u8, dst_dir: Io.Dir, dst_path: []const u8) Io.Dir.RenamePreserveError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        return try hio.storage.renamePath(hio.gpa, src_dir.handle, src_path, dst_dir.handle, dst_path, true);
+        return try hio.storage.renamePath(hio.io(), hio.gpa, src_dir.handle, src_path, dst_dir.handle, dst_path, true);
     }
 
     pub fn dirSymLink(_: VTable, _: ?*anyopaque, _: Io.Dir, _: []const u8, _: []const u8, _: Io.Dir.SymLinkFlags) Io.Dir.SymLinkError!void {
@@ -610,26 +610,20 @@ pub const VTable = enum(u0) {
 
     pub fn fileStat(_: VTable, ud: ?*anyopaque, file: Io.File) Io.File.StatError!Io.File.Stat {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
 
-        return hio.storage.stat(file.handle);
+        return try hio.storage.stat(hio.io(), file.handle);
     }
 
     pub fn fileLength(_: VTable, ud: ?*anyopaque, file: Io.File) Io.File.LengthError!u64 {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
 
-        return hio.storage.length(file.handle);
+        return try hio.storage.length(hio.io(), file.handle);
     }
 
     pub fn fileClose(_: VTable, ud: ?*anyopaque, files: []const Io.File) void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        for (files) |file| hio.storage.close(hio.gpa, file.handle);
+        for (files) |file| hio.storage.close(hio.io(), hio.gpa, file.handle);
     }
 
     pub fn fileWritePositional(_: VTable, ud: ?*anyopaque, file: Io.File, header: []const u8, data: []const []const u8, splat: usize, offset: u64) Io.File.WritePositionalError!usize {
@@ -644,10 +638,8 @@ pub const VTable = enum(u0) {
             return 0;
 
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
 
-        return hio.storage.writePositional(file.handle, buf, offset);
+        return try hio.storage.writePositional(hio.io(), file.handle, buf, offset);
     }
 
     pub fn fileWriteFileStreaming(_: VTable, _: ?*anyopaque, _: Io.File, _: []const u8, _: *Io.File.Reader, _: Io.Limit) Io.File.Writer.WriteFileError!usize {
@@ -660,13 +652,11 @@ pub const VTable = enum(u0) {
 
     pub fn fileReadPositional(_: VTable, ud: ?*anyopaque, file: Io.File, data: []const []u8, offset: u64) Io.File.ReadPositionalError!usize {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
 
         for (data) |buf| {
             if (buf.len == 0) continue;
 
-            return try hio.storage.readPositional(file.handle, buf, offset);
+            return try hio.storage.readPositional(hio.io(), file.handle, buf, offset);
         }
 
         return 0;
@@ -674,18 +664,14 @@ pub const VTable = enum(u0) {
 
     pub fn fileSeekBy(_: VTable, ud: ?*anyopaque, file: Io.File, offset: i64) Io.File.SeekError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
 
-        return hio.storage.seekBy(file.handle, offset);
+        return hio.storage.seekBy(hio.io(), file.handle, offset);
     }
 
     pub fn fileSeekTo(_: VTable, ud: ?*anyopaque, file: Io.File, offset: u64) Io.File.SeekError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
 
-        return hio.storage.seekTo(file.handle, offset);
+        return hio.storage.seekTo(hio.io(), file.handle, offset);
     }
 
     pub fn fileSync(_: VTable, _: ?*anyopaque, _: Io.File) Io.File.SyncError!void {
@@ -705,10 +691,8 @@ pub const VTable = enum(u0) {
 
     pub fn fileSetLength(_: VTable, ud: ?*anyopaque, file: Io.File, new_length: u64) Io.File.SetLengthError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
 
-        return hio.storage.setLength(file.handle, new_length);
+        return hio.storage.setLength(hio.io(), file.handle, new_length);
     }
 
     pub fn fileSetOwner(_: VTable, _: ?*anyopaque, _: Io.File, _: ?Io.File.Uid, _: ?Io.File.Gid) Io.File.SetOwnerError!void {
@@ -869,10 +853,8 @@ pub const VTable = enum(u0) {
 
     pub fn processSetCurrentDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir) std.process.SetCurrentDirError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        return try hio.storage.setCurrentDir(hio.gpa, dir.handle);
+        return try hio.storage.setCurrentDir(hio.io(), hio.gpa, dir.handle);
     }
 
     pub fn processReplace(_: VTable, _: ?*anyopaque, _: std.process.ReplaceOptions) std.process.ReplaceError {
@@ -940,30 +922,26 @@ pub const VTable = enum(u0) {
 
     pub fn netListenIp(_: VTable, ud: ?*anyopaque, address: Io.net.IpAddress, opts: Io.net.IpAddress.ListenOptions) Io.net.IpAddress.ListenError!Io.net.Server {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        return try hio.storage.netListen(hio.gpa, address, opts);
+        return try hio.storage.netListen(hio.io(), hio.gpa, address, opts);
     }
 
     pub fn netAccept(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle) Io.net.Server.AcceptError!Io.net.Stream {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        return try hio.storage.netAccept(hio.gpa, handle);
+        return try hio.storage.netAccept(hio.io(), hio.gpa, handle);
     }
 
-    pub fn netBindIp(_: VTable, _: ?*anyopaque, _: *const Io.net.IpAddress, _: Io.net.IpAddress.BindOptions) Io.net.IpAddress.BindError!Io.net.Socket {
-        return error.NetworkDown;
+    pub fn netBindIp(_: VTable, ud: ?*anyopaque, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.BindOptions) Io.net.IpAddress.BindError!Io.net.Socket {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+
+        return try hio.storage.netBind(hio.io(), hio.gpa, address, opts);
     }
 
     pub fn netConnectIp(_: VTable, ud: ?*anyopaque, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.ConnectOptions) Io.net.IpAddress.ConnectError!Io.net.Stream {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        return try hio.storage.netConnect(hio.gpa, address, opts);
+        return try hio.storage.netConnect(hio.io(), hio.gpa, address, opts);
     }
 
     pub fn netListenUnix(_: VTable, _: ?*anyopaque, _: *const Io.net.UnixAddress, _: Io.net.UnixAddress.ListenOptions) Io.net.UnixAddress.ListenError!Io.net.Socket.Handle {
@@ -978,23 +956,25 @@ pub const VTable = enum(u0) {
         return error.OperationUnsupported;
     }
 
-    pub fn netSend(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: []Io.net.OutgoingMessage, _: Io.net.SendFlags) struct { ?Io.net.Socket.SendError, usize } {
-        return .{ error.NetworkDown, 0 };
+    pub fn netSend(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle, messages: []Io.net.OutgoingMessage, flags: Io.net.SendFlags) struct { ?Io.net.Socket.SendError, usize } {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+
+        return hio.storage.netSend(hio.io(), handle, messages, flags);
     }
 
-    pub fn netReceive(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: []Io.net.IncomingMessage, _: []u8, _: Io.net.ReceiveFlags, _: Io.Timeout) struct { ?Io.net.Socket.ReceiveTimeoutError, usize } {
-        return .{ error.NetworkDown, 0 };
+    pub fn netReceive(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle, messages: []Io.net.IncomingMessage, data: []u8, flags: Io.net.ReceiveFlags, timeout: Io.Timeout) struct { ?Io.net.Socket.ReceiveTimeoutError, usize } {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+
+        return hio.storage.netReceive(hio.io(), handle, messages, data, flags, timeout);
     }
 
     pub fn netRead(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle, data: [][]u8) Io.net.Stream.Reader.Error!usize {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
 
         for(data) |buf| {
             if (buf.len == 0) continue;
 
-            return hio.storage.netRead(handle, buf);
+            return try hio.storage.netRead(hio.io(), handle, buf);
         }
 
         return 0;
@@ -1002,8 +982,6 @@ pub const VTable = enum(u0) {
 
     pub fn netWrite(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle, header: []const u8, data: []const []const u8, splat: usize) Io.net.Stream.Writer.Error!usize {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
 
         const buf = if (header.len != 0)
             header
@@ -1015,7 +993,7 @@ pub const VTable = enum(u0) {
         else 
             return 0;
 
-        return try hio.storage.netWrite(handle, buf);
+        return try hio.storage.netWrite(hio.io(), handle, buf);
     }
 
     pub fn netWriteFile(_: VTable, _: ?*anyopaque, _: Io.net.Socket.Handle, _: []const u8, _: *Io.File.Reader, _: Io.Limit) Io.net.Stream.Writer.WriteFileError!usize {
@@ -1024,18 +1002,14 @@ pub const VTable = enum(u0) {
 
     pub fn netClose(_: VTable, ud: ?*anyopaque, sockets: []const Io.net.Socket.Handle) void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockUncancelable(hio.io());
-        defer hio.storage.lock.unlock(hio.io());
 
-        for (sockets) |handle| hio.storage.close(hio.gpa, handle);
+        for (sockets) |handle| hio.storage.close(hio.io(), hio.gpa, handle);
     }
 
     pub fn netShutdown(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle, how: Io.net.ShutdownHow) Io.net.ShutdownError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-        hio.storage.lock.lockSharedUncancelable(hio.io());
-        defer hio.storage.lock.unlockShared(hio.io());
 
-        return try hio.storage.netShutdown(handle, how);
+        return try hio.storage.netShutdown(hio.io(), handle, how);
     }
 
     pub fn netInterfaceNameResolve(_: VTable, _: ?*anyopaque, name: *const Io.net.Interface.Name) Io.net.Interface.Name.ResolveError!Io.net.Interface {
