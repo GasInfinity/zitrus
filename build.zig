@@ -97,6 +97,8 @@ pub fn build(b: *Build) void {
         .install_subdir = "docs",
     });
 
+    b.addNamedLazyPath("misc/docs", zitrus_lib.getEmittedDocs());
+
     const docs_step = b.step("docs", "Install docs");
     docs_step.dependOn(&install_docs.step);
 

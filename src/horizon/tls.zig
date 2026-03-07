@@ -60,6 +60,7 @@ pub fn initStatic() void {
     @setRuntimeSafety(false); // We don't want to panic as it depends on TLS
     @disableInstrumentation();
     @export(&__aeabi_read_tp, .{ .name = "__aeabi_read_tp" });
+    @export(&__tls_get_addr, .{ .name = "__tls_get_addr" });
 
     const data_image = dataImage();
 
@@ -128,7 +129,7 @@ fn __aeabi_read_tp() callconv(.naked) void {
 
 const Index = extern struct { module: usize, offset: usize };
 
-export fn __tls_get_addr(index: *const Index) *anyopaque {
+fn __tls_get_addr(index: *const Index) callconv(.c) *anyopaque {
     return @ptrFromInt(@intFromPtr(get().state.tp) + index.offset);
 }
 

@@ -52,6 +52,7 @@ pub const smdh = ncch.smdh;
 pub const ncsd = @import("fmt/ncsd.zig");
 pub const ncch = @import("fmt/ncch.zig");
 pub const dvl = @import("fmt/dvl.zig");
+pub const fnt = @import("fmt/fnt.zig");
 
 pub const archive = @import("fmt/archive.zig");
 pub const layout = @import("fmt/layout.zig");
