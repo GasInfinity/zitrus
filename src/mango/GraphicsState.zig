@@ -288,12 +288,6 @@ pub fn setStencilReference(state: *GraphicsState, reference: u8) void {
     state.dirty.stencil_config = true;
 }
 
-// TODO: This will be removed, textures will be enabled/disabled automatically with bindCombinedImageSamplers
-pub fn setTextureEnable(state: *GraphicsState, enable: *const [4]bool) void {
-    state.misc.texture_enable = .init(enable.*);
-    state.dirty.texture_config = true;
-}
-
 pub fn setTextureCoordinates(state: *GraphicsState, texture_2_coordinates: mango.TextureCoordinateSource, texture_3_coordinates: mango.TextureCoordinateSource) void {
     state.misc.texture_2_coordinates = texture_2_coordinates.nativeTexture2();
     state.misc.texture_3_coordinates = texture_3_coordinates.nativeTexture3();

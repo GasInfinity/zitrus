@@ -591,7 +591,7 @@ pub const Condition = enum(u2) { @"or", @"and", x, y };
 pub const Primitive = enum(u1) { vertex, primitive };
 pub const Winding = enum(u1) { default, invert };
 
-pub const Instruction = packed union {
+pub const Instruction = packed union(u32) {
     pub const Opcode = enum(u6) {
         pub const Mad = enum(u3) { _ };
         pub const Comparison = enum(u5) { _ };

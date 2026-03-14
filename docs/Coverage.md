@@ -24,7 +24,7 @@
 
 ## Formats (+ Tooling)
 - 🟢 Smdh (tools/Smdh): Make / Dump
-- 🟢 3dsx (tools/3dsx): Make / Dump
+- 🟢 3dsx (tools/3dsx): Make / Dump / Link (send and execute)
 - 🟢 Pica (tools/Pica): Assemble / Disassemble
     - 🟢 Assemble: Only **Z**itrus**P**ica**Sh**ader's are implemented as an output format.
     - 🟢 Disassemble: Outputs **Z**itrus**P**ica**A**sse**m**bly. Either RAW instructions, ZPSH's or DVL's (.shbin) can be disassembled.

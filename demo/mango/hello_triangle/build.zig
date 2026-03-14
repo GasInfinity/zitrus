@@ -16,7 +16,6 @@ pub fn build(b: *std.Build) void {
                 .os_tag = .@"3ds",
             }),
             .optimize = optimize,
-            .single_threaded = true,
             .imports = &.{
                 .{ .name = "zitrus", .module = zitrus_mod },
             },
@@ -45,4 +44,13 @@ pub fn build(b: *std.Build) void {
     });
 
     final_3dsx.install(b, .default);
+
+    const link: zitrus.Link3dsx = .init(zitrus_dep, .{
+        .@"3dsx" = final_3dsx.out,
+    });
+
+    const link_step = b.step("link", "Link (send and execute) the 3dsx to a 3ds");
+    link_step.dependOn(&link.run.step);
+
+    if (b.args) |args| link.run.addArgs(args);
 }

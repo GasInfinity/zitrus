@@ -48,7 +48,7 @@ pub const EntrypointHeader = extern struct {
         pub const vertex: ShaderInfo = .{ .type = .vertex };
         pub const Type = enum(u2) { vertex, geometry_point, geometry_variable, geometry_fixed };
 
-        pub const Geometry = packed union {
+        pub const Geometry = packed union(u14) {
             pub const empty: Geometry = .{ .point = std.mem.zeroes(Geometry.Point) };
 
             pub const Point = packed struct(u14) {

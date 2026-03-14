@@ -105,8 +105,8 @@ pub fn reset(pool: *CommandPool) void {
     while (maybe_current) |current| {
         maybe_current = current.next;
 
-        const b_cmd_buffer: *CommandBuffer = @alignCast(@fieldParentPtr("node", current));
-        b_cmd_buffer.reset(.none);
+        const node: *Node = @alignCast(@fieldParentPtr("node", current));
+        node.cmd_buffer.reset(.none);
     }
 }
 

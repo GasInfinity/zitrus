@@ -226,11 +226,6 @@ pub const Handle = enum(u32) {
         return b_cmd.setStencilReference(reference);
     }
 
-    pub fn setTextureEnable(cmd: Handle, enable: *const [4]bool) void {
-        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.setTextureEnable(enable);
-    }
-
     pub fn setTextureCoordinates(cmd: Handle, texture_2_coordinates: mango.TextureCoordinateSource, texture_3_coordinates: mango.TextureCoordinateSource) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         return b_cmd.setTextureCoordinates(texture_2_coordinates, texture_3_coordinates);
@@ -256,6 +251,8 @@ pub const Scope = enum {
     immediate_draw,
 };
 
+pub const Error = error{OutOfMemory};
+
 // NOTE: `CommandPool` must be as self-contained as possible, it only depends on the pool to grow its native buffer, no more!
 pool: *backend.CommandPool,
 
@@ -264,7 +261,7 @@ gfx_state: GraphicsState = .empty,
 rnd_state: RenderingState = .empty,
 emitted_graphics_pipeline: ?*backend.Pipeline.Graphics = null,
 bound_graphics_pipeline: ?*backend.Pipeline.Graphics = null,
-current_error: ?anyerror = null,
+current_error: ?Error = null,
 state: State = .initial,
 scope: Scope = .none,
 
@@ -666,11 +663,6 @@ pub fn setStencilWriteMask(cmd: *CommandBuffer, write_mask: u8) void {
 pub fn setStencilReference(cmd: *CommandBuffer, reference: u8) void {
     std.debug.assert(cmd.state == .recording);
     cmd.gfx_state.setStencilReference(reference);
-}
-
-pub fn setTextureEnable(cmd: *CommandBuffer, enable: *const [4]bool) void {
-    std.debug.assert(cmd.state == .recording);
-    cmd.gfx_state.setTextureEnable(enable);
 }
 
 pub fn setTextureCoordinates(cmd: *CommandBuffer, texture_2_coordinates: mango.TextureCoordinateSource, texture_3_coordinates: mango.TextureCoordinateSource) void {

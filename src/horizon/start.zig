@@ -25,6 +25,7 @@ const stack_size: u32 = if (@hasDecl(root, "zitrus_options") and @FieldType(root
 var allocated_stack: [stack_size]u8 align(8) linksection(".bss.allocated_stack") = undefined;
 
 fn startup() callconv(.naked) noreturn {
+    @disableInstrumentation();
     @setRuntimeSafety(false);
     // TODO: Add .cantunwind: https://github.com/llvm/llvm-project/issues/115891
     asm volatile (
@@ -34,10 +35,10 @@ fn startup() callconv(.naked) noreturn {
         :
         : [callMainAndExit] "X" (&callMainAndExit),
           [allocated_stack] "r" (&allocated_stack),
-          [stack_size] "r" (stack_size),
+          [stack_size] "i" (stack_size),
 
-          // Unused here but needed if we want zig to NOT optimize further reads!
-          [program_meta] "r" (&environment.program_meta),
+          // Needed as it will be optimized if not.
+          [program_meta] "p" (&environment.program_meta),
         : .{ .memory = true });
 }
 
@@ -131,7 +132,7 @@ inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !U
     };
 
     if (First == Init) return root.main(base);
-    
+
     if (comptime std.mem.findScalar(type, application_juice, First)) |_| {
         const srv = try horizon.ServiceManager.open();
         defer srv.close();

@@ -236,8 +236,8 @@ pub const Codec = union(enum) {
             .static_slice => blk: {
                 const header: Buffer.TranslationDescriptor.StaticBuffer = @bitCast(buffer[0]);
 
-                if(header.type != .static_buffer) return error.BadTranslationHeader;
-                if(header.index != T.index) return error.BadTranslationHeader;
+                if (header.type != .static_buffer) return error.BadTranslationHeader;
+                if (header.index != T.index) return error.BadTranslationHeader;
 
                 if (header.size == 0) return .static(&.{});
                 break :blk .static(@as([*]u8, @ptrFromInt(buffer[1]))[0..header.size]);
@@ -245,9 +245,9 @@ pub const Codec = union(enum) {
             .mapped_slice => blk: {
                 const header: Buffer.TranslationDescriptor.MappedBuffer = @bitCast(buffer[0]);
 
-                if(header.type != 1) return error.BadTranslationHeader;
-                if(header.read != T.permissions.read) return error.BadTranslationHeader;
-                if(header.write != T.permissions.write) return error.BadTranslationHeader;
+                if (header.type != 1) return error.BadTranslationHeader;
+                if (header.read != T.permissions.read) return error.BadTranslationHeader;
+                if (header.write != T.permissions.write) return error.BadTranslationHeader;
 
                 if (header.size == 0) return .mapped(&.{});
                 break :blk .mapped(@as([*]u8, @ptrFromInt(buffer[1]))[0..header.size]);
@@ -255,18 +255,18 @@ pub const Codec = union(enum) {
             .replace_by_process_id => blk: {
                 const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
 
-                if(header.type != .handle) return error.BadTranslationHeader;
-                if(header.extra_handles > 0) return error.BadTranslationHeader;
-                if(!header.replace_by_process_id) return error.BadTranslationHeader;
+                if (header.type != .handle) return error.BadTranslationHeader;
+                if (header.extra_handles > 0) return error.BadTranslationHeader;
+                if (!header.replace_by_process_id) return error.BadTranslationHeader;
 
                 break :blk @enumFromInt(buffer[1]);
             },
             .handles, .move_handles => |amount| blk: {
                 const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
 
-                if(header.type != .handle) return error.BadTranslationHeader;
-                if(header.extra_handles != amount-1) return error.BadTranslationHeader;
-                if(header.move_handles != (codec == .move_handles)) return error.BadTranslationHeader;
+                if (header.type != .handle) return error.BadTranslationHeader;
+                if (header.extra_handles != amount - 1) return error.BadTranslationHeader;
+                if (header.move_handles != (codec == .move_handles)) return error.BadTranslationHeader;
 
                 var result: T = undefined;
                 @as(*[amount]u32, @ptrCast(&result)).* = buffer[1..][0..amount].*;
@@ -276,9 +276,9 @@ pub const Codec = union(enum) {
                 const sz = codec.size();
                 const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
 
-                if(header.type != .handle) return error.BadTranslationHeader;
-                if(header.extra_handles != (sz-2)) return error.BadTranslationHeader;
-                if(header.move_handles != (codec == .move_handle_array)) return error.BadTranslationHeader;
+                if (header.type != .handle) return error.BadTranslationHeader;
+                if (header.extra_handles != (sz - 2)) return error.BadTranslationHeader;
+                if (header.move_handles != (codec == .move_handle_array)) return error.BadTranslationHeader;
 
                 const WrappedType = T.Wrapped;
                 var result: WrappedType = undefined;
@@ -518,7 +518,7 @@ pub fn Command(comptime CommandId: type, comptime command_id: CommandId, comptim
 }
 
 pub const Buffer = extern struct {
-    pub const TranslationDescriptor = packed union {
+    pub const TranslationDescriptor = packed union(u32) {
         pub const Type = enum(u3) {
             handle,
             static_buffer,

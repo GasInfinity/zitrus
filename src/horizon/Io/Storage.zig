@@ -4,7 +4,7 @@ pub const separator = '/';
 // This is a workaround to not stall any soc:U IPC call. We'll
 // busy loop/wait instead so other threads can progress.
 //
-// Time we'll sleep when waiting some operation, 
+// Time we'll sleep when waiting some operation,
 // has been arbitrarily chosen.
 const socket_busy_loop_workaround_ns = 100000;
 
@@ -69,13 +69,12 @@ pub const Description = struct {
 /// A builder for a path.
 pub const Builder = struct {
     pub const Table = Storage.Table([]const u16);
-    pub const root: []const u16 = &.{'/', 0};
+    pub const root: []const u16 = &.{ '/', 0 };
     pub const init: Builder = .{ .buf = undefined, .end = 0 };
 
     buf: [Io.Dir.max_path_bytes + 1]u16,
     end: usize,
 
-    
     /// It is asserted that `path` is valid
     pub fn appendRaw(builder: *Builder, sub_path: []const u16) error{NameTooLong}!void {
         if (builder.end + sub_path.len > builder.buf.len) return error.NameTooLong;
@@ -83,7 +82,7 @@ pub const Builder = struct {
         builder.end += sub_path.len;
     }
 
-    pub fn append(builder: *Builder, sub_path: []const u8) error{NameTooLong, BadPathName}!void {
+    pub fn append(builder: *Builder, sub_path: []const u8) error{ NameTooLong, BadPathName }!void {
         if (sub_path.len == 0) return;
         if (builder.end == builder.buf.len) return error.NameTooLong;
 
@@ -92,7 +91,7 @@ pub const Builder = struct {
             builder.end += 1;
         }
 
-        var it: Io.Dir.path.ComponentIterator(.posix, u8) = .init(sub_path); 
+        var it: Io.Dir.path.ComponentIterator(.posix, u8) = .init(sub_path);
 
         var next = it.next();
         while (next) |component| {
@@ -101,9 +100,9 @@ pub const Builder = struct {
             const name = component.name;
             if (std.mem.eql(u8, name, ".")) continue;
             if (std.mem.eql(u8, name, "..")) {
-                const last = if (std.mem.lastIndexOfScalar(u16, builder.buf[0..builder.end - 1], '/')) |idx| 
+                const last = if (std.mem.lastIndexOfScalar(u16, builder.buf[0 .. builder.end - 1], '/')) |idx|
                     builder.buf[(idx + 1)..builder.end]
-                else 
+                else
                     &.{}; // This means we're at root.
 
                 builder.end -= last.len;
@@ -132,7 +131,7 @@ pub const Builder = struct {
         if (builder.end == builder.buf.len) return error.NameTooLong;
 
         builder.buf[builder.end] = 0;
-        return builder.buf[0..builder.end + 1];
+        return builder.buf[0 .. builder.end + 1];
     }
 
     pub fn path(builder: *Builder) []u16 {
@@ -320,12 +319,13 @@ pub fn openPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_di
             .romfs => {
                 if (opts.create != .none) return error.ReadOnlyFileSystem;
 
-                const parent: romfs.View.Directory = if (Io.Dir.path.isAbsolutePosix(device_path)) 
+                const parent: romfs.View.Directory = if (Io.Dir.path.isAbsolutePosix(device_path))
                     .root
-                else maybe_dir_stored.?.romfs.asDirectory(); // We already return NoDevice above
+                else
+                    maybe_dir_stored.?.romfs.asDirectory(); // We already return NoDevice above
 
                 var utf16_device_path_buffer: [Io.Dir.max_path_bytes]u16 = undefined;
-                const utf16_device_path = utf16_device_path_buffer[0..std.unicode.utf8ToUtf16Le(&utf16_device_path_buffer, device_path) catch return error.BadPathName];
+                const utf16_device_path = utf16_device_path_buffer[0 .. std.unicode.utf8ToUtf16Le(&utf16_device_path_buffer, device_path) catch return error.BadPathName];
                 const entry = try storage.device.romfs.openAny(parent, utf16_device_path);
 
                 if ((opts.allow == .file or opts.mode != .read_only) and entry.kind == .directory) return error.IsDir;
@@ -382,14 +382,14 @@ pub fn openPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_di
                     }, .{}) catch |err| switch (err) {
                         error.IsDir => |e| if (opts.allow != .file and opts.mode == .read_only)
                             break :file
-                        else 
+                        else
                             return e,
                         error.FileNotFound => |e| return e,
                         else => return error.Unexpected,
                         // TODO: We have to map the errors in OpenFile
                     };
                     errdefer file.close();
-                    
+
                     if (opts.allow == .directory) return error.NotDir;
 
                     break :des .{
@@ -406,10 +406,10 @@ pub fn openPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_di
                 // NOTE: We already know (truly?) this is a directory atp, we can avoid opening a handle (which we only need to iterate)
                 const stored_path_idx = storage.paths.allocateOne(gpa) catch return error.SystemResources;
                 errdefer storage.paths.free(stored_path_idx);
-                
+
                 const stored_path: []const u16 = gpa.dupe(u16, path_z) catch return error.SystemResources;
                 errdefer gpa.free(stored_path);
-                
+
                 storage.paths.list.items[@intFromEnum(stored_path_idx)] = .{ .value = stored_path };
 
                 break :des .{
@@ -505,22 +505,23 @@ pub const AccessPathError = TryMountError || error{
 pub fn accessPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_dir: Descriptor, sub_path: []const u8, read: bool, write: bool) AccessPathError!void {
     if (sub_path.len > Io.Dir.max_path_bytes) return error.NameTooLong;
     if (sub_path.len == 0) return error.BadPathName;
-    
+
     const maybe_device, const device_path = try splitParsePath(sub_path);
     const maybe_dir_stored, const maybe_dir_device = (try storage.getDirectoryDescription(io, parent_dir)) orelse .{ null, null };
     const device = maybe_device orelse maybe_dir_device orelse return error.NoDevice;
 
-    try storage.tryMount(io, gpa, device); 
+    try storage.tryMount(io, gpa, device);
 
     switch (device) {
         .soc => unreachable,
         .romfs => {
-            const parent: romfs.View.Directory = if (Io.Dir.path.isAbsolutePosix(device_path)) 
+            const parent: romfs.View.Directory = if (Io.Dir.path.isAbsolutePosix(device_path))
                 .root
-            else maybe_dir_stored.?.romfs.asDirectory(); // We already return NoDevice above
+            else
+                maybe_dir_stored.?.romfs.asDirectory(); // We already return NoDevice above
 
             var utf16_device_path_buffer: [Io.Dir.max_path_bytes]u16 = undefined;
-            const utf16_device_path = utf16_device_path_buffer[0..std.unicode.utf8ToUtf16Le(&utf16_device_path_buffer, device_path) catch return error.BadPathName];
+            const utf16_device_path = utf16_device_path_buffer[0 .. std.unicode.utf8ToUtf16Le(&utf16_device_path_buffer, device_path) catch return error.BadPathName];
             _ = try storage.device.romfs.openAny(parent, utf16_device_path);
 
             if (write) return error.ReadOnlyFileSystem;
@@ -538,7 +539,7 @@ pub fn accessPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_
             var current_read = read;
 
             while (true) {
-                if(fs.sendOpenFile(0, archive, .utf16, @ptrCast(path_z), .{
+                if (fs.sendOpenFile(0, archive, .utf16, @ptrCast(path_z), .{
                     .read = current_read,
                     .write = write,
                     .create = false,
@@ -599,15 +600,15 @@ pub fn modifyPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_
             const path_z = try storage.buildPath(&builder, io, device_path, maybe_dir_stored);
 
             switch (operation) {
-                .create_dir => fs.sendCreateDirectory(0, archive, .utf16, @ptrCast(path_z), .{}) catch |err| switch(err) {
+                .create_dir => fs.sendCreateDirectory(0, archive, .utf16, @ptrCast(path_z), .{}) catch |err| switch (err) {
                     error.FileNotFound, error.PathAlreadyExists => |e| return e,
                     else => return error.Unexpected,
                 },
-                .delete_dir => fs.sendDeleteDirectory(0, archive, .utf16, @ptrCast(path_z)) catch |err| switch(err) {
+                .delete_dir => fs.sendDeleteDirectory(0, archive, .utf16, @ptrCast(path_z)) catch |err| switch (err) {
                     error.FileNotFound, error.NotDir => |e| return e,
                     else => return error.Unexpected,
                 },
-                .delete_file => fs.sendDeleteFile(0, archive, .utf16, @ptrCast(path_z)) catch |err| switch(err) {
+                .delete_file => fs.sendDeleteFile(0, archive, .utf16, @ptrCast(path_z)) catch |err| switch (err) {
                     error.FileNotFound, error.IsDir => |e| return e,
                     else => return error.Unexpected,
                 },
@@ -646,7 +647,7 @@ pub fn renamePath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, src_par
 
             var src_builder: Builder = .init;
             const src_path_z = try storage.buildPath(&src_builder, io, src_device_path, maybe_src_stored);
-            
+
             var dst_builder: Builder = .init;
             const dst_path_z = try storage.buildPath(&dst_builder, io, dst_device_path, maybe_dst_stored);
 
@@ -721,7 +722,7 @@ pub fn createDirPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, pare
             if (parent.len + device_path.len + 1 > Io.Dir.max_path_bytes) return error.NameTooLong;
 
             var builder: Builder = .init;
-            try builder.appendRaw(parent[0..parent.len - 1]); // Remove the NULL terminator as we don't need it here.
+            try builder.appendRaw(parent[0 .. parent.len - 1]); // Remove the NULL terminator as we don't need it here.
             const parent_end = builder.end;
             try builder.append(device_path);
 
@@ -734,7 +735,7 @@ pub fn createDirPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, pare
 
             while (true) {
                 // NOTE: This looks weird (and is brittle...) but this way we don't have to allocate an intermediate buffer!
-                const current_path_z = path_z[0..parent_end + component.path.len + 1];
+                const current_path_z = path_z[0 .. parent_end + component.path.len + 1];
 
                 const last = path_z[parent_end + component.path.len];
                 path_z[parent_end + component.path.len] = 0;
@@ -787,14 +788,14 @@ pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: Io.net.
     errdefer storage.closeUninitialized(io, fd);
 
     const sock: SocketUser.Descriptor = sock: {
-        const maybe_sock = (soc.sendSocket(.inet, .stream, .any) catch |err| switch(err) {
-            else => return error.Unexpected, 
+        const maybe_sock = (soc.sendSocket(.inet, .stream, .any) catch |err| switch (err) {
+            else => return error.Unexpected,
         });
 
         break :sock switch (maybe_sock.errno()) {
             .SUCCESS => @enumFromInt(@intFromEnum(maybe_sock)),
             .NOMEM => return error.SystemResources,
-            else => |e| return unexpectedSocErrno(e)
+            else => |e| return unexpectedSocErrno(e),
         };
     };
     errdefer sock.close(soc);
@@ -805,7 +806,7 @@ pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: Io.net.
 
     // TODO: proper error handling, we'll see them while we develop
     if (opts.reuse_address) {
-        switch((soc.sendSetSockOpt(sock, .socket, .{ .socket = .reuse_address }, @ptrCast(&@as(u32, 1))) catch |err| switch (err) {
+        switch ((soc.sendSetSockOpt(sock, .socket, .{ .socket = .reuse_address }, @ptrCast(&@as(u32, 1))) catch |err| switch (err) {
             else => return error.Unexpected,
         }).errno()) {
             .SUCCESS => {},
@@ -817,7 +818,7 @@ pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: Io.net.
     while (true) {
         if (addr.port == 0) soc_address.ip4.port = randomEphemeralPort(io);
 
-        switch((soc.sendBind(sock, &soc_address) catch |err| switch (err) {
+        switch ((soc.sendBind(sock, &soc_address) catch |err| switch (err) {
             else => return error.Unexpected,
         }).errno()) {
             .SUCCESS => break,
@@ -826,7 +827,7 @@ pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: Io.net.
         }
     }
 
-    switch((soc.sendListen(sock, opts.kernel_backlog) catch |err| switch (err) {
+    switch ((soc.sendListen(sock, opts.kernel_backlog) catch |err| switch (err) {
         else => return error.Unexpected,
     }).errno()) {
         .SUCCESS => {},
@@ -846,12 +847,10 @@ pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: Io.net.
     return .{
         .socket = .{
             .handle = fd,
-            .address = .{
-                .ip4 = .{
-                    .bytes = addr.bytes,
-                    .port = std.mem.bigToNative(u16, soc_address.ip4.port),
-                }
-            },
+            .address = .{ .ip4 = .{
+                .bytes = addr.bytes,
+                .port = std.mem.bigToNative(u16, soc_address.ip4.port),
+            } },
         },
     };
 }
@@ -880,14 +879,14 @@ pub fn netBind(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io
     io.random(@ptrCast(&port));
 
     const sock: SocketUser.Descriptor = sock: {
-        const maybe_sock = (soc.sendSocket(.inet, .dgram, .any) catch |err| switch(err) {
-            else => return error.Unexpected, 
+        const maybe_sock = (soc.sendSocket(.inet, .dgram, .any) catch |err| switch (err) {
+            else => return error.Unexpected,
         });
 
         break :sock switch (maybe_sock.errno()) {
             .SUCCESS => @enumFromInt(@intFromEnum(maybe_sock)),
             .NOMEM => return error.SystemResources,
-            else => |e| return unexpectedSocErrno(e)
+            else => |e| return unexpectedSocErrno(e),
         };
     };
     errdefer sock.close(soc);
@@ -900,7 +899,7 @@ pub fn netBind(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io
     while (true) {
         if (addr.port == 0) soc_address.ip4.port = randomEphemeralPort(io);
 
-        switch((soc.sendBind(sock, &soc_address) catch |err| switch (err) {
+        switch ((soc.sendBind(sock, &soc_address) catch |err| switch (err) {
             else => return error.Unexpected,
         }).errno()) {
             .SUCCESS => break,
@@ -918,17 +917,15 @@ pub fn netBind(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io
 
     return .{
         .handle = fd,
-        .address = .{
-            .ip4 = .{
-                .bytes = addr.bytes,
-                .port = std.mem.bigToNative(u16, soc_address.ip4.port),
-            }
-        },
+        .address = .{ .ip4 = .{
+            .bytes = addr.bytes,
+            .port = std.mem.bigToNative(u16, soc_address.ip4.port),
+        } },
     };
 }
 
 pub fn netAccept(storage: *Storage, io: std.Io, gpa: Allocator, handle: Descriptor) Io.net.Server.AcceptError!Io.net.Stream {
-    const desc = try storage.getDescription(handle); 
+    const desc = try storage.getDescription(handle);
     std.debug.assert(desc.flags.kind == .socket);
     std.debug.assert(desc.flags.device == .soc);
 
@@ -945,7 +942,7 @@ pub fn netAccept(storage: *Storage, io: std.Io, gpa: Allocator, handle: Descript
             else => return error.Unexpected,
         };
 
-        switch(maybe_accepted_sock.errno()) {
+        switch (maybe_accepted_sock.errno()) {
             .SUCCESS => break :blk @enumFromInt(@intFromEnum(maybe_accepted_sock)),
             .AGAIN => horizon.sleepThread(socket_busy_loop_workaround_ns),
             .NOMEM => return error.SystemResources,
@@ -993,14 +990,14 @@ pub fn netConnect(storage: *Storage, io: std.Io, gpa: Allocator, address: *const
     errdefer storage.closeUninitialized(io, fd);
 
     const sock: SocketUser.Descriptor = sock: {
-        const maybe_sock = (soc.sendSocket(.inet, .stream, .any) catch |err| switch(err) {
-            else => return error.Unexpected, 
+        const maybe_sock = (soc.sendSocket(.inet, .stream, .any) catch |err| switch (err) {
+            else => return error.Unexpected,
         });
 
         break :sock switch (maybe_sock.errno()) {
             .SUCCESS => @enumFromInt(@intFromEnum(maybe_sock)),
             .NOMEM => return error.SystemResources,
-            else => |e| return unexpectedSocErrno(e)
+            else => |e| return unexpectedSocErrno(e),
         };
     };
     errdefer sock.close(soc);
@@ -1024,7 +1021,7 @@ pub fn netConnect(storage: *Storage, io: std.Io, gpa: Allocator, address: *const
         .events = .{},
     };
 
-    switch((soc.sendConnect(sock, &soc_address) catch |err| switch (err) {
+    switch ((soc.sendConnect(sock, &soc_address) catch |err| switch (err) {
         else => return error.Unexpected,
     }).errno()) {
         .SUCCESS => {},
@@ -1062,7 +1059,7 @@ pub fn netConnect(storage: *Storage, io: std.Io, gpa: Allocator, address: *const
         else => |e| return unexpectedSocErrno(e),
     }
 
-    switch((soc.sendGetSockName(sock, &soc_address) catch |err| switch (err) {
+    switch ((soc.sendGetSockName(sock, &soc_address) catch |err| switch (err) {
         else => return error.Unexpected,
     }).errno()) {
         .SUCCESS => {},
@@ -1100,7 +1097,7 @@ fn setSocketNonBlocking(soc: SocketUser, sock: SocketUser.Descriptor, non_blocki
         .non_block = non_blocking,
         ._unknown1 = flags._unknown1,
     } }) catch |err| switch (err) {
-            else => return error.Unexpected,
+        else => return error.Unexpected,
     }).errno()) {
         .SUCCESS => {},
         .NOMEM => return error.SystemResources,
@@ -1113,7 +1110,7 @@ pub fn netShutdown(storage: *Storage, io: std.Io, handle: Descriptor, how: Io.ne
 
     return switch (flags.kind) {
         .directory, .file => error.Unexpected,
-        .socket => switch((storage.soc.sendShutdown(stored.socket, switch (how) {
+        .socket => switch ((storage.soc.sendShutdown(stored.socket, switch (how) {
             .recv => .recv,
             .send => .send,
             .both => .both,
@@ -1168,7 +1165,7 @@ pub fn netLookup(storage: *Storage, io: std.Io, gpa: Allocator, host_name: Io.ne
     defer results.deinit(gpa);
 
     _ = results.addManyAsSliceAssumeCapacity(2);
-    
+
     while (true) {
         const maybe, const resolved_results_len = soc.sendGetAddrInfo(name_c, port_c, &hints, results.items) catch |err| switch (err) {
             else => return error.Unexpected,
@@ -1190,14 +1187,14 @@ pub fn netLookup(storage: *Storage, io: std.Io, gpa: Allocator, host_name: Io.ne
     var canonical_name = false;
     for (results.items) |entry| {
         const address: Io.net.IpAddress = addressFromSoc(entry.address);
-        
+
         resolved.putOne(io, .{ .address = address }) catch |err| switch (err) {
             error.Closed => unreachable,
             error.Canceled => |e| return e,
         };
 
         if (!canonical_name) {
-            const name = entry.canonical_name[0..std.mem.findScalar(u8, &entry.canonical_name, 0) orelse entry.canonical_name.len];
+            const name = entry.canonical_name[0 .. std.mem.findScalar(u8, &entry.canonical_name, 0) orelse entry.canonical_name.len];
             if (name.len == 0) continue;
 
             @memcpy(opts.canonical_name_buffer[0..name.len], name);
@@ -1207,18 +1204,18 @@ pub fn netLookup(storage: *Storage, io: std.Io, gpa: Allocator, host_name: Io.ne
             };
             canonical_name = true;
         }
-    } 
+    }
 }
 
 /// Assumes `lock` is held as shareable.
 pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.Dir.Entry) Io.Dir.Reader.Error!usize {
     std.debug.assert(r.buffer.len > @sizeOf(Description.Extra.Directory.NameBuffer));
 
-    const handle = r.dir.handle; 
+    const handle = r.dir.handle;
     const flags = blk: {
         storage.lock.lockSharedUncancelable(io);
         defer storage.lock.unlockShared(io);
-        
+
         break :blk (try storage.getDescription(handle)).flags;
     };
 
@@ -1229,7 +1226,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
             .romfs => {
                 storage.lock.lockSharedUncancelable(io);
                 defer storage.lock.unlockShared(io);
-                
+
                 const desc = try storage.getDescription(handle);
 
                 switch (r.state) {
@@ -1280,7 +1277,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                 const path_z, var dir = blk: {
                     storage.lock.lockSharedUncancelable(io);
                     defer storage.lock.unlockShared(io);
-                    
+
                     const desc = try storage.getDescription(handle);
                     break :blk .{ switch (desc.stored.path) {
                         .invalid => Builder.root,
@@ -1322,9 +1319,9 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
 
                     @atomicStore(Filesystem.Directory, &(try storage.getDescription(handle)).extra.dir.archive, dir, .monotonic);
                 }
-                
+
                 const bytes = r.buffer[0..@sizeOf(Description.Extra.Directory.NameBuffer)];
-                
+
                 var consumed: usize = 0;
                 var i: usize = 0;
                 while (i < entries.len) {
@@ -1332,7 +1329,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                         const entries_buf: []align(@alignOf(usize)) Filesystem.Directory.Entry = buf: {
                             const remaining = r.buffer[@sizeOf(Description.Extra.Directory.NameBuffer)..];
                             // NOTE: This is always aligned as it has @alignOf(u32) and the name buffer is aligned to 4 bytes.
-                            const entry_ptr: [*]align(@alignOf(usize)) Filesystem.Directory.Entry = @alignCast(@ptrCast(remaining.ptr));
+                            const entry_ptr: [*]align(@alignOf(usize)) Filesystem.Directory.Entry = @ptrCast(@alignCast(remaining.ptr));
                             break :buf entry_ptr[0..(remaining.len / @sizeOf(Filesystem.Directory.Entry))];
                         };
 
@@ -1356,8 +1353,8 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                         r.index = @sizeOf(Description.Extra.Directory.NameBuffer);
                     }
 
-                    const entry: *align(@alignOf(usize)) Filesystem.Directory.Entry = @alignCast(@ptrCast(r.buffer[r.index..][0..@sizeOf(Filesystem.Directory.Entry)]));
-                    const utf16_name = entry.utf16_name[0..std.mem.findScalar(u16, &entry.utf16_name, 0) orelse entry.utf16_name.len];
+                    const entry: *align(@alignOf(usize)) Filesystem.Directory.Entry = @ptrCast(@alignCast(r.buffer[r.index..][0..@sizeOf(Filesystem.Directory.Entry)]));
+                    const utf16_name = entry.utf16_name[0 .. std.mem.findScalar(u16, &entry.utf16_name, 0) orelse entry.utf16_name.len];
                     if (utf16_name.len * 2 > (bytes.len - consumed)) break;
 
                     const name_len = std.unicode.utf16LeToUtf8(bytes[consumed..], utf16_name) catch return error.Unexpected;
@@ -1379,7 +1376,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
     };
 }
 
-pub fn length(storage: *Storage, io: std.Io, handle: Descriptor) Io.File.LengthError!u64  {
+pub fn length(storage: *Storage, io: std.Io, handle: Descriptor) Io.File.LengthError!u64 {
     const stored, const flags = try storage.getDescriptionStoredFlags(io, handle);
 
     return switch (flags.kind) {
@@ -1480,7 +1477,7 @@ pub fn writePositional(storage: *Storage, io: std.Io, handle: Descriptor, buffer
             .sdmc => stored.file.sendWrite(offset, buffer, .{}) catch |e| switch (e) {
                 else => error.Unexpected,
             },
-        }
+        },
     };
 }
 
@@ -1586,15 +1583,15 @@ pub fn writeStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer:
                     }
                 }
 
-                break :blk written; 
+                break :blk written;
             },
-        }
+        },
     };
 }
 
 pub fn netRead(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []u8) Io.net.Stream.Reader.Error!usize {
     const stored, const flags = try storage.getDescriptionStoredFlags(io, handle);
-    
+
     if (flags.kind != .socket) return error.Unexpected;
 
     const soc = storage.soc;
@@ -1605,7 +1602,7 @@ pub fn netRead(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []u8) 
             else => return error.Unexpected,
         };
 
-        switch(maybe_received.errno()) {
+        switch (maybe_received.errno()) {
             .SUCCESS => return @intCast(@intFromEnum(maybe_received)),
             .AGAIN => horizon.sleepThread(socket_busy_loop_workaround_ns),
             .NOMEM => return error.SystemResources,
@@ -1615,7 +1612,7 @@ pub fn netRead(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []u8) 
     }
 }
 
-pub fn netReceive(storage: *Storage, io: std.Io, handle: Descriptor, messages: []Io.net.IncomingMessage, data: []u8, flags: Io.net.ReceiveFlags, timeout: Io.Timeout) struct { ?Io.net.Socket.ReceiveTimeoutError, usize } {
+pub fn netReceive(storage: *Storage, io: std.Io, handle: Descriptor, messages: []Io.net.IncomingMessage, data: []u8, flags: Io.net.ReceiveFlags) Io.Operation.NetReceive.Result {
     const stored, const desc_flags = storage.getDescriptionStoredFlags(io, handle) catch |err| switch (err) {
         error.Unexpected => |e| return .{ e, 0 },
     };
@@ -1628,8 +1625,6 @@ pub fn netReceive(storage: *Storage, io: std.Io, handle: Descriptor, messages: [
     var message_i: usize = 0;
     var data_i: usize = 0;
     var src_address: SocketUser.IpAddress = undefined;
-
-    const deadline = timeout.toTimestamp(io);
 
     while (true) {
         if (message_i == messages.len) return .{ null, message_i };
@@ -1650,7 +1645,7 @@ pub fn netReceive(storage: *Storage, io: std.Io, handle: Descriptor, messages: [
 
             switch (maybe_recvd.errno()) {
                 .SUCCESS => {
-                    const recvd: u32 = @intCast(@intFromEnum(maybe_recvd)); 
+                    const recvd: u32 = @intCast(@intFromEnum(maybe_recvd));
                     const recvd_written = @min(remaining_data_buffer.len, recvd);
                     data_i += recvd_written;
                     message_i += 1;
@@ -1671,12 +1666,6 @@ pub fn netReceive(storage: *Storage, io: std.Io, handle: Descriptor, messages: [
                 .AGAIN => {
                     if (message_i != 0) return .{ null, message_i };
 
-                    if (deadline) |d| {
-                        const duration = d.durationFromNow(io);
-
-                        if (duration.raw.nanoseconds <= 0) return .{ error.Timeout, message_i };
-                    }
-
                     horizon.sleepThread(socket_busy_loop_workaround_ns);
                 },
                 .NOBUFS, .NOMEM => return .{ error.SystemResources, message_i },
@@ -1688,7 +1677,7 @@ pub fn netReceive(storage: *Storage, io: std.Io, handle: Descriptor, messages: [
 
 pub fn netWrite(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []const u8) Io.net.Stream.Writer.Error!usize {
     const stored, const flags = try storage.getDescriptionStoredFlags(io, handle);
-    
+
     if (flags.kind != .socket) return error.Unexpected;
 
     const soc = storage.soc;
@@ -1699,7 +1688,7 @@ pub fn netWrite(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []con
             else => return error.Unexpected,
         };
 
-        switch(maybe_sent.errno()) {
+        switch (maybe_sent.errno()) {
             .SUCCESS => return @intCast(@intFromEnum(maybe_sent)),
             .AGAIN => horizon.sleepThread(socket_busy_loop_workaround_ns),
             .NOMEM => return error.SystemResources,
@@ -1711,7 +1700,7 @@ pub fn netWrite(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []con
 
 pub fn netSend(storage: *Storage, io: std.Io, handle: Descriptor, messages: []Io.net.OutgoingMessage, flags: Io.net.SendFlags) struct { ?Io.net.Socket.SendError, usize } {
     const stored, const desc_flags = storage.getDescriptionStoredFlags(io, handle) catch |err| return .{ err, 0 };
-    
+
     if (desc_flags.kind != .socket) return .{ error.Unexpected, 0 };
 
     const soc = storage.soc;
@@ -1719,7 +1708,7 @@ pub fn netSend(storage: *Storage, io: std.Io, handle: Descriptor, messages: []Io
 
     for (messages, 0..) |mes, i| {
         if (mes.address.* != .ip4) return .{ error.AddressFamilyUnsupported, i };
-        
+
         const addr: SocketUser.IpAddress = .{ .ip4 = address4ToSoc(mes.address.ip4) };
 
         msg_sent: while (true) {
@@ -1732,7 +1721,7 @@ pub fn netSend(storage: *Storage, io: std.Io, handle: Descriptor, messages: []Io
             switch (maybe_sent.errno()) {
                 .SUCCESS => break :msg_sent,
                 .AGAIN => horizon.sleepThread(socket_busy_loop_workaround_ns),
-                else => |e| return .{ unexpectedSocErrno(e), i }
+                else => |e| return .{ unexpectedSocErrno(e), i },
             }
         }
     }
@@ -1778,7 +1767,7 @@ pub fn seekTo(storage: *Storage, io: std.Io, handle: Descriptor, offset: u64) Io
 
 /// Assumes `lock` is held as non-shareable.
 pub fn close(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, handle: Descriptor) void {
-    const index = switch(handle) {
+    const index = switch (handle) {
         .invalid, .cwd => programmerBug("invalid fd") catch return, // cwd is only valid in open
         _ => blk: {
             storage.lock.lockUncancelable(io);
@@ -1798,10 +1787,10 @@ pub fn setCurrentDir(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, hand
         storage.lock.lockUncancelable(io);
         defer storage.lock.unlock(io);
 
-        const index = switch(handle) {
+        const index = switch (handle) {
             .invalid, .cwd => return programmerBug("invalid fd"), // cwd is only valid in open
             _ => storage.fds.items[@intFromEnum(handle)],
-        }; 
+        };
 
         const desc = &storage.descriptions.list.items[@intFromEnum(index)].value;
         std.debug.assert(desc.flags.kind == .directory);
@@ -1810,9 +1799,9 @@ pub fn setCurrentDir(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, hand
         const last_cwd = storage.cwd;
         storage.cwd = index;
 
-        log.debug("cwd {} -> {}", .{last_cwd, storage.cwd});
+        log.debug("cwd {} -> {}", .{ last_cwd, storage.cwd });
 
-        break :last last_cwd; 
+        break :last last_cwd;
     };
 
     switch (last_cwd) {
@@ -1822,17 +1811,11 @@ pub fn setCurrentDir(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, hand
 }
 
 fn address4ToSoc(address: Io.net.Ip4Address) SocketUser.Ip4Address {
-    return .{
-        .bytes = address.bytes,
-        .port = std.mem.nativeToBig(u16, address.port)
-    };
+    return .{ .bytes = address.bytes, .port = std.mem.nativeToBig(u16, address.port) };
 }
 
 fn address4FromSoc(address: SocketUser.Ip4Address) Io.net.Ip4Address {
-    return .{
-        .bytes = address.bytes,
-        .port = std.mem.bigToNative(u16, address.port)
-    };
+    return .{ .bytes = address.bytes, .port = std.mem.bigToNative(u16, address.port) };
 }
 
 fn address6FromSoc(address: SocketUser.Ip6Address) Io.net.Ip6Address {
@@ -1863,7 +1846,7 @@ fn splitParsePath(path: []const u8) error{BadPathName}!struct { ?Device.Kind, []
     return if (std.mem.findScalar(u8, path, '/')) |first_slash| dev: {
         break :dev if (std.mem.findScalar(u8, path[0..first_slash], ':')) |first_colon| {
             if (first_colon != first_slash - 1) return error.BadPathName;
-            const device = std.meta.stringToEnum(Device.Kind, path[0..first_colon]) orelse return error.BadPathName; 
+            const device = std.meta.stringToEnum(Device.Kind, path[0..first_colon]) orelse return error.BadPathName;
 
             switch (device) {
                 .soc => return error.BadPathName,
@@ -1876,7 +1859,7 @@ fn splitParsePath(path: []const u8) error{BadPathName}!struct { ?Device.Kind, []
 }
 
 /// Buils a full path, returns the final path from `Builder.nullTerminator`
-fn buildPath(storage: *Storage, builder: *Builder, io: std.Io, device_path: []const u8, stored: ?Description.Stored) error{NameTooLong, BadPathName}![]u16 {
+fn buildPath(storage: *Storage, builder: *Builder, io: std.Io, device_path: []const u8, stored: ?Description.Stored) error{ NameTooLong, BadPathName }![]u16 {
     const parent: []const u16 = if (Io.Dir.path.isAbsolutePosix(device_path))
         Builder.root
     else switch (stored.?.path) { // We already return NoDevice above
@@ -1892,7 +1875,7 @@ fn buildPath(storage: *Storage, builder: *Builder, io: std.Io, device_path: []co
     // + 1 for the NUL-terminator
     if (parent.len + device_path.len + 1 > Io.Dir.max_path_bytes) return error.NameTooLong;
 
-    try builder.appendRaw(parent[0..parent.len - 1]); // Remove the NULL terminator as we don't need it
+    try builder.appendRaw(parent[0 .. parent.len - 1]); // Remove the NULL terminator as we don't need it
     try builder.append(device_path);
 
     return try builder.nullTerminate();
@@ -1928,10 +1911,10 @@ fn closeUninitialized(storage: *Storage, io: std.Io, handle: Descriptor) void {
     fd.* = .invalid;
 }
 
-fn getDescriptionStoredFlags(storage: *Storage, io: std.Io, handle: Descriptor) Io.UnexpectedError!struct { Description.Stored, Description.Flags }{
+fn getDescriptionStoredFlags(storage: *Storage, io: std.Io, handle: Descriptor) Io.UnexpectedError!struct { Description.Stored, Description.Flags } {
     storage.lock.lockSharedUncancelable(io);
     defer storage.lock.unlockShared(io);
-    
+
     const desc = try storage.getDescription(handle);
     // NOTE: These are basically RO after a description is created.
     return .{ desc.stored, desc.flags };
@@ -1939,7 +1922,7 @@ fn getDescriptionStoredFlags(storage: *Storage, io: std.Io, handle: Descriptor) 
 
 /// Assumes `lock` is held as shareable while the pointer is alive.
 fn getDescription(storage: *Storage, handle: Descriptor) Io.UnexpectedError!*Description {
-    return switch(handle) {
+    return switch (handle) {
         .invalid, .cwd => return programmerBug("invalid fd"), // cwd is only valid in open
         _ => switch (storage.fds.items[@intFromEnum(handle)]) {
             .invalid => return programmerBug("fd not pointing to anything, possibly UAF"),
@@ -1953,12 +1936,12 @@ fn getDirectoryDescription(storage: *Storage, io: std.Io, handle: Descriptor) Io
     storage.lock.lockSharedUncancelable(io);
     defer storage.lock.unlockShared(io);
 
-    const dir_index = switch(handle) {
+    const dir_index = switch (handle) {
         .invalid => return programmerBug("invalid dir"),
         .cwd => storage.cwd,
         _ => |opened| blk: {
             // Only cwd is allowed to be invalid (only at the start, after setting it it is always available as you can't close it)
-            std.debug.assert(opened != .invalid); 
+            std.debug.assert(opened != .invalid);
             break :blk storage.fds.items[@intFromEnum(opened)];
         },
     };
@@ -1994,7 +1977,7 @@ fn closeDescription(storage: *Storage, io: std.Io, gpa: Allocator, index: Descri
     if (free) {
         switch (flags.device) {
             .romfs => {}, // Opened files/directories are just offsets.
-            .sdmc => switch(flags.kind) {
+            .sdmc => switch (flags.kind) {
                 .socket => unreachable,
                 .directory => free: {
                     if (extra.dir.archive != Filesystem.Directory.none) extra.dir.archive.close();
@@ -2011,7 +1994,7 @@ fn closeDescription(storage: *Storage, io: std.Io, gpa: Allocator, index: Descri
 
                         break :blk storage.paths.list.items[@intFromEnum(idx)].value;
                     };
-                    
+
                     gpa.free(path);
                 },
                 .file => stored.file.close(),
@@ -2026,7 +2009,7 @@ fn closeDescription(storage: *Storage, io: std.Io, gpa: Allocator, index: Descri
             storage.descriptions.free(index);
         }
 
-        log.debug("description {d} closed ({}, {})", .{@intFromEnum(index), flags.device, flags.kind});
+        log.debug("description {d} closed ({}, {})", .{ @intFromEnum(index), flags.device, flags.kind });
     }
 }
 
@@ -2040,7 +2023,7 @@ fn allocateLowestDescriptor(storage: *Storage, gpa: Allocator) Allocator.Error!D
     return @enumFromInt(storage.fds.items.len - 1);
 }
 
-pub const TryMountError = error{NoDevice, SystemResources, Unexpected};
+pub const TryMountError = error{ NoDevice, SystemResources, Unexpected };
 
 /// Assumes `lock` is held as non-shareable.
 fn tryMount(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, kind: Device.Kind) TryMountError!void {
@@ -2065,7 +2048,7 @@ fn tryMount(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, kind: Device.
                 .none => dev.* = storage.fs.sendOpenArchive(kind.archiveId().?, .empty, &.{}) catch return error.Unexpected,
                 _ => {}, // nothing to do
             }
-        }
+        },
     }
 }
 
@@ -2122,7 +2105,7 @@ fn Table(comptime T: type) type {
                     }
 
                     break :blk one_free;
-                }
+                },
             };
         }
 
@@ -2136,10 +2119,10 @@ fn Table(comptime T: type) type {
 
                     table.first_free = index;
                     table.last_free = index;
-                }, 
+                },
                 _ => {
                     table.list.items[@intFromEnum(table.last_free)].next = index;
-                    table.last_free = index; 
+                    table.last_free = index;
                 },
             }
         }

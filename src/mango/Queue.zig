@@ -432,7 +432,7 @@ pub const TransferItem = struct {
         };
 
         kind: Kind,
-        extra: packed union {
+        extra: packed union(u30) {
             copy: u30,
             transfer: packed struct(u30) {
                 src_fmt: pica.ColorFormat,

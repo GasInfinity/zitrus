@@ -10,8 +10,8 @@ pub const Handle = enum(u64) {
 };
 
 pub const Data = packed struct(u64) {
-    valid: bool = true,
     image: mango.Image,
+    valid: bool = true,
     packed_format: u5,
     is_cube: bool,
     base_array_layer: u3,

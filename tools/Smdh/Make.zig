@@ -68,15 +68,13 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         .{ std.Io.File.stdout(), false };
     defer if (output_should_close) output_file.close(io);
 
-    // const large_icon_path = args.@"--".large;
-    // const possibly_small_icon_path = args.@"--".small;
+    const large_icon_path = args.@"--".large;
+    const possibly_small_icon_path = args.@"--".small;
 
-    // XXX: Regressed until zigimg updates
-    const icons = std.mem.zeroes(smdh.Icons);
-    // const icons = loadIcons(arena, large_icon_path, possibly_small_icon_path) catch |err| {
-    //     log.err("could not convert icon files due to: {t}", .{err});
-    //     return 1;
-    // };
+    const icons = loadIcons(arena, io, large_icon_path, possibly_small_icon_path) catch |err| {
+        log.err("could not convert icon files due to: {t}", .{err});
+        return 1;
+    };
 
     const final_smdh = app_settings.toSmdh(icons) catch |err| {
         log.err("could not make final smdh: {t}", .{err});
@@ -92,62 +90,62 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
     return 0;
 }
 
-// fn loadIconWithSize(size: usize, arena: std.mem.Allocator, path: []const u8) !zigimg.Image {
-//     var read_buffer: [4096]u8 = undefined;
-//     var img = zigimg.Image.fromFilePath(arena, path, &read_buffer) catch |err| {
-//         log.err("could not open icon file '{s}': {t}", .{ path, err });
-//         return err;
-//     };
-//     errdefer img.deinit(arena);
-//
-//     if (img.width != img.height or img.width != size) return error.InvalidIconDimensions;
-//
-//     try img.convert(arena, .rgb565);
-//     return img;
-// }
-//
-// fn loadIcons(arena: std.mem.Allocator, large_path: []const u8, small_path: ?[]const u8) !smdh.Icons {
-//     var icons: smdh.Icons = std.mem.zeroes(smdh.Icons);
-//
-//     var large_image = try loadIconWithSize(smdh.Icons.large_size, arena, large_path);
-//     defer large_image.deinit(arena);
-//
-//     pica.morton.convert(.tile, 8, smdh.Icons.large_size, @sizeOf(Rgb565), &icons.large, @ptrCast(large_image.pixels.rgb565));
-//
-//     if (small_path) |path| {
-//         var small_image = try loadIconWithSize(smdh.Icons.small_size, arena, path);
-//         defer small_image.deinit(arena);
-//
-//         pica.morton.convert(.tile, 8, smdh.Icons.small_size, @sizeOf(Rgb565), &icons.small, @ptrCast(small_image.pixels.rgb565));
-//     } else {
-//         var downsampled = try zigimg.Image.create(arena, smdh.Icons.small_size, smdh.Icons.small_size, .rgb565);
-//         defer downsampled.deinit(arena);
-//
-//         // XXX: I think zigimg should have a resize function, I'll cook something when I have time if nothing is done
-//         const image_pixels: []Rgb565 = @ptrCast(large_image.pixels.rgb565);
-//         const downsampled_pixels: []Rgb565 = @ptrCast(downsampled.pixels.rgb565);
-//         for (0..smdh.Icons.small_size) |y| {
-//             for (0..smdh.Icons.small_size) |x| {
-//                 const px1 = image_pixels[(2 * y) * smdh.Icons.large_size + (2 * x)];
-//                 const px2 = image_pixels[(2 * y) * smdh.Icons.large_size + (2 * x) + 1];
-//                 const px3 = image_pixels[((2 * y) + 1) * smdh.Icons.large_size + (2 * x)];
-//                 const px4 = image_pixels[((2 * y) + 1) * smdh.Icons.large_size + (2 * x) + 1];
-//
-//                 const downsampled_pixel = Rgb565{
-//                     .r = @intCast((@as(usize, px1.r) + px2.r + px3.r + px4.r) / 4),
-//                     .g = @intCast((@as(usize, px1.g) + px2.g + px3.g + px4.g) / 4),
-//                     .b = @intCast((@as(usize, px1.b) + px2.b + px3.b + px4.b) / 4),
-//                 };
-//
-//                 downsampled_pixels[y * smdh.Icons.small_size + x] = downsampled_pixel;
-//             }
-//         }
-//
-//         pica.morton.convert(.tile, 8, smdh.Icons.small_size, @sizeOf(Rgb565), &icons.small, @ptrCast(downsampled_pixels));
-//     }
-//
-//     return icons;
-// }
+fn loadIconWithSize(size: usize, arena: std.mem.Allocator, io: std.Io, path: []const u8) !zigimg.Image {
+    var read_buffer: [4096]u8 = undefined;
+    var img = zigimg.Image.fromFilePath(arena, io, path, &read_buffer) catch |err| {
+        log.err("could not open icon file '{s}': {t}", .{ path, err });
+        return err;
+    };
+    errdefer img.deinit(arena);
+
+    if (img.width != img.height or img.width != size) return error.InvalidIconDimensions;
+
+    try img.convert(arena, .rgb565);
+    return img;
+}
+
+fn loadIcons(arena: std.mem.Allocator, io: std.Io, large_path: []const u8, small_path: ?[]const u8) !smdh.Icons {
+    var icons: smdh.Icons = std.mem.zeroes(smdh.Icons);
+
+    var large_image = try loadIconWithSize(smdh.Icons.large_size, arena, io, large_path);
+    defer large_image.deinit(arena);
+
+    pica.morton.convert(.tile, 8, smdh.Icons.large_size, @sizeOf(Rgb565), &icons.large, @ptrCast(large_image.pixels.rgb565));
+
+    if (small_path) |path| {
+        var small_image = try loadIconWithSize(smdh.Icons.small_size, arena, io, path);
+        defer small_image.deinit(arena);
+
+        pica.morton.convert(.tile, 8, smdh.Icons.small_size, @sizeOf(Rgb565), &icons.small, @ptrCast(small_image.pixels.rgb565));
+    } else {
+        var downsampled = try zigimg.Image.create(arena, smdh.Icons.small_size, smdh.Icons.small_size, .rgb565);
+        defer downsampled.deinit(arena);
+
+        // XXX: I think zigimg should have a resize function, I'll cook something when I have time if nothing is done
+        const image_pixels: []Rgb565 = @ptrCast(large_image.pixels.rgb565);
+        const downsampled_pixels: []Rgb565 = @ptrCast(downsampled.pixels.rgb565);
+        for (0..smdh.Icons.small_size) |y| {
+            for (0..smdh.Icons.small_size) |x| {
+                const px1 = image_pixels[(2 * y) * smdh.Icons.large_size + (2 * x)];
+                const px2 = image_pixels[(2 * y) * smdh.Icons.large_size + (2 * x) + 1];
+                const px3 = image_pixels[((2 * y) + 1) * smdh.Icons.large_size + (2 * x)];
+                const px4 = image_pixels[((2 * y) + 1) * smdh.Icons.large_size + (2 * x) + 1];
+
+                const downsampled_pixel = Rgb565{
+                    .r = @intCast((@as(usize, px1.r) + px2.r + px3.r + px4.r) / 4),
+                    .g = @intCast((@as(usize, px1.g) + px2.g + px3.g + px4.g) / 4),
+                    .b = @intCast((@as(usize, px1.b) + px2.b + px3.b + px4.b) / 4),
+                };
+
+                downsampled_pixels[y * smdh.Icons.small_size + x] = downsampled_pixel;
+            }
+        }
+
+        pica.morton.convert(.tile, 8, smdh.Icons.small_size, @sizeOf(Rgb565), &icons.small, @ptrCast(downsampled_pixels));
+    }
+
+    return icons;
+}
 
 const Rgb565 = pica.ColorFormat.Rgb565;
 
@@ -158,7 +156,7 @@ const Settings = @import("Settings.zig");
 
 const std = @import("std");
 const plz = @import("plz");
-// const zigimg = @import("zigimg");
+const zigimg = @import("zigimg");
 const zitrus = @import("zitrus");
 const smdh = zitrus.horizon.fmt.ncch.smdh;
 const pica = zitrus.hardware.pica;

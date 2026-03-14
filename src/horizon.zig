@@ -40,7 +40,7 @@
 //! * `start` - The glue between your `main` and the real entrypoint,
 //! its purpose is to do the bare minimum but still be useful.
 //!
-//! * `panic` - A standard panic handler that reports panics via `ErrorDisplayManager`.
+//! * `debug` - std.debug overrides that reports panics via `ErrorDisplayManager`.
 //! Uses `break` if connecting to it didn't succeed.
 //!
 //! * `testing` - You should use variables defined here when using
@@ -499,10 +499,13 @@ pub const Object = packed struct(u32) {
     _: u32,
 
     pub fn dupe(obj: Object) Error!Object {
-        const C = result.Code;
         return switch (duplicateHandle(obj).cases()) {
             .success => |r| r.value,
-            .failure => |code| if (code == C.kernel_out_of_handles) error.SystemResources else if (code == C.kernel_invalid_handle) resultBug(code) else unexpectedResult(code),
+            .failure => |code| switch (code) {
+                .kernel_out_of_handles => error.SystemResources,
+                .kernel_invalid_handle => resultBug(code),
+                else => unexpectedResult(code),
+            },
         };
     }
 
@@ -676,7 +679,6 @@ pub const AddressArbiter = packed struct(u32) {
     }
 
     pub fn arbitrate(arbiter: AddressArbiter, address: *i32, arbitration: Arbitration) ArbitrateError!void {
-        const C = result.Code;
         const value: i32, const timeout: Timeout = switch (arbitration) {
             inline .signal, .wait_if_less_than, .decrement_and_wait_if_less_than => |value| .{ value, .none },
             inline .wait_if_less_than_timeout, .decrement_and_wait_if_less_than_timeout => |timeout_value| .{ timeout_value.value, timeout_value.timeout },
@@ -692,10 +694,11 @@ pub const AddressArbiter = packed struct(u32) {
         else
             arbitrateAddress(arbiter, address, std.meta.activeTag(arbitration), value, timeout);
 
-        return if (code == C.os_timeout) error.Timeout else if (code == C.kernel_unaligned_address) unreachable // NOTE: If you hit this you 100% have IB as the pointer is assumed to be aligned
-        else if (code == C.os_invalid_string) unreachable // NOTE: invalid address
-        else if (!code.isSuccess()) unreachable // NOTE: really unreachable
-        else {};
+        return switch (code) {
+            .os_timeout => error.Timeout,
+            .kernel_unaligned_address, .os_invalid_string => unreachable,
+            else => if (!code.isSuccess()) unreachable,
+        };
     }
 
     /// Waits on the address if `address.* < value` until signaled. The comparison is *signed*.
@@ -747,23 +750,23 @@ pub const MemoryBlock = packed struct(u32) {
     obj: Object,
 
     pub fn create(address: [*]align(heap.page_size) u8, size: u32, this: MemoryPermission, other: MemoryPermission) CreateError!MemoryBlock {
-        const C = result.Code;
         return switch (createMemoryBlock(address, size, this, other).cases()) {
             .success => |s| s.value,
-            .failure => |code| if (code == C.fnd_out_of_memory or code == C.os_out_of_memory_blocks or code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory_for_memory_blocks) error.SystemResources //
-            else if (code == C.kernel_permission_denied or code == C.os_invalid_combination) error.PermissionDenied //
-            else if (code == C.kernel_unaligned_size or code == C.os_unaligned_size or code == C.os_invalid_address) resultBug(code) //
-            else unexpectedResult(code),
+            .failure => |code| switch (code) {
+                .fnd_out_of_memory, .os_out_of_memory_blocks, .kernel_out_of_handles, .os_out_of_kernel_memory_for_memory_blocks => error.SystemResources,
+                .kernel_permission_denied, .os_invalid_combination => error.PermissionDenied,
+                .kernel_unaligned_size, .os_unaligned_size, .os_invalid_address => resultBug(code),
+                else => unexpectedResult(code),
+            },
         };
     }
 
     pub fn map(mem: MemoryBlock, address: [*]align(heap.page_size) u8, this: MemoryPermission, other: MemoryPermission) MapError!void {
-        const C = result.Code;
-        const code = mapMemoryBlock(mem, address, this, other);
-
-        return if (code == C.os_unaligned_address or code == C.os_invalid_handle) unreachable // NOTE: If you hit this you 100% have IB as the pointer is assumed to be aligned
-        else if (code == C.os_invalid_combination or code == C.os_invalid_address or code == C.os_invalid_address_state) resultBug(code) // NOTE: Invalid combination == Invalid permissions
-        else if (!code.isSuccess()) unexpectedResult(code) else {};
+        return switch (mapMemoryBlock(mem, address, this, other)) {
+            .os_unaligned_address, .os_invalid_handle => unreachable,
+            .os_invalid_combination, .os_invalid_address, .os_invalid_address_state => |c| resultBug(c),
+            else => |c| if (!c.isSuccess()) unexpectedResult(c),
+        };
     }
 
     pub fn unmap(mem: MemoryBlock, address: [*]align(heap.page_size) u8) void {
@@ -783,21 +786,24 @@ pub const Synchronization = packed struct(u32) {
     obj: Object,
 
     pub fn wait(sync: Synchronization, timeout: Timeout) WaitError!void {
-        const C = result.Code;
-        const code = waitSynchronization(sync, timeout);
-
-        return if (code == C.os_timeout) error.Timeout else if (code == C.kernel_invalid_handle) unreachable // programmer error
-        else if (code == C.kernel_out_of_range) unreachable // invalid timeout
-        else if (!code.isSuccess()) unexpectedResult(code) else {};
+        return switch (waitSynchronization(sync, timeout)) {
+            .os_timeout => error.Timeout,
+            .kernel_invalid_handle, .kernel_out_of_range => |c| resultBug(c),
+            else => |c| if (!c.isSuccess()) unexpectedResult(c),
+        };
     }
 
     pub fn waitMany(syncs: []const Synchronization, wait_all: bool, timeout: Timeout) WaitManyError!usize {
-        const C = result.Code;
         return switch (waitSynchronizationMultiple(@ptrCast(syncs), wait_all, timeout).cases()) {
-            .success => |s| if (s.code == C.os_timeout) error.Timeout else s.value,
-            .failure => |code| if (code == C.kernel_invalid_handle) unreachable else if (code == C.kernel_invalid_pointer) unreachable // syncs.ptr is null
-            else if (code == C.kernel_out_of_range) unreachable // invalid timeout
-            else if (code == C.kernel_out_of_memory) error.SystemResources else unexpectedResult(code),
+            .success => |s| switch (s.code) {
+                .os_timeout => error.Timeout,
+                else => s.value,
+            },
+            .failure => |code| switch (code) {
+                .kernel_out_of_memory => error.SystemResources,
+                .kernel_invalid_handle, .kernel_out_of_range => |c| resultBug(c),
+                else => |c| unexpectedResult(c),
+            },
         };
     }
 
@@ -834,12 +840,10 @@ pub const Mutex = packed struct(u32) {
     }
 
     pub fn release(mutex: Mutex) void {
-        const C = result.Code;
-        const code = releaseMutex(mutex);
-
-        return if (code == C.kernel_invalid_handle) unreachable else if (code == C.kernel_invalid_result_value) unreachable // not locked
-        else if (code == C.kernel_mutex_not_owned) unreachable else if (!code.isSuccess()) unreachable // NOTE: Truly unreachable
-        else {};
+        return switch (releaseMutex(mutex)) {
+            .kernel_invalid_handle, .kernel_invalid_result_value, .kernel_mutex_not_owned => unreachable,
+            else => |c| if (!c.isSuccess()) unreachable,
+        };
     }
 
     pub fn wait(mutex: Mutex, timeout: Timeout) WaitError!void {
@@ -863,20 +867,24 @@ pub const Semaphore = packed struct(u32) {
     int: Interruptable,
 
     pub fn create(initial_count: u31, max_count: u31) CreateError!Semaphore {
-        const C = result.Code;
         return switch (createSemaphore(initial_count, max_count).cases()) {
             .success => |s| s.value,
-            .failure => |code| if (code == C.os_out_of_semaphores or code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory) error.SystemResources else if (code == C.kernel_invalid_combination) resultBug(code) // initial_count > max_count
-            else unexpectedResult(code),
+            .failure => |code| switch (code) {
+                .os_out_of_semaphores, .kernel_out_of_handles, .os_out_of_kernel_memory => error.SystemResources,
+                .kernel_invalid_combination => resultBug(code),
+                else => unexpectedResult(code),
+            },
         };
     }
 
     pub fn release(semaphore: Semaphore, count: u31) usize {
-        const C = result.Code;
         return switch (releaseSemaphore(semaphore, count).cases()) {
             .success => |r| r.value,
-            .failure => |code| if (code == C.kernel_invalid_handle) unreachable else if (code == C.kernel_out_of_range) unreachable // releasing more than max_count
-            else unreachable, // NOTE: Truly unreachable
+            .failure => |code| switch (code) {
+                .kernel_invalid_handle => unreachable,
+                .kernel_out_of_range => unreachable,
+                else => unreachable, // NOTE: Truly unreachable
+            },
         };
     }
 
@@ -901,29 +909,27 @@ pub const Event = packed struct(u32) {
     int: Interruptable,
 
     pub fn create(reset_type: ResetType) CreateError!Event {
-        const C = result.Code;
         return switch (createEvent(reset_type).cases()) {
             .success => |s| s.value,
-            .failure => |code| if (code == C.os_out_of_events or code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory) error.SystemResources else unexpectedResult(code),
+            .failure => |code| switch (code) {
+                .os_out_of_events, .kernel_out_of_handles, .os_out_of_kernel_memory => error.SystemResources,
+                else => unexpectedResult(code),
+            },
         };
     }
 
     pub fn clear(ev: Event) void {
-        const C = result.Code;
-        const code = clearEvent(ev);
-
-        return if (code == C.kernel_invalid_handle) unreachable //
-        else if (!code.isSuccess()) unreachable // NOTE: Truly unreachable / kernel bug
-        else {};
+        return switch (clearEvent(ev)) {
+            .kernel_invalid_handle => unreachable,
+            else => |c| if (!c.isSuccess()) unreachable, // NOTE: Truly unreachable / kernel bug
+        };
     }
 
     pub fn signal(ev: Event) void {
-        const C = result.Code;
-        const code = signalEvent(ev);
-
-        return if (code == C.kernel_invalid_handle) unreachable //
-        else if (!code.isSuccess()) unreachable // NOTE: Truly unreachable / kernel bug
-        else {};
+        return switch (signalEvent(ev)) {
+            .kernel_invalid_handle => unreachable,
+            else => |c| if (!c.isSuccess()) unreachable, // NOTE: Truly unreachable / kernel bug
+        };
     }
 
     pub fn dupe(ev: Event) Object.Error!Event {
@@ -1004,31 +1010,23 @@ pub const Session = struct {
         sync: Synchronization,
 
         pub fn connect(port: [:0]const u8) ConnectionError!Session.Client {
-            const C = result.Code;
             std.debug.assert(port.len < 12);
             return switch (connectToPort(port).cases()) {
                 .success => |s| s.value,
-                .failure => |code| if (code == C.kernel_not_found) 
-                    error.NotFound 
-                else if (code == C.os_invalid_string or code == C.os_string_too_big)
-                    resultBug(code) // invalid port.ptr and we already assert port.len < 12
-                else
-                    unexpectedResult(code),
+                .failure => |code| switch (code) {
+                    .kernel_not_found => error.NotFound,
+                    .os_invalid_string, .os_string_too_big => resultBug(code),
+                    else => unexpectedResult(code),
+                },
             };
         }
 
         pub fn sendRequest(session: Session.Client) RequestError!void {
-            const C = result.Code;
-            const code = sendSyncRequest(session);
-
-            return if (code == C.kernel_invalid_handle)
-                resultBug(code)
-            else if (code == C.os_session_closed_by_remote) 
-                error.ConnectionClosedByPeer
-            else if (!code.isSuccess()) 
-                unexpectedResult(code) 
-            else 
-                {};
+            return switch (sendSyncRequest(session)) {
+                .kernel_invalid_handle => |c| resultBug(c),
+                .os_session_closed_by_remote => error.ConnectionClosedByPeer,
+                else => |c| if (!c.isSuccess()) unexpectedResult(c),
+            };
         }
 
         pub fn close(session: Session.Client) void {
@@ -1086,10 +1084,14 @@ pub const ClientPort = packed struct(u32) {
     sync: Synchronization,
 
     pub fn createSession(port: ClientPort) CreateSessionError!Session.Client {
-        const C = result.Code;
         return switch (createSessionToPort(port)) {
             .success => |s| s.value,
-            .failure => |code| if (code == C.kernel_invalid_handle) unreachable else if (code == C.os_port_busy) error.PortBusy else if (code == C.out_of_sessions or code == C.kernel_out_of_handles or code == C.os_out_of_kernel_memory) error.SystemResources else unexpectedResult(code),
+            .failure => |code| switch (code) {
+                .kernel_invalid_handle => resultBug(code),
+                .os_port_busy => error.PortBusy,
+                .out_of_sessions, .out_of_handles, .out_of_kernel_memory => error.SystemResources,
+                else => unexpectedResult(code),
+            },
         };
     }
 
@@ -1209,8 +1211,7 @@ pub const Process = packed struct(u32) {
         memory_region = 19,
     };
 
-    // TODO: Make union(u32) when implemented in zig
-    pub const Capability = packed union {
+    pub const Capability = packed union(u32) {
         pub const none: Capability = @bitCast(@as(u32, 0xFFFFFFFF));
 
         // I suppose this allows you to use `svcBindInterrupt`?
@@ -1563,7 +1564,7 @@ pub fn setThreadIdealProcessor(thread: Process, ideal_processor: i32) result.Cod
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn getCpuCount() i32 {
+pub fn getCurrentCpu() i32 {
     return asm volatile ("svc 0x11"
         : [processor_number] "={r0}" (-> i32),
         :

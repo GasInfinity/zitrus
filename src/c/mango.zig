@@ -3,7 +3,7 @@
 pub const MgResult = enum(i32) {
     validation_failed = -3,
     out_of_memory = -2,
-    unknown = -1,
+    unexpected = -1,
 
     success = 0,
     timeout = 1,
@@ -19,49 +19,33 @@ pub export fn mgGetDeviceQueue(device: mango.Device, family: mango.QueueFamily, 
 }
 
 pub export fn mgQueueCopyBuffer(queue: mango.Queue, info: *const mango.CopyBufferInfo) MgResult {
-    queue.copyBuffer(info.*) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
-
+    queue.copyBuffer(info.*) catch |err| return translateError(err);
     return .success;
 }
 
 pub export fn mgQueueCopyBufferToImage(queue: mango.Queue, info: *const mango.CopyBufferToImageInfo) MgResult {
-    queue.copyBufferToImage(info.*) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
-
+    queue.copyBufferToImage(info.*) catch |err| return translateError(err);
     return .success;
 }
 
 pub export fn mgQueueBlitImage(queue: mango.Queue, info: *const mango.BlitImageInfo) MgResult {
-    queue.blitImage(info.*) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
-
+    queue.blitImage(info.*) catch |err| return translateError(err);
     return .success;
 }
 
 pub export fn mgQueueSubmit(queue: mango.Queue, info: *const mango.SubmitInfo) MgResult {
-    queue.submit(info.*) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
-
+    queue.submit(info.*) catch |err| return translateError(err);
     return .success;
 }
 
 pub export fn mgQueuePresent(queue: mango.Queue, info: *const mango.PresentInfo) MgResult {
-    queue.present(info.*) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
+    queue.present(info.*) catch |err| return translateError(err);
 
     return .success;
 }
 
 pub export fn mgAllocateMemory(device: mango.Device, allocate_info: *const mango.MemoryAllocateInfo, allocator: c.ZigAllocator, memory: *mango.DeviceMemory) MgResult {
-    memory.* = device.allocateMemory(allocate_info.*, allocator.allocator()) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
+    memory.* = device.allocateMemory(allocate_info.*, allocator.allocator()) catch |err| return translateError(err);
 
     return .success;
 }
@@ -71,7 +55,7 @@ pub export fn mgFreeMemory(device: mango.Device, memory: mango.DeviceMemory, all
 }
 
 pub export fn mgMapMemory(device: mango.Device, memory: mango.DeviceMemory, offset: u32, size: mango.DeviceSize, data: *[*]u8) MgResult {
-    data.* = (device.mapMemory(memory, offset, size) catch |err| switch (err) {}).ptr;
+    data.* = (device.mapMemory(memory, offset, size) catch |err| return translateError(err)).ptr;
 
     return .success;
 }
@@ -81,15 +65,13 @@ pub export fn mgUnmapMemory(device: mango.Device, memory: mango.DeviceMemory) vo
 }
 
 pub export fn mgFlushMappedMemoryRanges(device: mango.Device, range_count: usize, ranges: [*]const mango.MappedMemoryRange) MgResult {
-    device.flushMappedMemoryRanges(ranges[0..range_count]) catch |err| switch (err) {};
+    device.flushMappedMemoryRanges(ranges[0..range_count]) catch |err| return translateError(err);
 
     return .success;
 }
 
 pub export fn mgCreateSemaphore(device: mango.Device, create_info: *const mango.SemaphoreCreateInfo, allocator: c.ZigAllocator, semaphore: *mango.Semaphore) MgResult {
-    semaphore.* = device.createSemaphore(create_info.*, allocator.allocator()) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
+    semaphore.* = device.createSemaphore(create_info.*, allocator.allocator()) catch |err| return translateError(err);
 
     return .success;
 }
@@ -99,9 +81,7 @@ pub export fn mgDestroySemaphore(device: mango.Device, semaphore: mango.Semaphor
 }
 
 pub export fn mgCreateCommandPool(device: mango.Device, create_info: *const mango.CommandPoolCreateInfo, allocator: c.ZigAllocator, command_pool: *mango.CommandPool) MgResult {
-    command_pool.* = device.createCommandPool(create_info.*, allocator.allocator()) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
+    command_pool.* = device.createCommandPool(create_info.*, allocator.allocator()) catch |err| return translateError(err);
 
     return .success;
 }
@@ -119,9 +99,7 @@ pub export fn mgTrimCommandPool(device: mango.Device, command_pool: mango.Comman
 }
 
 pub export fn mgAllocateCommandBuffers(device: mango.Device, allocate_info: mango.CommandBufferAllocateInfo, buffers: [*]mango.CommandBuffer) MgResult {
-    device.allocateCommandBuffers(allocate_info, buffers[0..allocate_info.command_buffer_count]) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
+    device.allocateCommandBuffers(allocate_info, buffers[0..allocate_info.command_buffer_count]) catch |err| return translateError(err);
 
     return .success;
 }
@@ -131,9 +109,7 @@ pub export fn mgFreeCommandBuffers(device: mango.Device, command_pool: mango.Com
 }
 
 pub export fn mgCreateBuffer(device: mango.Device, create_info: *const mango.BufferCreateInfo, allocator: c.ZigAllocator, buffer: *mango.Buffer) MgResult {
-    buffer.* = device.createBuffer(create_info.*, allocator.allocator()) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
+    buffer.* = device.createBuffer(create_info.*, allocator.allocator()) catch |err| return translateError(err);
 
     return .success;
 }
@@ -143,15 +119,13 @@ pub export fn mgDestroyBuffer(device: mango.Device, buffer: mango.Buffer, alloca
 }
 
 pub export fn mgBindBufferMemory(device: mango.Device, buffer: mango.Buffer, memory: mango.DeviceMemory, memory_offset: mango.DeviceSize) MgResult {
-    device.bindBufferMemory(buffer, memory, memory_offset) catch |err| switch (err) {};
+    device.bindBufferMemory(buffer, memory, memory_offset) catch |err| return translateError(err);
 
     return .success;
 }
 
 pub export fn mgCreateImage(device: mango.Device, create_info: *const mango.ImageCreateInfo, allocator: c.ZigAllocator, image: *mango.Image) MgResult {
-    image.* = device.createImage(create_info.*, allocator.allocator()) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
+    image.* = device.createImage(create_info.*, allocator.allocator()) catch |err| return translateError(err);
 
     return .success;
 }
@@ -161,15 +135,13 @@ pub export fn mgDestroyImage(device: mango.Device, image: mango.Image, allocator
 }
 
 pub export fn mgBindImageMemory(device: mango.Device, image: mango.Image, memory: mango.DeviceMemory, memory_offset: mango.DeviceSize) MgResult {
-    device.bindImageMemory(image, memory, memory_offset) catch |err| switch (err) {};
+    device.bindImageMemory(image, memory, memory_offset) catch |err| return translateError(err);
 
     return .success;
 }
 
 pub export fn mgCreateImageView(device: mango.Device, create_info: *const mango.ImageViewCreateInfo, allocator: c.ZigAllocator, image_view: *mango.ImageView) MgResult {
-    image_view.* = device.createImageView(create_info.*, allocator.allocator()) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
+    image_view.* = device.createImageView(create_info.*, allocator.allocator()) catch |err| return translateError(err);
 
     return .success;
 }
@@ -179,9 +151,7 @@ pub export fn mgDestroyImageView(device: mango.Device, image_view: mango.ImageVi
 }
 
 pub export fn mgCreateSampler(device: mango.Device, create_info: *const mango.SamplerCreateInfo, allocator: c.ZigAllocator, sampler: *mango.Sampler) MgResult {
-    sampler.* = device.createSampler(create_info.*, allocator.allocator()) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
+    sampler.* = device.createSampler(create_info.*, allocator.allocator()) catch |err| return translateError(err);
 
     return .success;
 }
@@ -191,10 +161,7 @@ pub export fn mgDestroySampler(device: mango.Device, sampler: mango.Sampler, all
 }
 
 pub export fn mgCreateGraphicsPipeline(device: mango.Device, create_info: mango.GraphicsPipelineCreateInfo, allocator: c.ZigAllocator, pipeline: *mango.Pipeline) MgResult {
-    pipeline.* = device.createGraphicsPipeline(create_info, allocator.allocator()) catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-        error.ValidationFailed => return .validation_failed,
-    };
+    pipeline.* = device.createGraphicsPipeline(create_info, allocator.allocator()) catch |err| return translateError(err);
 
     return .success;
 }
@@ -204,7 +171,7 @@ pub export fn mgDestroyPipeline(device: mango.Device, pipeline: mango.Pipeline, 
 }
 
 pub export fn mgCreateSwapchain(device: mango.Device, create_info: mango.SwapchainCreateInfo, allocator: c.ZigAllocator, swapchain: *mango.Swapchain) MgResult {
-    swapchain.* = device.createSwapchain(create_info, allocator.allocator()) catch |err| switch (err) {};
+    swapchain.* = device.createSwapchain(create_info, allocator.allocator()) catch |err| return translateError(err);
 
     return .success;
 }
@@ -224,51 +191,40 @@ pub export fn mgGetSwapchainImages(device: mango.Device, swapchain: mango.Swapch
 }
 
 pub export fn mgAcquireNextImage(device: mango.Device, swapchain: mango.Swapchain, timeout: i64, next_image: *u8) MgResult {
-    next_image.* = device.acquireNextImage(swapchain, timeout) catch |err| switch (err) {
-        error.Timeout => return .timeout,
-    };
+    next_image.* = device.acquireNextImage(swapchain, timeout) catch |err| return translateError(err);
 
     return .success;
 }
 
 pub export fn mgSignalSemaphore(device: mango.Device, signal_info: *const mango.SemaphoreOperation) MgResult {
-    device.signalSemaphore(signal_info.*) catch |err| switch (err) {};
+    device.signalSemaphore(signal_info.*) catch |err| return translateError(err);
 
     return .success;
 }
 
 pub export fn mgWaitSemaphore(device: mango.Device, wait_info: *const mango.SemaphoreOperation, timeout: i64) MgResult {
-    device.waitSemaphore(wait_info.*, timeout) catch |err| switch (err) {
-        error.Timeout => return .timeout,
-    };
+    device.waitSemaphore(wait_info.*, timeout) catch |err| return translateError(err);
     return .success;
 }
 
-pub export fn mgDeviceWaitIdle(device: mango.Device) MgResult {
-    device.waitIdle() catch |err| switch (err) {};
-
-    return .success;
+pub export fn mgDeviceWaitIdle(device: mango.Device) void {
+    device.waitIdle();
 }
 
 pub export fn mgBeginCommandBuffer(cmd: mango.CommandBuffer) MgResult {
-    cmd.begin() catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-    };
+    cmd.begin() catch |err| return translateError(err);
 
     return .success;
 }
 
 pub export fn mgEndCommandBuffer(cmd: mango.CommandBuffer) MgResult {
-    cmd.end() catch |err| switch (err) {
-        error.OutOfMemory => return .out_of_memory,
-        else => return .unknown,
-    };
+    cmd.end() catch |err| return translateError(err);
 
     return .success;
 }
 
-pub export fn mgResetCommandBuffer(cmd: mango.CommandBuffer) void {
-    return cmd.reset();
+pub export fn mgResetCommandBuffer(cmd: mango.CommandBuffer, flags: mango.CommandBufferResetFlags) void {
+    return cmd.reset(flags);
 }
 
 pub export fn mgCmdBindPipeline(cmd: mango.CommandBuffer, bind_point: mango.PipelineBindPoint, pipeline: mango.Pipeline) void {
@@ -403,12 +359,19 @@ pub export fn mgCmdSetStencilReference(cmd: mango.CommandBuffer, reference: u8) 
     return cmd.setStencilReference(reference);
 }
 
-pub export fn mgCmdSetTextureEnable(cmd: mango.CommandBuffer, enable: *const [4]bool) void {
-    return cmd.setTextureEnable(enable);
-}
-
 pub export fn mgCmdSetTextureCoordinates(cmd: mango.CommandBuffer, texture_2_coordinates: mango.TextureCoordinateSource, texture_3_coordinates: mango.TextureCoordinateSource) void {
     return cmd.setTextureCoordinates(texture_2_coordinates, texture_3_coordinates);
+}
+
+const AnyError = mango.ObjectCreationError || mango.MapMemoryError || mango.FlushMemoryError || mango.BindMemoryError || mango.AcquireNextImageError || mango.WaitSemaphoreError || mango.SignalSemaphoreError;
+
+fn translateError(err: AnyError) MgResult {
+    return switch (err) {
+        error.ValidationFailed => .validation_failed,
+        error.OutOfMemory => .out_of_memory,
+        error.Unexpected => .unexpected,
+        error.Timeout => .timeout,
+    };
 }
 
 const zitrus = @import("zitrus");

@@ -12,7 +12,7 @@ pub const service = "soc:U";
 pub const E = enum(u32) {
     pub const Maybe = enum(i32) {
         _,
-        
+
         pub fn errno(maybe: Maybe) E {
             return if (@intFromEnum(maybe) < 0) @enumFromInt(@abs(@intFromEnum(maybe))) else .SUCCESS;
         }
@@ -189,7 +189,9 @@ pub const AddressInfo = extern struct {
     canonical_name: [256]u8,
     address: IpAddress,
 
-    comptime { std.debug.assert(@sizeOf(AddressInfo) == 0x130); }
+    comptime {
+        std.debug.assert(@sizeOf(AddressInfo) == 0x130);
+    }
 };
 
 pub const SocketLevel = enum(u16) {
@@ -208,7 +210,7 @@ pub const SocketLevel = enum(u16) {
     socket = 0xFFFF,
 };
 
-pub const SocketOption = packed union {
+pub const SocketOption = packed union(u32) {
     socket: SocketLevel.Socket,
 };
 
@@ -263,7 +265,7 @@ pub fn close(soc: SocketUser) void {
     soc.session.close();
 }
 
-/// The memory block must be created with (this: none, other: rw) 
+/// The memory block must be created with (this: none, other: rw)
 /// if you don't want `permanent(os): incompatible_permissions (wrong_arg) (0xD900182E)`
 pub fn sendInitialize(soc: SocketUser, buffer: horizon.MemoryBlock, buffer_len: usize) !void {
     const data = tls.get();
@@ -273,7 +275,7 @@ pub fn sendInitialize(soc: SocketUser, buffer: horizon.MemoryBlock, buffer_len: 
         .buffer = buffer,
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -285,7 +287,7 @@ pub fn sendCloseAll(soc: SocketUser) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(soc.session, command.CloseAll, .{}, .{})).cases()) {
         .success => {},
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -295,7 +297,7 @@ pub fn sendAddGlobalSocket(soc: SocketUser, socket: Descriptor) !void {
         .socket = socket,
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -307,7 +309,7 @@ pub fn sendSocket(soc: SocketUser, domain: Family, typ: Type, protocol: Protocol
         .protocol = protocol,
     }, .{})).cases()) {
         .success => |s| s.value.descriptor,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -318,7 +320,7 @@ pub fn sendListen(soc: SocketUser, socket: Descriptor, backlog: u32) !E.Maybe {
         .backlog = backlog,
     }, .{})).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -329,7 +331,7 @@ pub fn sendAccept(soc: SocketUser, socket: Descriptor, address: *IpAddress) !E.M
         .address_len = @sizeOf(IpAddress),
     }, .{ .address = address })).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -341,7 +343,7 @@ pub fn sendBind(soc: SocketUser, socket: Descriptor, address: *const IpAddress) 
         .address = .static(@ptrCast(address)),
     }, .{})).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -353,7 +355,7 @@ pub fn sendConnect(soc: SocketUser, socket: Descriptor, address: *const IpAddres
         .address = .static(@ptrCast(address)),
     }, .{})).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -368,7 +370,7 @@ pub fn sendReceiveFromMapped(soc: SocketUser, socket: Descriptor, flags: Datagra
         .output = .mapped(output),
     }, .{ .src_address = if (src_address) |addr| @ptrCast(addr) else &.{} })).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -384,7 +386,7 @@ pub fn sendReceiveFrom(soc: SocketUser, socket: Descriptor, flags: DatagramFlags
         .src_address_len = if (src_address) |_| @sizeOf(IpAddress) else 0,
     }, .{ .output = output, .src_address = if (src_address) |addr| @ptrCast(addr) else &.{} })).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -400,7 +402,7 @@ pub fn sendSendToMapped(soc: SocketUser, socket: Descriptor, flags: DatagramFlag
         .input = .mapped(input),
     }, .{})).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -418,7 +420,7 @@ pub fn sendSendTo(soc: SocketUser, socket: Descriptor, flags: DatagramFlags, inp
         .dest_address = .static(if (dest_address) |addr| @ptrCast(addr) else &.{}),
     }, .{})).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -433,7 +435,7 @@ pub fn sendShutdown(soc: SocketUser, socket: Descriptor, how: ShutdownHow) !E.Ma
         .how = how,
     }, .{})).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -445,7 +447,7 @@ pub fn sendGetHostByName(soc: SocketUser, hostname: []const u8, entry: *HostEntr
         .hostname = .static(hostname),
     }, .{ .entry = entry })).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -461,7 +463,7 @@ pub fn sendGetAddrInfo(soc: SocketUser, node: []const u8, serv: []const u8, hint
         .hints = .static(if (hints) |hint| @ptrCast(hint) else &.{}),
     }, .{ .results = results })).cases()) {
         .success => |s| .{ s.value.errno, s.value.count },
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -475,7 +477,7 @@ pub fn sendSetSockOpt(soc: SocketUser, socket: Descriptor, level: SocketLevel, n
         .opt = .static(opt),
     }, .{})).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -488,7 +490,7 @@ pub fn sendGetSockOpt(soc: SocketUser, socket: Descriptor, level: SocketLevel, n
         .opt_len = opt.len,
     }, .{ .opt = opt })).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -500,19 +502,15 @@ pub fn sendFcntl(soc: SocketUser, socket: Descriptor, cmd: Descriptor.Command, a
         .arg = arg,
     }, .{})).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendPoll(soc: SocketUser, polls: []Descriptor.Poll, timeout: i32) !E.Maybe {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(soc.session, command.Poll, .{
-        .nfds = polls.len,
-        .timeout = timeout,
-        .poll = .static(@ptrCast(polls))
-    }, .{ .polls = polls })).cases()) {
+    return switch ((try data.ipc.sendRequest(soc.session, command.Poll, .{ .nfds = polls.len, .timeout = timeout, .poll = .static(@ptrCast(polls)) }, .{ .polls = polls })).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -523,7 +521,7 @@ pub fn sendGetSockName(soc: SocketUser, socket: Descriptor, address: *IpAddress)
         .address_len = @sizeOf(IpAddress),
     }, .{ .address = address })).cases()) {
         .success => |s| s.value.errno,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
@@ -531,7 +529,7 @@ pub fn sendGetHostId(soc: SocketUser) ![4]u8 {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(soc.session, command.GetHostId, .{}, .{})).cases()) {
         .success => |s| s.value.bytes,
-        .failure => |code| horizon.unexpectedResult(code), 
+        .failure => |code| horizon.unexpectedResult(code),
     };
 }
 

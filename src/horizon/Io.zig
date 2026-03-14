@@ -63,19 +63,19 @@ var global_backing: horizon.Io = .{
     .debug_mutex = .init,
     .debug_writer = horizon.outputDebugWriter(&.{}),
     .rng_mutex = .init,
-    .rng = blk: { 
+    .rng = blk: {
         @setEvalBranchQuota(8000);
         break :blk .init(@splat(6_7));
     },
     .parking_futex = .init,
-    .storage = .empty, 
+    .storage = .empty,
 };
 
 /// When using the horizon juicy main, this will be the backing memory of the `std.Io`
 /// you and `std.debug` will get (via `debug_io`), as such you SHOULD initialize it if not using juicy main.
 ///
 /// Not initializing it means calling any function is allowed to cause IB with these exceptions:
-/// 
+///
 /// These functions are safe:
 ///     - tryLockStderr
 ///     - now, clockResolution, sleep
@@ -155,10 +155,10 @@ const ParkingFutex = struct {
         if (fut.num_waiters.fetchAdd(0, .release) == 0) {
             @branchHint(.likely);
             return;
-        } 
+        }
 
         // SinglyLinkedList of waiters to be unparked
-        var waiters_head: ?*std.DoublyLinkedList.Node = null; 
+        var waiters_head: ?*std.DoublyLinkedList.Node = null;
         {
             fut.mutex.lock(arbiter);
             defer fut.mutex.unlock(arbiter);
@@ -261,8 +261,7 @@ pub fn initStorage(hio: *HIo, srv: horizon.ServiceManager, backends: enum { fs, 
         try soc.sendInitialize(soc_shm, soc_buffer.len);
         break :blk .{ soc, soc_buffer, soc_shm };
     };
-    errdefer if(maybe_soc) |soc| soc.close();
-
+    errdefer if (maybe_soc) |soc| soc.close();
 
     hio.storage = .init(true, maybe_fs, maybe_soc, soc_buffer, soc_shm);
 }
@@ -387,7 +386,7 @@ pub const VTable = enum(u0) {
 
         return switch (operation) {
             .file_read_streaming => |op| blk: {
-                for(op.data) |buf| {
+                for (op.data) |buf| {
                     if (buf.len == 0) continue;
 
                     break :blk .{ .file_read_streaming = hio.storage.readStreaming(hio.io(), op.file.handle, buf) };
@@ -398,24 +397,37 @@ pub const VTable = enum(u0) {
             .file_write_streaming => |op| blk: {
                 const buf = if (op.header.len != 0)
                     op.header
-                else buf: for (op.data[0..op.data.len - 1]) |buf| {
+                else buf: for (op.data[0 .. op.data.len - 1]) |buf| {
                     if (buf.len == 0) continue;
                     break :buf buf;
                 } else if (op.data[op.data.len - 1].len > 0 and op.splat > 0)
                     op.data[op.data.len - 1]
-                else 
+                else
                     break :blk .{ .file_write_streaming = 0 };
 
                 break :blk .{ .file_write_streaming = hio.storage.writeStreaming(hio.io(), op.file.handle, buf) };
             },
+            .net_receive => |op| .{ .net_receive = hio.storage.netReceive(hio.io(), op.socket_handle, op.message_buffer, op.data_buffer, op.flags) },
             .device_io_control => unreachable,
         };
+    }
+
+    pub fn batchAwaitAsync(_: VTable, _: ?*anyopaque, _: *Io.Batch) Cancelable!void {
+        @compileError("TODO");
+    }
+
+    pub fn batchAwaitConcurrent(_: VTable, _: ?*anyopaque, _: *Io.Batch, _: Io.Timeout) Io.Batch.AwaitConcurrentError!void {
+        @compileError("TODO");
+    }
+
+    pub fn batchCancel(_: ?*anyopaque, _: *Io.Batch) void {
+        @compileError("TODO");
     }
 
     pub fn dirCreateDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
-        return hio.storage.modifyPath(hio.io(), hio.gpa, dir.handle, path, .create_dir) catch |err| switch(err) {
+        return hio.storage.modifyPath(hio.io(), hio.gpa, dir.handle, path, .create_dir) catch |err| switch (err) {
             error.IsDir => unreachable,
             else => |e| return e,
         };
@@ -441,7 +453,7 @@ pub const VTable = enum(u0) {
             .handle = hio.storage.openPath(hio.io(), hio.gpa, dir.handle, path, .{
                 .mode = .read_only,
                 .allow = .directory,
-            }) catch |err| switch(err) {
+            }) catch |err| switch (err) {
                 error.IsDir, error.PathAlreadyExists => unreachable,
                 error.ReadOnlyFileSystem => return error.AccessDenied, // XXX: see dirOpenFile
                 else => |e| return e,
@@ -491,7 +503,7 @@ pub const VTable = enum(u0) {
         };
         errdefer file.close(hio.io());
 
-        if (opts.truncate) file.setLength(hio.io(), 0) catch |err| switch(err) {
+        if (opts.truncate) file.setLength(hio.io(), 0) catch |err| switch (err) {
             error.NonResizable, error.InputOutput => unreachable, // NOTE: we never return these for writeable files
             else => |e| return e,
         };
@@ -526,7 +538,7 @@ pub const VTable = enum(u0) {
     pub fn dirClose(_: VTable, ud: ?*anyopaque, dirs: []const Io.Dir) void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
-        for (dirs) |dir| hio.storage.close(hio.io(), hio.gpa, dir.handle); 
+        for (dirs) |dir| hio.storage.close(hio.io(), hio.gpa, dir.handle);
     }
 
     pub fn dirRead(_: VTable, ud: ?*anyopaque, r: *Io.Dir.Reader, entries: []Io.Dir.Entry) Io.Dir.Reader.Error!usize {
@@ -629,12 +641,12 @@ pub const VTable = enum(u0) {
     pub fn fileWritePositional(_: VTable, ud: ?*anyopaque, file: Io.File, header: []const u8, data: []const []const u8, splat: usize, offset: u64) Io.File.WritePositionalError!usize {
         const buf = if (header.len != 0)
             header
-        else buf: for (data[0..data.len - 1]) |buf| {
+        else buf: for (data[0 .. data.len - 1]) |buf| {
             if (buf.len == 0) continue;
             break :buf buf;
         } else if (data[data.len - 1].len > 0 and splat > 0)
             data[data.len - 1]
-        else 
+        else
             return 0;
 
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
@@ -674,8 +686,7 @@ pub const VTable = enum(u0) {
         return hio.storage.seekTo(hio.io(), file.handle, offset);
     }
 
-    pub fn fileSync(_: VTable, _: ?*anyopaque, _: Io.File) Io.File.SyncError!void {
-    }
+    pub fn fileSync(_: VTable, _: ?*anyopaque, _: Io.File) Io.File.SyncError!void {}
 
     pub fn fileIsTty(_: VTable, _: ?*anyopaque, _: Io.File) Cancelable!bool {
         return false; // A file can never be a tty
@@ -857,6 +868,26 @@ pub const VTable = enum(u0) {
         return try hio.storage.setCurrentDir(hio.io(), hio.gpa, dir.handle);
     }
 
+    pub fn processSetCurrentPath(_: VTable, ud: ?*anyopaque, path: []const u8) std.process.SetCurrentPathError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        const h_io = hio.io();
+
+        const dir = Io.Dir.cwd().openDir(h_io, path, .{}) catch |err| switch (err) {
+            error.PermissionDenied,
+            error.ProcessFdQuotaExceeded,
+            error.SystemFdQuotaExceeded,
+            error.NetworkNotFound,
+            => unreachable, // NOTE: We don't even return these
+            else => |e| return e,
+        };
+        defer dir.close(h_io);
+
+        return std.process.setCurrentDir(h_io, dir) catch |err| switch (err) {
+            error.UnrecognizedVolume => unreachable, // NOTE: same
+            else => |e| return e,
+        };
+    }
+
     pub fn processReplace(_: VTable, _: ?*anyopaque, _: std.process.ReplaceOptions) std.process.ReplaceError {
         return error.OperationUnsupported;
     }
@@ -962,16 +993,10 @@ pub const VTable = enum(u0) {
         return hio.storage.netSend(hio.io(), handle, messages, flags);
     }
 
-    pub fn netReceive(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle, messages: []Io.net.IncomingMessage, data: []u8, flags: Io.net.ReceiveFlags, timeout: Io.Timeout) struct { ?Io.net.Socket.ReceiveTimeoutError, usize } {
-        const hio: *HIo = @ptrCast(@alignCast(ud.?));
-
-        return hio.storage.netReceive(hio.io(), handle, messages, data, flags, timeout);
-    }
-
     pub fn netRead(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle, data: [][]u8) Io.net.Stream.Reader.Error!usize {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
-        for(data) |buf| {
+        for (data) |buf| {
             if (buf.len == 0) continue;
 
             return try hio.storage.netRead(hio.io(), handle, buf);
@@ -985,12 +1010,12 @@ pub const VTable = enum(u0) {
 
         const buf = if (header.len != 0)
             header
-        else buf: for (data[0..data.len - 1]) |buf| {
+        else buf: for (data[0 .. data.len - 1]) |buf| {
             if (buf.len == 0) continue;
             break :buf buf;
         } else if (data[data.len - 1].len > 0 and splat > 0)
             data[data.len - 1]
-        else 
+        else
             return 0;
 
         return try hio.storage.netWrite(hio.io(), handle, buf);
@@ -1013,9 +1038,9 @@ pub const VTable = enum(u0) {
     }
 
     pub fn netInterfaceNameResolve(_: VTable, _: ?*anyopaque, name: *const Io.net.Interface.Name) Io.net.Interface.Name.ResolveError!Io.net.Interface {
-        return if (std.mem.eql(u8, name.bytes[0..std.mem.findScalar(u8, name.bytes, 0) orelse name.bytes.len], "wlan0"))
-            .{ .index = 1 } 
-        else 
+        return if (std.mem.eql(u8, name.bytes[0 .. std.mem.findScalar(u8, name.bytes, 0) orelse name.bytes.len], "wlan0"))
+            .{ .index = 1 }
+        else
             error.InterfaceNotFound;
     }
 

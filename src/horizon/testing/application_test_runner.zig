@@ -53,7 +53,7 @@ pub fn main(init: horizon.Init) !void {
 
     const soc = horizon.services.SocketUser.open(srv) catch @panic("Error opening connection to soc:U");
     defer soc.close();
-    
+
     const soc_buffer = try gpa.alignedAlloc(u8, .fromByteUnits(horizon.heap.page_size), testing_soc_buffer_len);
     defer gpa.free(soc_buffer);
 
@@ -83,15 +83,12 @@ pub fn main(init: horizon.Init) !void {
         defer {
             horizon.testing.io_instance.deinit();
             if (horizon.testing.allocator_instance.deinit() == .leak) leaks += 1;
-        } 
+        }
 
         {
             const t_io = horizon.testing.io_instance.io();
 
-            const sdmc_root = try std.Io.Dir.cwd().openDir(t_io, "sdmc:/", .{});
-            defer sdmc_root.close(t_io);
-
-            try std.process.setCurrentDir(t_io, sdmc_root);
+            try std.process.setCurrentPath(t_io, "sdmc:/");
         }
 
         debug_writer.print("{d}/{d} {s}... ", .{ i + 1, test_fn_list.len, test_fn.name }) catch {};

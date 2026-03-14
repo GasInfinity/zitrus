@@ -188,7 +188,7 @@ pub const File = packed struct(u32) {
     pub fn sendOpenSubFile(file: File, offset: u64, size: u64) !File {
         const data = tls.get();
         return switch ((try data.ipc.sendRequest(file.session, File.command.OpenSubFile, .{ .offset = offset, .size = size }, .{})).cases()) {
-            .success => |s| s.value.file,
+            .success => |s| s.value.file.wrapped,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
@@ -282,7 +282,7 @@ pub const File = packed struct(u32) {
     }
 
     pub const command = struct {
-        pub const OpenSubFile = ipc.Command(Id, .open_sub_file, struct { offset: u64, size: u64 }, struct { file: File });
+        pub const OpenSubFile = ipc.Command(Id, .open_sub_file, struct { offset: u64, size: u64 }, struct { file: ipc.MoveHandles(File) });
         pub const Read = ipc.Command(Id, .read, struct { offset: u64, size: usize, buffer: ipc.Mapped(.w) }, struct { actual_read: usize, buffer: ipc.Mapped(.w) });
         pub const Write = ipc.Command(Id, .write, struct { offset: u64, size: usize, options: WriteOptions, buffer: ipc.Mapped(.r) }, struct { actual_written: usize, buffer: ipc.Mapped(.r) });
         pub const GetSize = ipc.Command(Id, .get_size, struct {}, struct { size: u64 });
@@ -413,14 +413,12 @@ pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_t
         .path = .static(path),
     }, .{})).cases()) {
         .success => |s| s.value.file.wrapped,
-        .failure => |code| if (code == Code.fs.entry_not_found)
-            error.FileNotFound
-        else if (code == Code.fs.unexpected_entry_kind)
-            error.IsDir
-        else if (code == Code.fs.unexpected_open_flags)
-            error.UnexpectedOpenFlags
-        else
-            horizon.unexpectedResult(code),
+        .failure => |code| switch (code) {
+            .fs_entry_not_found => error.FileNotFound,
+            .fs_unexpected_entry_kind => error.IsDir,
+            .fs_unexpected_open_flags => error.UnexpectedOpenFlags,
+            else => horizon.unexpectedResult(code),
+        },
     };
 }
 
@@ -457,16 +455,15 @@ pub fn sendDeleteFile(fs: Filesystem, transaction: usize, archive: Archive, path
         .path = .static(path),
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| if (code == Code.fs.entry_not_found)
-            error.FileNotFound
-        else if (code == Code.fs.unexpected_entry_kind)
-            error.IsDir
-        else
-            horizon.unexpectedResult(code),
+        .failure => |code| switch (code) {
+            .fs_entry_not_found => error.FileNotFound,
+            .fs_unexpected_entry_kind => error.IsDir,
+            else => horizon.unexpectedResult(code),
+        },
     };
 }
 
-pub const RenameFileError = ipc.Buffer.SendRequestError || error{FileNotFound,PathAlreadyExists};
+pub const RenameFileError = ipc.Buffer.SendRequestError || error{ FileNotFound, PathAlreadyExists };
 pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) RenameFileError!void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.RenameFile, .{
@@ -481,12 +478,11 @@ pub fn sendRenameFile(fs: Filesystem, transaction: usize, src_archive: Archive, 
         .destination_path = .static(dst_path),
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| if (code == Code.fs.entry_already_exists)
-            error.PathAlreadyExists
-        else if (code == Code.fs.entry_not_found)
-            error.FileNotFound
-        else
-            horizon.unexpectedResult(code),
+        .failure => |code| switch (code) {
+            .fs_entry_already_exists => error.PathAlreadyExists,
+            .fs_entry_not_found => error.FileNotFound,
+            else => horizon.unexpectedResult(code),
+        },
     };
 }
 
@@ -504,12 +500,11 @@ pub fn sendDeleteDirectory(fs: Filesystem, transaction: usize, archive: Archive,
         .path = .static(path),
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| if (code == Code.fs.entry_not_found)
-            error.FileNotFound
-        else if (code == Code.fs.unexpected_entry_kind)
-            error.NotDir
-        else
-            horizon.unexpectedResult(code),
+        .failure => |code| switch (code) {
+            .fs_entry_not_found => error.FileNotFound,
+            .fs_unexpected_entry_kind => error.NotDir,
+            else => horizon.unexpectedResult(code),
+        },
     };
 }
 
@@ -544,12 +539,11 @@ pub fn sendCreateFile(fs: Filesystem, transaction: usize, archive: Archive, path
         .path = .static(path),
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| if (code == Code.fs.entry_not_found)
-            error.FileNotFound
-        else if (code == Code.fs.entry_already_exists) 
-            error.PathAlreadyExists
-        else 
-            horizon.unexpectedResult(code),
+        .failure => |code| switch (code) {
+            .fs_entry_not_found => error.FileNotFound,
+            .fs_entry_already_exists => error.PathAlreadyExists,
+            else => horizon.unexpectedResult(code),
+        },
     };
 }
 
@@ -569,16 +563,15 @@ pub fn sendCreateDirectory(fs: Filesystem, transaction: usize, archive: Archive,
         .path = .static(path),
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| if (code == Code.fs.entry_not_found)
-            error.FileNotFound
-        else if (code == Code.fs.entry_already_exists) 
-            error.PathAlreadyExists
-        else
-            horizon.unexpectedResult(code),
+        .failure => |code| switch (code) {
+            .fs_entry_not_found => error.FileNotFound,
+            .fs_entry_already_exists => error.PathAlreadyExists,
+            else => horizon.unexpectedResult(code),
+        },
     };
 }
 
-pub const RenameDirectoryError = ipc.Buffer.SendRequestError || error{FileNotFound,PathAlreadyExists};
+pub const RenameDirectoryError = ipc.Buffer.SendRequestError || error{ FileNotFound, PathAlreadyExists };
 pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Archive, dst_archive: Archive, src_path_type: PathType, src_path: []const u8, dst_path_type: PathType, dst_path: []const u8) RenameDirectoryError!void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(fs.session, command.RenameDirectory, .{
@@ -593,12 +586,11 @@ pub fn sendRenameDirectory(fs: Filesystem, transaction: usize, src_archive: Arch
         .destination_path = .static(dst_path),
     }, .{})).cases()) {
         .success => {},
-        .failure => |code| if (code == Code.fs.entry_not_found)
-            error.FileNotFound
-        else if (code == Code.fs.entry_already_exists)
-            error.PathAlreadyExists
-        else
-            horizon.unexpectedResult(code),
+        .failure => |code| switch (code) {
+            .fs_entry_not_found => error.FileNotFound,
+            .fs_entry_already_exists => error.PathAlreadyExists,
+            else => horizon.unexpectedResult(code),
+        },
     };
 }
 
@@ -614,10 +606,10 @@ pub fn sendOpenDirectory(fs: Filesystem, archive: Archive, path_type: PathType, 
         .path = .static(path),
     }, .{})).cases()) {
         .success => |s| s.value.directory.wrapped,
-        .failure => |code| if (code == Code.fs.entry_not_found or code == Code.fs.unexpected_entry_kind) 
-            error.FileNotFound
-        else
-            horizon.unexpectedResult(code),
+        .failure => |code| switch (code) {
+            .fs_entry_not_found, .fs_unexpected_entry_kind => error.FileNotFound,
+            else => horizon.unexpectedResult(code),
+        },
     };
 }
 

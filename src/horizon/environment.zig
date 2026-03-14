@@ -1,4 +1,4 @@
-pub const ProgramMeta = extern struct {
+pub const Meta = extern struct {
     const magic_value = "_prm";
 
     pub const RuntimeFlags = packed struct(u32) {
@@ -12,45 +12,51 @@ pub const ProgramMeta = extern struct {
         }
     };
 
+    pub const Args = extern struct {
+        len: u32,
+        /// There are `len` embedded NUL-terminated strings here.
+        ptr: void,
+
+        pub fn iterator(args: *const Args) Iterator {
+            return .{ .remaining = args.len, .current = @ptrCast(&args.ptr) };
+        }
+
+        pub const Iterator = struct {
+            pub const empty: Iterator = .{ .remaining = 0, .current = undefined };
+
+            remaining: usize,
+            current: [*:0]const u8,
+
+            pub fn next(it: *Iterator) ?[:0]const u8 {
+                if (it.remaining == 0) return null;
+
+                const arg = std.mem.span(it.current);
+                it.remaining -= 1;
+                it.current += (arg.len + 1);
+                return arg;
+            }
+        };
+    };
+
     magic: [magic_value.len]u8 = magic_value.*,
     provided_services: ?[*]u32 = null,
     app_id: Applet.AppId = .application,
     // Default: O3DS Heap size
     heap_size: u32 = 24 * 1024 * 1024,
     linear_heap_size: u32 = 32 * 1024 * 1024,
-    argument_list: ?[*]const u32 = null,
-    runtime_flags: RuntimeFlags = RuntimeFlags{},
+    arguments: ?*const Args = null,
+    runtime_flags: RuntimeFlags = .{},
 
-    pub fn is3dsx(prm: ProgramMeta) bool {
+    pub fn is3dsx(prm: Meta) bool {
         return prm.provided_services != null;
     }
 
-    pub fn argumentListIterator(prm: ProgramMeta) ArgumentListIterator {
-        return if (prm.argument_list) |list| .{
-            .remaining = list[0],
-            .current = @ptrCast(&list[1]),
-        } else .{
-            .remaining = 0,
-            .current = &.{},
-        };
+    pub fn argumentListIterator(prm: Meta) Args.Iterator {
+        return if (prm.arguments) |args| args.iterator() else .empty;
     }
-
-    pub const ArgumentListIterator = struct {
-        remaining: usize,
-        current: [*:0]const u8,
-
-        pub fn next(it: *ArgumentListIterator) ?[:0]const u8 {
-            if (it.remaining == 0) return null;
-
-            const arg = std.mem.span(it.current);
-            it.remaining -= 1;
-            it.current += (arg.len + 1);
-            return arg;
-        }
-    };
 };
 
-pub var program_meta: ProgramMeta linksection(".prm") = .{};
+pub var program_meta: Meta linksection(".prm") = .{};
 
 const ProvidedService = struct {
     name: [8]u8,

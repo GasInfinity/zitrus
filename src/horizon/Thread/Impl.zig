@@ -13,7 +13,7 @@ pub fn getCurrentId() u32 {
 }
 
 pub fn getCpuCount() !usize {
-    return @bitCast(horizon.getCpuCount());
+    return 1;
 }
 
 pub fn yield() std.Thread.YieldError!void {
@@ -77,7 +77,7 @@ pub fn spawn(config: std.Thread.SpawnConfig, comptime f: anytype, args: anytype)
                     if (info.payload != void) @compileError(bad_fn_ret);
 
                     @call(.auto, f, inst.fn_args) catch |err| {
-                        std.debug.print("thread {d} error: {s}\n", .{getCurrentId(), @errorName(err)});
+                        std.debug.print("thread {d} error: {s}\n", .{ getCurrentId(), @errorName(err) });
                         if (@errorReturnTrace()) |trace| std.debug.dumpStackTrace(trace);
                     };
                 },

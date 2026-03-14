@@ -67,20 +67,16 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
         try writer.flush();
     }
 
-    // var write_buffer: [4096]u8 = undefined;
+    var write_buffer: [4096]u8 = undefined;
     inline for (&.{ args.small, args.large }, &.{ &info.icons.small, &info.icons.large }, &.{ smdh.Icons.small_size, smdh.Icons.large_size }) |out_icon_path, icon, icon_size| if (out_icon_path) |path| {
-        _ = icon_size;
-        _ = icon;
-        _ = path;
-        if (true) @panic("Regressed until zigimg updates"); // XXX: Wait until zigimg updates
-        // var out = try zigimg.Image.create(arena, icon_size, icon_size, .rgb565);
-        // defer out.deinit(arena);
-        //
-        // // XXX: we allocate too much, shouldn't we able to convert in-place also here?
-        // pica.morton.convert(.untile, 8,  icon_size, @sizeOf(Rgb565), @ptrCast(out.pixels.rgb565), @ptrCast(icon));
-        //
-        // try out.convert(arena, .rgb24);
-        // try out.writeToFilePath(arena, path, &write_buffer, .{ .png = .{} });
+        var out = try zigimg.Image.create(arena, icon_size, icon_size, .rgb565);
+        defer out.deinit(arena);
+
+        // XXX: we allocate too much, shouldn't we able to convert in-place also here?
+        pica.morton.convert(.untile, 8,  icon_size, @sizeOf(Rgb565), @ptrCast(out.pixels.rgb565), @ptrCast(icon));
+
+        try out.convert(arena, .rgb24);
+        try out.writeToFilePath(arena, io, path, &write_buffer, .{ .png = .{} });
     };
 
     return 0;
@@ -95,7 +91,7 @@ const Settings = @import("Settings.zig");
 
 const std = @import("std");
 const plz = @import("plz");
-// const zigimg = @import("zigimg");
+const zigimg = @import("zigimg");
 const zitrus = @import("zitrus");
 const smdh = zitrus.horizon.fmt.ncch.smdh;
 const pica = zitrus.hardware.pica;

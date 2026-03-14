@@ -107,18 +107,17 @@ fn initSelf3dsx(fs: Filesystem, gpa: std.mem.Allocator) !RomFs {
     const location: Location, const path: [:0]const u8 = if (first_slash == 0)
         .{ .sdmc, program_path } // NOTE: Assume sdmc?
     else blk: {
-        if (program_path[first_slash - 1] != ':') {
-            return error.InvalidPath;
-        }
+        if (program_path[first_slash - 1] != ':') return error.BadPathName;
 
         const location = program_path[0..(first_slash - 1)];
 
         break :blk if (std.mem.eql(u8, location, "sdmc"))
             .{ .sdmc, program_path[first_slash.. :0] }
         else
-            return error.UnknownLocation;
+            return error.NoDevice;
     };
 
+    std.log.info("{} - {s}", .{ location, path });
     const file: Filesystem.File = switch (location) {
         // TODO: I think I must convert to utf16 just in case?
         .sdmc => fs.sendOpenFileDirectly(0, .sdmc, .empty, &.{}, .ascii, path[0 .. path.len + 1], .r, .{}) catch return error.NoRomFs,

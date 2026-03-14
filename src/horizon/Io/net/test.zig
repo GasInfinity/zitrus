@@ -133,7 +133,7 @@ const localhost: net.IpAddress = .{ .ip4 = .loopback(0) };
 
 const testing = std.testing;
 const expect = testing.expect;
-const expectEqual  = testing.expectEqual;
+const expectEqual = testing.expectEqual;
 const expectError = testing.expectError;
 const expectEqualStrings = std.testing.expectEqualStrings;
 const tmpDir = std.testing.tmpDir;

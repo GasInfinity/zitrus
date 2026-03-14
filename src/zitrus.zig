@@ -47,5 +47,5 @@ const std = @import("std");
 
 pub const std_os_options: std.Options.OperatingSystem = if (builtin.target.os.tag == .@"3ds")
     horizon.default_std_os_options
-else 
+else
     .{};

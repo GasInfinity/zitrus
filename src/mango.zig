@@ -1656,6 +1656,14 @@ pub const Swapchain = backend.Swapchain.Handle;
 
 pub const LightLookupTable = backend.LightLookupTable.Handle;
 
+pub const ObjectCreationError = error{ ValidationFailed, OutOfMemory, Unexpected };
+pub const MapMemoryError = error{Unexpected};
+pub const FlushMemoryError = error{Unexpected};
+pub const BindMemoryError = error{Unexpected};
+pub const AcquireNextImageError = error{ Timeout, Unexpected };
+pub const SignalSemaphoreError = error{Unexpected};
+pub const WaitSemaphoreError = error{ Timeout, Unexpected };
+
 comptime {
     _ = backend;
 }

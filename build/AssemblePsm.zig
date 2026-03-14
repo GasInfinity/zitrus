@@ -1,4 +1,4 @@
-//! A wrapper to simplify making a SMDH (SMDH) with the build system.
+//! A wrapper to simplify assembling PSM files with the build system.
 
 pub const Options = struct {
     pub const Format = enum { zpsh };

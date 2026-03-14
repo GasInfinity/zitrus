@@ -3,7 +3,6 @@ const zitrus = @import("zitrus");
 
 pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
-    const no_bin = b.option(bool, "no-bin", "Don't emit a binary (incremental compilation)") orelse false;
 
     const zitrus_dep = b.dependency("zitrus", .{});
     const zitrus_mod = zitrus_dep.module("zitrus");
@@ -35,20 +34,25 @@ pub fn build(b: *std.Build) void {
     exe.pie = true;
     exe.setLinkerScript(zitrus_dep.namedLazyPath("horizon/ld"));
 
-    if (no_bin) {
-        b.getInstallStep().dependOn(&exe.step);
-    } else {
-        b.installArtifact(exe);
+    b.installArtifact(exe);
 
-        const smdh = zitrus.MakeSmdh.init(zitrus_dep, .{
-            .settings = b.path("smdh-settings.zon"),
-        });
+    const smdh = zitrus.MakeSmdh.init(zitrus_dep, .{
+        .settings = b.path("smdh-settings.zon"),
+    });
 
-        const final_3dsx = zitrus.Make3dsx.init(zitrus_dep, .{
-            .exe = exe,
-            .smdh = smdh.out,
-        });
+    const final_3dsx = zitrus.Make3dsx.init(zitrus_dep, .{
+        .exe = exe,
+        .smdh = smdh.out,
+    });
 
-        final_3dsx.install(b, .default);
-    }
+    final_3dsx.install(b, .default);
+
+    const link: zitrus.Link3dsx = .init(zitrus_dep, .{
+        .@"3dsx" = final_3dsx.out,
+    });
+
+    const link_step = b.step("link", "Link (send and execute) the 3dsx to a 3ds");
+    link_step.dependOn(&link.run.step);
+
+    if (b.args) |args| link.run.addArgs(args);
 }

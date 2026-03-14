@@ -10,6 +10,7 @@ pub const Make3dsx = @import("build/Make3dsx.zig");
 pub const MakeSmdh = @import("build/MakeSmdh.zig");
 pub const MakeRomFs = @import("build/MakeRomFs.zig");
 pub const AssemblePsm = @import("build/AssemblePsm.zig");
+pub const Link3dsx = @import("build/Link3dsx.zig");
 
 pub const target = struct {
     /// Freestanding target query, use `arm-3ds` to target the horizon (a.k.a the 3DS OS) userland instead 
@@ -120,7 +121,7 @@ pub fn build(b: *Build) void {
 
     const run_mod_tests = b.addRunArtifact(mod_tests);
     const run_exe_tests = b.addRunArtifact(exe_tests);
-    const run_tests_step = b.step("test", "Runs zitrus tests");
+    const run_tests_step = b.step("test", "Run zitrus tests");
     run_tests_step.dependOn(&run_mod_tests.step);
     run_tests_step.dependOn(&run_exe_tests.step);
 
@@ -132,7 +133,7 @@ pub fn build(b: *Build) void {
         run_tool.addArgs(args);
     }
 
-    const run_step = b.step("run", "Runs zitrus tools");
+    const run_step = b.step("run", "Run zitrus tools");
     run_step.dependOn(&run_tool.step);
     makeTestSteps(b, zitrus, tools_exe);
     makeScriptSteps(b, zitrus, plz);
@@ -254,7 +255,6 @@ fn makeReleaseStep(b: *Build, version_slice: []const u8, optimize: std.builtin.O
 }
 
 fn createToolsExecutable(b: *Build, config: *Build.Step.Options, optimize: std.builtin.OptimizeMode, mod_target: Build.ResolvedTarget, plz: *Build.Module, zigimg: *Build.Module, zitrus: *Build.Module) struct { *Build.Module, *Build.Step.Compile } {
-    _ = zigimg;
     const tools = b.createModule(.{
         .root_source_file = b.path("tools/main.zig"),
         .target = mod_target,
@@ -262,7 +262,7 @@ fn createToolsExecutable(b: *Build, config: *Build.Step.Options, optimize: std.b
         .imports = &.{
             .{ .name = "zitrus", .module = zitrus },
             .{ .name = "plz", .module = plz },
-            // .{ .name = "zigimg", .module = zigimg },
+            .{ .name = "zigimg", .module = zigimg },
         },
     });
 
@@ -271,6 +271,8 @@ fn createToolsExecutable(b: *Build, config: *Build.Step.Options, optimize: std.b
     return .{ tools, b.addExecutable(.{
         .name = "zitrus",
         .root_module = tools,
+        // XXX: self-hosted backend crashes when bitcasting a packed struct with a 0-bit field.
+        .use_llvm = true,
     }) };
 }
 

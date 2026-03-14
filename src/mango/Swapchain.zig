@@ -1,10 +1,7 @@
 //! Wraps LCD surfaces for PICA200 output for presentation.
 //!
 //! Swapchains don't allocate memory by themselves, they are linked with up to
-//! two linearly tiled `Image`s and one optimally tiled image for render output.
-//!
-//! They double-buffer (if two images are provided) the linear images on the screen and automatically
-//! does a copyImageToImage before presentation.
+//! three linearly tiled `Image`s.
 //!
 //! As `Swapchain`s don't own its data, you're free to recreate swapchains with different formats dynamically.
 //! As only 2 swapchains can be created at the same time (top and bottom), their data is embedded in the presentation engine.

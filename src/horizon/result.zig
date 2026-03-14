@@ -238,13 +238,6 @@ pub const Code = packed struct(i32) {
         .summary = .status_changed,
     };
 
-    pub const fs = struct {
-        pub const entry_not_found: Code = @bitCast(@as(u32, 0xC8804478));
-        pub const unexpected_entry_kind: Code = @bitCast(@as(u32, 0xC92044FA));
-        pub const unexpected_open_flags: Code = @bitCast(@as(u32, 0xC92044E6));
-        pub const entry_already_exists: Code = @bitCast(@as(u32, 0xC82044BE));
-    };
-
     pub const success: Code = @bitCast(@as(u32, 0));
     pub const not_implemented: Code = @bitCast(@as(u32, 0xE0E01BF4));
 
@@ -297,6 +290,11 @@ pub const Code = packed struct(i32) {
     pub const srv_name_embedded_null: Code = @bitCast(@as(u32, 0xD9006407));
     pub const srv_out_of_services: Code = @bitCast(@as(u32, 0xD86067F3));
     pub const srv_process_not_registered: Code = @bitCast(@as(u32, 0xD8806404));
+
+    pub const fs_entry_not_found: Code = @bitCast(@as(u32, 0xC8804478));
+    pub const fs_unexpected_entry_kind: Code = @bitCast(@as(u32, 0xC92044FA));
+    pub const fs_unexpected_open_flags: Code = @bitCast(@as(u32, 0xC92044E6));
+    pub const fs_entry_already_exists: Code = @bitCast(@as(u32, 0xC82044BE));
 
     description: Description = .success,
     module: Module = .common,

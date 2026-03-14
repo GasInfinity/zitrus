@@ -20,11 +20,11 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "zitrus", .module = zitrus_mod },
             },
         }),
+        .zig_lib_dir = zitrus_dep.namedLazyPath("juice/zig_lib"),
     });
 
-    exe.zig_lib_dir = zitrus_dep.builder.dependency("zig", .{}).path("lib/");
     exe.pie = true;
-    exe.setLinkerScript(zitrus_dep.path(zitrus.target.arm11.horizon.linker_script));
+    exe.setLinkerScript(zitrus_dep.namedLazyPath("horizon/ld"));
     b.installArtifact(exe);
 
     const smdh = zitrus.MakeSmdh.init(zitrus_dep, .{
@@ -37,4 +37,13 @@ pub fn build(b: *std.Build) void {
     });
 
     final_3dsx.install(b, .default);
+
+    const link: zitrus.Link3dsx = .init(zitrus_dep, .{
+        .@"3dsx" = final_3dsx.out,
+    });
+
+    const link_step = b.step("link", "Link (send and execute) the 3dsx to a 3ds");
+    link_step.dependOn(&link.run.step);
+
+    if (b.args) |args| link.run.addArgs(args);
 }
