@@ -22,8 +22,8 @@
         },
         // Yes, we need our own fork of zig `lib/` until upstream merges it (if they merge it).
         .@"zig-lib" = .{
-            .url = "git+https://codeberg.org/GasInfinity/zig.git?ref=the-os-independence-day-lib-only#85776f5f2cd5f6cf6ae21151d237533f149b4fe7",
-            .hash = "N-V-__8AAAxdzQudSuXoD8JOURbRbBxDu0Hye7VGBgSnAvoC",
+            .url = "git+https://codeberg.org/GasInfinity/zig.git?ref=the-os-independence-day-lib-only#8fe16dcab7ed14520bfd48fbbbd43f12d4e0a920",
+            .hash = "N-V-__8AAPeOzQsj_RvVtwiRXVdaFDX8Us0LYZgZgKv8On5F",
         },
     },
     .paths = .{

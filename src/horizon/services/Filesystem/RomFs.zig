@@ -117,7 +117,6 @@ fn initSelf3dsx(fs: Filesystem, gpa: std.mem.Allocator) !RomFs {
             return error.NoDevice;
     };
 
-    std.log.info("{} - {s}", .{ location, path });
     const file: Filesystem.File = switch (location) {
         // TODO: I think I must convert to utf16 just in case?
         .sdmc => fs.sendOpenFileDirectly(0, .sdmc, .empty, &.{}, .ascii, path[0 .. path.len + 1], .r, .{}) catch return error.NoRomFs,

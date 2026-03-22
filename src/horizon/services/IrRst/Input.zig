@@ -9,10 +9,9 @@ pub fn init(hid: IrRst) !Input {
     var handles = try hid.sendGetHandles();
     errdefer handles.close();
 
-    const shm_memory_data = try horizon.heap.non_thread_safe_shared_memory_address_allocator.alloc(@sizeOf(IrRst.Shared), .fromByteUnits(4096));
-    errdefer horizon.heap.non_thread_safe_shared_memory_address_allocator.free(shm_memory_data);
+    const shm_memory_data = horizon.heap.allocShared(@sizeOf(IrRst.Shared));
+    try handles.shm.map(shm_memory_data, .r, .dont_care);
 
-    try handles.shm.map(@alignCast(shm_memory_data.ptr), .r, .dont_care);
     return .{
         .handles = handles,
         .shm_memory_data = @ptrCast(shm_memory_data),
@@ -21,7 +20,6 @@ pub fn init(hid: IrRst) !Input {
 
 pub fn deinit(input: *Input) void {
     input.handles.shm.unmap(@ptrCast(input.shm_memory_data));
-    horizon.heap.non_thread_safe_shared_memory_address_allocator.free(@ptrCast(input.shm_memory_data));
     input.handles.close();
     input.* = undefined;
 }

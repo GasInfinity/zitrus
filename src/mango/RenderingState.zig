@@ -8,14 +8,25 @@ pub const Dirty = packed struct(u32) {
     begin_rendering: bool = false,
     vertex_buffers: bool = false,
     uniforms: u6 = 0,
-    texture_units: u3 = 0,
+    // NOTE: default dirty so we disable the `texture_enable` bits if none.
+    texture_units: u3 = std.math.maxInt(u3),
+    light_enable: bool = false,
     light_environment_factors: bool = false,
     light_parameters: bool = false,
     light_factors: bool = false,
-    _: u18 = 0,
+    light_tables: bool = false,
+    _: u16 = 0,
 
     pub fn setUniformsDirty(dirty: *Dirty, stage: mango.ShaderStage, location: UniformLocation) void {
         dirty.uniforms |= (@as(u6, 1) << @intCast(@intFromEnum(stage) * std.enums.values(UniformLocation).len + @intFromEnum(location)));
+    }
+
+    pub fn setStageUniformsDirty(dirty: *Dirty, stage: mango.ShaderStage) void {
+        dirty.uniforms |= (@as(u6, 0b111) << @intCast(@intFromEnum(stage) * std.enums.values(UniformLocation).len));
+    }
+
+    pub fn clearDirtyStageUniforms(dirty: *Dirty, stage: mango.ShaderStage) void {
+        dirty.uniforms &= ~(@as(u6, 0b111) << @intCast(@intFromEnum(stage) * std.enums.values(UniformLocation).len));
     }
 
     pub fn isUniformsDirty(dirty: Dirty, stage: mango.ShaderStage, location: UniformLocation) bool {
@@ -54,6 +65,10 @@ pub const Misc = packed struct {
 };
 
 pub const UniformState = struct {
+    /// When not null, we must emit all floating point constants and set it to null.
+    /// All other constants have been copied into their respective arrays.
+    shader_dirty: std.EnumArray(mango.ShaderStage, ?*backend.Shader),
+
     floating_dirty: std.EnumArray(mango.ShaderStage, std.EnumSet(pica.shader.register.Source.Constant)) = .initFill(.initEmpty()),
 
     // Stored as XYZW
@@ -69,26 +84,52 @@ pub const TextureUnitState = struct {
 };
 
 pub const LightingState = struct {
+    pub const empty: LightingState = .{
+        .ambient = undefined,
+        .light_enabled = .splat(false),
+        .light_types = .splat(.directional),
+        .light_attenuation_disabled = .splat(true),
+        .light_spotlight_disabled = .splat(true),
+        .light_shadows_disabled = .splat(true),
+
+        .light_parameters_dirty = .splat(false),
+        .light_parameters = undefined,
+
+        .light_factors_dirty = .splat(false),
+        .light_factors = undefined,
+
+        .light_attenuation_dirty = .splat(false),
+        .light_attenuation = @splat(.null),
+        .light_spotlight_dirty = .splat(false),
+        .light_spotlight = @splat(.null),
+    };
+
+    // TODO: separate some of this state
     pub const LightParameters = struct {
         vector: [3]f32,
         spotlight_direction: [3]f32,
 
         attenuation_bias: f32,
         attenuation_scale: f32,
-
-        // NOTE: `.null` means its NOT enabled!
-        attenuation_table: mango.LightLookupTable,
-        spotlight_table: mango.LightLookupTable,
     };
 
     ambient: [3]u8,
+    light_enabled: BitpackedArray(bool, 8),
     light_types: BitpackedArray(Graphics.FragmentLighting.Light.Type, 8),
+    light_attenuation_disabled: BitpackedArray(bool, 8),
+    light_spotlight_disabled: BitpackedArray(bool, 8),
     light_shadows_disabled: BitpackedArray(bool, 8),
+
+    light_parameters_dirty: BitpackedArray(bool, 8),
     light_parameters: [8]LightParameters,
+
+    light_factors_dirty: BitpackedArray(bool, 8),
     light_factors: [8]mango.LightFactors,
 
-    /// Amount of lights configured by the user.
-    configured: u8,
+    light_attenuation_dirty: BitpackedArray(bool, 8),
+    light_attenuation: [8]mango.LightLookupTable,
+    light_spotlight_dirty: BitpackedArray(bool, 8),
+    light_spotlight: [8]mango.LightLookupTable,
 };
 
 pub const empty: RenderingState = .{
@@ -100,7 +141,7 @@ pub const empty: RenderingState = .{
     .uniform_state = undefined,
     .texture_unit_enabled = @splat(false),
     .texture_units = undefined,
-    .lighting_state = undefined,
+    .lighting_state = .empty,
     .dirty = .{},
 };
 
@@ -129,6 +170,40 @@ pub fn endRendering(rnd: *RenderingState) bool {
 
     // If this is not dirty then at least one draw call has been issued.
     return !rnd.dirty.begin_rendering;
+}
+
+pub fn bindShaders(rnd: *RenderingState, stages: []const mango.ShaderStage, shaders: []const mango.Shader) void {
+    const dirty = &rnd.dirty;
+
+    for (stages, shaders) |stage, shader| {
+        const maybe_new: ?*backend.Shader = .fromHandleMutable(shader);
+
+        const boolean_constants = rnd.uniform_state.boolean_constants.getPtr(stage);
+        const integer_constants = rnd.uniform_state.integer_constants.getPtr(stage);
+        const shader_dirty = rnd.uniform_state.shader_dirty.getPtr(stage);
+
+        if (maybe_new) |new| {
+            boolean_constants.* = new.boolean_constant_set;
+
+            {
+                var i: usize = 0;
+                var it = new.integer_constant_set.iterator();
+
+                while (it.next()) |int| : (i += 1) {
+                    integer_constants.set(int, new.integer_constants[i]);
+                }
+            }
+
+            dirty.setUniformsDirty(stage, .bool);
+            if (new.integer_constants.len > 0) dirty.setUniformsDirty(stage, .int);
+            if (new.floating_constants.len > 0) dirty.setUniformsDirty(stage, .float);
+        } else switch (stage) {
+            .vertex => {}, // NOTE: binding a null vertex shader is a NOP as one must always be bound.
+            .geometry => dirty.clearDirtyStageUniforms(.geometry),
+        }
+
+        shader_dirty.* = maybe_new;
+    }
 }
 
 pub fn bindVertexBuffers(rnd: *RenderingState, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
@@ -210,41 +285,58 @@ pub fn bindCombinedImageSamplers(rnd: *RenderingState, first_combined: u32, comb
     }
 }
 
-pub fn bindLightEnvironmentFactors(rnd: *RenderingState, factors: mango.LightEnvironmentFactors) void {
+pub fn setLightEnvironmentFactors(rnd: *RenderingState, factors: mango.LightEnvironmentFactors) void {
     rnd.lighting_state.ambient = factors.ambient;
     rnd.dirty.light_environment_factors = true;
 }
 
-pub fn bindLights(rnd: *RenderingState, lights: []const mango.Light) void {
-    std.debug.assert(lights.len <= 8);
+pub fn bindLightTables(rnd: *RenderingState, slot: mango.LightLookupSlot, first_light: u32, tables: []const mango.LightLookupTable) void {
+    const stored, const dirty = switch (slot) {
+        .da => .{ &rnd.lighting_state.light_attenuation, &rnd.lighting_state.light_attenuation_dirty },
+        .sp => .{ &rnd.lighting_state.light_spotlight, &rnd.lighting_state.light_spotlight_dirty },
+    };
 
-    rnd.lighting_state.light_types = .splat(.positional);
-    rnd.lighting_state.light_shadows_disabled = .splat(true);
+    for (tables, 0..) |table, i| {
+        dirty.set(i, true);
+        stored[first_light + i] = table;
+    }
+
+    rnd.dirty.light_tables = true;
+}
+
+pub fn setLightsEnabled(rnd: *RenderingState, first_light: u32, enabled: []const bool) void {
+    std.debug.assert(first_light + enabled.len <= 8);
+    for (enabled, 0..) |enable, i| rnd.lighting_state.light_enabled.set(first_light + i, enable);
+    rnd.dirty.light_enable = true;
+}
+
+pub fn setLights(rnd: *RenderingState, first_light: u32, lights: []const mango.Light) void {
+    std.debug.assert(first_light + lights.len <= 8);
 
     for (lights, 0..) |light, i| {
-        rnd.lighting_state.light_types.set(i, light.type.native());
-        rnd.lighting_state.light_shadows_disabled.set(i, !light.enable_shadow);
+        rnd.lighting_state.light_parameters_dirty.set(first_light + i, true);
+        rnd.lighting_state.light_types.set(first_light + i, light.type.native());
+        rnd.lighting_state.light_shadows_disabled.set(first_light + i, !light.enable_shadow);
+        rnd.lighting_state.light_attenuation_disabled.set(first_light + i, !light.enable_attenuation);
+        rnd.lighting_state.light_spotlight_disabled.set(first_light + i, !light.enable_spotlight);
 
-        rnd.lighting_state.light_parameters[i] = .{
+        rnd.lighting_state.light_parameters[first_light + i] = .{
             .vector = light.vector,
             .spotlight_direction = light.spotlight_direction,
 
             .attenuation_bias = light.attenuation_bias,
             .attenuation_scale = light.attenuation_scale,
-
-            .attenuation_table = if (light.enable_attenuation) light.attenuation_table else .null,
-            .spotlight_table = if (light.enable_spotlight) light.spotlight_table else .null,
         };
     }
 
-    rnd.lighting_state.configured = @intCast(lights.len);
     rnd.dirty.light_parameters = true;
 }
 
-pub fn bindLightFactors(rnd: *RenderingState, light_factors: []const mango.LightFactors) void {
-    std.debug.assert(light_factors.len <= 8);
+pub fn setLightFactors(rnd: *RenderingState, first_light: u32, light_factors: []const mango.LightFactors) void {
+    std.debug.assert(first_light + light_factors.len <= 8);
 
-    @memcpy(rnd.lighting_state.light_factors[0..light_factors.len], light_factors);
+    for (0..light_factors.len) |i| rnd.lighting_state.light_factors_dirty.set(first_light + i, true);
+    @memcpy(rnd.lighting_state.light_factors[first_light..][0..light_factors.len], light_factors);
     rnd.dirty.light_factors = true;
 }
 
@@ -259,7 +351,7 @@ pub fn maxEmitDirtyQueueLength(rnd: *RenderingState) usize {
     // zig fmt: off
     var cost: usize = (@as(usize, @intFromBool(dirty.begin_rendering)) * 8)
                     + (@as(usize, @intFromBool(dirty.light_environment_factors)) * 2)
-                    + (@as(usize, @intFromBool(dirty.light_factors or dirty.light_parameters)) * rnd.lighting_state.configured) * 30
+                    + @as(usize, @intFromBool(dirty.light_enable or dirty.light_factors or dirty.light_parameters)) * 30
                     + (@as(usize, @intFromBool(dirty.vertex_buffers)) * (rnd.misc.vertex_buffers_dirty_end - rnd.misc.vertex_buffers_dirty_start)) * 6;
     // zig fmt: on
 
@@ -276,6 +368,16 @@ pub fn maxEmitDirtyQueueLength(rnd: *RenderingState) usize {
         for (0..3) |i| {
             cost += @as(usize, @intFromBool(dirty.isTextureUnitDirty(@intCast(i)))) * 10;
         }
+    }
+
+    if (dirty.light_tables) {
+        for (0..8) |i| if (rnd.lighting_state.light_attenuation_dirty.get(i)) {
+            cost += 264;
+        };
+
+        for (0..8) |i| if (rnd.lighting_state.light_spotlight_dirty.get(i)) {
+            cost += 264;
+        };
     }
 
     return cost;
@@ -296,16 +398,24 @@ pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
         queue.add(p3d, &p3d.fragment_lighting.ambient, .initBuffer(rnd.lighting_state.ambient));
     }
 
+    if (dirty.light_tables) {
+        const tables: []const []const mango.LightLookupTable = &.{ &rnd.lighting_state.light_attenuation, &rnd.lighting_state.light_spotlight };
+        const dirty_tables: []const *BitpackedArray(bool, 8) = &.{ &rnd.lighting_state.light_attenuation_dirty, &rnd.lighting_state.light_spotlight_dirty };
+        const first_selectors: []const Graphics.FragmentLighting.LookupTable = &.{ .da0, .sp0 };
+
+        for (tables, dirty_tables, first_selectors) |table, dirty_table, first| for (0..8) |i| if (dirty_table.get(i)) {
+            if (table[i] == .null) continue;
+
+            const b_table: *backend.LightLookupTable = .fromHandleMutable(table[i]);
+            const selector: Graphics.FragmentLighting.LookupTable = @enumFromInt(@intFromEnum(first) + i);
+
+            queue.add(p3d, &p3d.fragment_lighting.lut_index, .init(selector, 0));
+            queue.addConsecutive(p3d, &p3d.fragment_lighting.lut_data[0], &b_table.data);
+        };
+    }
+
     if (dirty.light_parameters) {
-        std.debug.assert(dirty.light_factors); // You must bind new light factors after binding new lights!
-
-        queue.add(p3d, &p3d.fragment_lighting.num_lights_min_one, .init(@intCast(rnd.lighting_state.configured - 1)));
-
-        const shadows_disabled = rnd.lighting_state.light_shadows_disabled;
-        var spotlight_disabled: BitpackedArray(bool, 8) = .splat(true);
-        var attenuation_disabled: BitpackedArray(bool, 8) = .splat(true);
-
-        for (0..rnd.lighting_state.configured) |i| {
+        for (0..8) |i| if (rnd.lighting_state.light_parameters_dirty.get(i)) {
             const params = rnd.lighting_state.light_parameters[i];
             const factors = rnd.lighting_state.light_factors[i];
 
@@ -322,34 +432,19 @@ pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
                 .geometric_factor_enable = factors.geometric.native(),
             });
 
-            if (params.attenuation_table != .null) {
+            if (!rnd.lighting_state.light_attenuation_disabled.get(i)) {
                 queue.add(p3d, &p3d.fragment_lighting.light[i].attenuation, .{
                     .bias = .init(.of(params.attenuation_bias)),
                     .scale = .init(.of(params.attenuation_scale)),
                 });
             }
-
-            const tables: []const mango.LightLookupTable = &.{ params.attenuation_table, params.spotlight_table };
-            const first_selectors: []const Graphics.FragmentLighting.LookupTable = &.{ .da0, .sp0 };
-            const disabled_tables: []const *BitpackedArray(bool, 8) = &.{ &attenuation_disabled, &spotlight_disabled };
-
-            for (tables, first_selectors, disabled_tables) |table, first_selector, disabled| {
-                if (table == .null) continue;
-
-                const b_table: *backend.LightLookupTable = .fromHandleMutable(table);
-                const selector: Graphics.FragmentLighting.LookupTable = @enumFromInt(@intFromEnum(first_selector) + i);
-
-                disabled.set(i, false);
-                queue.add(p3d, &p3d.fragment_lighting.lut_index, .init(selector, 0));
-                queue.addConsecutive(p3d, &p3d.fragment_lighting.lut_data[0], &b_table.data);
-            }
-        }
+        };
 
         // Finally enable / disable da, sp and shadows per-light.
         queue.addMasked(p3d, &p3d.fragment_lighting.control.lights, .{
-            .shadows_disabled = shadows_disabled,
-            .spotlight_disabled = spotlight_disabled,
-            .distance_attenuation_disabled = attenuation_disabled,
+            .shadows_disabled = rnd.lighting_state.light_shadows_disabled,
+            .spotlight_disabled = rnd.lighting_state.light_spotlight_disabled,
+            .distance_attenuation_disabled = rnd.lighting_state.light_attenuation_disabled,
             // NOTE: Ignored by mask
             .disable_d0 = false,
             .disable_d1 = false,
@@ -357,11 +452,11 @@ pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
             .disable_rb = false,
             .disable_rg = false,
             .disable_rr = false,
-        }, 0b1101);
+        }, 0b1011);
     }
 
     if (dirty.light_factors) {
-        for (0..rnd.lighting_state.configured) |i| {
+        for (0..8) |i| if (rnd.lighting_state.light_factors_dirty.get(i)) {
             const factors = rnd.lighting_state.light_factors[i];
 
             // We already configured the light if we changed parameters.
@@ -378,7 +473,25 @@ pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
                 .diffuse = .initBuffer(factors.diffuse),
                 .ambient = .initBuffer(factors.ambient),
             });
-        }
+        };
+    }
+
+    if (dirty.light_enable) {
+        const lights_enabled = rnd.lighting_state.light_enabled;
+
+        var enabled: u4 = 0;
+        var permutation: BitpackedArray(Graphics.FragmentLighting.Light.Id, 8) = .splat(@enumFromInt(0));
+
+        for (0..8) |i| if (lights_enabled.get(i)) {
+            permutation.set(enabled, @enumFromInt(i));
+            enabled += 1;
+        };
+
+        // TODO: validate a light is always enabled
+
+        std.debug.assert(enabled > 0);
+        queue.add(p3d, &p3d.fragment_lighting.light_permutation, permutation);
+        queue.add(p3d, &p3d.fragment_lighting.num_lights_min_one, .init(@intCast(enabled - 1)));
     }
 
     if (dirty.vertex_buffers) {
@@ -388,20 +501,30 @@ pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
     }
 
     if (dirty.begin_rendering) {
-        const color_width: u16, const color_height: u16, const color_physical_address: PhysicalAddress = if (rnd.color_attachment.data.valid) info: {
+        const color_width: u16, const color_height: u16, const color_physical_address: PhysicalAddress, const color_format = if (rnd.color_attachment.data.valid) info: {
             @branchHint(.likely);
             const color_attachment: backend.ImageView = rnd.color_attachment;
             const color_rendering_info = color_attachment.getRenderingInfo();
 
-            break :info .{ color_rendering_info.width, color_rendering_info.height, color_rendering_info.address };
-        } else .{ 0, 0, .fromAddress(0) };
+            break :info .{
+                color_rendering_info.width,
+                color_rendering_info.height,
+                color_rendering_info.address,
+                color_attachment.data.format().nativeColorFormat(),
+            };
+        } else .{ 0, 0, .fromAddress(0), .abgr8888 };
 
-        const depth_stencil_width: u16, const depth_stencil_height: u16, const depth_stencil_physical_address: PhysicalAddress = if (rnd.depth_stencil_attachment.data.valid) info: {
+        const depth_stencil_width: u16, const depth_stencil_height: u16, const depth_stencil_physical_address: PhysicalAddress, const depth_format = if (rnd.depth_stencil_attachment.data.valid) info: {
             const depth_stencil_attachment: backend.ImageView = rnd.depth_stencil_attachment;
             const depth_stencil_rendering_info = depth_stencil_attachment.getRenderingInfo();
 
-            break :info .{ depth_stencil_rendering_info.width, depth_stencil_rendering_info.height, depth_stencil_rendering_info.address };
-        } else .{ 0, 0, .fromAddress(0) };
+            break :info .{
+                depth_stencil_rendering_info.width,
+                depth_stencil_rendering_info.height,
+                depth_stencil_rendering_info.address,
+                depth_stencil_attachment.data.format().nativeDepthStencilFormat(),
+            };
+        } else .{ 0, 0, .fromAddress(0), .d16 };
 
         if (color_width != 0 and depth_stencil_width != 0) {
             std.debug.assert(color_width == depth_stencil_width and color_height == depth_stencil_height);
@@ -413,6 +536,22 @@ pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
             .{ depth_stencil_width, depth_stencil_height };
 
         queue.add(p3d, &p3d.output_merger.invalidate, .init(.trigger));
+        queue.addIncremental(p3d, .{
+            &p3d.output_merger.color_read,
+            &p3d.output_merger.color_write,
+            &p3d.output_merger.depth_read,
+            &p3d.output_merger.depth_write,
+            &p3d.output_merger.depth_format,
+            &p3d.output_merger.color_format,
+        }, .{
+            .init(if (color_physical_address == .zero) .disable else .all),
+            .init(if (color_physical_address == .zero) .disable else .all),
+            .init(if (depth_stencil_physical_address == .zero) .disable else .all),
+            .init(if (depth_stencil_physical_address == .zero) .disable else .all),
+            .init(depth_format),
+            .init(color_format),
+        });
+
         queue.addIncremental(p3d, .{
             &p3d.output_merger.depth_location,
             &p3d.output_merger.color_location,
@@ -541,35 +680,62 @@ fn emitDirtyUniforms(rnd: *RenderingState, queue: *command.Queue) void {
     const shader_stages: []const mango.ShaderStage = &.{ mango.ShaderStage.vertex, mango.ShaderStage.geometry };
 
     for (shader_registers, shader_stages) |registers, stage| {
+        const maybe_shader = rnd.uniform_state.shader_dirty.getPtr(stage);
+        defer maybe_shader.* = null;
+
+        const floating_dirty = rnd.uniform_state.floating_dirty.getPtr(stage);
+
+        if (maybe_shader.*) |shader| emitShaderUniforms(shader, registers, queue);
+
         for (std.enums.values(UniformLocation)) |location| if (dirty.isUniformsDirty(stage, location)) switch (location) {
             .bool => queue.add(p3d, &registers.bool_uniforms, .init(@bitCast(rnd.uniform_state.boolean_constants.get(stage).bits))),
             .int => queue.add(p3d, &registers.int_uniforms[0..4].*, rnd.uniform_state.integer_constants.get(stage).values),
-            .float => emitFloatUniforms(rnd.uniform_state.floating_dirty.getPtr(stage), rnd.uniform_state.floating_constants.getPtr(stage), registers, queue),
+            .float => emitFloatUniforms(floating_dirty, rnd.uniform_state.floating_constants.getPtr(stage), registers, queue),
         };
     }
 }
 
-fn emitFloatUniforms(flt_dirty: *std.EnumSet(pica.shader.register.Source.Constant), flt_constants: *std.EnumArray(pica.shader.register.Source.Constant, [4]f32), shader: *volatile pica.Graphics.Shader, queue: *command.Queue) void {
-    var last_const: ?pica.shader.register.Source.Constant = null;
+fn emitShaderUniforms(shader: *backend.Shader, p3d_shader: *volatile pica.Graphics.Shader, queue: *command.Queue) void {
+    const floating_constants = shader.floating_constants;
 
-    var it = flt_dirty.iterator();
-    while (it.next()) |f| {
-        // NOTE: We iterate in index order, `last_const` will always either be null or lower than `f`
-        if (last_const == null or (@intFromEnum(f) - @intFromEnum(last_const.?)) != 1) {
-            queue.add(p3d, &shader.float_uniform_index, .{
-                .index = f,
-                .mode = .f8_23,
-            });
+    var it = shader.floating_constant_set.iterator();
+    var current = it.next();
+    var i: usize = 0;
+    while (current) |initial| {
+        var seq_constants: usize = 1;
+        defer i += seq_constants;
+
+        while (true) : (seq_constants += 1) {
+            current = it.next();
+
+            const next = current orelse break;
+            if ((@intFromEnum(next) - @intFromEnum(initial)) != 1) break;
         }
 
-        const constants = flt_constants.getPtr(f);
+        queue.add(p3d, &p3d_shader.float_uniform_index, .{ .index = initial, .mode = .f7_16 });
+        queue.addConsecutive(p3d, &p3d_shader.float_uniform_data[0], @ptrCast(floating_constants[i..][0..seq_constants]));
+    }
+}
 
+fn emitFloatUniforms(flt_dirty: *std.EnumSet(pica.shader.register.Source.Constant), flt_constants: *std.EnumArray(pica.shader.register.Source.Constant, [4]f32), p3d_shader: *volatile pica.Graphics.Shader, queue: *command.Queue) void {
+    var it = flt_dirty.iterator();
+    var current = it.next();
+    while (current) |initial| {
         // NOTE: They were stored as XYZW but PICA expects WZYX
         // We can modify in-place because we know it won't be used again until it gets dirty again!
-        std.mem.reverse(f32, constants);
+        std.mem.reverse(f32, flt_constants.getPtr(initial));
 
-        queue.add(p3d, &shader.float_uniform_data[0..4].*, @bitCast(constants.*));
-        last_const = f;
+        var seq_constants: usize = 1;
+        while (true) : (seq_constants += 1) {
+            current = it.next();
+
+            const next = current orelse break;
+            if ((@intFromEnum(next) - @intFromEnum(initial)) != 1) break;
+            std.mem.reverse(f32, flt_constants.getPtr(next));
+        }
+
+        queue.add(p3d, &p3d_shader.float_uniform_index, .{ .index = initial, .mode = .f8_23 });
+        queue.addConsecutive(p3d, &p3d_shader.float_uniform_data[0], @ptrCast(flt_constants.values[@intFromEnum(initial)..][0..seq_constants]));
     }
 
     flt_dirty.* = .initEmpty();

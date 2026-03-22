@@ -9,8 +9,8 @@ pub const MgResult = enum(i32) {
     timeout = 1,
 };
 
-pub export fn mgDestroyDevice(device: mango.Device, allocator: c.ZigAllocator) void {
-    return device.destroy(allocator.allocator());
+pub export fn mgDestroyDevice(device: mango.Device) void {
+    return device.destroy();
 }
 
 pub export fn mgGetDeviceQueue(device: mango.Device, family: mango.QueueFamily, queue: *mango.Queue) MgResult {
@@ -160,16 +160,6 @@ pub export fn mgDestroySampler(device: mango.Device, sampler: mango.Sampler, all
     return device.destroySampler(sampler, allocator.allocator());
 }
 
-pub export fn mgCreateGraphicsPipeline(device: mango.Device, create_info: mango.GraphicsPipelineCreateInfo, allocator: c.ZigAllocator, pipeline: *mango.Pipeline) MgResult {
-    pipeline.* = device.createGraphicsPipeline(create_info, allocator.allocator()) catch |err| return translateError(err);
-
-    return .success;
-}
-
-pub export fn mgDestroyPipeline(device: mango.Device, pipeline: mango.Pipeline, allocator: c.ZigAllocator) void {
-    return device.destroyPipeline(pipeline, allocator.allocator());
-}
-
 pub export fn mgCreateSwapchain(device: mango.Device, create_info: mango.SwapchainCreateInfo, allocator: c.ZigAllocator, swapchain: *mango.Swapchain) MgResult {
     swapchain.* = device.createSwapchain(create_info, allocator.allocator()) catch |err| return translateError(err);
 
@@ -182,28 +172,28 @@ pub export fn mgDestroySwapchain(device: mango.Device, swapchain: mango.Swapchai
 
 pub export fn mgGetSwapchainImages(device: mango.Device, swapchain: mango.Swapchain, image_count: *usize, images: ?[*]mango.Image) MgResult {
     if (images) |non_null_images| {
-        _ = device.getSwapchainImages(swapchain, non_null_images[0..image_count.*]);
+        _ = device.getSwapchainImages(swapchain, non_null_images[0..image_count.*]) catch |err| return translateError(err);
         return .success;
     }
 
-    image_count.* = device.getSwapchainImages(swapchain, &.{});
+    image_count.* = device.getSwapchainImages(swapchain, &.{}) catch |err| return translateError(err);
     return .success;
 }
 
-pub export fn mgAcquireNextImage(device: mango.Device, swapchain: mango.Swapchain, timeout: i64, next_image: *u8) MgResult {
+pub export fn mgAcquireNextImage(device: mango.Device, swapchain: mango.Swapchain, timeout: u64, next_image: *u8) MgResult {
     next_image.* = device.acquireNextImage(swapchain, timeout) catch |err| return translateError(err);
 
     return .success;
 }
 
-pub export fn mgSignalSemaphore(device: mango.Device, signal_info: *const mango.SemaphoreOperation) MgResult {
+pub export fn mgSignalSemaphore(device: mango.Device, signal_info: *const mango.SemaphoreSignalInfo) MgResult {
     device.signalSemaphore(signal_info.*) catch |err| return translateError(err);
 
     return .success;
 }
 
-pub export fn mgWaitSemaphore(device: mango.Device, wait_info: *const mango.SemaphoreOperation, timeout: i64) MgResult {
-    device.waitSemaphore(wait_info.*, timeout) catch |err| return translateError(err);
+pub export fn mgWaitSemaphores(device: mango.Device, wait_info: *const mango.SemaphoreWaitInfo, timeout: u64) MgResult {
+    device.waitSemaphores(wait_info.*, timeout) catch |err| return translateError(err);
     return .success;
 }
 
@@ -225,10 +215,6 @@ pub export fn mgEndCommandBuffer(cmd: mango.CommandBuffer) MgResult {
 
 pub export fn mgResetCommandBuffer(cmd: mango.CommandBuffer, flags: mango.CommandBufferResetFlags) void {
     return cmd.reset(flags);
-}
-
-pub export fn mgCmdBindPipeline(cmd: mango.CommandBuffer, bind_point: mango.PipelineBindPoint, pipeline: mango.Pipeline) void {
-    return cmd.bindPipeline(bind_point, pipeline);
 }
 
 pub export fn mgCmdBindVertexBuffers(cmd: mango.CommandBuffer, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
@@ -339,8 +325,8 @@ pub export fn mgCmdSetAlphaTestReference(cmd: mango.CommandBuffer, reference: u8
     return cmd.setAlphaTestReference(reference);
 }
 
-pub export fn mgCmdSetStencilEnable(cmd: mango.CommandBuffer, enable: bool) void {
-    return cmd.setStencilEnable(enable);
+pub export fn mgCmdSetStencilTestEnable(cmd: mango.CommandBuffer, enable: bool) void {
+    return cmd.setStencilTestEnable(enable);
 }
 
 pub export fn mgCmdSetStencilOp(cmd: mango.CommandBuffer, fail_op: mango.StencilOperation, pass_op: mango.StencilOperation, depth_fail_op: mango.StencilOperation, op: mango.CompareOperation) void {

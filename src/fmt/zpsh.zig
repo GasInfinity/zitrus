@@ -35,6 +35,9 @@ pub const Header = extern struct {
     flags: Flags = .{},
     /// In `u32`s
     header_size: u8 = @divExact(@sizeOf(Header), @sizeOf(u32)),
+    /// A xxHash32 hash of instructions and operand descriptors, in the described order.
+    /// Seed is 67
+    code_hash: u32,
 
     pub const CheckError = error{NotZpsh};
 
@@ -44,6 +47,10 @@ pub const Header = extern struct {
 };
 
 pub const EntrypointHeader = extern struct {
+    pub const Flags = packed struct(u16) {
+        _: u16 = 0,
+    };
+
     pub const ShaderInfo = packed struct(u16) {
         pub const vertex: ShaderInfo = .{ .type = .vertex };
         pub const Type = enum(u2) { vertex, geometry_point, geometry_variable, geometry_fixed };
@@ -223,6 +230,8 @@ pub const EntrypointHeader = extern struct {
     name_string_offset: u32,
     instruction_offset: u16,
     info: ShaderInfo,
+    flags: Flags,
+    header_size: u16 = @divExact(@sizeOf(Header), @sizeOf(u32)),
 
     // NOTE: Constants are sorted, that is, e.g: f0 = true, f1 = false, f2 = true then in memory there will be two floating constant entries that correspond to f0 and f2. Same for integers and same for outputs.
     boolean_constant_mask: BooleanConstantMask,
@@ -232,9 +241,11 @@ pub const EntrypointHeader = extern struct {
 };
 
 pub const Parsed = struct {
+    code_hash: u32,
     instructions: []const shader.encoding.Instruction,
     operand_descriptors: []const shader.encoding.OperandDescriptor,
     string_table: []const u8,
+    entrypoint_offsets: []const u32,
     entrypoint_data: []const u8,
     entrypoints: u12,
 
@@ -246,23 +257,30 @@ pub const Parsed = struct {
         try hdr.check();
 
         const header_size = @as(usize, hdr.header_size) * @sizeOf(u32);
-        const byte_code_size = @sizeOf(shader.encoding.Instruction) * hdr.shader.instructions();
-        const byte_operands_size = @sizeOf(shader.encoding.OperandDescriptor) * @as(usize, hdr.shader.descriptors);
+        const entrypoint_offsets_start = header_size;
+        const entrypoint_offsets_size = @as(usize, hdr.shader.entrypoints) * @sizeOf(u32);
+        const code_start = entrypoint_offsets_start + entrypoint_offsets_size;
+        const code_size = @sizeOf(shader.encoding.Instruction) * hdr.shader.instructions();
+        const operands_start = code_start + code_size;
+        const operands_size = @sizeOf(shader.encoding.OperandDescriptor) * @as(usize, hdr.shader.descriptors);
+        const string_table_start = operands_start + operands_size;
         const string_table_size = @as(usize, hdr.entry_string_table_size) * @sizeOf(u32);
+        const entrypoints_start = string_table_start + string_table_size;
 
         return .{
-            .instructions = @alignCast(std.mem.bytesAsSlice(pica.shader.encoding.Instruction, buffer[header_size..][0..byte_code_size])),
-            .operand_descriptors = @alignCast(std.mem.bytesAsSlice(pica.shader.encoding.OperandDescriptor, buffer[(header_size + byte_code_size)..][0..byte_operands_size])),
-            .string_table = buffer[(header_size + byte_code_size + byte_operands_size)..][0..string_table_size],
-            .entrypoint_data = buffer[(header_size + byte_code_size + byte_operands_size + string_table_size)..],
+            .code_hash = hdr.code_hash,
+            .instructions = @alignCast(std.mem.bytesAsSlice(pica.shader.encoding.Instruction, buffer[code_start..][0..code_size])),
+            .operand_descriptors = @alignCast(std.mem.bytesAsSlice(pica.shader.encoding.OperandDescriptor, buffer[operands_start..][0..operands_size])),
+            .string_table = buffer[string_table_start..][0..string_table_size],
+            .entrypoint_offsets = @alignCast(std.mem.bytesAsSlice(u32, buffer[entrypoint_offsets_start..][0..entrypoint_offsets_size])),
+            .entrypoint_data = buffer[entrypoints_start..],
             .entrypoints = hdr.shader.entrypoints,
         };
     }
 
-    pub fn entrypointIterator(parsed: *const Parsed) EntrypointIterator {
+    pub fn iterator(parsed: *const Parsed) EntrypointIterator {
         return .{
             .parsed = parsed,
-            .byte_offset = 0,
             .current_entry = 0,
         };
     }
@@ -285,13 +303,14 @@ pub const Parsed = struct {
         };
 
         parsed: *const Parsed,
-        byte_offset: u32,
         current_entry: u12,
 
         pub fn next(it: *EntrypointIterator) ?Entry {
             if (it.current_entry == it.parsed.entrypoints) return null;
+            defer it.current_entry += 1;
 
-            const entry_start = it.parsed.entrypoint_data[it.byte_offset..];
+            const offset = it.parsed.entrypoint_offsets[it.current_entry];
+            const entry_start = it.parsed.entrypoint_data[offset..];
             const hdr = if (builtin.cpu.arch.endian() != .little) hdr: {
                 const hdr_ptr: *const EntrypointHeader = @alignCast(std.mem.bytesAsValue(EntrypointHeader, entry_start));
                 var hdr = hdr_ptr.*;
@@ -307,11 +326,6 @@ pub const Parsed = struct {
             const integer_constants_byte_size: u32 = @intCast(integer_constant_set.count() * @sizeOf([4]u8));
             const floating_constants_byte_size: u32 = @intCast(floating_constant_set.count() * @sizeOf(pica.F7_16x4));
             const output_map_byte_size: u32 = @intCast(output_map_set.count() * @sizeOf(pica.OutputMap));
-
-            defer {
-                it.current_entry += 1;
-                it.byte_offset += @as(u32, @sizeOf(EntrypointHeader)) + integer_constants_byte_size + floating_constants_byte_size + output_map_byte_size;
-            }
 
             return .{
                 .info = hdr.info,

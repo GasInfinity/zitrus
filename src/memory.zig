@@ -6,7 +6,8 @@
 pub const VRamBank = enum(u1) { a, b };
 
 pub const arm11 = struct {
-    pub const pica: *volatile zitrus.hardware.pica.Registers = @ptrFromInt(io_begin + 0x400000);
+    pub const lcd: *volatile hardware.lcd.Registers = @ptrFromInt(io_begin + 0x202000);
+    pub const pica: *volatile hardware.pica.Registers = @ptrFromInt(io_begin + 0x400000);
 };
 
 pub const arm9 = struct {
@@ -40,3 +41,4 @@ pub const fcram_end_o3ds: usize = fcram_begin + 0x08000000;
 pub const fcram_end_n3ds: usize = fcram_end_o3ds + 0x08000000;
 
 const zitrus = @import("zitrus");
+const hardware = zitrus.hardware;

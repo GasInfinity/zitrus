@@ -359,7 +359,7 @@ pub fn normal(config: Config, allocator: std.mem.Allocator) !SoftwareKeyboard {
             .dictionary_word_count = @intCast(config.dictionary.len),
             .max_digits = config.max_digits,
             .button_text = Config.Button.labels(config.buttons),
-            .numpad_keys = undefined,
+            .numpad_keys = @splat(0),
             .hint_text = config.hint.arrayEncodeZ(State.max_hint_text_len),
             .predictive_input = config.features.predictive_input,
             .multiline = config.features.multiline,
@@ -476,14 +476,13 @@ pub fn writtenText(swkbd: *SoftwareKeyboard) [:0]const u16 {
     return std.mem.bytesAsSlice(u16, swkbd.text)[swkbd.state.text_offset..swkbd.state.text_length :0];
 }
 
-pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu, context: anytype) !Result {
-    std.debug.assert(if (swkbd.state.filter.callback) @TypeOf(context) != void else true);
-    try app.startLibraryApplet(apt, service, srv, gsp, .application_software_keyboard, swkbd.text_block.obj, std.mem.asBytes(&swkbd.state));
+pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture, context: anytype) !Result {
+    try app.startLibraryApplet(apt, service, srv, capture, .application_software_keyboard, swkbd.text_block.obj, @ptrCast(&swkbd.state));
 
-    return swkbd_loop: switch (try app.waitAppletResult(apt, service, srv, gsp, std.mem.asBytes(&swkbd.state))) {
+    return swkbd_loop: switch (try app.waitAppletResult(apt, service, srv, @ptrCast(&swkbd.state))) {
         .execution => |e| switch (e) {
             .resumed => switch (swkbd.state.reply) {
-                _, .invalid_input => unreachable,
+                _, .invalid_input => return error.Unexpected,
                 .out_of_memory => return error.OutOfMemory,
 
                 .d0_clicked => .right,
@@ -505,10 +504,8 @@ pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, se
             .jump_home => .jump_home,
             .must_close => unreachable,
         },
-        .message => |params| if (@TypeOf(context) != void) {
-            std.debug.assert(params.handle == horizon.Object.none);
-
-            const result = context.filter(swkbd.writtenText());
+        .message => {
+            const result: CallbackResult = if (@TypeOf(context) != void) context.filter(swkbd.writtenText()) else .ok;
             swkbd.state.callback_result = std.meta.activeTag(result);
 
             switch (result) {
@@ -516,9 +513,9 @@ pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, se
                 .close, .@"continue" => |message| message.bufEncodeZ(&swkbd.state.callback_message),
             }
 
-            try apt.sendSendParameter(service, srv, horizon.environment.program_meta.app_id, .application_software_keyboard, .message, swkbd.text_block.obj, std.mem.asBytes(&swkbd.state));
-            continue :swkbd_loop try app.waitAppletResult(apt, service, srv, gsp, std.mem.asBytes(&swkbd.state));
-        } else unreachable,
+            try apt.sendSendParameter(service, srv, horizon.environment.program_meta.app_id, .application_software_keyboard, .message, swkbd.text_block.obj, @ptrCast(&swkbd.state));
+            continue :swkbd_loop try app.waitAppletResult(apt, service, srv, @ptrCast(&swkbd.state));
+        },
     };
 }
 

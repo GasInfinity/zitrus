@@ -8,6 +8,7 @@ pub const shared_memory_end: usize = 0x14000000;
 pub const old_linear_heap_begin: usize = shared_memory_end;
 pub const old_linear_heap_end: usize = 0x1E800000;
 pub const io_begin: usize = 0x1EC00000;
+pub const lcd_begin: usize = 0x1ED02000;
 pub const gpu_begin: usize = 0x1EF00000;
 pub const io_end: usize = 0x1F000000;
 pub const vram_begin: usize = io_end;
@@ -22,7 +23,8 @@ pub const linear_heap_end: usize = linear_heap_begin + 0x10000000;
 pub const configuration_memory_begin = 0x1FF80000;
 pub const shared_page_memory_begin = 0x1FF81000;
 
-pub const gpu_registers: *pica.Registers = @ptrFromInt(gpu_begin);
+pub const lcd_registers: *volatile hardware.lcd.Registers = @ptrFromInt(lcd_begin);
+pub const gpu_registers: *volatile hardware.pica.Registers = @ptrFromInt(gpu_begin);
 
 pub const kernel_config: *const config.Kernel = @ptrFromInt(configuration_memory_begin);
 pub const shared_config: *config.Shared = @ptrFromInt(shared_page_memory_begin);
@@ -41,4 +43,4 @@ const horizon = zitrus.horizon;
 const config = horizon.config;
 
 const memory = zitrus.memory;
-const pica = zitrus.hardware.pica;
+const hardware = zitrus.hardware;

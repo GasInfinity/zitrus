@@ -133,9 +133,27 @@ pub const Transition = enum(u32) {
 };
 
 pub const CaptureBuffer = extern struct {
-    pub const Info = extern struct { left_offset: usize, right_offset: usize, color_format: u32 };
+    pub const Format = enum(u32) {
+        none = std.math.maxInt(u32),
+        /// 4 bytes, `A B G R`.
+        abgr8888 = 0,
+        /// 3 bytes, `B G R`.
+        bgr888,
+        /// Packed, 2 bytes, `RRRRRGGGGGGBBBBB`.
+        rgb565,
+        /// Packed, 2 bytes, `RRRRRGGGGGBBBBBA`.
+        rgba5551,
+        /// Packed, 2 bytes, `RRRRGGGGBBBBAAAA`.
+        rgba4444,
+    };
 
-    size: usize,
+    pub const Info = extern struct {
+        left_offset: u32,
+        right_offset: u32,
+        format: Format,
+    };
+
+    size: u32,
     enabled_3d: bool,
     _reserved0: [3]u8 = @splat(0),
     top: Info,
@@ -157,15 +175,15 @@ pub const CaptureBuffer = extern struct {
             // So, the GSP trips when this value is exactly what it should? XXX: Why do I need to multiply bottom_size by 2 for library applets?
             .size = (top_size + bottom_size * 2),
             .enabled_3d = (capture.top.format.interlacing_mode == .enable),
-            .top = Info{
+            .top = .{
                 .left_offset = 0,
                 .right_offset = top_framebuffer_size * (top_framebuffers - 1),
-                .color_format = @intFromEnum(capture.top.format.color_format),
+                .format = @enumFromInt(@intFromEnum(capture.top.format.color_format)),
             },
-            .bottom = Info{
+            .bottom = .{
                 .left_offset = top_size,
                 .right_offset = top_size,
-                .color_format = @intFromEnum(capture.bottom.format.color_format),
+                .format = @enumFromInt(@intFromEnum(capture.bottom.format.color_format)),
             },
         };
     }

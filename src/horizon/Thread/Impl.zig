@@ -2,6 +2,11 @@
 pub const default_stack_size = 16 * 1024;
 pub const Id = u32;
 
+pub const Options = struct {
+    processor: horizon.Thread.Processor = .any,
+    priority: horizon.Thread.Priority = .lowest,
+};
+
 threadlocal var tls_id: ?u32 = null;
 
 pub fn getCurrentId() u32 {
@@ -46,6 +51,10 @@ completion: *Completion,
 const bad_fn_ret = "expected return type of startFn to be 'u8', 'noreturn', '!noreturn', 'void', or '!void'";
 
 pub fn spawn(config: std.Thread.SpawnConfig, comptime f: anytype, args: anytype) !Thread {
+    return spawnOptions(config, f, args, .{});
+}
+
+pub fn spawnOptions(config: std.Thread.SpawnConfig, comptime f: anytype, args: anytype, opts: Options) !Thread {
     const gpa = config.allocator orelse return error.OutOfMemory;
 
     const Args = @TypeOf(args);
@@ -129,7 +138,7 @@ pub fn spawn(config: std.Thread.SpawnConfig, comptime f: anytype, args: anytype)
         },
     };
 
-    instance.completion.thread = try .create(Instance.entry, instance, stack.ptr + stack.len, .lowest, .any);
+    instance.completion.thread = try .create(Instance.entry, instance, stack.ptr + stack.len, opts.priority, opts.processor);
 
     return .{ .completion = &instance.completion };
 }

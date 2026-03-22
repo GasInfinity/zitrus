@@ -37,9 +37,10 @@ pub const State = packed struct(u8) {
 
     allow_home: bool = false,
     allow_sleep: bool = false,
+    sleeping: bool = false,
     must_close: bool = false,
 
-    _: u5 = 0,
+    _: u4 = 0,
 };
 
 notification_event: Event,
@@ -135,7 +136,8 @@ pub fn waitNotificationTimeout(app: *Application, apt: Applet, service: Applet.S
         else => return err,
     };
 
-    notif_handling: switch (try apt.sendInquireNotification(service, srv, environment.program_meta.app_id)) {
+    const notification = try apt.sendInquireNotification(service, srv, environment.program_meta.app_id);
+    notif_handling: switch (notification) {
         .none => {},
         .home_button_1, .home_button_2 => {
             if (!app.flags.allow_home) {
@@ -145,18 +147,23 @@ pub fn waitNotificationTimeout(app: *Application, apt: Applet, service: Applet.S
                 return .jump_home;
             }
         },
-        .sleep_query => try apt.sendReplySleepQuery(service, srv, environment.program_meta.app_id, if (app.flags.allow_sleep)
-            .accept
-        else
-            .reject),
+        .sleep_query => {
+            const reply: Applet.QueryReply = if (app.flags.allow_sleep)
+                .accept
+            else
+                .reject;
+            try apt.sendReplySleepQuery(service, srv, environment.program_meta.app_id, reply);
+        },
         .sleep_accepted => {
-            // sleep dsp if needed
+            app.flags.sleeping = true;
             try apt.sendReplySleepNotificationComplete(service, srv, environment.program_meta.app_id);
             return .sleeping;
         },
         .sleep_canceled_by_open => continue :notif_handling .sleep_wakeup,
-        .sleep_wakeup => {
-            // wakeup dsp
+        .sleep_wakeup => blk: {
+            if (!app.flags.sleeping) break :blk;
+
+            app.flags.sleeping = false;
             return .sleep_wakeup;
         },
         .shutdown => {
@@ -181,7 +188,22 @@ fn waitParameterConsumingNotifications(app: *Application, apt: Applet, service: 
         const is_parameter = try Event.waitMany(&.{ app.notification_event, app.parameters_event }, false, .none) == 1;
 
         if (!is_parameter) {
-            switch (try apt.sendInquireNotification(service, srv, environment.program_meta.app_id)) {
+            notif_handling: switch (try apt.sendInquireNotification(service, srv, environment.program_meta.app_id)) {
+                .none, .home_button_1, .home_button_2, .power_button_click, .power_button_clear => {},
+                // We're waiting so just accept it!
+                .sleep_query => try apt.sendReplySleepQuery(service, srv, environment.program_meta.app_id, .accept),
+                .sleep_accepted => {
+                    app.flags.sleeping = true;
+                    try apt.sendReplySleepNotificationComplete(service, srv, environment.program_meta.app_id);
+                },
+                .sleep_canceled_by_open => continue :notif_handling .sleep_wakeup,
+                .sleep_wakeup => blk: {
+                    if (!app.flags.sleeping) break :blk;
+                    app.flags.sleeping = false;
+                },
+                .shutdown => app.flags.must_close = true,
+                .try_sleep => {}, // TODO
+                .order_to_close => app.flags.must_close = true,
                 else => {},
             }
 
@@ -192,7 +214,7 @@ fn waitParameterConsumingNotifications(app: *Application, apt: Applet, service: 
     }
 }
 
-pub fn waitAppletResult(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu, parameter: []u8) !AppletResult {
+pub fn waitAppletResult(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, parameter: []u8) !AppletResult {
     const parameters = try app.waitParameterConsumingNotifications(apt, service, srv, parameter);
     switch (parameters.cmd) {
         .wakeup, .request, .response => unreachable, // NOTE: Should only be sent at Application start? + do we get requests? + we're not waiting for a response!
@@ -207,10 +229,7 @@ pub fn waitAppletResult(app: *Application, apt: Applet, service: Applet.Service,
 
             switch (cmd) {
                 .wakeup_by_cancel, .wakeup_by_cancelall => app.flags.must_close = true,
-                else => {
-                    try gsp.sendAcquireRight(0x0);
-                    try gsp.sendRestoreVRAMSysArea();
-                },
+                else => {},
             }
 
             return .{ .execution = switch (cmd) {
@@ -225,25 +244,22 @@ pub fn waitAppletResult(app: *Application, apt: Applet, service: Applet.Service,
     }
 }
 
-// NOTE: we also need to wakeup the dsp if needed when implemented
-pub fn jumpToHome(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu, params: Applet.JumpToHomeParameters) !ExecutionResult {
+// NOTE: we also need to wakeup the dsp if needed when implemented. but not here!
+pub fn jumpToHome(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture, params: Applet.JumpToHomeParameters) !ExecutionResult {
     const last_allow_sleep = app.flags.allow_sleep;
 
     app.setSleepAllowed(apt, service, srv, false);
     defer app.setSleepAllowed(apt, service, srv, last_allow_sleep);
 
     try apt.sendPrepareToJumpToHomeMenu(service, srv);
-    try gsp.sendSaveVRAMSysArea();
 
     const home_app_id = (try apt.sendGetAppletManInfo(service, srv, .none)).home_menu;
-    try app.screenTransfer(apt, service, srv, gsp, home_app_id, false);
+    try app.screenTransfer(apt, service, srv, capture, home_app_id, false);
 
-    // Sleep dsp
-    try gsp.sendReleaseRight();
     try apt.sendJumpToHomeMenu(service, srv, params);
 
     // XXX: Does the home menu return any kind of parameters?
-    return switch (try app.waitAppletResult(apt, service, srv, gsp, &.{})) {
+    return switch (try app.waitAppletResult(apt, service, srv, &.{})) {
         .execution => |e| switch (e) {
             .jump_home => unreachable, // NOTE: Doesn't make sense, you jump home and wake me up to return to you again? Only makes sense for applets.
             else => e,
@@ -252,46 +268,39 @@ pub fn jumpToHome(app: *Application, apt: Applet, service: Applet.Service, srv: 
     };
 }
 
-pub fn startLibraryApplet(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu, app_id: Applet.AppId, param_handle: Object, param: []const u8) !void {
+pub fn startLibraryApplet(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture, app_id: Applet.AppId, param_handle: Object, param: []const u8) !void {
     const last_allow_sleep = app.flags.allow_sleep;
 
     app.setSleepAllowed(apt, service, srv, false);
     defer app.setSleepAllowed(apt, service, srv, last_allow_sleep);
 
     try apt.sendPrepareToStartLibraryApplet(service, srv, app_id);
-    try gsp.sendSaveVRAMSysArea();
-    try app.screenTransfer(apt, service, srv, gsp, app_id, true);
+    try app.screenTransfer(apt, service, srv, capture, app_id, true);
 
     // Sleep dsp
-    try gsp.sendReleaseRight();
     try apt.sendStartLibraryApplet(service, srv, app_id, param_handle, param);
 }
 
 // NOTE: This will stay with the same interface as jump to home as I don't know of a system applet which returns data.
-pub fn launchSystemApplet(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu, app_id: Applet.AppId, param_handle: Object, param: []const u8) !ExecutionResult {
+pub fn launchSystemApplet(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture, app_id: Applet.AppId, param_handle: Object, param: []const u8) !ExecutionResult {
     const last_allow_sleep = app.flags.allow_sleep;
 
     app.setSleepAllowed(apt, service, srv, false);
     defer app.setSleepAllowed(apt, service, srv, last_allow_sleep);
 
     try apt.sendPrepareToStartSystemApplet(srv, service, app_id);
-    try gsp.sendSaveVRAMSysArea();
-
-    // Sleep dsp
-    try gsp.sendReleaseRight();
     try apt.sendStartSystemApplet(srv, app_id, param_handle, param);
-    try app.screenTransfer(apt, srv, service, gsp, app_id, false);
+    try app.screenTransfer(apt, srv, service, capture, app_id, false);
 
-    return switch (try app.waitAppletResult(apt, srv, gsp, &.{})) {
+    return switch (try app.waitAppletResult(apt, srv, &.{})) {
         .execution => |e| e,
         .message => unreachable, // XXX: Same as with jumping to home...
     };
 }
 
 // NOTE: This is just straight up taken from libctru. I didn't know why jumping to home was not working, now I know :p
-pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu, target_app_id: Applet.AppId, is_library_applet: bool) !void {
-    const gsp_capture_info = try gsp.sendImportDisplayCaptureInfo();
-    const apt_capture_info = Applet.CaptureBuffer.init(gsp_capture_info);
+pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture, target_app_id: Applet.AppId, is_library_applet: bool) !void {
+    const apt_capture_info = Applet.CaptureBuffer.init(capture);
 
     while (!(try apt.sendIsRegistered(service, srv, target_app_id))) {
         // XXX: Maybe this could be adjusted? Currently it follows the same behaviour as libctru

@@ -409,7 +409,7 @@ pub const SemaOperation = struct {
     sema: *backend.Semaphore,
     value: u64,
 
-    pub fn initSemaphoreOperation(maybe_op: ?*const mango.SemaphoreOperation) ?SemaOperation {
+    pub fn initSemaphoreOperation(maybe_op: ?*const mango.SemaphoreQueueOperation) ?SemaOperation {
         return if (maybe_op) |op| .{
             .sema = .fromHandleMutable(op.semaphore),
             .value = op.value,
@@ -464,6 +464,12 @@ pub const PresentationItem = struct {
     index: u8,
 };
 
+pub const Status = enum(i32) {
+    working = -1,
+    waiting = 0,
+    idle = 1,
+};
+
 pub const Fill = State(.fill, FillItem, backend.max_buffered_queue_items);
 pub const Transfer = State(.transfer, TransferItem, backend.max_buffered_queue_items);
 pub const Submit = State(.submit, SubmitItem, backend.max_buffered_queue_items);
@@ -501,7 +507,7 @@ pub fn State(comptime kind: Type, comptime T: type, comptime capacity: u16) type
         ///
         /// Not thread-safe, must be called from only one thread.
         pub fn wakePushFront(state: *QueueState, item: T, wait: ?SemaOperation, signal: ?SemaOperation) !void {
-            defer state.device.driverWake(kind);
+            defer state.device.wakeIdleQueue(kind);
             return state.queue.pushFront(.{
                 .item = item,
                 .wait = wait,
@@ -559,8 +565,6 @@ pub fn State(comptime kind: Type, comptime T: type, comptime capacity: u16) type
 }
 
 const backend = @import("backend.zig");
-
-const PresentationEngine = backend.PresentationEngine;
 
 const std = @import("std");
 const zitrus = @import("zitrus");

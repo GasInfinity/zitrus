@@ -951,16 +951,16 @@ pub const VTable = enum(u0) {
         return error.EntropyUnavailable; // XXX: Is there any truly random entropy source in hos?
     }
 
-    pub fn netListenIp(_: VTable, ud: ?*anyopaque, address: Io.net.IpAddress, opts: Io.net.IpAddress.ListenOptions) Io.net.IpAddress.ListenError!Io.net.Server {
+    pub fn netListenIp(_: VTable, ud: ?*anyopaque, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.ListenOptions) Io.net.IpAddress.ListenError!Io.net.Socket {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
         return try hio.storage.netListen(hio.io(), hio.gpa, address, opts);
     }
 
-    pub fn netAccept(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle) Io.net.Server.AcceptError!Io.net.Stream {
+    pub fn netAccept(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle, opts: Io.net.Server.AcceptOptions) Io.net.Server.AcceptError!Io.net.Socket {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
-        return try hio.storage.netAccept(hio.io(), hio.gpa, handle);
+        return try hio.storage.netAccept(hio.io(), hio.gpa, handle, opts);
     }
 
     pub fn netBindIp(_: VTable, ud: ?*anyopaque, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.BindOptions) Io.net.IpAddress.BindError!Io.net.Socket {
@@ -969,7 +969,7 @@ pub const VTable = enum(u0) {
         return try hio.storage.netBind(hio.io(), hio.gpa, address, opts);
     }
 
-    pub fn netConnectIp(_: VTable, ud: ?*anyopaque, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.ConnectOptions) Io.net.IpAddress.ConnectError!Io.net.Stream {
+    pub fn netConnectIp(_: VTable, ud: ?*anyopaque, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.ConnectOptions) Io.net.IpAddress.ConnectError!Io.net.Socket {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
         return try hio.storage.netConnect(hio.io(), hio.gpa, address, opts);

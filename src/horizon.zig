@@ -714,6 +714,19 @@ pub const AddressArbiter = packed struct(u32) {
         }) catch unreachable;
     }
 
+    /// Decrements and waits on the address if `address.* < value` until signaled atomically. The comparison is *signed*.
+    pub fn decrementWait(arbiter: AddressArbiter, comptime T: type, address: *T, value: T) void {
+        comptime std.debug.assert(@bitSizeOf(T) == @bitSizeOf(u32) and @sizeOf(T) == @sizeOf(u32));
+
+        return arbiter.arbitrate(@ptrCast(address), .{
+            .decrement_and_wait_if_less_than = switch (@typeInfo(T)) {
+                .int => @bitCast(value),
+                .@"enum" => @bitCast(@intFromEnum(value)),
+                else => comptime unreachable,
+            },
+        }) catch unreachable;
+    }
+
     /// Waits on the address if `address.* < value` until signaled or `timeout`. The comparison is *signed*.
     pub fn waitTimeout(arbiter: AddressArbiter, comptime T: type, address: *T, value: T, timeout: Timeout) error{Timeout}!void {
         comptime std.debug.assert(@bitSizeOf(T) == @bitSizeOf(u32) and @sizeOf(T) == @sizeOf(u32));
@@ -726,6 +739,22 @@ pub const AddressArbiter = packed struct(u32) {
             },
             .timeout = timeout,
         } });
+    }
+
+    /// Decrements and waits on the address if `address.* < value` until signaled atomically or `timeout`. The comparison is *signed*.
+    pub fn decrementWaitTimeout(arbiter: AddressArbiter, comptime T: type, address: *T, value: T, timeout: Timeout) error{Timeout}!void {
+        comptime std.debug.assert(@bitSizeOf(T) == @bitSizeOf(u32) and @sizeOf(T) == @sizeOf(u32));
+
+        return try arbiter.arbitrate(@ptrCast(address), .{
+            .decrement_and_wait_if_less_than_timeout = .{
+                .value = switch (@typeInfo(T)) {
+                    .int => @bitCast(value),
+                    .@"enum" => @bitCast(@intFromEnum(value)),
+                    else => comptime unreachable,
+                },
+                .timeout = timeout,
+            },
+        });
     }
 
     /// Signals up to `waiters` threads waiting on the address or all if null.
@@ -2231,7 +2260,10 @@ pub fn breakpoint() void {
 
 pub const UnexpectedError = std.Io.UnexpectedError;
 pub fn unexpectedResult(code: result.Code) UnexpectedError {
-    debug.print("unexpected result: {f} (0x{X:0>8})\n", .{ code, @as(u32, @bitCast(code)) });
+    if (is_debug) {
+        debug.print("unexpected result: {f} (0x{X:0>8})\n", .{ code, @as(u32, @bitCast(code)) });
+        std.debug.dumpCurrentStackTrace(.{});
+    }
     return error.Unexpected;
 }
 

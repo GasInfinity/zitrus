@@ -16,7 +16,10 @@ pub const max_present_queue_items = max_swapchain_images * max_swapchain_image_l
 /// It is asserted that draw call emissions won't take more than this amount of words.
 pub const max_native_drawcall_cost = 20;
 
-pub const PresentationEngine = @import("PresentationEngine.zig");
+pub const Horizon = @import("backend/Horizon.zig");
+
+pub const log = std.log.scoped(.mango);
+pub const validation = @import("validation.zig");
 
 pub const Device = @import("Device.zig");
 pub const Queue = @import("Queue.zig");
@@ -25,13 +28,12 @@ pub const DeviceMemory = @import("DeviceMemory.zig");
 pub const Buffer = @import("Buffer.zig");
 pub const Image = @import("Image.zig");
 pub const ImageView = @import("ImageView.zig");
-pub const Pipeline = @import("Pipeline.zig");
+pub const Shader = @import("Shader.zig");
 pub const CommandPool = @import("CommandPool.zig");
 pub const CommandBuffer = @import("CommandBuffer.zig");
 pub const Sampler = @import("Sampler.zig");
 pub const Surface = @import("Surface.zig");
 pub const Swapchain = @import("Swapchain.zig");
-
 pub const LightLookupTable = @import("LightLookupTable.zig");
 
 pub const GraphicsState = @import("GraphicsState.zig");
@@ -202,6 +204,8 @@ test imageLayerSize {
 }
 
 comptime {
+    _ = Horizon;
+
     _ = Device;
     _ = Queue;
     _ = Semaphore;
@@ -209,12 +213,14 @@ comptime {
     _ = Buffer;
     _ = Image;
     _ = ImageView;
-    _ = Pipeline;
     _ = CommandPool;
     _ = CommandBuffer;
+    _ = Shader;
     _ = Sampler;
     _ = Surface;
     _ = Swapchain;
+    _ = VertexInputLayout;
+    _ = validation;
 }
 
 const std = @import("std");

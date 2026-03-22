@@ -22,17 +22,20 @@ pub fn waitEventTimeout(mn: Mango, timeout: horizon.Timeout) !?horizon.Init.Appl
         .quit => return .quit,
         .jump_home_rejected => return .jump_home_rejected,
         .jump_home => {
-            mn.device.waitIdle();
-            switch (try mn.app.app.jumpToHome(mn.app.apt, .app, mn.app.srv, mn.app.gsp, .none)) {
-                .resumed => continue,
+            const info = try mn.device.release();
+            switch (try mn.app.app.jumpToHome(mn.app.apt, .app, mn.app.srv, info, .none)) {
+                .resumed => {
+                    try mn.device.reacquire();
+                    continue;
+                },
                 .jump_home => unreachable,
                 .must_close => return .quit,
             }
         },
         .sleep => {
-            mn.device.waitIdle();
+            _ = try mn.device.release();
             while (try mn.app.app.waitNotification(mn.app.apt, .app, mn.app.srv) != .sleep_wakeup) {}
-            try mn.app.gsp.sendSetLcdForceBlack(false);
+            try mn.device.reacquire();
         },
     };
 

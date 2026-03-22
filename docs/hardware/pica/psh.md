@@ -19,6 +19,9 @@ The main header of the binary, starting at offset `0x00`
 | `entry_string_table_size` | `u16`    | Size **in `u32`s** of the entrypoint string table |
 | `flags`   | `bitpacked struct(u8)`   | Reserved                   |
 | `header_size` | `u8`                 | Real size **in `u32`s** of the **Header**, allows for *forward compatibility* |
+| `entrypoint offset` [0] | `u32`                 | Relative to the entrypoint area (first will always be 0) |
+| ... | ... | ... |
+| `entrypoint offset` [n-1] | `u32`                 | ditto |
 
 #### `shader` bit layout
 

@@ -80,7 +80,9 @@ pub const Scene = struct {
     semaphore: mango.Semaphore,
     current_timeline: u64,
 
-    pipeline: mango.Pipeline,
+    phong_lut: mango.LightLookupTable,
+    input_layout: mango.VertexInputLayout,
+    vtx_shader: mango.Shader,
 
     top_renderbuffer: Renderbuffer,
     bottom_renderbuffer: Renderbuffer,
@@ -113,128 +115,36 @@ pub const Scene = struct {
             .context = null,
             .range = .positive,
         }, gpa);
-        // NOTE: As we won't have a dynamic light environment, we can destroy the LUT after creating the pipeline.
-        defer device.destroyLightLookupTable(phong_distribution_lut, gpa);
+        errdefer device.destroyLightLookupTable(phong_distribution_lut, gpa);
 
-        const pipeline = try device.createGraphicsPipeline(.{
-            .rendering_info = &.{
-                .color_attachment_format = .a8b8g8r8_unorm,
-                .depth_stencil_attachment_format = .d24_unorm,
+        const vertex_input_layout = try device.createVertexInputLayout(.init(&.{
+            .{
+                .stride = @sizeOf(Vertex),
             },
-            .vertex_input_state = &.init(&.{
-                .{
-                    .stride = @sizeOf(Vertex),
-                },
-            }, &.{
-                .{
-                    .location = .v0,
-                    .binding = .@"0",
-                    .format = .r32g32b32_sfloat,
-                    .offset = @offsetOf(Vertex, "pos"),
-                },
-                .{
-                    .location = .v1,
-                    .binding = .@"0",
-                    .format = .r32g32b32_sfloat,
-                    .offset = @offsetOf(Vertex, "norm"),
-                },
-                .{
-                    .location = .v2,
-                    .binding = .@"0",
-                    .format = .r32g32_sfloat,
-                    .offset = @offsetOf(Vertex, "uv"),
-                },
-            }, &.{}),
-            .vertex_shader_state = &.init(simple_vtx, "main"),
-            .geometry_shader_state = null,
-            .input_assembly_state = &.{
-                .topology = .triangle_list,
+        }, &.{
+            .{
+                .location = .v0,
+                .binding = .@"0",
+                .format = .r32g32b32_sfloat,
+                .offset = @offsetOf(Vertex, "pos"),
             },
-            .viewport_state = null,
-            .rasterization_state = &.{
-                .front_face = .ccw,
-
-                .cull_mode = .back,
-
-                .depth_mode = .z_buffer,
-                .depth_bias_constant = 0.0,
+            .{
+                .location = .v1,
+                .binding = .@"0",
+                .format = .r32g32b32_sfloat,
+                .offset = @offsetOf(Vertex, "norm"),
             },
-            .alpha_depth_stencil_state = &.{
-                .alpha_test_enable = false,
-                .alpha_test_compare_op = .never,
-                .alpha_test_reference = 0,
-
-                // (!) Disabling depth tests also disables depth writes like in every other graphics api
-                .depth_test_enable = true,
-                .depth_write_enable = true,
-                .depth_compare_op = .ge,
-
-                .stencil_test_enable = false,
-                .back_front = std.mem.zeroes(mango.GraphicsPipelineCreateInfo.AlphaDepthStencilState.StencilOperationState),
+            .{
+                .location = .v2,
+                .binding = .@"0",
+                .format = .r32g32_sfloat,
+                .offset = @offsetOf(Vertex, "uv"),
             },
-            .texture_sampling_state = &.{
-                .texture_2_coordinates = .@"2",
-                .texture_3_coordinates = .@"2",
-            },
-            .lighting_state = &.{
-                .enable = true,
-                .environment = &.{
-                    .enable_distribution = .{ true, false },
+        }, &.{}), gpa);
+        errdefer device.destroyVertexInputLayout(vertex_input_layout, gpa);
 
-                    .distribution_tables = .{ phong_distribution_lut, .null },
-                    .distribution_inputs = .{ .@"N * H", undefined },
-                    .distribution_ranges = .{ .positive, undefined },
-                    .distribution_scales = .{ .@"1x", undefined },
-                },
-            },
-            .texture_combiner_state = &.init(&.{ .{
-                .color_src = .{ .fragment_primary_color, .fragment_secondary_color, .previous },
-                .alpha_src = @splat(.primary_color),
-                .color_factor = @splat(.src_color),
-                .alpha_factor = @splat(.src_alpha),
-                .color_op = .add,
-                .alpha_op = .replace,
-
-                .color_scale = .@"1x",
-                .alpha_scale = .@"1x",
-
-                .constant = @splat(255),
-            }, .{
-                .color_src = .{ .previous, .texture_0, .previous },
-                .alpha_src = @splat(.primary_color),
-                .color_factor = @splat(.src_color),
-                .alpha_factor = @splat(.src_alpha),
-                .color_op = .modulate,
-                .alpha_op = .replace,
-
-                .color_scale = .@"1x",
-                .alpha_scale = .@"1x",
-
-                .constant = .{ 255, 0, 0, 255 },
-            } }, &.{.previous}),
-            .color_blend_state = &.{
-                .logic_op_enable = false,
-                .logic_op = .clear,
-
-                .attachment = .{
-                    .blend_equation = .{
-                        .src_color_factor = .one,
-                        .dst_color_factor = .zero,
-                        .color_op = .add,
-                        .src_alpha_factor = .one,
-                        .dst_alpha_factor = .zero,
-                        .alpha_op = .add,
-                    },
-                    .color_write_mask = .rgba,
-                },
-                .blend_constants = .{ 0, 0, 0, 0 },
-            },
-            .dynamic_state = .{
-                .viewport = true,
-                .scissor = true,
-            },
-        }, gpa);
-        errdefer device.destroyPipeline(pipeline, gpa);
+        const vertex_shader = try device.createShader(.init(.psh, simple_vtx, "main"), gpa);
+        errdefer device.destroyShader(vertex_shader, gpa);
 
         const top_renderbuffer: Renderbuffer = try .init(device, gpa, 480, 800, .a8b8g8r8_unorm, .d24_unorm);
         errdefer top_renderbuffer.deinit(device, gpa);
@@ -275,7 +185,9 @@ pub const Scene = struct {
             .semaphore = sema,
             .current_timeline = 1,
 
-            .pipeline = pipeline,
+            .phong_lut = phong_distribution_lut,
+            .input_layout = vertex_input_layout,
+            .vtx_shader = vertex_shader,
 
             .top_renderbuffer = top_renderbuffer,
             .bottom_renderbuffer = bottom_renderbuffer,
@@ -297,7 +209,9 @@ pub const Scene = struct {
         scene.cube_mesh.deinit(device, gpa);
         scene.bottom_renderbuffer.deinit(device, gpa);
         scene.top_renderbuffer.deinit(device, gpa);
-        device.destroyPipeline(scene.pipeline, gpa);
+        device.destroyShader(scene.vtx_shader, gpa);
+        device.destroyVertexInputLayout(scene.input_layout, gpa);
+        device.destroyLightLookupTable(scene.phong_lut, gpa);
         device.destroySemaphore(scene.semaphore, gpa);
     }
 
@@ -355,8 +269,76 @@ pub const Scene = struct {
 
         try cmd.begin();
 
-        scene.cube_mesh.bind(cmd);
-        cmd.bindPipeline(.graphics, scene.pipeline);
+        cmd.setLogicOpEnable(false);
+        cmd.setAlphaTestEnable(false);
+        cmd.setStencilTestEnable(false);
+
+        cmd.setDepthTestEnable(true);
+        cmd.setDepthWriteEnable(true);
+        cmd.setDepthMode(.z_buffer);
+        cmd.setDepthCompareOp(.ge);
+        cmd.setDepthBias(0.0);
+
+        cmd.setCullMode(.back);
+        cmd.setFrontFace(.ccw);
+        cmd.setPrimitiveTopology(.triangle_list);
+
+        cmd.setLightingEnable(true);
+        cmd.setLightEnvironmentEnable(.{
+            .distribution = .{ true, false },
+        });
+        cmd.setLightEnvironmentInput(.{
+            .distribution = @splat(.@"N * H"),
+        });
+        cmd.setLightEnvironmentRange(.{
+            .distribution = @splat(.positive),
+        });
+        cmd.setLightEnvironmentScale(.{
+            .distribution = @splat(.@"1x"),
+        });
+        cmd.bindLightEnvironmentTable(.d0, scene.phong_lut);
+
+        cmd.setVertexInput(scene.input_layout);
+        cmd.setTextureCombiners(&.{
+            .{
+                .color_src = .{ .fragment_primary_color, .fragment_secondary_color, .previous },
+                .alpha_src = @splat(.primary_color),
+                .color_factor = @splat(.src_color),
+                .alpha_factor = @splat(.src_alpha),
+                .color_op = .add,
+                .alpha_op = .replace,
+
+                .color_scale = .@"1x",
+                .alpha_scale = .@"1x",
+
+                .constant = @splat(255),
+            },
+            .{
+                .color_src = .{ .previous, .texture_0, .previous },
+                .alpha_src = @splat(.primary_color),
+                .color_factor = @splat(.src_color),
+                .alpha_factor = @splat(.src_alpha),
+                .color_op = .modulate,
+                .alpha_op = .replace,
+
+                .color_scale = .@"1x",
+                .alpha_scale = .@"1x",
+
+                .constant = .{ 255, 0, 0, 255 },
+            },
+        }, &.{.previous});
+        cmd.setBlendEquation(.{
+            .src_color_factor = .one,
+            .dst_color_factor = .zero,
+            .color_op = .add,
+            .src_alpha_factor = .one,
+            .dst_alpha_factor = .zero,
+            .alpha_op = .add,
+        });
+        cmd.setColorWriteMask(.rgba);
+        cmd.setTextureCoordinates(.@"2", .@"2");
+
+        cmd.bindShaders(&.{.vertex}, &.{scene.vtx_shader});
         cmd.bindCombinedImageSamplers(0, &.{.{
             .image = scene.zero_test_image.view,
             .sampler = scene.simple_sampler,
@@ -373,6 +355,8 @@ pub const Scene = struct {
         });
         cmd.setScissor(.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 480, .height = 800 } }));
 
+        scene.cube_mesh.bind(cmd);
+
         {
             cmd.beginRendering(.{
                 .color_attachment = scene.top_renderbuffer.color.view,
@@ -386,7 +370,7 @@ pub const Scene = struct {
             const sin_time = @sin(scene.time / 2);
             const cos_time = @cos(scene.time / 2);
 
-            cmd.bindLightEnvironmentFactors(.{
+            cmd.setLightEnvironmentFactors(.{
                 .ambient = @splat(26),
             });
 
@@ -394,12 +378,12 @@ pub const Scene = struct {
             const light_vector = @as([4]f32, zmath.mat.mulVec(camera_view, light_position))[0..3].*;
 
             // You can either do lighting in view-space or world-space.
-            cmd.bindLights(&.{.{
+            cmd.setLightsEnabled(0, &.{true});
+            cmd.setLights(0, &.{.{
                 .vector = light_vector,
                 .type = .positional,
             }});
-
-            cmd.bindLightFactors(&.{.{
+            cmd.setLightFactors(0, &.{.{
                 .ambient = @splat(0),
                 .diffuse = @splat(255),
                 .specular = .{ @splat(128), @splat(0) },
@@ -416,6 +400,7 @@ pub const Scene = struct {
             cmd.bindFloatUniforms(.vertex, 4, &camera_view);
             scene.cube_mesh.draw(cmd);
 
+            cmd.setCullMode(.none);
             cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.mul(camera_view, zmath.mat.translate(4, 0, 1)));
             scene.cube_mesh.draw(cmd);
         }
@@ -489,10 +474,7 @@ pub const Scene = struct {
         try top_swap.present(present_queue, top_idx, &.init(scene.semaphore, scene.current_timeline));
 
         // We must wait as we're using a single image to render.
-        try device.waitSemaphore(.{
-            .semaphore = scene.semaphore,
-            .value = scene.current_timeline,
-        }, -1);
+        try device.waitSemaphores(.init(&.{scene.semaphore}, &.{scene.current_timeline}), std.math.maxInt(u64));
     }
 };
 
@@ -531,7 +513,7 @@ pub const DoubleBufferedSwapchain = struct {
         }, gpa);
 
         var images: [2]mango.Image = undefined;
-        _ = device.getSwapchainImages(swapchain, &images);
+        _ = try device.getSwapchainImages(swapchain, &images);
 
         return .{
             .swapchain_memory = memory,
@@ -546,10 +528,10 @@ pub const DoubleBufferedSwapchain = struct {
     }
 
     pub fn acquireNext(chain: DoubleBufferedSwapchain, device: mango.Device) !u8 {
-        return device.acquireNextImage(chain.swapchain, -1);
+        return device.acquireNextImage(chain.swapchain, std.math.maxInt(u64));
     }
 
-    pub fn present(chain: DoubleBufferedSwapchain, present_queue: mango.Queue, index: u8, wait: ?*const mango.SemaphoreOperation) !void {
+    pub fn present(chain: DoubleBufferedSwapchain, present_queue: mango.Queue, index: u8, wait: ?*const mango.SemaphoreQueueOperation) !void {
         try present_queue.present(.{
             .wait_semaphore = wait,
             .swapchain = chain.swapchain,
@@ -773,10 +755,6 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
 
     var scene: Scene = try .init(device, gpa);
     defer scene.deinit(device, gpa);
-
-    // TODO: unfill lcds when swapchains have at least 1 present instead of here.
-    try app.gsp.sendSetLcdForceBlack(false);
-    defer if (!app.app.flags.must_close) app.gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
 
     main_loop: while (true) {
         while (try init.pollEvent()) |ev| switch (ev) {

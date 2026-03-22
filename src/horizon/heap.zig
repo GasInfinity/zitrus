@@ -15,24 +15,30 @@ pub const linear_page_allocator: Allocator = .{
     .vtable = &LinearPageAllocator.vtable,
 };
 
-// FIXME: This must use another interface as its not really allocating real memory and cannot be written!
-pub var non_thread_safe_shared_memory_address_allocator: SharedMemoryAddressAllocator = .init(@ptrFromInt(horizon.memory.shared_memory_begin));
+/// Allocates shared memory pages from a global bump allocator.
+///
+/// It is *very* unlikely that you'll hit the upper bound (64MB);
+/// if you do, manage your own shared memory pages.
+pub fn allocShared(size: usize) [*]align(page_size) u8 {
+    const g = struct {
+        var current: std.atomic.Value(u32) = .init(horizon.memory.shared_memory_begin);
+    };
+
+    const pages = std.mem.alignForward(usize, size, page_size);
+    const address = g.current.fetchAdd(pages, .monotonic);
+    return @ptrFromInt(address);
+}
 
 comptime {
     _ = CommitAllocator;
     _ = LinearPageAllocator;
 }
 
-const SharedMemoryAddressAllocator = zalloc.bitmap.StaticBitmapAllocator(.fromByteUnits(page_size), (horizon.memory.shared_memory_end - horizon.memory.shared_memory_begin));
-const VRamBankAllocator = zalloc.bitmap.StaticBitmapAllocator(.fromByteUnits(page_size), zitrus.memory.vram_bank_size);
-
 const LinearPageAllocator = @import("heap/LinearPageAllocator.zig");
 
 const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
-
-const zalloc = @import("zalloc");
 
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;

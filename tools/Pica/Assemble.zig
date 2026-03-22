@@ -120,22 +120,38 @@ pub fn run(args: Assemble, io: std.Io, arena: std.mem.Allocator) !u8 {
             var string_table: std.ArrayList(u8) = try .initCapacity(arena, padded_strings_size);
             defer string_table.deinit(arena);
 
+            var current_entrypoint_offset: u32 = 0;
+            var entrypoint_offsets: std.ArrayList(u32) = try .initCapacity(arena, assembled.entrypoints.count());
+            defer entrypoint_offsets.deinit(arena);
+
             entry_it.reset();
             while (entry_it.next()) |entrypoint| {
+                const entry_info = entrypoint.value_ptr.*;
+                
                 string_table.appendSliceAssumeCapacity(entrypoint.key_ptr.*);
                 string_table.appendAssumeCapacity(0);
+
+                entrypoint_offsets.appendAssumeCapacity(current_entrypoint_offset);
+                current_entrypoint_offset += @intCast(@sizeOf(zpsh.EntrypointHeader) + (entry_info.constants.int.count() * @sizeOf([4]i8)) + (entry_info.constants.float.count() * @sizeOf(pica.F7_16x4)) + (entry_info.outputs.count() * @sizeOf(pica.OutputMap)));
             }
 
             // Align the section
             string_table.appendNTimesAssumeCapacity(0, padded_strings_size - string_table.items.len);
 
+            var code_hasher: std.hash.XxHash32 = .init(67);
+            code_hasher.update(@ptrCast(assembled.encoded.instructions.items));
+            code_hasher.update(@ptrCast(assembled.encoded.constDescriptorSlice()));
+            const code_hash = code_hasher.final();
+
             try out.writeStruct(zpsh.Header{
                 .shader = .init(assembled.entrypoints.count(), encoded.instructions.items.len, encoded.allocated_descriptors),
                 .entry_string_table_size = @intCast(@divExact(padded_strings_size, @sizeOf(u32))),
+                .code_hash = code_hash,
             }, .little);
 
-            try out.writeAll(std.mem.sliceAsBytes(encoded.instructions.items));
-            try out.writeAll(std.mem.sliceAsBytes(encoded.constDescriptorSlice()));
+            try out.writeSliceEndian(u32, entrypoint_offsets.items, .little);
+            try out.writeSliceEndian(u32, @ptrCast(encoded.instructions.items), .little);
+            try out.writeSliceEndian(u32, @ptrCast(encoded.constDescriptorSlice()), .little);
             try out.writeAll(string_table.items);
 
             var current_string_offset: u32 = 0;
@@ -164,6 +180,7 @@ pub fn run(args: Assemble, io: std.Io, arena: std.mem.Allocator) !u8 {
                             },
                         },
                     },
+                    .flags = .{},
                     .boolean_constant_mask = .fromSet(.{ .bits = processed_info.constants.bool.bits }),
                     .integer_constant_mask = .fromSet(.{ .bits = processed_info.constants.int.bits }),
                     .floating_constant_mask = .fromSet(.{ .bits = processed_info.constants.float.bits }),

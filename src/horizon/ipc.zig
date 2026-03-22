@@ -273,7 +273,7 @@ pub const Codec = union(enum) {
                 break :blk result;
             },
             .handle_array, .move_handle_array => |flds| blk: {
-                const sz = codec.size();
+                const sz = comptime codec.size();
                 const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
 
                 if (header.type != .handle) return error.BadTranslationHeader;
@@ -297,7 +297,7 @@ pub const Codec = union(enum) {
 
                 var i: usize = 0;
                 inline for (flds, @typeInfo(T).@"struct".fields) |fld, info| {
-                    defer i += fld.size();
+                    defer i += comptime fld.size();
 
                     @field(result, info.name) = try fld.bufRead(info.type, buffer[i..]);
                 }
@@ -669,8 +669,10 @@ pub const Buffer = extern struct {
 
         if (!code.isSuccess()) return .of(code, undefined);
 
-        if (buffer.packed_command.header.parameters.normal != DefinedCommand.response_parameters.normal + 1) return error.BadIpcHeader;
-        if (buffer.packed_command.header.parameters.translate != DefinedCommand.response_parameters.translate) return error.BadIpcHeader;
+        if (buffer.packed_command.header.parameters.normal != DefinedCommand.response_parameters.normal + 1
+        or  buffer.packed_command.header.parameters.translate != DefinedCommand.response_parameters.translate) {
+            return unexpectedResponseParameters(DefinedCommand.response_parameters, buffer.packed_command.header.parameters);
+        }
 
         return .of(code, try DefinedCommand.response.bufRead(DefinedCommand.Response, buffer.packed_command.parameters[1..]));
     }
@@ -680,6 +682,14 @@ pub const Buffer = extern struct {
         if (buffer.packed_command.header.parameters != DefinedCommand.request_parameters) return error.BadIpcHeader;
 
         return DefinedCommand.request.bufRead(DefinedCommand.Request, &buffer.packed_command.parameters);
+    }
+
+    fn unexpectedResponseParameters(expected: PackedCommand.Parameters, actual: PackedCommand.Parameters) ReadError {
+        if (is_debug) {
+            std.debug.print("bad IPC response params, expected [n: {d}, t: {d}], got [n: {d}, t: {d}]", .{expected.normal + 1, expected.translate, actual.normal, actual.translate});
+        }
+
+        return error.BadIpcHeader;
     }
 };
 
@@ -783,6 +793,7 @@ comptime {
 
 const testing = std.testing;
 
+const is_debug = builtin.mode == .Debug;
 const builtin = @import("builtin");
 const std = @import("std");
 

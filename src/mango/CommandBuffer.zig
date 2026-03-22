@@ -35,9 +35,9 @@ pub const Handle = enum(u32) {
         return b_cmd.end();
     }
 
-    pub fn bindPipeline(cmd: Handle, bind_point: mango.PipelineBindPoint, pipeline: mango.Pipeline) void {
+    pub fn bindShaders(cmd: Handle, stages: []const mango.ShaderStage, shaders: []const mango.Shader) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.bindPipeline(bind_point, pipeline);
+        b_cmd.bindShaders(stages, shaders);
     }
 
     pub fn bindVertexBuffersSlice(cmd: Handle, first_binding: u32, buffers: []const mango.Buffer, offsets: []const u32) void {
@@ -65,19 +65,29 @@ pub const Handle = enum(u32) {
         return b_cmd.bindCombinedImageSamplers(first_combined, combined_image_samplers);
     }
 
-    pub fn bindLightEnvironmentFactors(cmd: Handle, factors: mango.LightEnvironmentFactors) void {
+    pub fn setLightEnvironmentFactors(cmd: Handle, factors: mango.LightEnvironmentFactors) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.bindLightEnvironmentFactors(factors);
+        return b_cmd.setLightEnvironmentFactors(factors);
     }
 
-    pub fn bindLights(cmd: Handle, lights: []const mango.Light) void {
+    pub fn setLightsEnabled(cmd: Handle, first_light: u32, enable: []const bool) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.bindLights(lights);
+        return b_cmd.setLightsEnabled(first_light, enable);
     }
 
-    pub fn bindLightFactors(cmd: Handle, light_factors: []const mango.LightFactors) void {
+    pub fn setLights(cmd: Handle, first_light: u32, lights: []const mango.Light) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.bindLightFactors(light_factors);
+        return b_cmd.setLights(first_light, lights);
+    }
+
+    pub fn setLightFactors(cmd: Handle, first_light: u32, light_factors: []const mango.LightFactors) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setLightFactors(first_light, light_factors);
+    }
+
+    pub fn bindLightTables(cmd: Handle, slot: mango.LightLookupSlot, first_light: u32, tables: []const mango.LightLookupTable) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.bindLightTables(slot, first_light, tables);
     }
 
     pub fn beginRendering(cmd: Handle, rendering_info: mango.RenderingInfo) void {
@@ -176,6 +186,11 @@ pub const Handle = enum(u32) {
         return b_cmd.setDepthWriteEnable(enable);
     }
 
+    pub fn setDepthBias(cmd: Handle, constant: f32) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.setDepthBias(constant);
+    }
+
     pub fn setLogicOpEnable(cmd: Handle, enable: bool) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         return b_cmd.setLogicOpEnable(enable);
@@ -201,9 +216,9 @@ pub const Handle = enum(u32) {
         return b_cmd.setAlphaTestReference(reference);
     }
 
-    pub fn setStencilEnable(cmd: Handle, enable: bool) void {
+    pub fn setStencilTestEnable(cmd: Handle, enable: bool) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.setStencilEnable(enable);
+        return b_cmd.setStencilTestEnable(enable);
     }
 
     pub fn setStencilOp(cmd: Handle, fail_op: mango.StencilOperation, pass_op: mango.StencilOperation, depth_fail_op: mango.StencilOperation, op: mango.CompareOperation) void {
@@ -231,6 +246,41 @@ pub const Handle = enum(u32) {
         return b_cmd.setTextureCoordinates(texture_2_coordinates, texture_3_coordinates);
     }
 
+    pub fn setVertexInput(cmd: Handle, layout: mango.VertexInputLayout) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.setVertexInput(layout);
+    }
+
+    pub fn setLightingEnable(cmd: Handle, enable: bool) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.setLightingEnable(enable);
+    }
+
+    pub fn setLightEnvironmentEnable(cmd: Handle, enable: mango.LightEnvironmentEnable) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.setLightEnvironmentEnable(enable);
+    }
+
+    pub fn setLightEnvironmentInput(cmd: Handle, input: mango.LightEnvironmentInput) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.setLightEnvironmentInput(input);
+    }
+
+    pub fn setLightEnvironmentRange(cmd: Handle, range: mango.LightEnvironmentRange) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.setLightEnvironmentRange(range);
+    }
+
+    pub fn setLightEnvironmentScale(cmd: Handle, scale: mango.LightEnvironmentScale) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.setLightEnvironmentScale(scale);
+    }
+
+    pub fn bindLightEnvironmentTable(cmd: Handle, slot: mango.LightEnvironmentLookupSlot, table: mango.LightLookupTable) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.bindLightEnvironmentTable(slot, table);
+    }
+
     pub fn reset(cmd: Handle, flags: mango.CommandBufferResetFlags) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         return b_cmd.reset(flags);
@@ -251,7 +301,7 @@ pub const Scope = enum {
     immediate_draw,
 };
 
-pub const Error = error{OutOfMemory};
+pub const Error = error{OutOfMemory} || validation.Error;
 
 // NOTE: `CommandPool` must be as self-contained as possible, it only depends on the pool to grow its native buffer, no more!
 pool: *backend.CommandPool,
@@ -259,8 +309,6 @@ pool: *backend.CommandPool,
 queue: command.Queue,
 gfx_state: GraphicsState = .empty,
 rnd_state: RenderingState = .empty,
-emitted_graphics_pipeline: ?*backend.Pipeline.Graphics = null,
-bound_graphics_pipeline: ?*backend.Pipeline.Graphics = null,
 current_error: ?Error = null,
 state: State = .initial,
 scope: Scope = .none,
@@ -283,6 +331,9 @@ pub fn deinit(cmd: *CommandBuffer) []align(8) u32 {
 pub fn begin(cmd: *CommandBuffer) !void {
     std.debug.assert(cmd.state == .initial or cmd.state == .executable);
     cmd.reset(.none);
+    if (cmd.queue.buffer.len == 0) cmd.queue.buffer = try cmd.pool.allocateNative(null);
+
+    cmd.queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
     cmd.state = .recording;
 }
 
@@ -294,8 +345,6 @@ pub fn end(cmd: *CommandBuffer) !void {
         return err;
     }
 
-    // XXX: Homebrew apps expect `primitive_engine.mode` to start in configuration mode. Or you have a dreaded black screen of death x-x
-    cmd.queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
     cmd.queue.finalize();
     cmd.state = .executable;
 }
@@ -309,26 +358,14 @@ pub fn reset(cmd: *CommandBuffer, flags: mango.CommandBufferResetFlags) void {
     cmd.queue.current_index = 0;
     cmd.gfx_state = .empty;
     cmd.rnd_state = .empty;
-    cmd.bound_graphics_pipeline = null;
-    cmd.emitted_graphics_pipeline = null;
     cmd.current_error = null;
     cmd.scope = .none;
     cmd.state = .initial;
 }
 
-pub fn bindPipeline(cmd: *CommandBuffer, bind_point: mango.PipelineBindPoint, pipeline: mango.Pipeline) void {
-    std.debug.assert(cmd.state == .recording);
-
-    switch (bind_point) {
-        .graphics => {
-            if (pipeline == .null) {
-                cmd.bound_graphics_pipeline = null;
-                return;
-            }
-
-            cmd.bound_graphics_pipeline = .fromHandleMutable(pipeline);
-        },
-    }
+pub fn bindShaders(cmd: *CommandBuffer, stages: []const mango.ShaderStage, shaders: []const mango.Shader) void {
+    cmd.gfx_state.bindShaders(stages, shaders);
+    cmd.rnd_state.bindShaders(stages, shaders);
 }
 
 pub fn bindVertexBuffers(cmd: *CommandBuffer, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
@@ -355,22 +392,34 @@ pub fn bindCombinedImageSamplers(cmd: *CommandBuffer, first_combined: u32, combi
     return cmd.rnd_state.bindCombinedImageSamplers(first_combined, combined_image_samplers);
 }
 
-pub fn bindLightEnvironmentFactors(cmd: *CommandBuffer, factors: mango.LightEnvironmentFactors) void {
+pub fn setLightEnvironmentFactors(cmd: *CommandBuffer, factors: mango.LightEnvironmentFactors) void {
     std.debug.assert(cmd.state == .recording);
 
-    return cmd.rnd_state.bindLightEnvironmentFactors(factors);
+    return cmd.rnd_state.setLightEnvironmentFactors(factors);
 }
 
-pub fn bindLights(cmd: *CommandBuffer, lights: []const mango.Light) void {
+pub fn setLightsEnabled(cmd: *CommandBuffer, first_light: u32, enable: []const bool) void {
     std.debug.assert(cmd.state == .recording);
 
-    return cmd.rnd_state.bindLights(lights);
+    return cmd.rnd_state.setLightsEnabled(first_light, enable);
 }
 
-pub fn bindLightFactors(cmd: *CommandBuffer, light_factors: []const mango.LightFactors) void {
+pub fn setLights(cmd: *CommandBuffer, first_light: u32, lights: []const mango.Light) void {
     std.debug.assert(cmd.state == .recording);
 
-    return cmd.rnd_state.bindLightFactors(light_factors);
+    return cmd.rnd_state.setLights(first_light, lights);
+}
+
+pub fn setLightFactors(cmd: *CommandBuffer, first_light: u32, light_factors: []const mango.LightFactors) void {
+    std.debug.assert(cmd.state == .recording);
+
+    return cmd.rnd_state.setLightFactors(first_light, light_factors);
+}
+
+pub fn bindLightTables(cmd: *CommandBuffer, slot: mango.LightLookupSlot, first_light: u32, tables: []const mango.LightLookupTable) void {
+    std.debug.assert(cmd.state == .recording);
+
+    return cmd.rnd_state.bindLightTables(slot, first_light, tables);
 }
 
 pub fn beginRendering(cmd: *CommandBuffer, rendering_info: mango.RenderingInfo) void {
@@ -427,8 +476,11 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
         else => {},
     };
 
-    queue.addMasked(p3d, &p3d.primitive_engine.config_2, .{ .inputting_vertices_or_draw_arrays = true }, 0b0001);
-    defer queue.addMasked(p3d, &p3d.primitive_engine.config_2, .{ .inputting_vertices_or_draw_arrays = false }, 0b0001);
+    queue.add(p3d, &p3d.primitive_engine.mode, .init(.drawing));
+    defer queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
+
+    queue.addMasked(p3d, &p3d.primitive_engine.state, .{ .inputting_vertices_or_draw_arrays = true }, 0b0001);
+    defer queue.addMasked(p3d, &p3d.primitive_engine.state, .{ .inputting_vertices_or_draw_arrays = false }, 0b0001);
 
     const first_draw = vertex_info[0];
     queue.addIncremental(p3d, .{
@@ -486,6 +538,10 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
     const dynamic_rendering_state = cmd.rnd_state;
 
     const first_draw = index_info[0];
+
+    queue.add(p3d, &p3d.primitive_engine.mode, .init(.drawing));
+    defer queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
+
     queue.addIncremental(p3d, .{
         &p3d.primitive_engine.attributes.index_buffer,
         &p3d.primitive_engine.draw_vertex_count,
@@ -615,6 +671,11 @@ pub fn setDepthWriteEnable(cmd: *CommandBuffer, enable: bool) void {
     cmd.gfx_state.setDepthWriteEnable(enable);
 }
 
+pub fn setDepthBias(cmd: *CommandBuffer, constant: f32) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.setDepthBias(constant);
+}
+
 pub fn setLogicOpEnable(cmd: *CommandBuffer, enable: bool) void {
     std.debug.assert(cmd.state == .recording);
     cmd.gfx_state.setLogicOpEnable(enable);
@@ -640,9 +701,9 @@ pub fn setAlphaTestReference(cmd: *CommandBuffer, reference: u8) void {
     cmd.gfx_state.setAlphaTestReference(reference);
 }
 
-pub fn setStencilEnable(cmd: *CommandBuffer, enable: bool) void {
+pub fn setStencilTestEnable(cmd: *CommandBuffer, enable: bool) void {
     std.debug.assert(cmd.state == .recording);
-    cmd.gfx_state.setStencilEnable(enable);
+    cmd.gfx_state.setStencilTestEnable(enable);
 }
 
 pub fn setStencilOp(cmd: *CommandBuffer, fail_op: mango.StencilOperation, pass_op: mango.StencilOperation, depth_fail_op: mango.StencilOperation, op: mango.CompareOperation) void {
@@ -670,6 +731,41 @@ pub fn setTextureCoordinates(cmd: *CommandBuffer, texture_2_coordinates: mango.T
     cmd.gfx_state.setTextureCoordinates(texture_2_coordinates, texture_3_coordinates);
 }
 
+pub fn setVertexInput(cmd: *CommandBuffer, layout: mango.VertexInputLayout) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.setVertexInput(layout);
+}
+
+pub fn setLightingEnable(cmd: *CommandBuffer, enable: bool) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.setLightingEnable(enable);
+}
+
+pub fn setLightEnvironmentEnable(cmd: *CommandBuffer, enable: mango.LightEnvironmentEnable) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.setLightEnvironmentEnable(enable);
+}
+
+pub fn setLightEnvironmentInput(cmd: *CommandBuffer, input: mango.LightEnvironmentInput) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.setLightEnvironmentInput(input);
+}
+
+pub fn setLightEnvironmentRange(cmd: *CommandBuffer, range: mango.LightEnvironmentRange) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.setLightEnvironmentRange(range);
+}
+
+pub fn setLightEnvironmentScale(cmd: *CommandBuffer, scale: mango.LightEnvironmentScale) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.setLightEnvironmentScale(scale);
+}
+
+pub fn bindLightEnvironmentTable(cmd: *CommandBuffer, slot: mango.LightEnvironmentLookupSlot, table: mango.LightLookupTable) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.bindLightEnvironmentTable(slot, table);
+}
+
 fn beforeDraw(cmd: *CommandBuffer, draw_count: usize) bool {
     if (cmd.current_error) |_| {
         return false;
@@ -682,20 +778,13 @@ fn beforeDraw(cmd: *CommandBuffer, draw_count: usize) bool {
 
     const queue = &cmd.queue;
 
-    if (cmd.bound_graphics_pipeline != cmd.emitted_graphics_pipeline) {
-        std.debug.assert(cmd.bound_graphics_pipeline != null); // May be removed if we ever get shader objects
+    cmd.gfx_state.emitDirty(queue) catch |err| switch (err) {
+        error.ValidationFailed => |e| {
+            cmd.current_error = e;
+            return false;
+        },
+    };
 
-        if (cmd.bound_graphics_pipeline) |bound_gfx_pipeline| {
-            @memcpy(cmd.queue.buffer[cmd.queue.current_index..][0..bound_gfx_pipeline.encoded_command_state.len], bound_gfx_pipeline.encoded_command_state);
-            cmd.queue.current_index += bound_gfx_pipeline.encoded_command_state.len;
-
-            bound_gfx_pipeline.copyGraphicsState(&cmd.gfx_state);
-            bound_gfx_pipeline.copyRenderingState(&cmd.rnd_state);
-            cmd.emitted_graphics_pipeline = bound_gfx_pipeline;
-        }
-    }
-
-    cmd.gfx_state.emitDirty(queue);
     cmd.rnd_state.emitDirty(queue);
     return true;
 }
@@ -706,9 +795,7 @@ fn growIfNeeded(cmd: *CommandBuffer, draw_count: usize) !void {
 
     const max_graphics_emission_cost = cmd.gfx_state.maxEmitDirtyQueueLength();
     const max_rendering_emission_cost = cmd.rnd_state.maxEmitDirtyQueueLength();
-    // TODO: Make this basically zero with the native secondary command buffer!
-    const max_pipeline_emission_cost = @as(usize, @intFromBool(cmd.bound_graphics_pipeline != cmd.emitted_graphics_pipeline and cmd.bound_graphics_pipeline != null)) * 1024;
-    const max_emission_cost = max_graphics_emission_cost + max_rendering_emission_cost + (draw_count * backend.max_native_drawcall_cost) + max_pipeline_emission_cost;
+    const max_emission_cost = max_graphics_emission_cost + max_rendering_emission_cost + (draw_count * backend.max_native_drawcall_cost);
 
     if (unused_slice.len >= max_emission_cost) return;
 
@@ -736,6 +823,7 @@ pub fn fromHandleMutable(handle: Handle) *CommandBuffer {
 
 const CommandBuffer = @This();
 const backend = @import("backend.zig");
+const validation = backend.validation;
 
 const GraphicsState = backend.GraphicsState;
 const RenderingState = backend.RenderingState;

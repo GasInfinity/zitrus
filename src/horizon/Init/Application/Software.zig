@@ -24,14 +24,21 @@ pub fn waitEventTimeout(sft: Software, timeout: horizon.Timeout) !?horizon.Init.
     while (try sft.app.waitEventTimeout(timeout)) |ev| switch (ev) {
         .quit => return .quit,
         .jump_home_rejected => return .jump_home_rejected,
-        .jump_home => switch (try sft.app.app.jumpToHome(sft.app.apt, .app, sft.app.srv, sft.app.gsp, .none)) {
-            .resumed => continue,
-            .jump_home => unreachable,
-            .must_close => return .quit,
+        .jump_home => {
+            const capture = try sft.soft.release(sft.app.gsp);
+            switch (try sft.app.app.jumpToHome(sft.app.apt, .app, sft.app.srv, capture, .none)) {
+                .resumed => {
+                    try sft.soft.reacquire(sft.app.gsp);
+                    continue;
+                },
+                .jump_home => unreachable,
+                .must_close => return .quit,
+            }
         },
         .sleep => {
+            _ = try sft.soft.release(sft.app.gsp);
             while (try sft.app.app.waitNotification(sft.app.apt, .app, sft.app.srv) != .sleep_wakeup) {}
-            try sft.app.gsp.sendSetLcdForceBlack(false);
+            try sft.soft.reacquire(sft.app.gsp);
         },
     };
 

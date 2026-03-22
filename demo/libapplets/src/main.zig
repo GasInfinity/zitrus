@@ -2,17 +2,19 @@ pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_o
 
 pub fn main(init: horizon.Init.Application.Software) !void {
     const gpa = init.app.base.gpa;
+    const gsp = init.app.gsp;
     const app = init.app;
 
     {
         var initial: Applet.Application.Error = .textUtf8(.success, "All your codebase are belong to us?", .none);
 
-        switch (try initial.start(app.app, app.apt, .app, app.srv, app.gsp)) {
+        switch (try initial.start(app.app, app.apt, .app, app.srv, try init.soft.release(gsp))) {
             .none,
             .action_performed,
             => {},
             .jump_home, .jump_home_by_power, .software_reset => unreachable,
         }
+        try init.soft.reacquire(gsp);
     }
 
     var swkbd: Applet.Application.SoftwareKeyboard = try .normal(.{
@@ -42,22 +44,24 @@ pub fn main(init: horizon.Init.Application.Software) !void {
         }
     };
 
-    switch (try swkbd.startContext(app.app, app.apt, .app, app.srv, app.gsp, CallbackContext{})) {
+    switch (try swkbd.startContext(app.app, app.apt, .app, app.srv, try init.soft.release(gsp), CallbackContext{})) {
         else => |e| switch (e) {
             .left, .right => {},
             else => unreachable,
         },
     }
+    try init.soft.reacquire(gsp);
 
     {
         var initial: Applet.Application.Error = .textUtf8(.success, "Correct! Have a great day :D", .none);
 
-        switch (try initial.start(app.app, app.apt, .app, app.srv, app.gsp)) {
+        switch (try initial.start(app.app, app.apt, .app, app.srv, try init.soft.release(gsp))) {
             .none,
             .action_performed,
             => {},
             .jump_home, .jump_home_by_power, .software_reset => unreachable,
         }
+        try init.soft.reacquire(gsp);
     }
 }
 

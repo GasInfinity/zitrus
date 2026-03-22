@@ -769,9 +769,9 @@ pub fn createDirPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, pare
     }
 }
 
-pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: Io.net.IpAddress, opts: Io.net.IpAddress.ListenOptions) Io.net.IpAddress.ListenError!Io.net.Server {
+pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.ListenOptions) Io.net.IpAddress.ListenError!Io.net.Socket {
     if (storage.soc.session == horizon.Session.Client.none) return error.NetworkDown;
-    if (address != .ip4) return error.AddressFamilyUnsupported;
+    if (address.* != .ip4) return error.AddressFamilyUnsupported;
 
     switch (opts.protocol) {
         .tcp => switch (opts.mode) {
@@ -845,13 +845,11 @@ pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: Io.net.
     }
 
     return .{
-        .socket = .{
-            .handle = fd,
-            .address = .{ .ip4 = .{
-                .bytes = addr.bytes,
-                .port = std.mem.bigToNative(u16, soc_address.ip4.port),
-            } },
-        },
+        .handle = fd,
+        .address = .{ .ip4 = .{
+            .bytes = addr.bytes,
+            .port = std.mem.bigToNative(u16, soc_address.ip4.port),
+        } },
     };
 }
 
@@ -924,7 +922,8 @@ pub fn netBind(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io
     };
 }
 
-pub fn netAccept(storage: *Storage, io: std.Io, gpa: Allocator, handle: Descriptor) Io.net.Server.AcceptError!Io.net.Stream {
+pub fn netAccept(storage: *Storage, io: std.Io, gpa: Allocator, handle: Descriptor, opts: Io.net.Server.AcceptOptions) Io.net.Server.AcceptError!Io.net.Socket {
+    _ = opts;
     const desc = try storage.getDescription(handle);
     std.debug.assert(desc.flags.kind == .socket);
     std.debug.assert(desc.flags.device == .soc);
@@ -961,14 +960,12 @@ pub fn netAccept(storage: *Storage, io: std.Io, gpa: Allocator, handle: Descript
     }
 
     return .{
-        .socket = .{
-            .handle = fd,
-            .address = addressFromSoc(soc_address),
-        },
+        .handle = fd,
+        .address = addressFromSoc(soc_address),
     };
 }
 
-pub fn netConnect(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.ConnectOptions) Io.net.IpAddress.ConnectError!Io.net.Stream {
+pub fn netConnect(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.ConnectOptions) Io.net.IpAddress.ConnectError!Io.net.Socket {
     if (storage.soc.session == horizon.Session.Client.none) return error.NetworkDown;
     if (address.* != .ip4) return error.AddressFamilyUnsupported;
     if (opts.timeout != .none) @panic("TODO: Timeout");
@@ -1075,10 +1072,8 @@ pub fn netConnect(storage: *Storage, io: std.Io, gpa: Allocator, address: *const
     }
 
     return .{
-        .socket = .{
-            .handle = fd,
-            .address = addressFromSoc(soc_address),
-        },
+        .handle = fd,
+        .address = addressFromSoc(soc_address),
     };
 }
 

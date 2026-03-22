@@ -6,19 +6,23 @@
 //!         * Transfer Engine / Display Transfer: present, copyBufferToImage, copyImageToBuffer, copyImageToImage, blitImage
 //!         * 3D Command List: submit
 
-// TODO: Regress portability for simplicity, abstract the implementation when diving into bare metal as some things are almost a must (Threading, for example).
-// as this is the ONLY file that depends on horizon it shouldn't be that hard to port it for bare-metal compatibility.
-//
-// NOTE: For wide compatibility we should use a vtable with restricted function pointers.
-// All implementations of the device must be done with zig (so it is able to optimize them!)
-
 pub const Handle = enum(u32) {
     null = 0,
     _,
 
-    pub fn destroy(device: Handle, gpa: std.mem.Allocator) void {
+    pub fn destroy(device: Handle) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        b_device.deinit(gpa);
+        b_device.destroy();
+    }
+
+    pub fn reacquire(device: Handle) !void {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return try b_device.reacquire();
+    }
+
+    pub fn release(device: Handle) !GspGpu.ScreenCapture {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return try b_device.release();
     }
 
     pub fn getQueue(device: Handle, family: mango.QueueFamily) mango.Queue {
@@ -26,14 +30,14 @@ pub const Handle = enum(u32) {
         return b_device.getQueue(family);
     }
 
-    pub fn allocateMemory(device: Handle, allocate_info: mango.MemoryAllocateInfo, gpa: std.mem.Allocator) !mango.DeviceMemory {
+    pub fn allocateMemory(device: Handle, allocate_info: mango.MemoryAllocateInfo, maybe_gpa: ?std.mem.Allocator) !mango.DeviceMemory {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.allocateMemory(allocate_info, gpa);
+        return b_device.allocateMemory(allocate_info, maybe_gpa);
     }
 
-    pub fn freeMemory(device: Handle, memory: mango.DeviceMemory, gpa: std.mem.Allocator) void {
+    pub fn freeMemory(device: Handle, memory: mango.DeviceMemory, maybe_gpa: ?std.mem.Allocator) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.freeMemory(memory, gpa);
+        return b_device.freeMemory(memory, maybe_gpa);
     }
 
     pub fn mapMemory(device: Handle, memory: mango.DeviceMemory, offset: u32, size: mango.DeviceSize) ![]u8 {
@@ -51,24 +55,24 @@ pub const Handle = enum(u32) {
         return b_device.flushMappedMemoryRanges(ranges);
     }
 
-    pub fn createSemaphore(device: Handle, create_info: mango.SemaphoreCreateInfo, gpa: std.mem.Allocator) !mango.Semaphore {
+    pub fn createSemaphore(device: Handle, create_info: mango.SemaphoreCreateInfo, maybe_gpa: ?std.mem.Allocator) !mango.Semaphore {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.createSemaphore(create_info, gpa);
+        return b_device.createSemaphore(create_info, maybe_gpa);
     }
 
-    pub fn destroySemaphore(device: Handle, semaphore: mango.Semaphore, gpa: std.mem.Allocator) void {
+    pub fn destroySemaphore(device: Handle, semaphore: mango.Semaphore, maybe_gpa: ?std.mem.Allocator) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.destroySemaphore(semaphore, gpa);
+        return b_device.destroySemaphore(semaphore, maybe_gpa);
     }
 
-    pub fn createCommandPool(device: Handle, create_info: mango.CommandPoolCreateInfo, gpa: std.mem.Allocator) !mango.CommandPool {
+    pub fn createCommandPool(device: Handle, create_info: mango.CommandPoolCreateInfo, maybe_gpa: ?std.mem.Allocator) !mango.CommandPool {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.createCommandPool(create_info, gpa);
+        return b_device.createCommandPool(create_info, maybe_gpa);
     }
 
-    pub fn destroyCommandPool(device: Handle, command_pool: mango.CommandPool, gpa: std.mem.Allocator) void {
+    pub fn destroyCommandPool(device: Handle, command_pool: mango.CommandPool, maybe_gpa: ?std.mem.Allocator) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.destroyCommandPool(command_pool, gpa);
+        return b_device.destroyCommandPool(command_pool, maybe_gpa);
     }
 
     pub fn resetCommandPool(device: Handle, command_pool: mango.CommandPool) void {
@@ -91,14 +95,14 @@ pub const Handle = enum(u32) {
         return b_device.freeCommandBuffers(command_pool, buffers);
     }
 
-    pub fn createBuffer(device: Handle, create_info: mango.BufferCreateInfo, gpa: std.mem.Allocator) !mango.Buffer {
+    pub fn createBuffer(device: Handle, create_info: mango.BufferCreateInfo, maybe_gpa: ?std.mem.Allocator) !mango.Buffer {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.createBuffer(create_info, gpa);
+        return b_device.createBuffer(create_info, maybe_gpa);
     }
 
-    pub fn destroyBuffer(device: Handle, buffer: mango.Buffer, gpa: std.mem.Allocator) void {
+    pub fn destroyBuffer(device: Handle, buffer: mango.Buffer, maybe_gpa: ?std.mem.Allocator) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.destroyBuffer(buffer, gpa);
+        return b_device.destroyBuffer(buffer, maybe_gpa);
     }
 
     pub fn bindBufferMemory(device: Handle, buffer: mango.Buffer, memory: mango.DeviceMemory, memory_offset: mango.DeviceSize) !void {
@@ -106,14 +110,14 @@ pub const Handle = enum(u32) {
         return b_device.bindBufferMemory(buffer, memory, memory_offset);
     }
 
-    pub fn createImage(device: Handle, create_info: mango.ImageCreateInfo, gpa: std.mem.Allocator) !mango.Image {
+    pub fn createImage(device: Handle, create_info: mango.ImageCreateInfo, maybe_gpa: ?std.mem.Allocator) !mango.Image {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.createImage(create_info, gpa);
+        return b_device.createImage(create_info, maybe_gpa);
     }
 
-    pub fn destroyImage(device: Handle, image: mango.Image, gpa: std.mem.Allocator) void {
+    pub fn destroyImage(device: Handle, image: mango.Image, maybe_gpa: ?std.mem.Allocator) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.destroyImage(image, gpa);
+        return b_device.destroyImage(image, maybe_gpa);
     }
 
     pub fn bindImageMemory(device: Handle, image: mango.Image, memory: mango.DeviceMemory, memory_offset: mango.DeviceSize) !void {
@@ -121,80 +125,118 @@ pub const Handle = enum(u32) {
         return b_device.bindImageMemory(image, memory, memory_offset);
     }
 
-    pub fn createImageView(device: Handle, create_info: mango.ImageViewCreateInfo, gpa: std.mem.Allocator) !mango.ImageView {
+    pub fn createImageView(device: Handle, create_info: mango.ImageViewCreateInfo, maybe_gpa: ?std.mem.Allocator) !mango.ImageView {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.createImageView(create_info, gpa);
+        return b_device.createImageView(create_info, maybe_gpa);
     }
 
-    pub fn destroyImageView(device: Handle, image_view: mango.ImageView, gpa: std.mem.Allocator) void {
+    pub fn destroyImageView(device: Handle, image_view: mango.ImageView, maybe_gpa: ?std.mem.Allocator) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.destroyImageView(image_view, gpa);
+        return b_device.destroyImageView(image_view, maybe_gpa);
     }
 
-    pub fn createSampler(device: Handle, create_info: mango.SamplerCreateInfo, gpa: std.mem.Allocator) !mango.Sampler {
+    pub fn createSampler(device: Handle, create_info: mango.SamplerCreateInfo, maybe_gpa: ?std.mem.Allocator) !mango.Sampler {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.createSampler(create_info, gpa);
+        return b_device.createSampler(create_info, maybe_gpa);
     }
 
-    pub fn destroySampler(device: Handle, sampler: mango.Sampler, gpa: std.mem.Allocator) void {
+    pub fn destroySampler(device: Handle, sampler: mango.Sampler, maybe_gpa: ?std.mem.Allocator) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.destroySampler(sampler, gpa);
+        return b_device.destroySampler(sampler, maybe_gpa);
     }
 
-    pub fn createGraphicsPipeline(device: Handle, create_info: mango.GraphicsPipelineCreateInfo, gpa: std.mem.Allocator) !mango.Pipeline {
+    pub fn createShader(device: Handle, create_info: mango.ShaderCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.Shader {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.createGraphicsPipeline(create_info, gpa);
+        return b_device.createShader(create_info, maybe_gpa);
     }
 
-    pub fn destroyPipeline(device: Handle, pipeline: mango.Pipeline, gpa: std.mem.Allocator) void {
+    pub fn destroyShader(device: Handle, shader: mango.Shader, maybe_gpa: ?std.mem.Allocator) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.destroyPipeline(pipeline, gpa);
+        b_device.destroyShader(shader, maybe_gpa);
     }
 
-    pub fn createLightLookupTable(device: Handle, create_info: mango.LightLookupTableCreateInfo, gpa: std.mem.Allocator) !mango.LightLookupTable {
+    pub fn createVertexInputLayout(device: Handle, create_info: mango.VertexInputLayoutCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.VertexInputLayout {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.createLightLookupTable(create_info, gpa);
+        return b_device.createVertexInputLayout(create_info, maybe_gpa);
     }
 
-    pub fn destroyLightLookupTable(device: Handle, lut: mango.LightLookupTable, gpa: std.mem.Allocator) void {
+    pub fn destroyVertexInputLayout(device: Handle, layout: mango.VertexInputLayout, maybe_gpa: ?std.mem.Allocator) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.destroyLightLookupTable(lut, gpa);
+        return b_device.destroyVertexInputLayout(layout, maybe_gpa);
     }
 
-    pub fn createSwapchain(device: Handle, create_info: mango.SwapchainCreateInfo, gpa: std.mem.Allocator) !mango.Swapchain {
+    pub fn createLightLookupTable(device: Handle, create_info: mango.LightLookupTableCreateInfo, maybe_gpa: ?std.mem.Allocator) !mango.LightLookupTable {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.createSwapchain(create_info, gpa);
+        return b_device.createLightLookupTable(create_info, maybe_gpa);
     }
 
-    pub fn destroySwapchain(device: Handle, swapchain: mango.Swapchain, gpa: std.mem.Allocator) void {
+    pub fn destroyLightLookupTable(device: Handle, lut: mango.LightLookupTable, maybe_gpa: ?std.mem.Allocator) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.destroySwapchain(swapchain, gpa);
+        return b_device.destroyLightLookupTable(lut, maybe_gpa);
     }
 
-    pub fn getSwapchainImages(device: Handle, swapchain: mango.Swapchain, images: []mango.Image) u8 {
+    pub fn createSwapchain(device: Handle, create_info: mango.SwapchainCreateInfo, maybe_gpa: ?std.mem.Allocator) !mango.Swapchain {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return b_device.createSwapchain(create_info, maybe_gpa);
+    }
+
+    pub fn destroySwapchain(device: Handle, swapchain: mango.Swapchain, maybe_gpa: ?std.mem.Allocator) void {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return b_device.destroySwapchain(swapchain, maybe_gpa);
+    }
+
+    pub fn getSwapchainImages(device: Handle, swapchain: mango.Swapchain, images: []mango.Image) !u8 {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return b_device.getSwapchainImages(swapchain, images);
     }
 
-    pub fn acquireNextImage(device: Handle, swapchain: mango.Swapchain, timeout: i64) !u8 {
+    pub fn acquireNextImage(device: Handle, swapchain: mango.Swapchain, timeout: u64) !u8 {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return b_device.acquireNextImage(swapchain, timeout);
     }
 
-    pub fn signalSemaphore(device: Handle, signal_info: mango.SemaphoreOperation) !void {
+    pub fn signalSemaphore(device: Handle, signal_info: mango.SemaphoreSignalInfo) !void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return b_device.signalSemaphore(signal_info);
     }
 
-    pub fn waitSemaphore(device: Handle, wait_info: mango.SemaphoreOperation, timeout: i64) !void {
+    pub fn waitSemaphores(device: Handle, wait_info: mango.SemaphoreWaitInfo, timeout: u64) !void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.waitSemaphore(wait_info, timeout);
+        return b_device.waitSemaphores(wait_info, timeout);
     }
 
     pub fn waitIdle(device: Handle) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return b_device.waitIdle();
     }
+};
+
+// TODO: restricted function types when they come!
+pub const VTable = struct {
+    destroy: *const fn (dev: *Device) void,
+
+    release: *const fn (dev: *Device) ReleaseDeviceError!GspGpu.ScreenCapture,
+    reacquire: *const fn (dev: *Device) ReacquireDeviceError!void,
+
+    waitIdleQueue: *const fn (dev: *Device, queue: Queue.Type) void,
+    wakeIdleQueue: *const fn (dev: *Device, queue: Queue.Type) void,
+
+    getShaderCode: *const fn (dev: *Device, key: backend.Shader.Code.Key) mango.ObjectCreationError!*backend.Shader.Code,
+    destroyShaderCode: *const fn (dev: *Device, code: *backend.Shader.Code) void,
+
+    allocateMemory: *const fn (dev: *Device, allocate_info: mango.MemoryAllocateInfo, gpa: std.mem.Allocator) mango.ObjectCreationError!mango.DeviceMemory,
+    freeMemory: *const fn (dev: *Device, memory: mango.DeviceMemory, gpa: std.mem.Allocator) void,
+    mapMemory: *const fn (dev: *Device, memory: mango.DeviceMemory, offset: u32, size: mango.DeviceSize) MapMemoryError![]u8,
+    unmapMemory: *const fn (device: *Device, memory: mango.DeviceMemory) void,
+    flushMappedMemoryRanges: *const fn (dev: *Device, ranges: []const mango.MappedMemoryRange) FlushMemoryError!void,
+
+    createSwapchain: *const fn (dev: *Device, create_info: mango.SwapchainCreateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.Swapchain,
+    destroySwapchain: *const fn (dev: *Device, swapchain: mango.Swapchain, gpa: std.mem.Allocator) void,
+    getSwapchainImages: *const fn (dev: *Device, swapchain: mango.Swapchain, images: []mango.Image) GetSwapchainImagesError!u8,
+    acquireNextImage: *const fn (dev: *Device, swapchain: mango.Swapchain, timeout: u64) AcquireNextImageError!u8,
+
+    waitSemaphores: *const fn (dev: *Device, wait_info: mango.SemaphoreWaitInfo, timeout: u64) WaitSemaphoreError!void,
+    signalSemaphore: *const fn (dev: *Device, signal_info: mango.SemaphoreSignalInfo) SignalSemaphoreError!void,
 };
 
 const ObjectCreationError = mango.ObjectCreationError;
@@ -204,103 +246,32 @@ const BindMemoryError = mango.BindMemoryError;
 const AcquireNextImageError = mango.AcquireNextImageError;
 const SignalSemaphoreError = mango.SignalSemaphoreError;
 const WaitSemaphoreError = mango.WaitSemaphoreError;
+const ReleaseDeviceError = mango.ReleaseDeviceError;
+const ReacquireDeviceError = mango.ReacquireDeviceError;
+const GetSwapchainImagesError = mango.GetSwapchainImagesError;
 
-pub const QueueStatus = enum(i32) {
-    working = -1,
-    waiting = 0,
-    idle = 1,
-};
+vtable: VTable,
 
-gsp: GspGpu,
-gsp_thread_index: u8,
-gsp_shm_memory_block: MemoryBlock,
-gsp_shm: *GspGpu.Shared,
-interrupt_event: Event,
-arbiter: AddressArbiter,
-driver: horizon.Thread.Impl,
-
-running: std.atomic.Value(bool),
-vram_gpas: std.EnumArray(zitrus.memory.VRamBank, VRamBankAllocator),
-
-// TODO: We can allow asking to create X queues, e.g the user may only want a transfer queue + submit queue only (we can basically do a clear by drawing a fullscreen quad!)
-// This would introduce an extra indirection, but would reduce mem usage. Look into it sometime pls.
+gpa: std.mem.Allocator,
 fill_queue: backend.Queue.Fill,
 transfer_queue: backend.Queue.Transfer,
 submit_queue: backend.Queue.Submit,
-presentation_engine: PresentationEngine,
+presentation_queue: backend.Queue.Presentation = undefined,
 
 /// Whether we're waiting for operations to complete or not.
 /// Waiting for a semaphore is NOT considered idle as we'll eventually wake.
-queue_statuses: std.EnumArray(Queue.Type, std.atomic.Value(QueueStatus)),
+queue_statuses: std.EnumArray(Queue.Type, std.atomic.Value(Queue.Status)),
 
-pub fn initHorizonBacked(create_info: mango.HorizonBackedDeviceCreateInfo, gpa: std.mem.Allocator) !*Device {
-    const gsp = create_info.gsp;
-    const arbiter = create_info.arbiter;
-
-    const device = try gpa.create(Device);
-    errdefer gpa.destroy(device);
-
-    try gsp.sendAcquireRight(0x0);
-
-    const interrupt_event: Event = try .create(.oneshot);
-    errdefer interrupt_event.close();
-
-    // XXX: What does this flag mean?
-    const queue_result = try gsp.sendRegisterInterruptRelayQueue(0x1, interrupt_event);
-
-    if (queue_result.first_initialization) {
-        try GspGpu.Graphics.initializeHardware(gsp);
-    }
-
-    // FIXME: As everywhere else we use this, this is NOT thread-safe and IS global, two big no-nos (it's easy to replace tho so defer the design!)
-    const shared_memory = try horizon.heap.non_thread_safe_shared_memory_address_allocator.alloc(@sizeOf(GspGpu.Shared), .fromByteUnits(4096));
-    errdefer horizon.heap.non_thread_safe_shared_memory_address_allocator.free(shared_memory);
-
-    try queue_result.response.gsp_memory.map(@alignCast(shared_memory.ptr), .rw, .dont_care);
-    errdefer queue_result.response.gsp_memory.unmap(shared_memory.ptr);
-
-    device.* = .{
-        .running = .init(true),
-        .vram_gpas = .init(.{
-            .a = .init(@ptrFromInt(horizon.memory.vram_a_begin)),
-            .b = .init(@ptrFromInt(horizon.memory.vram_b_begin)),
-        }),
-        .presentation_engine = .init(device),
-        .gsp = gsp,
-        .gsp_thread_index = @intCast(queue_result.response.thread_index),
-        .gsp_shm_memory_block = queue_result.response.gsp_memory,
-        .gsp_shm = @ptrCast(shared_memory),
-        .interrupt_event = interrupt_event,
-        .arbiter = arbiter,
-        .driver = undefined, // NOTE: The driver thread creation is deferred as we want to fully initialize things first!
-        .queue_statuses = .initDefault(.init(.idle), .{}),
-        .fill_queue = .init(device),
-        .transfer_queue = .init(device),
-        .submit_queue = .init(device),
-    };
-
-    device.gsp_shm.framebuffers[device.gsp_thread_index][0].header = std.mem.zeroes(GspGpu.FramebufferInfo.Header);
-    device.gsp_shm.framebuffers[device.gsp_thread_index][1].header = std.mem.zeroes(GspGpu.FramebufferInfo.Header);
-
-    device.driver = try .spawn(.{
-        .allocator = gpa,
-    }, driverMain, .{device});
-
-    return device;
+pub fn destroy(device: *Device) void {
+    device.vtable.destroy(device);
 }
 
-pub fn deinit(device: *Device, gpa: std.mem.Allocator) void {
-    device.running.store(false, .monotonic);
-    device.driver.join();
-    device.gsp_shm_memory_block.unmap(@ptrCast(@alignCast(device.gsp_shm)));
+pub fn reacquire(device: *Device) !void {
+    return try device.vtable.reacquire(device);
+}
 
-    // FIXME: Same as the comment in `init`. See above
-    horizon.heap.non_thread_safe_shared_memory_address_allocator.free(std.mem.asBytes(device.gsp_shm));
-    device.gsp_shm_memory_block.close();
-    device.gsp.sendUnregisterInterruptRelayQueue() catch unreachable;
-    device.gsp.sendReleaseRight() catch {};
-    device.interrupt_event.close();
-    gpa.destroy(device);
+pub fn release(device: *Device) !GspGpu.ScreenCapture {
+    return try device.vtable.release(device);
 }
 
 pub fn getQueue(device: *Device, family: mango.QueueFamily) mango.Queue {
@@ -308,137 +279,54 @@ pub fn getQueue(device: *Device, family: mango.QueueFamily) mango.Queue {
         .transfer => device.transfer_queue.toHandle(),
         .fill => device.fill_queue.toHandle(),
         .submit => device.submit_queue.toHandle(),
-        .present => device.presentation_engine.queue.toHandle(),
+        .present => device.presentation_queue.toHandle(),
     };
 }
 
-pub fn allocateMemory(device: *Device, allocate_info: mango.MemoryAllocateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.DeviceMemory {
-    _ = gpa;
-
-    const aligned_allocation_size = std.mem.alignForward(usize, @intFromEnum(allocate_info.allocation_size), horizon.heap.page_size);
-
-    const allocated_memory: backend.DeviceMemory = switch (allocate_info.memory_type) {
-        .fcram_cached => fcram: {
-            const allocated_virtual_address = switch (horizon.controlMemory(.{
-                .kind = .commit,
-                .area = .all,
-                .linear = true,
-            }, null, null, aligned_allocation_size, .rw).cases()) {
-                .success => |s| s.value,
-                .failure => return error.OutOfMemory,
-            };
-
-            break :fcram .{ .data = .init(allocated_virtual_address, horizon.memory.toPhysical(@intFromPtr(allocated_virtual_address)), aligned_allocation_size, .fcram) };
-        },
-        // XXX: Hardcore 1, 2 as VRAM (A) and VRAM (B) with DEVICE_LOCAL only, see above.
-        .vram_a, .vram_b => |type_bank| vram: {
-            const bank: zitrus.memory.VRamBank = switch (type_bank) {
-                .vram_a => .a,
-                .vram_b => .b,
-                else => unreachable,
-            };
-            const vram_bank_gpa = device.vram_gpas.getPtr(bank);
-            const allocated_virtual_address = try vram_bank_gpa.alloc(aligned_allocation_size, VRamBankAllocator.min_alignment);
-
-            break :vram .{ .data = .init(allocated_virtual_address.ptr, horizon.memory.toPhysical(@intFromPtr(allocated_virtual_address.ptr)), aligned_allocation_size, @enumFromInt(@as(u2, @intFromEnum(bank)) + 1)) };
-        },
-    };
-
-    return allocated_memory.toHandle();
+pub fn allocateMemory(device: *Device, allocate_info: mango.MemoryAllocateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.DeviceMemory {
+    const gpa = maybe_gpa orelse device.gpa;
+    return try device.vtable.allocateMemory(device, allocate_info, gpa);
 }
 
-pub fn freeMemory(device: *Device, memory: mango.DeviceMemory, gpa: std.mem.Allocator) void {
-    _ = gpa;
-    const b_memory: backend.DeviceMemory = .fromHandle(memory);
-
-    std.debug.assert(b_memory.data.valid);
-
-    switch (b_memory.data.heap) {
-        .fcram => _ = horizon.controlMemory(.{
-            .kind = .free,
-            .area = .all,
-            .linear = true,
-        }, @ptrCast(b_memory.virtualAddress()), null, b_memory.size(), .rw),
-        .vram_a, .vram_b => {
-            const bank: zitrus.memory.VRamBank = switch (b_memory.data.heap) {
-                .fcram => unreachable,
-                .vram_a => .a,
-                .vram_b => .b,
-            };
-
-            const vram_bank_gpa = device.vram_gpas.getPtr(bank);
-            vram_bank_gpa.free(b_memory.virtualAddress()[0..b_memory.size()]);
-        },
-    }
+pub fn freeMemory(device: *Device, memory: mango.DeviceMemory, maybe_gpa: ?std.mem.Allocator) void {
+    const gpa = maybe_gpa orelse device.gpa;
+    return device.vtable.freeMemory(device, memory, gpa);
 }
 
 pub fn mapMemory(device: *Device, memory: mango.DeviceMemory, offset: u32, size: mango.DeviceSize) MapMemoryError![]u8 {
-    _ = device;
-
-    const b_memory: backend.DeviceMemory = .fromHandle(memory);
-
-    std.debug.assert(std.mem.isAligned(offset, horizon.heap.page_size) and offset <= b_memory.size());
-
-    if (size != .whole) {
-        std.debug.assert(@intFromEnum(size) <= (b_memory.size() - offset));
-
-        return (b_memory.virtualAddress() + offset)[0..@intFromEnum(size)];
-    }
-
-    return (b_memory.virtualAddress() + offset)[0 .. b_memory.size() - offset];
+    return try device.vtable.mapMemory(device, memory, offset, size);
 }
 
 pub fn unmapMemory(device: *Device, memory: mango.DeviceMemory) void {
-    _ = device;
-    _ = memory;
-    // NOTE: Currently does nothing, could do something in the future
+    return device.vtable.unmapMemory(device, memory);
 }
 
 pub fn flushMappedMemoryRanges(device: *Device, ranges: []const mango.MappedMemoryRange) FlushMemoryError!void {
-    _ = device;
-
-    for (ranges) |range| {
-        const b_memory: backend.DeviceMemory = .fromHandle(range.memory);
-
-        const offset = @intFromEnum(range.offset);
-        const flushed_memory = switch (range.size) {
-            .whole => b_memory.virtualAddress()[offset..][0..(b_memory.size() - offset)],
-            _ => |sz| sz: {
-                const size = @intFromEnum(sz);
-
-                std.debug.assert(size <= (b_memory.size() - offset));
-
-                break :sz b_memory.virtualAddress()[offset..][0..size];
-            },
-        };
-
-        // TODO: error handling
-        _ = horizon.flushProcessDataCache(.current, flushed_memory);
-    }
+    return try device.vtable.flushMappedMemoryRanges(device, ranges);
 }
 
-pub fn createSemaphore(device: *Device, create_info: mango.SemaphoreCreateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.Semaphore {
-    _ = device;
+pub fn createSemaphore(device: *Device, create_info: mango.SemaphoreCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.Semaphore {
+    const gpa = maybe_gpa orelse device.gpa;
     const b_semaphore: *backend.Semaphore = try gpa.create(backend.Semaphore);
     b_semaphore.* = .init(create_info);
     return b_semaphore.toHandle();
 }
 
-pub fn destroySemaphore(device: *Device, semaphore: mango.Semaphore, gpa: std.mem.Allocator) void {
-    _ = device;
+pub fn destroySemaphore(device: *Device, semaphore: mango.Semaphore, maybe_gpa: ?std.mem.Allocator) void {
+    const gpa = maybe_gpa orelse device.gpa;
     const b_semaphore: *backend.Semaphore = .fromHandleMutable(semaphore);
     gpa.destroy(b_semaphore);
 }
 
-pub fn createCommandPool(device: *Device, create_info: mango.CommandPoolCreateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.CommandPool {
-    _ = device;
+pub fn createCommandPool(device: *Device, create_info: mango.CommandPoolCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.CommandPool {
+    const gpa = maybe_gpa orelse device.gpa;
     const b_command_pool: *backend.CommandPool = try gpa.create(backend.CommandPool);
     b_command_pool.* = try .init(create_info, gpa);
     return b_command_pool.toHandle();
 }
 
-pub fn destroyCommandPool(device: *Device, command_pool: mango.CommandPool, gpa: std.mem.Allocator) void {
-    _ = device;
+pub fn destroyCommandPool(device: *Device, command_pool: mango.CommandPool, maybe_gpa: ?std.mem.Allocator) void {
+    const gpa = maybe_gpa orelse device.gpa;
     const b_command_pool: *backend.CommandPool = .fromHandleMutable(command_pool);
     b_command_pool.deinit(gpa);
     gpa.destroy(b_command_pool);
@@ -468,9 +356,8 @@ pub fn freeCommandBuffers(device: *Device, command_pool: mango.CommandPool, buff
     return b_command_pool.free(buffers);
 }
 
-pub fn createBuffer(device: *Device, create_info: mango.BufferCreateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.Buffer {
-    _ = device;
-
+pub fn createBuffer(device: *Device, create_info: mango.BufferCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.Buffer {
+    const gpa = maybe_gpa orelse device.gpa;
     const buffer = try gpa.create(backend.Buffer);
     errdefer gpa.destroy(buffer);
 
@@ -478,8 +365,8 @@ pub fn createBuffer(device: *Device, create_info: mango.BufferCreateInfo, gpa: s
     return buffer.toHandle();
 }
 
-pub fn destroyBuffer(device: *Device, buffer: mango.Buffer, gpa: std.mem.Allocator) void {
-    _ = device;
+pub fn destroyBuffer(device: *Device, buffer: mango.Buffer, maybe_gpa: ?std.mem.Allocator) void {
+    const gpa = maybe_gpa orelse device.gpa;
     const b_buffer: *backend.Buffer = .fromHandleMutable(buffer);
     gpa.destroy(b_buffer);
 }
@@ -496,9 +383,8 @@ pub fn bindBufferMemory(device: *Device, buffer: mango.Buffer, memory: mango.Dev
     b_buffer.memory_info = .init(b_memory, @intFromEnum(memory_offset));
 }
 
-pub fn createImage(device: *Device, create_info: mango.ImageCreateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.Image {
-    _ = device;
-
+pub fn createImage(device: *Device, create_info: mango.ImageCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.Image {
+    const gpa = maybe_gpa orelse device.gpa;
     const image = try gpa.create(backend.Image);
     errdefer gpa.destroy(image);
 
@@ -506,8 +392,8 @@ pub fn createImage(device: *Device, create_info: mango.ImageCreateInfo, gpa: std
     return image.toHandle();
 }
 
-pub fn destroyImage(device: *Device, image: mango.Image, gpa: std.mem.Allocator) void {
-    _ = device;
+pub fn destroyImage(device: *Device, image: mango.Image, maybe_gpa: ?std.mem.Allocator) void {
+    const gpa = maybe_gpa orelse device.gpa;
     const b_image: *backend.Image = .fromHandleMutable(image);
     gpa.destroy(b_image);
 }
@@ -524,9 +410,9 @@ pub fn bindImageMemory(device: *Device, image: mango.Image, memory: mango.Device
     b_image.memory_info = .init(b_memory, @intFromEnum(memory_offset));
 }
 
-pub fn createImageView(device: *Device, create_info: mango.ImageViewCreateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.ImageView {
+pub fn createImageView(device: *Device, create_info: mango.ImageViewCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.ImageView {
     _ = device;
-    _ = gpa;
+    _ = maybe_gpa;
 
     const b_image_view: backend.ImageView = .{
         .data = .init(create_info),
@@ -535,15 +421,15 @@ pub fn createImageView(device: *Device, create_info: mango.ImageViewCreateInfo, 
     return b_image_view.toHandle();
 }
 
-pub fn destroyImageView(device: *Device, image_view: mango.ImageView, gpa: std.mem.Allocator) void {
+pub fn destroyImageView(device: *Device, image_view: mango.ImageView, maybe_gpa: ?std.mem.Allocator) void {
     _ = device;
     _ = image_view;
-    _ = gpa;
+    _ = maybe_gpa;
 }
 
-pub fn createSampler(device: *Device, create_info: mango.SamplerCreateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.Sampler {
+pub fn createSampler(device: *Device, create_info: mango.SamplerCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.Sampler {
     _ = device;
-    _ = gpa;
+    _ = maybe_gpa;
 
     const b_image_sampler: backend.Sampler = .{
         .data = .init(create_info),
@@ -552,83 +438,129 @@ pub fn createSampler(device: *Device, create_info: mango.SamplerCreateInfo, gpa:
     return b_image_sampler.toHandle();
 }
 
-pub fn destroySampler(device: *Device, sampler: mango.Sampler, gpa: std.mem.Allocator) void {
+pub fn destroySampler(device: *Device, sampler: mango.Sampler, maybe_gpa: ?std.mem.Allocator) void {
     _ = device;
     _ = sampler;
-    _ = gpa;
+    _ = maybe_gpa;
 }
 
-pub fn createGraphicsPipeline(device: *Device, create_info: mango.GraphicsPipelineCreateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.Pipeline {
-    _ = device;
+pub fn createShader(device: *Device, create_info: mango.ShaderCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.Shader {
+    const gpa = maybe_gpa orelse device.gpa;
+    return switch (create_info.code_type) {
+        .psh => {
+            const parsed = zitrus.fmt.zpsh.Parsed.initBuffer(create_info.code[0..create_info.code_len]) catch return error.ValidationFailed;
+            const entrypoint_name = create_info.name[0..create_info.name_len];
+            const entry = blk: {
+                var it = parsed.iterator();
+                while (it.next()) |entry| if (std.mem.eql(u8, entry.name, entrypoint_name)) {
+                    break :blk entry;
+                };
 
-    const graphics_pipeline: *backend.Pipeline.Graphics = try gpa.create(backend.Pipeline.Graphics);
-    graphics_pipeline.* = try .init(create_info, gpa);
+                try validation.assert(
+                    false,
+                    validation.shader.entry_not_found,
+                    .{entrypoint_name},
+                );
+                unreachable;
+            };
 
-    return graphics_pipeline.toHandle();
+            const code = try device.vtable.getShaderCode(device, .initZpsh(parsed));
+            errdefer device.vtable.destroyShaderCode(device, code);
+
+            const shader = try gpa.create(backend.Shader);
+            errdefer gpa.destroy(shader);
+
+            shader.* = try .init(gpa, code, entry);
+            errdefer shader.deinit(gpa);
+
+            return shader.toHandle();
+        },
+        else => |c| {
+            try validation.assert(
+                false,
+                validation.shader.unknown_code_type,
+                .{c},
+            );
+            unreachable;
+        },
+    };
 }
 
-pub fn destroyPipeline(device: *Device, pipeline: mango.Pipeline, gpa: std.mem.Allocator) void {
-    _ = device;
-    const b_gfx_pipeline: *backend.Pipeline.Graphics = .fromHandleMutable(pipeline);
+pub fn destroyShader(device: *Device, shader: mango.Shader, maybe_gpa: ?std.mem.Allocator) void {
+    const gpa = maybe_gpa orelse device.gpa;
+    const b_shader = backend.Shader.fromHandleMutable(shader).?;
+    defer gpa.destroy(b_shader);
+    defer b_shader.deinit(gpa);
 
-    b_gfx_pipeline.deinit(gpa);
-    gpa.destroy(b_gfx_pipeline);
+    if (b_shader.code.ref.fetchSub(1, .monotonic) > 1) return;
+    device.vtable.destroyShaderCode(device, b_shader.code);
 }
 
-pub fn createLightLookupTable(device: *Device, create_info: mango.LightLookupTableCreateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.LightLookupTable {
-    _ = device;
+pub fn createVertexInputLayout(device: *Device, create_info: mango.VertexInputLayoutCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.VertexInputLayout {
+    const gpa = maybe_gpa orelse device.gpa;
+    const layout: *backend.VertexInputLayout = try gpa.create(backend.VertexInputLayout);
+    layout.* = try .compile(
+        create_info.bindings[0..create_info.bindings_len],
+        create_info.attributes[0..create_info.attributes_len],
+        create_info.fixed_attributes[0..create_info.fixed_attributes_len],
+    );
+    return layout.toHandle();
+}
 
+pub fn destroyVertexInputLayout(device: *Device, layout: mango.VertexInputLayout, maybe_gpa: ?std.mem.Allocator) void {
+    const gpa = maybe_gpa orelse device.gpa;
+    const b_layout: *const backend.VertexInputLayout = .fromHandleMutable(layout);
+    gpa.destroy(b_layout);
+}
+
+pub fn createLightLookupTable(device: *Device, create_info: mango.LightLookupTableCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.LightLookupTable {
+    const gpa = maybe_gpa orelse device.gpa;
     const lut: *backend.LightLookupTable = try gpa.create(backend.LightLookupTable);
     lut.* = .init(create_info);
 
     return lut.toHandle();
 }
 
-pub fn destroyLightLookupTable(device: *Device, lut: mango.LightLookupTable, gpa: std.mem.Allocator) void {
-    _ = device;
+pub fn destroyLightLookupTable(device: *Device, lut: mango.LightLookupTable, maybe_gpa: ?std.mem.Allocator) void {
+    const gpa = maybe_gpa orelse device.gpa;
     const b_lut: *const backend.LightLookupTable = .fromHandleMutable(lut);
     gpa.destroy(b_lut);
 }
 
-pub fn createSwapchain(device: *Device, create_info: mango.SwapchainCreateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.Swapchain {
-    return device.presentation_engine.initSwapchain(create_info, gpa);
+pub fn createSwapchain(device: *Device, create_info: mango.SwapchainCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.Swapchain {
+    return try device.vtable.createSwapchain(device, create_info, maybe_gpa orelse device.gpa);
 }
 
-pub fn destroySwapchain(device: *Device, swapchain: mango.Swapchain, gpa: std.mem.Allocator) void {
-    return device.presentation_engine.deinitSwapchain(swapchain, gpa);
+pub fn destroySwapchain(device: *Device, swapchain: mango.Swapchain, maybe_gpa: ?std.mem.Allocator) void {
+    return device.vtable.destroySwapchain(device, swapchain, maybe_gpa orelse device.gpa);
 }
 
-pub fn getSwapchainImages(device: *Device, swapchain: mango.Swapchain, images: []mango.Image) u8 {
-    return device.presentation_engine.getSwapchainImages(swapchain, images);
+pub fn getSwapchainImages(device: *Device, swapchain: mango.Swapchain, images: []mango.Image) !u8 {
+    return try device.vtable.getSwapchainImages(device, swapchain, images);
 }
 
-pub fn acquireNextImage(device: *Device, swapchain: mango.Swapchain, timeout: i64) AcquireNextImageError!u8 {
-    return device.presentation_engine.acquireNextImage(swapchain, timeout);
+pub fn acquireNextImage(device: *Device, swapchain: mango.Swapchain, timeout: u64) AcquireNextImageError!u8 {
+    return try device.vtable.acquireNextImage(device, swapchain, timeout);
 }
 
-pub fn signalSemaphore(device: *Device, signal_info: mango.SemaphoreOperation) SignalSemaphoreError!void {
-    const b_semaphore: *backend.Semaphore = .fromHandleMutable(signal_info.semaphore);
-
-    if (b_semaphore.signal(signal_info.value)) {
-        // Only wake if anyone was waiting
-        device.arbiter.signal(i32, &b_semaphore.wake.raw, null);
-    }
+pub fn signalSemaphore(device: *Device, signal_info: mango.SemaphoreSignalInfo) SignalSemaphoreError!void {
+    return try device.vtable.signalSemaphore(device, signal_info);
 }
 
-pub fn waitSemaphore(device: *Device, wait_info: mango.SemaphoreOperation, timeout: i64) WaitSemaphoreError!void {
-    const b_semaphore: *backend.Semaphore = .fromHandleMutable(wait_info.semaphore);
+pub fn waitSemaphores(device: *Device, wait_info: mango.SemaphoreWaitInfo, timeout: u64) WaitSemaphoreError!void {
+    var i: usize = 0;
+    while (i < wait_info.semaphore_count) : (i += 1) {
+        const sema = wait_info.semaphores[i];
+        const value = wait_info.values[i];
 
-    while (true) {
-        if (b_semaphore.counterValue() >= wait_info.value) return;
+        const b_sema: *backend.Semaphore = .fromHandleMutable(sema);
+        if (b_sema.counterValue() >= value) continue;
 
-        device.arbiter.arbitrate(&b_semaphore.wake.raw, .{
-            .decrement_and_wait_if_less_than_timeout = .{
-                .value = 1,
-                .timeout = @enumFromInt(timeout),
-                // We may get a Timeout before the driver waking us
-                // XXX: Azahar does not have the same behavior as ofw, this somehow becomes a timeout even if timeout == -1
-            },
-        }) catch return if (b_semaphore.counterValue() >= wait_info.value) {} else error.Timeout;
+        return try device.vtable.waitSemaphores(device, .{
+            .semaphore_count = wait_info.semaphore_count - i,
+            .semaphores = wait_info.semaphores[i..],
+            .values = wait_info.values[i..],
+        }, timeout);
     }
 }
 
@@ -638,150 +570,39 @@ pub fn waitIdle(device: *Device) void {
 
         while (true) switch (queue_status.load(.monotonic)) {
             .idle => break,
-            .waiting, .working => _ = device.arbiter.arbitrate(@ptrCast(&queue_status.raw), .{ .wait_if_less_than = @intFromEnum(QueueStatus.idle) }) catch unreachable,
+            .waiting, .working => device.vtable.waitIdleQueue(device, kind),
         };
     }
 }
 
-pub fn driverWake(device: *Device, reason: Queue.Type) void {
+pub fn wakeIdleQueue(device: *Device, reason: Queue.Type) void {
     if (device.queue_statuses.getPtr(reason).load(.monotonic) == .idle) {
-        device.interrupt_event.signal();
+        device.vtable.wakeIdleQueue(device, reason);
     }
 }
 
-// FIXME: Currently if some error happens in the driver, the entire app crashes! Should we report an error condition?
-fn driverMain(device: *Device) void {
-    const presentation_engine = &device.presentation_engine;
-    const gsp = device.gsp;
-    const int_que = &device.gsp_shm.interrupt_queue[device.gsp_thread_index];
-    const gx = &device.gsp_shm.command_queue[device.gsp_thread_index];
-    const fbs = &device.gsp_shm.framebuffers[device.gsp_thread_index];
-
-    while (device.running.load(.monotonic)) {
-        device.interrupt_event.wait(.none) catch unreachable; // No error.Timeout can happen
-
-        const interrupts = int_que.popBackAll();
-
-        // NOTE: The application may have wanted to wake us up!
-        if (!interrupts.eql(.initEmpty())) {
-            var interrupts_it = interrupts.iterator();
-
-            while (interrupts_it.next()) |int| {
-                switch (int) {
-                    .dma => {}, // XXX: Should we use the CPU DMA engines?
-                    .psc0, .psc1 => _ = device.fill_queue.complete() catch unreachable,
-                    .ppf => _ = device.transfer_queue.complete() catch unreachable,
-                    .p3d => {
-                        const last_submission = device.submit_queue.complete() catch unreachable;
-
-                        last_submission.cmd_buffer.notifyCompleted();
-                    },
-                    .vblank_top => _ = presentation_engine.refresh(fbs, .top),
-                    .vblank_bottom => _ = presentation_engine.refresh(fbs, .bottom),
-                }
-            }
-        }
-
-        var enqueued_commands: usize = 0;
-        inline for (comptime std.enums.values(Queue.Type)) |kind| {
-            const queue = switch (kind) {
-                .fill => &device.fill_queue,
-                .transfer => &device.transfer_queue,
-                .submit => &device.submit_queue,
-                .present => &presentation_engine.queue,
-            };
-
-            const queue_status = device.queue_statuses.getPtr(kind);
-            switch (queue.workPopBack()) {
-                .empty => {
-                    const empty_status: QueueStatus = switch (kind) {
-                        .fill, .transfer, .submit => .idle,
-
-                        // NOTE: The present queue is considered idle when all outstanding present operations are handled, a.k.a: unless we presented all frames we're still working!
-                        .present => present_status: inline for (comptime std.enums.values(pica.Screen)) |screen| {
-                            if (presentation_engine.chain_presents.getPtr(screen).load(.monotonic) > 0) {
-                                break :present_status .working;
-                            }
-                        } else .idle,
-                    };
-
-                    const last_status = queue_status.swap(empty_status, .monotonic);
-
-                    // Is anyone waiting for us? Wake them!
-                    if (last_status != .idle and empty_status == .idle) {
-                        device.arbiter.arbitrate(@ptrCast(&queue_status.raw), .{ .signal = -1 }) catch unreachable;
-                    }
-                },
-                .wait => _ = queue_status.store(.waiting, .monotonic),
-                .work => |itm| {
-                    _ = queue_status.store(.working, .monotonic);
-
-                    switch (kind) {
-                        .fill => {
-                            gx.pushFrontAssumeCapacity(.initMemoryFill(.{ .init(itm.data, itm.value), null }, .none));
-                        },
-                        .transfer => {
-                            switch (itm.flags.kind) {
-                                .copy => gx.pushFrontAssumeCapacity(.initTextureCopy(itm.src, itm.dst, itm.flags.extra.copy, itm.input_gap_size, itm.output_gap_size, .none)),
-                                .linear_tiled, .tiled_linear, .tiled_tiled => gx.pushFrontAssumeCapacity(.initDisplayTransfer(itm.src, itm.dst, itm.flags.extra.transfer.src_fmt, itm.input_gap_size, itm.flags.extra.transfer.dst_fmt, itm.output_gap_size, .{
-                                    .mode = switch (itm.flags.kind) {
-                                        .copy => unreachable,
-                                        .linear_tiled => .linear_tiled,
-                                        .tiled_linear => .tiled_linear,
-                                        .tiled_tiled => .tiled_tiled,
-                                    },
-                                    .downscale = itm.flags.extra.transfer.downscale,
-                                    .use_32x32 = itm.flags.extra.transfer.use_32x32,
-                                }, .none)),
-                            }
-                        },
-                        .submit => {
-                            const b_cmd = itm.cmd_buffer;
-
-                            gx.pushFrontAssumeCapacity(.initProcessCommandList(b_cmd.queue.buffer[0..b_cmd.queue.current_index], .none, .flush, .none));
-                        },
-                        .present => presentation_engine.queueWork(fbs, itm),
-                    }
-
-                    enqueued_commands += 1;
-                },
-            }
-        }
-
-        if (enqueued_commands > 0) gsp.sendTriggerCmdReqQueue() catch unreachable;
-    }
-}
-
-pub fn toHandle(image: *Device) Handle {
-    return @enumFromInt(@intFromPtr(image));
+pub fn toHandle(device: *Device) Handle {
+    return @enumFromInt(@intFromPtr(device));
 }
 
 pub fn fromHandleMutable(handle: Handle) *Device {
     return @as(*Device, @ptrFromInt(@intFromEnum(handle)));
 }
 
-comptime {
-    std.debug.assert(VRamBankAllocator.min_alignment_byte_units == 4096);
-}
-
-const VRamBankAllocator = zalloc.bitmap.StaticBitmapAllocator(.fromByteUnits(4096), zitrus.memory.vram_bank_size);
-
 const Device = @This();
 const backend = @import("backend.zig");
 
+const log = validation.log;
+const validation = backend.validation;
+
 const Queue = backend.Queue;
-const PresentationEngine = backend.PresentationEngine;
 
 const std = @import("std");
 const zitrus = @import("zitrus");
 const zalloc = @import("zalloc");
 
 const horizon = zitrus.horizon;
-const AddressArbiter = horizon.AddressArbiter;
-const Event = horizon.Event;
-const MemoryBlock = horizon.MemoryBlock;
 const GspGpu = horizon.services.GspGpu;
-const Thread = horizon.Thread;
 
 const mango = zitrus.mango;
 const pica = zitrus.hardware.pica;

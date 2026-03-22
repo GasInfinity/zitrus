@@ -220,10 +220,10 @@ pub fn agreeUpdate(flags: State.Flags) Error {
     return .{ .state = .agreeUpdate(flags) };
 }
 
-pub fn start(err: *Error, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu) !Result {
-    try app.startLibraryApplet(apt, service, srv, gsp, .application_error_display, .none, std.mem.asBytes(&err.state));
+pub fn start(err: *Error, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture) !Result {
+    try app.startLibraryApplet(apt, service, srv, capture, .application_error_display, .none, std.mem.asBytes(&err.state));
 
-    return switch (try app.waitAppletResult(apt, service, srv, gsp, std.mem.asBytes(&err.state))) {
+    return switch (try app.waitAppletResult(apt, service, srv, std.mem.asBytes(&err.state))) {
         .execution => |e| switch (e) {
             .resumed => switch (err.state.reply) {
                 .none => .none,

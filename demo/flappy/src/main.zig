@@ -321,11 +321,7 @@ const Screen = pica.Screen;
 const Bgr888 = pica.ColorFormat.Bgr888;
 
 const horizon = zitrus.horizon;
-const ServiceManager = horizon.ServiceManager;
-const Applet = horizon.services.Applet;
-const GspGpu = horizon.services.GspGpu;
 const Hid = horizon.services.Hid;
-const Framebuffer = GspGpu.Graphics.Framebuffer;
 
 const zitrus = @import("zitrus");
 const std = @import("std");

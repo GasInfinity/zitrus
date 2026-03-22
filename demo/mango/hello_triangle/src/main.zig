@@ -30,7 +30,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
     var sync_counter: u64 = 0;
 
     const Vertex = extern struct {
-        pos: [2]i8,
+        pos: [2]f32,
     };
 
     // Allocate the memory we will use for swapchains.
@@ -47,11 +47,8 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
     //  - VRAM Bank B -> 2, DEVICE_LOCAL [| HOST_VISIBLE in some situations] (3MB, full ownership)
     //
     // Unlike Vulkan, you manage the memory of your swapchain.
-    // This has some implications: Screen content is UNDEFINED when the swapchain is destroyed,
-    // that means that if you want hot-swap swapchains (e.g: you're making an emulator and want
-    // to change the swapchain format dynamically), you should fill the LCD with a solid color.
-    //
-    // XXX: Should we fill the LCD ourselves?
+    // Both screens will be filled with a black solid color until the swapchains
+    // are properly initialized and at least 1 present has been done in each.
     const bottom_presentable_image_memory = try device.allocateMemory(.{
         .memory_type = .vram_a,
         .allocation_size = .size(320 * 240 * 3 * 2),
@@ -127,13 +124,13 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
     // It is asserted that an image with index `i` will be bound to image_memory_info[i].memory + offset.
     const top_images: [2]mango.Image = blk: {
         var img: [2]mango.Image = undefined;
-        _ = device.getSwapchainImages(top_swapchain, &img);
+        _ = try device.getSwapchainImages(top_swapchain, &img);
         break :blk img;
     };
 
     const bottom_images: [2]mango.Image = blk: {
         var img: [2]mango.Image = undefined;
-        _ = device.getSwapchainImages(bottom_swapchain, &img);
+        _ = try device.getSwapchainImages(bottom_swapchain, &img);
         break :blk img;
     };
 
@@ -165,13 +162,13 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         const mapped_idx = try device.mapMemory(index_buffer_memory, 0, .whole);
         defer device.unmapMemory(index_buffer_memory);
 
-        const vtx_data: *[3]Vertex = std.mem.bytesAsValue([3]Vertex, mapped_vtx);
+        const vtx_data: *[3]Vertex = @alignCast(std.mem.bytesAsValue([3]Vertex, mapped_vtx));
         const idx_data: *[3]u8 = std.mem.bytesAsValue([3]u8, mapped_idx);
 
         vtx_data.* = .{
-            .{ .pos = .{ -1, -1 } },
-            .{ .pos = .{ 1, 0 } },
-            .{ .pos = .{ -1, 1 } },
+            .{ .pos = .{ -0.5, -0.5 } },
+            .{ .pos = .{ 0.5, 0 } },
+            .{ .pos = .{ -0.5, 0.5 } },
         };
 
         idx_data.* = .{ 0, 1, 2 };
@@ -250,104 +247,22 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
     }, gpa);
     defer device.destroyImageView(top_color_attachment_image_view, gpa);
 
-    // Create the pipeline, this is an example.
-    //
-    // A lot of this state can be dynamic.
-    const simple_pipeline = try device.createGraphicsPipeline(.{
-        .rendering_info = &.{
-            .color_attachment_format = .a8b8g8r8_unorm,
-            .depth_stencil_attachment_format = .undefined,
-        },
-        .vertex_input_state = &.init(&.{
-            .{
-                .stride = @sizeOf(Vertex),
-            },
-        }, &.{
-            .{
-                .location = .v0,
-                .binding = .@"0",
-                .format = .r8g8_sscaled,
-                .offset = 0,
-            },
-        }, &.{}),
-        // This must be a 'PSH' shader binary assembled by zitrus.
-        .vertex_shader_state = &.init(position_vtx, "main"),
-        .geometry_shader_state = null,
-        .input_assembly_state = &.{
-            .topology = .triangle_list,
-        },
-        // This is dynamic state, that's why it can be null.
-        .viewport_state = null,
-        .rasterization_state = &.{
-            .front_face = .ccw,
-            .cull_mode = .none,
+    const simple_shader = try device.createShader(.init(.psh, position_vtx, "main"), gpa);
+    defer device.destroyShader(simple_shader, gpa);
 
-            // (Mango specific) You can set the depth mode of the depth buffer to a w_buffer or z_buffer.
-            .depth_mode = .z_buffer,
-            .depth_bias_constant = 0.0,
+    const vertex_input_layout = try device.createVertexInputLayout(.init(&.{
+        .{
+            .stride = @sizeOf(Vertex),
         },
-        .alpha_depth_stencil_state = &.{
-            // (Mango specific) Alpha Test is added as a fixed function stage.
-            .alpha_test_enable = false,
-            .alpha_test_compare_op = .never,
-            .alpha_test_reference = 0,
-
-            // (!) Disabling depth tests also disables depth writes like in every other graphics api
-            .depth_test_enable = false,
-            .depth_write_enable = false,
-            .depth_compare_op = .gt,
-
-            .stencil_test_enable = false,
-            .back_front = std.mem.zeroes(mango.GraphicsPipelineCreateInfo.AlphaDepthStencilState.StencilOperationState),
+    }, &.{
+        .{
+            .location = .v0,
+            .binding = .@"0",
+            .format = .r32g32_sfloat,
+            .offset = 0,
         },
-        // (Mango specific) Texture configuration is added as a fixed function stage.
-        .texture_sampling_state = &.{
-            .texture_2_coordinates = .@"2",
-            .texture_3_coordinates = .@"2",
-        },
-        // (Mango specific) Fragment lighting is added as a fixed function stage.
-        .lighting_state = &.{
-            .enable = false,
-            .environment = null,
-        },
-        // (Mango specific) Fragment color combiner is added as a fixed function stage.
-        .texture_combiner_state = &.init(&.{.{
-            .color_src = @splat(.primary_color),
-            .alpha_src = @splat(.primary_color),
-            .color_factor = @splat(.src_color),
-            .alpha_factor = @splat(.src_alpha),
-            .color_op = .replace,
-            .alpha_op = .replace,
-
-            .color_scale = .@"1x",
-            .alpha_scale = .@"1x",
-
-            .constant = @splat(0),
-        }}, &.{}),
-        .color_blend_state = &.{
-            .logic_op_enable = false,
-            .logic_op = .clear,
-
-            .attachment = .{
-                // (Mango specific) The blend equation must be explicitly set. No blend_enable toggle.
-                .blend_equation = .{
-                    .src_color_factor = .one,
-                    .dst_color_factor = .zero,
-                    .color_op = .add,
-                    .src_alpha_factor = .one,
-                    .dst_alpha_factor = .zero,
-                    .alpha_op = .add,
-                },
-                .color_write_mask = .rgba,
-            },
-            .blend_constants = .{ 0, 0, 0, 0 },
-        },
-        .dynamic_state = .{
-            .viewport = true,
-            .scissor = true,
-        },
-    }, gpa);
-    defer device.destroyPipeline(simple_pipeline, gpa);
+    }, &.{}), gpa);
+    defer device.destroyVertexInputLayout(vertex_input_layout, gpa);
 
     // Create the `CommandPool` for allocating `CommandBuffer`'s.
     //
@@ -367,14 +282,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
     };
     defer device.freeCommandBuffers(command_pool, @ptrCast(&cmd));
 
-    const gsp = init.app.gsp;
     const input = init.app.input;
-
-    // Stop filling the LCD with a solid color.
-    //
-    // Screen contents are undefined until we present the first frame, for simplicity we'll ignore that.
-    try gsp.sendSetLcdForceBlack(false);
-    defer if (!init.app.app.flags.must_close) gsp.sendSetLcdForceBlack(true) catch {}; // NOTE: Could fail if we don't have right?
 
     main_loop: while (true) {
         while (try init.pollEvent()) |ev| switch (ev) {
@@ -388,8 +296,8 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
             break :main_loop;
         }
 
-        const bottom_current_image_idx = try device.acquireNextImage(bottom_swapchain, -1);
-        const top_current_image_idx = try device.acquireNextImage(top_swapchain, -1);
+        const bottom_current_image_idx = try device.acquireNextImage(bottom_swapchain, std.math.maxInt(u64));
+        const top_current_image_idx = try device.acquireNextImage(top_swapchain, std.math.maxInt(u64));
 
         // Same command recording workflow as Vulkan.
         //
@@ -397,9 +305,41 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         // E.g: We have `bindCombinedImageSamplers`, `bindLightEnvironmentFactors`, `bindLights`, ...
         try cmd.begin();
 
-        cmd.bindIndexBuffer(index_buffer, 0, .u8);
-        cmd.bindVertexBuffersSlice(0, &.{vtx_buffer}, &.{0});
-        cmd.bindPipeline(.graphics, simple_pipeline);
+        // Set the initial state, the validation (in safe modes) will guide you
+        cmd.bindShaders(&.{.vertex}, &.{simple_shader});
+        cmd.setVertexInput(vertex_input_layout);
+        cmd.setLightingEnable(false);
+        cmd.setLogicOpEnable(false);
+        cmd.setAlphaTestEnable(false);
+        cmd.setDepthTestEnable(false);
+        cmd.setStencilTestEnable(false);
+        cmd.setCullMode(.none);
+        cmd.setFrontFace(.ccw);
+        cmd.setPrimitiveTopology(.triangle_list);
+        cmd.setColorWriteMask(.rgba);
+        cmd.setBlendEquation(.{
+            .src_color_factor = .one,
+            .dst_color_factor = .zero,
+            .color_op = .add,
+            .src_alpha_factor = .one,
+            .dst_alpha_factor = .zero,
+            .alpha_op = .add,
+        });
+        cmd.setTextureCombiners(&.{
+            .{
+                .color_src = @splat(.primary_color),
+                .alpha_src = @splat(.primary_color),
+                .color_factor = @splat(.src_color),
+                .alpha_factor = @splat(.src_alpha),
+                .color_op = .replace,
+                .alpha_op = .replace,
+
+                .color_scale = .@"1x",
+                .alpha_scale = .@"1x",
+
+                .constant = @splat(0),
+            },
+        }, &.{});
 
         // Render to the top screen
         cmd.setViewport(.{
@@ -411,6 +351,9 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
             .max_depth = 1.0,
         });
         cmd.setScissor(.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 400 } }));
+
+        cmd.bindIndexBuffer(index_buffer, 0, .u8);
+        cmd.bindVertexBuffersSlice(0, &.{vtx_buffer}, &.{0});
 
         {
             cmd.beginRendering(.{
@@ -426,7 +369,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         try fill_queue.clearColorImage(.{
             .wait_semaphore = &.init(sync_semaphore, sync_counter),
             .image = bottom_images[bottom_current_image_idx],
-            .color = @splat(0xFF),
+            .color = @splat(0x33),
             .subresource_range = .full,
             .signal_semaphore = &.init(sync_semaphore, sync_counter + 1),
         });
@@ -471,20 +414,12 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         // We're currently using one color attachment so even though we're double-buffered on the swapchain,
         // we only have a single buffer to work on. We must wait until we finished with the color buffer.
         sync_counter += 4;
-        try device.waitSemaphore(.{
-            .semaphore = sync_semaphore,
-            .value = sync_counter,
-        }, -1);
+        try device.waitSemaphores(.init(&.{sync_semaphore}, &.{sync_counter}), std.math.maxInt(u64));
     }
 }
 
 const mango = zitrus.mango;
-
 const horizon = zitrus.horizon;
-const ServiceManager = horizon.ServiceManager;
-const Applet = horizon.services.Applet;
-const GspGpu = horizon.services.GspGpu;
-const Hid = horizon.services.Hid;
 
 const zitrus = @import("zitrus");
 const std = @import("std");

@@ -365,7 +365,7 @@ test "tokenize multiple instructions" {
         // zig fmt: off
         .mnemonic_mov, .identifier, .comma, .identifier, .newline,
         .mnemonic_add, .identifier, .comma, .identifier,
-        // zig fmt: on 
+        // zig fmt: on
     });
 }
 
@@ -379,7 +379,7 @@ test "tokenize multiple instructions with comments in-between" {
         .mnemonic_mov, .identifier, .comma, .identifier, .newline,
         .newline,
         .mnemonic_add, .identifier, .comma, .identifier,
-        // zig fmt: on 
+        // zig fmt: on
     });
 }
 

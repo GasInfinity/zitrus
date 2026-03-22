@@ -114,8 +114,8 @@ pub const FramebufferInfo = extern struct {
         pub const Active = enum(u32) { first, second };
 
         active: Active,
-        left_vaddr: [*]const u8,
-        right_vaddr: [*]const u8,
+        left_vaddr: ?[*]const u8,
+        right_vaddr: ?[*]const u8,
         stride: u32,
         format: FramebufferFormat,
         select: u32,
@@ -471,9 +471,11 @@ pub const GxCommand = extern struct {
 };
 
 pub const ScreenCapture = extern struct {
+    pub const empty: ScreenCapture = std.mem.zeroes(ScreenCapture);
+
     pub const Info = extern struct {
-        left_vaddr: *anyopaque,
-        right_vaddr: *anyopaque,
+        left_vaddr: ?*anyopaque,
+        right_vaddr: ?*anyopaque,
         format: FramebufferFormat,
         stride: u32,
     };
@@ -505,29 +507,33 @@ pub fn close(gsp: GspGpu) void {
     gsp.session.close();
 }
 
-pub fn writeHwRegs(gsp: GspGpu, address: *anyopaque, buffer: []const u8) !void {
+pub fn writeRegister(gsp: GspGpu, address: anytype, value: @typeInfo(@TypeOf(address)).pointer.child) !void {
+    return try gsp.writeRegistersBuffer(address, @ptrCast(&value));
+}
+
+pub fn writeRegistersBuffer(gsp: GspGpu, address: *volatile anyopaque, buffer: []align(1) const u32) !void {
     const offset = @intFromPtr(address) - 0x1EB00000;
     var buffer_offset: usize = 0;
-    while (buffer_offset < buffer.len) : (buffer_offset += 0x80) {
-        const size = @min(buffer.len - buffer_offset, 0x80);
+    while (buffer_offset < buffer.len) : (buffer_offset += 32) {
+        const size = @min(buffer.len - buffer_offset, 32);
 
         try gsp.sendWriteHwRegs(offset, buffer[buffer_offset..][0..size]);
     }
 }
 
-pub fn writeHwRegsWithMask(gsp: GspGpu, address: *anyopaque, buffer: []const u8, mask: []const u8) !void {
+pub fn writeHwRegsWithMask(gsp: GspGpu, address: *volatile anyopaque, buffer: []align(1) const u32, mask: []align(1) const u32) !void {
     std.debug.assert(buffer.len == mask.len);
 
     const offset = @intFromPtr(address) - 0x1EB00000;
     var buffer_offset: usize = 0;
-    while (buffer_offset < buffer.len) : (buffer_offset += 0x80) {
-        const size = @min(buffer.len - buffer_offset, 0x80);
+    while (buffer_offset < buffer.len) : (buffer_offset += 32) {
+        const size = @min(buffer.len - buffer_offset, 32);
 
         try gsp.sendWriteHwRegsWithMask(offset, buffer[buffer_offset..][0..size], mask[buffer_offset..][0..size]);
     }
 }
 
-pub fn readHwRegs(gsp: GspGpu, address: *anyopaque, buffer: []u8) !void {
+pub fn readHwRegs(gsp: GspGpu, address: *volatile anyopaque, buffer: []u8) !void {
     const offset = @intFromPtr(address) - 0x1EB00000;
     var buffer_offset: usize = 0;
     while (buffer_offset < buffer.len) : (buffer_offset += 0x80) {
@@ -543,42 +549,42 @@ const InterruptRelayQueueResult = struct {
     shared_memory: MemoryBlock,
 };
 
-pub fn sendWriteHwRegs(gsp: GspGpu, offset: usize, buffer: []const u8) !void {
-    std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
+pub fn sendWriteHwRegs(gsp: GspGpu, offset: usize, buffer: []align(1) const u32) !void {
+    std.debug.assert(buffer.len <= 32);
 
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegs, .{ .offset = offset, .size = buffer.len, .data = .static(buffer) }, .{})).cases()) {
+    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegs, .{ .offset = offset, .size = buffer.len * @sizeOf(u32), .data = .static(@ptrCast(buffer)) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendWriteHwRegsWithMask(gsp: GspGpu, offset: usize, buffer: []const u8, mask: []const u8) !void {
+pub fn sendWriteHwRegsWithMask(gsp: GspGpu, offset: usize, buffer: []align(1) const u32, mask: []align(1) const u32) !void {
     std.debug.assert(buffer.len == mask.len);
-    std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
+    std.debug.assert(buffer.len <= 32);
 
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegsWithMask, .{ .offset = offset, .size = buffer.len, .data = .static(buffer), .mask = .static(mask) }, .{})).cases()) {
+    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegsWithMask, .{ .offset = offset, .size = buffer.len * @sizeOf(u32), .data = .static(@ptrCast(buffer)), .mask = .static(@ptrCast(mask)) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendWriteHwRegRepeat(gsp: GspGpu, offset: usize, buffer: []const u8) !void {
-    std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
+pub fn sendWriteHwRegRepeat(gsp: GspGpu, offset: usize, buffer: []align(1) const u32) !void {
+    std.debug.assert(buffer.len <= 32);
 
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegRepeat, .{ .offset = offset, .size = buffer.len, .data = .static(buffer) }, .{})).cases()) {
+    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegRepeat, .{ .offset = offset, .size = buffer.len * @sizeOf(u32), .data = .static(@ptrCast(buffer)) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendReadHwRegs(gsp: GspGpu, offset: usize, buffer: []u8) !void {
-    std.debug.assert(buffer.len <= 0x80 and std.mem.isAligned(buffer.len, 4));
+pub fn sendReadHwRegs(gsp: GspGpu, offset: usize, buffer: []u32) !void {
+    std.debug.assert(buffer.len <= 32);
 
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.ReadHwRegs, .{ .offset = offset, .size = buffer.len }, .{buffer})).cases()) {
+    return switch ((try data.ipc.sendRequest(gsp.session, command.ReadHwRegs, .{ .offset = offset, .size = buffer.len * @sizeOf(u32) }, .{ .buffer = buffer })).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -771,11 +777,11 @@ pub const command = struct {
         data: ipc.Static(0),
     }, struct {});
     pub const ReadHwRegs = ipc.Command(Id, .read_hw_regs, struct {
-        pub const static_buffers = 1;
+        pub const StaticOutput = struct { buffer: []u32 };
         offset: usize,
         size: usize,
     }, struct {
-        output: ipc.Static(0),
+        buffer: ipc.Static(0),
     });
     pub const SetBufferSwap = ipc.Command(Id, .set_buffer_swap, struct { screen: Screen, info: FramebufferInfo }, struct {});
     // SetCommandList stubbed

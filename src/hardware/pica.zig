@@ -311,6 +311,13 @@ pub const Screen = enum(u1) {
     top,
     bottom,
 
+    pub fn other(screen: Screen) Screen {
+        return switch (screen) {
+            .top => .bottom,
+            .bottom => .top,
+        };
+    }
+
     pub inline fn width(_: Screen) usize {
         return 240;
     }
@@ -671,32 +678,6 @@ pub const PrimitiveTopology = enum(u2) {
     }
 };
 
-pub const AttributeFormat = packed struct(u4) {
-    pub const Type = enum(u2) {
-        i8,
-        u8,
-        i16,
-        f32,
-
-        pub fn byteSize(typ: Type) usize {
-            return switch (typ) {
-                .i8, .u8 => @sizeOf(u8),
-                .i16 => @sizeOf(i16),
-                .f32 => @sizeOf(f32),
-            };
-        }
-    };
-
-    pub const Size = enum(u2) { x, xy, xyz, xyzw };
-
-    type: Type = .i8,
-    size: Size = .x,
-
-    pub fn byteSize(fmt: AttributeFormat) usize {
-        return fmt.type.byteSize() * (@intFromEnum(fmt.size) + 1);
-    }
-};
-
 pub const IndexFormat = enum(u1) {
     /// Specifies that indices are unsigned 8-bit numbers.
     u8,
@@ -879,20 +860,21 @@ pub const Graphics = extern struct {
             end: [2]u16,
         };
 
-        pub const OutputAttributeMode = packed struct(u32) {
+        pub const InputMode = packed struct(u32) {
+            /// XXX: Textures still work when setting this to false...?
             use_texture_coordinates: bool = false,
             _: u31 = 0,
         };
 
-        pub const OutputAttributeClock = packed struct(u32) {
-            position_z_present: bool = false,
-            color_present: bool = false,
+        pub const Clock = packed struct(u32) {
+            position_z: bool = false,
+            color: bool = false,
             _unused0: u6 = 0,
-            texture_coordinates_present: BitpackedArray(bool, 3) = .splat(false),
+            texture_coordinates: BitpackedArray(bool, 3) = .splat(false),
             _unused1: u5 = 0,
-            texture_coordinates_0_w_present: bool = false,
+            texture_coordinates_0_w: bool = false,
             _unused2: u7 = 0,
-            normal_view_present: bool = false,
+            normal_or_view: bool = false,
             _unused3: u7 = 0,
         };
 
@@ -938,8 +920,8 @@ pub const Graphics = extern struct {
         _unknown1: [1]u32,
         /// Maps depth from NDC [0, -1] to framebuffer [0, 1].
         depth_map: DepthMap,
-        shader_output_map_total: LsbRegister(u3),
-        shader_output_map_output: [7]OutputMap,
+        num_inputs: LsbRegister(u3),
+        inputs: [7]OutputMap,
         _unknown2: u32,
         shader_output_map_qualifiers: u32, // According to GBATEK this allows you to use the flat qualifier in output colors.
         _unknown3: u32,
@@ -955,7 +937,7 @@ pub const Graphics = extern struct {
         early_depth_function: LsbRegister(EarlyDepthCompareOperation),
         early_depth_test_enable: LsbRegister(bool),
         early_depth_clear: LsbRegister(Trigger),
-        shader_output_attribute_mode: OutputAttributeMode,
+        input_mode: InputMode,
         scissor: Scissor,
         /// Viewport origin, origin is bottom-left.
         viewport_xy: [2]u16,
@@ -965,7 +947,11 @@ pub const Graphics = extern struct {
         depth_map_mode: LsbRegister(DepthMap.Mode),
         /// Does not seem to have an effect but it's still documented like this
         _unused_render_buffer_dimensions: u32, // XXX: Why would the rasterizer need output dimensions?
-        shader_output_attribute_clock: OutputAttributeClock,
+        /// The clock driving inputs to the rasterizer from the shader.
+        ///
+        /// If a shader outputs a value which the rasterizer doesn't clock,
+        /// the rasterizer reads a default value; e.g color will read (1, 1, 1, 1)
+        input_clock: Clock,
     };
 
     pub const TextureUnits = extern struct {
@@ -1687,10 +1673,10 @@ pub const Graphics = extern struct {
             _unused1: u6 = 0,
             _unknown1: u4 = 0,
             _unused2: u11 = 0,
-            variable_geometry: bool = false,
+            variable_geometry_inputs: bool = false,
         };
 
-        pub const PipelineConfig2 = packed struct(u32) {
+        pub const State = packed struct(u32) {
             inputting_vertices_or_draw_arrays: bool = false,
             _unused0: u7 = 0,
             drawing_triangles: bool = false,
@@ -1698,24 +1684,88 @@ pub const Graphics = extern struct {
         };
 
         pub const GeometryShader = packed struct(u32) {
-            pub const Mode = enum(u2) { point, variable, fixed };
+            pub const Mode = enum(u2) {
+                /// Vertex shader outputs begin filling geometry shader inputs (`point_vertices_minus_one`) until all slots are filled,
+                /// in which case a geometry shader invocation is performed.
+                point,
+                /// Vertex shader ouputs are buffered into uniform registers starting at `f1`,
+                /// `f0` stores the number of vertices in the batch.
+                ///
+                /// All drawcalls must be indexed while using this geometry shader mode.
+                ///
+                /// The first index signifies how many vertices to process, two kinds of vertices
+                /// are batched: main and secondary vertices; main vertices passthrough all outputs
+                /// while secondary ones only the first.
+                variable,
+                /// Vertex shader outputs are buffered into geometry shader uniform registers (up to `fixed_vertices_minus_one`) starting
+                /// at `uniform_start`.
+                fixed,
+            };
 
             mode: GeometryShader.Mode,
             _unused0: u6 = 0,
             fixed_vertices_minus_one: u4,
-            vertices_minus_one: u4,
-            uniform_start: u8,
-            flag: bool,
-            _unused1: u7 = 0,
+            point_inputs_minus_one: u4,
+            uniform_start: shader.register.Source.Constant,
+            _unused1: u1 = 0,
+            /// Unknown, but it is said that must be set when mode is fixed in both 3dbrew and GBATEK.
+            fixed: bool,
+            _unused2: u7 = 0,
         };
 
         pub const Attribute = extern struct {
+            pub const Format = packed struct(u4) {
+                pub const i8x1: Format = .{ .type = .i8, .size = .x };
+                pub const i8x2: Format = .{ .type = .i8, .size = .xy };
+                pub const i8x3: Format = .{ .type = .i8, .size = .xyz };
+                pub const i8x4: Format = .{ .type = .i8, .size = .xyzw };
+
+                pub const u8x1: Format = .{ .type = .u8, .size = .x };
+                pub const u8x2: Format = .{ .type = .u8, .size = .xy };
+                pub const u8x3: Format = .{ .type = .u8, .size = .xyz };
+                pub const u8x4: Format = .{ .type = .u8, .size = .xyzw };
+
+                pub const i16x1: Format = .{ .type = .i16, .size = .x };
+                pub const i16x2: Format = .{ .type = .i16, .size = .xy };
+                pub const i16x3: Format = .{ .type = .i16, .size = .xyz };
+                pub const i16x4: Format = .{ .type = .i16, .size = .xyzw };
+
+                pub const f32x1: Format = .{ .type = .f32, .size = .x };
+                pub const f32x2: Format = .{ .type = .f32, .size = .xy };
+                pub const f32x3: Format = .{ .type = .f32, .size = .xyz };
+                pub const f32x4: Format = .{ .type = .f32, .size = .xyzw };
+
+                pub const Type = enum(u2) {
+                    i8,
+                    u8,
+                    i16,
+                    f32,
+
+                    pub fn byteSize(typ: Type) usize {
+                        return switch (typ) {
+                            .i8, .u8 => @sizeOf(u8),
+                            .i16 => @sizeOf(i16),
+                            .f32 => @sizeOf(f32),
+                        };
+                    }
+                };
+
+                pub const Size = enum(u2) { x, xy, xyz, xyzw };
+
+                type: Type = .i8,
+                size: Size = .x,
+
+                pub fn byteSize(fmt: Format) usize {
+                    return fmt.type.byteSize() * (@intFromEnum(fmt.size) + 1);
+                }
+            };
+
             pub const Config = extern struct {
                 pub const Flags = enum(u1) { array, fixed };
 
-                pub const Low = packed struct(u32) { attributes: BitpackedArray(AttributeFormat, 8) = .splat(.{}) };
+                pub const Low = packed struct(u32) { attributes: BitpackedArray(Format, 8) = .splat(.{}) };
                 pub const High = packed struct(u32) {
-                    remaining_attributes: BitpackedArray(AttributeFormat, 4) = .splat(.{}),
+                    remaining_attributes: BitpackedArray(Format, 4) = .splat(.{}),
                     flags: BitpackedArray(Flags, 12) = .splat(.array),
                     attributes_end: u4,
                 };
@@ -1723,20 +1773,20 @@ pub const Graphics = extern struct {
                 low: Low,
                 high: High,
 
-                pub fn setAttribute(config: *Config, index: AttributeIndex, value: AttributeFormat) void {
-                    std.mem.writePackedIntNative(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(AttributeFormat), @bitCast(value));
+                pub fn setAttribute(config: *Config, index: AttributeIndex, value: Format) void {
+                    std.mem.writePackedInt(u4, std.mem.asBytes(config), @as(usize, @intFromEnum(index)) * @bitSizeOf(Format), @bitCast(value), .little);
                 }
 
-                pub fn getAttribute(config: *Config, index: AttributeIndex) void {
-                    return @bitCast(std.mem.readPackedIntNative(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(AttributeFormat)));
+                pub fn getAttribute(config: *const Config, index: AttributeIndex) Format {
+                    return @bitCast(std.mem.readPackedInt(u4, std.mem.asBytes(config), @as(usize, @intFromEnum(index)) * @bitSizeOf(Format), .little));
                 }
 
                 pub fn setFlag(config: *Config, index: AttributeIndex, value: Flags) void {
-                    std.mem.writePackedIntNative(u1, std.mem.asBytes(config), (12 * @bitSizeOf(AttributeFormat)) + @intFromEnum(index) * @bitSizeOf(Flags), @bitCast(value));
+                    std.mem.writePackedInt(u1, std.mem.asBytes(config), (@as(usize, 12) * @bitSizeOf(Format)) + @intFromEnum(index) * @bitSizeOf(Flags), @intFromEnum(value), .little);
                 }
 
-                pub fn getFlag(config: *Config, index: AttributeIndex) void {
-                    return @bitCast(std.mem.readPackedIntNative(u1, std.mem.asBytes(config), (12 * @bitSizeOf(AttributeFormat)) + @intFromEnum(index) * @bitSizeOf(Flags)));
+                pub fn getFlag(config: *const Config, index: AttributeIndex) Flags {
+                    return @enumFromInt(std.mem.readPackedInt(u1, std.mem.asBytes(config), (@as(usize, 12) * @bitSizeOf(Format)) + @intFromEnum(index) * @bitSizeOf(Flags), .little));
                 }
             };
 
@@ -1792,11 +1842,11 @@ pub const Graphics = extern struct {
                     high: High,
 
                     pub fn setComponent(config: *VertexBuffer.Config, index: ArrayComponentIndex, value: ArrayComponent) void {
-                        std.mem.writePackedIntNative(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(ArrayComponent), @intFromEnum(value));
+                        std.mem.writePackedInt(u4, std.mem.asBytes(config), @as(usize, @intFromEnum(index)) * @bitSizeOf(ArrayComponent), @intFromEnum(value), .little);
                     }
 
-                    pub fn getComponent(config: *VertexBuffer.Config, index: ArrayComponentIndex) ArrayComponent {
-                        return @enumFromInt(std.mem.readPackedIntNative(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(ArrayComponent)));
+                    pub fn getComponent(config: *const VertexBuffer.Config, index: ArrayComponentIndex) ArrayComponent {
+                        return @enumFromInt(std.mem.readPackedInt(u4, std.mem.asBytes(config), @as(usize, @intFromEnum(index)) * @bitSizeOf(ArrayComponent), .little));
                     }
                 };
 
@@ -1872,14 +1922,15 @@ pub const Graphics = extern struct {
         _unknown3: [4]u32,
         vertex_shader_input_attributes: LsbRegister(u4),
         _unknown4: u32,
-        enable_geometry_shader_configuration: LsbRegister(bool),
+        /// updates to the vertex shader unit will not be propagated to the geometry shader if true.
+        exclusive_shader_configuration: LsbRegister(bool),
         mode: LsbRegister(Mode),
         _unknown5: [4]u32,
         vertex_shader_output_map_total_2: LsbRegister(u4),
         _unknown6: [6]u32,
         vertex_shader_output_map_total_1: LsbRegister(u4),
         geometry_shader: GeometryShader,
-        config_2: PipelineConfig2,
+        state: State,
         geometry_shader_full_vertices_minus_one: LsbRegister(u5),
         _unknown7: u32,
         _unknown8: [8]u32,
@@ -1897,25 +1948,19 @@ pub const Graphics = extern struct {
             }
         };
 
-        pub const InputBufferConfig = packed struct(u32) {
-            num_input_attributes: u4,
+        pub const Input = packed struct(u32) {
+            /// Amount of input registers
+            inputs: u4,
             _unused0: u4 = 0,
-            use_geometry_shader_subdivision: bool = false,
+            /// When true, inputs will fill uniform registers instead of input ones.
+            /// Used for variable and fixed geometry shader modes.
+            uniform: bool = false,
             _unused1: u18 = 0,
             enabled_for_geometry_0: bool = false,
             _unknown0: u1 = 0,
             enabled_for_vertex_0: bool = false,
             _unused2: u1 = 0,
             enabled_for_vertex_1: bool = false,
-        };
-
-        pub const OutputMask = packed struct(u32) {
-            output_enabled: BitpackedArray(bool, 16) = .splat(false),
-            _unknown0: u16 = 0,
-
-            pub fn set(out_mask: *OutputMask, reg: shader.register.Destination.Output, value: bool) void {
-                std.mem.writePackedInt(u1, std.mem.asBytes(out_mask), @intFromEnum(reg), @intFromBool(value), .little);
-            }
         };
 
         pub const FloatUniformConfig = packed struct(u32) {
@@ -1939,11 +1984,11 @@ pub const Graphics = extern struct {
             high: High = .{},
 
             pub fn setAttribute(config: *AttributePermutation, index: AttributeIndex, value: InputRegister) void {
-                std.mem.writePackedIntNative(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(InputRegister), @intFromEnum(value));
+                std.mem.writePackedInt(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(InputRegister), @intFromEnum(value), .little);
             }
 
             pub fn getAttribute(config: *AttributePermutation, index: AttributeIndex) InputRegister {
-                return @bitCast(std.mem.readPackedIntNative(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(InputRegister)));
+                return @enumFromInt(std.mem.readPackedInt(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(InputRegister), .little));
             }
         };
 
@@ -1959,10 +2004,10 @@ pub const Graphics = extern struct {
         bool_uniforms: BooleanUniformMask,
         int_uniforms: [4][4]u8,
         _unused0: [4]u32,
-        input_buffer_config: InputBufferConfig,
+        input: Input,
         entrypoint: Entry,
         attribute_permutation: AttributePermutation,
-        output_map_mask: OutputMask,
+        output_map_mask: LsbRegister(BitpackedArray(bool, 16)),
         _unused1: u32,
         code_transfer_end: LsbRegister(Trigger),
         float_uniform_index: FloatUniformConfig,

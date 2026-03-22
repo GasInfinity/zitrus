@@ -8,6 +8,7 @@ pub const dsp = @import("hardware/dsp.zig");
 pub const hid = @import("hardware/hid.zig");
 pub const lgy = @import("hardware/lgy.zig");
 pub const i2c = @import("hardware/i2c.zig");
+pub const lcd = @import("hardware/lcd.zig");
 
 /// Represents a register which is triggered by writing a value to it.
 pub const Trigger = enum(u1) { trigger = 1 };
@@ -92,8 +93,8 @@ pub fn MsbRegister(comptime T: type) type {
 /// A `BitpackedArray` is stored from LSb (0) to MSb (n - 1).
 pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
     const total_bit_size = @bitSizeOf(T) * n;
-    const ArrayInt = std.meta.Int(.unsigned, total_bit_size);
-    const ElementInt = std.meta.Int(.unsigned, @bitSizeOf(T));
+    const ArrayInt = @Int(.unsigned, total_bit_size);
+    const ElementInt = @Int(.unsigned, @bitSizeOf(T));
 
     return packed struct(ArrayInt) {
         pub const Int = ArrayInt;
@@ -124,7 +125,7 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
         }
 
         pub inline fn get(bt: Self, index: usize) T {
-            const value = std.mem.readPackedIntNative(ElementInt, @ptrCast(&bt.raw), index * @bitSizeOf(ElementInt));
+            const value = std.mem.readPackedInt(ElementInt, @ptrCast(&bt.raw), index * @bitSizeOf(ElementInt), .native);
 
             return switch (@typeInfo(T)) {
                 .@"enum" => @enumFromInt(value),
@@ -139,10 +140,10 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
         }
 
         pub inline fn set(bt: *Self, index: usize, value: T) void {
-            std.mem.writePackedIntNative(ElementInt, @ptrCast(&bt.raw), index * @bitSizeOf(ElementInt), switch (@typeInfo(T)) {
+            std.mem.writePackedInt(ElementInt, @ptrCast(&bt.raw), index * @bitSizeOf(ElementInt), switch (@typeInfo(T)) {
                 .@"enum" => @intFromEnum(value),
                 else => @bitCast(value),
-            });
+            }, .native);
         }
 
         const Self = @This();

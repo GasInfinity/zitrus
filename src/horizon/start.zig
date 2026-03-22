@@ -190,7 +190,7 @@ inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !U
                     .gsp = gsp,
                     .arbiter = arbiter,
                 }, gpa);
-                defer device.destroy(gpa);
+                defer device.destroy();
 
                 break :blk root.main(.{
                     .app = app_init,

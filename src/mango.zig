@@ -272,27 +272,27 @@ pub const Format = enum(u8) {
         };
     }
 
-    pub fn nativeVertexFormat(fmt: Format) pica.AttributeFormat {
+    pub fn nativeVertexFormat(fmt: Format) pica.Graphics.PrimitiveEngine.Attribute.Format {
         return switch (fmt) {
-            .r8_sscaled => .{ .type = .i8, .size = .x },
-            .r8_uscaled => .{ .type = .u8, .size = .x },
-            .r16_sscaled => .{ .type = .i16, .size = .x },
-            .r32_sfloat => .{ .type = .f32, .size = .x },
+            .r8_sscaled => .i8x1,
+            .r8_uscaled => .u8x1,
+            .r16_sscaled => .i16x1,
+            .r32_sfloat => .f32x1,
 
-            .r8g8_sscaled => .{ .type = .i8, .size = .xy },
-            .r8g8_uscaled => .{ .type = .u8, .size = .xy },
-            .r16g16_sscaled => .{ .type = .i16, .size = .xy },
-            .r32g32_sfloat => .{ .type = .f32, .size = .xy },
+            .r8g8_sscaled => .i8x2,
+            .r8g8_uscaled => .u8x2,
+            .r16g16_sscaled => .i16x2,
+            .r32g32_sfloat => .f32x2,
 
-            .r8g8b8_sscaled => .{ .type = .i8, .size = .xyz },
-            .r8g8b8_uscaled => .{ .type = .u8, .size = .xyz },
-            .r16g16b16_sscaled => .{ .type = .i16, .size = .xyz },
-            .r32g32b32_sfloat => .{ .type = .f32, .size = .xyz },
+            .r8g8b8_sscaled => .i8x3,
+            .r8g8b8_uscaled => .u8x3,
+            .r16g16b16_sscaled => .i16x3,
+            .r32g32b32_sfloat => .f32x3,
 
-            .r8g8b8a8_sscaled => .{ .type = .i8, .size = .xyzw },
-            .r8g8b8a8_uscaled => .{ .type = .u8, .size = .xyzw },
-            .r16g16b16a16_sscaled => .{ .type = .i16, .size = .xyzw },
-            .r32g32b32a32_sfloat => .{ .type = .f32, .size = .xyzw },
+            .r8g8b8a8_sscaled => .i8x4,
+            .r8g8b8a8_uscaled => .u8x4,
+            .r16g16b16a16_sscaled => .i16x4,
+            .r32g32b32a32_sfloat => .f32x4,
             else => unreachable,
         };
     }
@@ -915,192 +915,29 @@ pub const SamplerCreateInfo = extern struct {
     border_color: [4]u8,
 };
 
-pub const GraphicsPipelineCreateInfo = extern struct {
-    pub const FormatRenderingInfo = extern struct {
-        color_attachment_format: Format,
-        depth_stencil_attachment_format: Format,
-    };
+pub const ShaderCodeType = enum(u8) {
+    psh,
+    _,
+};
 
-    pub const VertexInputState = extern struct {
-        bindings: [*]const VertexInputBindingDescription,
-        attributes: [*]const VertexInputAttributeDescription,
-        fixed_attributes: [*]const VertexInputFixedAttributeDescription,
+pub const ShaderCreateInfo = extern struct {
+    code_type: ShaderCodeType,
+    code: [*]const u8,
+    code_len: u32,
 
-        bindings_len: u32,
-        attributes_len: u32,
-        fixed_attributes_len: u32,
+    name: [*]const u8,
+    name_len: u32,
 
-        pub fn init(bindings: []const VertexInputBindingDescription, attributes: []const VertexInputAttributeDescription, fixed_attributes: []const VertexInputFixedAttributeDescription) VertexInputState {
-            return .{
-                .bindings = bindings.ptr,
-                .attributes = attributes.ptr,
-                .fixed_attributes = fixed_attributes.ptr,
+    pub fn init(typ: ShaderCodeType, code: []const u8, name: []const u8) ShaderCreateInfo {
+        return .{
+            .code_type = typ,
+            .code = code.ptr,
+            .code_len = code.len,
 
-                .bindings_len = bindings.len,
-                .attributes_len = attributes.len,
-                .fixed_attributes_len = fixed_attributes.len,
-            };
-        }
-    };
-
-    pub const ShaderStageState = extern struct {
-        code: [*]const u8,
-        code_len: u32,
-
-        name: [*]const u8,
-        name_len: u32,
-
-        pub fn init(code: []const u8, name: []const u8) ShaderStageState {
-            return .{
-                .code = code.ptr,
-                .code_len = code.len,
-
-                .name = name.ptr,
-                .name_len = name.len,
-            };
-        }
-    };
-
-    pub const InputAssemblyState = extern struct {
-        topology: PrimitiveTopology,
-    };
-
-    pub const ViewportState = extern struct {
-        scissor: ?*const Scissor,
-        viewport: ?*const Viewport,
-    };
-
-    pub const RasterizationState = extern struct {
-        front_face: FrontFace = .ccw,
-        cull_mode: CullMode = .none,
-
-        depth_mode: DepthMode = .z_buffer,
-        depth_bias_constant: f32 = 0.0,
-    };
-
-    pub const TextureSamplingState = extern struct {
-        /// Only texture coordinates 2 and 1 are supported
-        texture_2_coordinates: TextureCoordinateSource,
-        texture_3_coordinates: TextureCoordinateSource,
-    };
-
-    pub const LightingState = extern struct {
-        enable: bool = false,
-        environment: ?*const LightEnvironment = null,
-    };
-
-    pub const TextureCombinerState = extern struct {
-        texture_combiners: [*]const TextureCombinerUnit,
-        texture_combiners_len: usize,
-
-        texture_combiner_buffer_sources: [*]const TextureCombinerUnit.BufferSources,
-        texture_combiner_buffer_sources_len: usize,
-
-        pub fn init(texture_combiners: []const TextureCombinerUnit, texture_combiner_buffer_sources: []const TextureCombinerUnit.BufferSources) TextureCombinerState {
-            return .{
-                .texture_combiners = texture_combiners.ptr,
-                .texture_combiners_len = texture_combiners.len,
-
-                .texture_combiner_buffer_sources = texture_combiner_buffer_sources.ptr,
-                .texture_combiner_buffer_sources_len = texture_combiner_buffer_sources.len,
-            };
-        }
-    };
-
-    pub const AlphaDepthStencilState = extern struct {
-        pub const StencilOperationState = extern struct {
-            fail_op: StencilOperation,
-            pass_op: StencilOperation,
-            depth_fail_op: StencilOperation,
-            compare_op: CompareOperation,
-            compare_mask: u8,
-            write_mask: u8,
-            reference: u8,
+            .name = name.ptr,
+            .name_len = name.len,
         };
-
-        alpha_test_enable: bool = false,
-        alpha_test_compare_op: CompareOperation = .ge,
-        alpha_test_reference: u8 = 255,
-
-        depth_test_enable: bool = false,
-        depth_write_enable: bool = true,
-        depth_compare_op: CompareOperation = .lt,
-
-        stencil_test_enable: bool = false,
-        back_front: StencilOperationState = std.mem.zeroes(StencilOperationState),
-    };
-
-    pub const ColorBlendState = extern struct {
-        pub const Attachment = extern struct {
-            blend_equation: ColorBlendEquation,
-            color_write_mask: ColorComponentFlags,
-        };
-
-        logic_op_enable: bool = false,
-        logic_op: LogicOperation = .clear,
-
-        attachment: Attachment,
-        blend_constants: [4]u8,
-    };
-
-    pub const DynamicState = packed struct(u32) {
-        viewport: bool = false,
-        scissor: bool = false,
-
-        depth_mode: bool = false,
-        depth_bias_constant: bool = false,
-
-        cull_mode: bool = false,
-        front_face: bool = false,
-
-        depth_test_enable: bool = false,
-        depth_write_enable: bool = false,
-        depth_compare_op: bool = false,
-
-        stencil_compare_mask: bool = false,
-        stencil_write_mask: bool = false,
-        stencil_reference: bool = false,
-        stencil_test_enable: bool = false,
-        stencil_test_operation: bool = false,
-
-        logic_op_enable: bool = false,
-        logic_op: bool = false,
-
-        blend_equation: bool = false,
-        blend_constants: bool = false,
-
-        alpha_test_enable: bool = false,
-        alpha_test_compare_op: bool = false,
-        alpha_test_reference: bool = false,
-
-        color_write_mask: bool = false,
-        primitive_topology: bool = false,
-
-        texture_combiner: bool = false,
-        texture_config: bool = false,
-
-        // TODO: Vertex Input dynamic state
-        vertex_input: bool = false,
-        // TODO: Light environment dynamic state
-        light_environment: bool = false,
-        light_environment_scales: bool = false,
-        _: u4 = 0,
-    };
-
-    rendering_info: *const FormatRenderingInfo,
-    vertex_shader_state: *const ShaderStageState,
-    geometry_shader_state: ?*const ShaderStageState,
-
-    vertex_input_state: ?*const VertexInputState,
-    input_assembly_state: ?*const InputAssemblyState,
-    viewport_state: ?*const ViewportState,
-    rasterization_state: ?*const RasterizationState,
-    alpha_depth_stencil_state: ?*const AlphaDepthStencilState,
-    texture_sampling_state: ?*const TextureSamplingState,
-    lighting_state: ?*const LightingState,
-    texture_combiner_state: ?*const TextureCombinerState,
-    color_blend_state: ?*const ColorBlendState,
-    dynamic_state: DynamicState,
+    }
 };
 
 pub const TextureCoordinateSource = enum(u8) {
@@ -1171,16 +1008,38 @@ pub const VertexInputFixedAttributeDescription = extern struct {
     location: VertexAttributeLocation,
 };
 
-pub const VertexInputBindingDescription = extern struct {
-    stride: u8,
-};
-
 pub const VertexInputAttributeDescription = extern struct {
     location: VertexAttributeLocation,
     binding: VertexAttributeBinding,
     format: Format,
     /// TODO: This has special requirements. Document them
     offset: u8,
+};
+
+pub const VertexInputBindingDescription = extern struct {
+    stride: u8,
+};
+
+pub const VertexInputLayoutCreateInfo = extern struct {
+    bindings: [*]const VertexInputBindingDescription,
+    attributes: [*]const VertexInputAttributeDescription,
+    fixed_attributes: [*]const VertexInputFixedAttributeDescription,
+
+    bindings_len: u32,
+    attributes_len: u32,
+    fixed_attributes_len: u32,
+
+    pub fn init(bindings: []const VertexInputBindingDescription, attributes: []const VertexInputAttributeDescription, fixed_attributes: []const VertexInputFixedAttributeDescription) VertexInputLayoutCreateInfo {
+        return .{
+            .bindings = bindings.ptr,
+            .attributes = attributes.ptr,
+            .fixed_attributes = fixed_attributes.ptr,
+
+            .bindings_len = bindings.len,
+            .attributes_len = attributes.len,
+            .fixed_attributes_len = fixed_attributes.len,
+        };
+    }
 };
 
 pub const MultiDrawInfo = extern struct {
@@ -1272,53 +1131,53 @@ pub const TextureCombinerUnit = extern struct {
 };
 
 pub const CopyBufferInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreOperation = null,
+    wait_semaphore: ?*const SemaphoreQueueOperation = null,
     src_buffer: Buffer,
     src_offset: DeviceSize,
     dst_buffer: Buffer,
     dst_offset: DeviceSize,
     size: DeviceSize,
-    signal_semaphore: ?*const SemaphoreOperation = null,
+    signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
 pub const CopyBufferToImageInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreOperation = null,
+    wait_semaphore: ?*const SemaphoreQueueOperation = null,
     src_buffer: Buffer,
     src_offset: DeviceSize,
     dst_image: Image,
     dst_subresource: ImageSubresourceLayers,
-    signal_semaphore: ?*const SemaphoreOperation = null,
+    signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
 pub const BlitImageInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreOperation = null,
+    wait_semaphore: ?*const SemaphoreQueueOperation = null,
     src_image: Image,
     dst_image: Image,
     src_subresource: ImageSubresourceLayers,
     dst_subresource: ImageSubresourceLayers,
-    signal_semaphore: ?*const SemaphoreOperation = null,
+    signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
 pub const ClearColorInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreOperation = null,
+    wait_semaphore: ?*const SemaphoreQueueOperation = null,
     subresource_range: ImageSubresourceRange,
     image: Image,
     color: [4]u8,
-    signal_semaphore: ?*const SemaphoreOperation = null,
+    signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
 pub const ClearDepthStencilInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreOperation = null,
+    wait_semaphore: ?*const SemaphoreQueueOperation = null,
     image: Image,
     depth: f32,
     stencil: u8,
-    signal_semaphore: ?*const SemaphoreOperation = null,
+    signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
 pub const SubmitInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreOperation = null,
+    wait_semaphore: ?*const SemaphoreQueueOperation = null,
     command_buffer: CommandBuffer,
-    signal_semaphore: ?*const SemaphoreOperation = null,
+    signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
 pub const ImageSubresourceRange = extern struct {
@@ -1354,22 +1213,43 @@ pub const PresentInfo = extern struct {
         _: u7 = 0,
     };
 
-    wait_semaphore: ?*const SemaphoreOperation = null,
+    wait_semaphore: ?*const SemaphoreQueueOperation = null,
     swapchain: Swapchain,
     image_index: u8,
     flags: Flags,
 };
 
-pub const SemaphoreOperation = extern struct {
+pub const SemaphoreQueueOperation = extern struct {
     value: u64,
     semaphore: Semaphore,
 
-    pub fn init(semaphore: Semaphore, value: u64) SemaphoreOperation {
+    pub fn init(semaphore: Semaphore, value: u64) SemaphoreQueueOperation {
         return .{
             .semaphore = semaphore,
             .value = value,
         };
     }
+};
+
+pub const SemaphoreWaitInfo = extern struct {
+    semaphore_count: u32,
+    semaphores: [*]const Semaphore,
+    values: [*]const u64,
+
+    pub fn init(semaphores: []const Semaphore, values: []const u64) SemaphoreWaitInfo {
+        std.debug.assert(semaphores.len == values.len);
+
+        return .{
+            .semaphore_count = semaphores.len,
+            .semaphores = semaphores.ptr,
+            .values = values.ptr,
+        };
+    }
+};
+
+pub const SemaphoreSignalInfo = extern struct {
+    semaphore: Semaphore,
+    value: u64,
 };
 
 // So here's how mango somewhat *abstracts* the fragment lighting stage
@@ -1453,7 +1333,66 @@ pub const LightEnvironmentFactors = extern struct {
     ambient: [3]u8,
 };
 
-pub const LightEnvironment = extern struct {
+pub const LightEnvironmentLookupSlot = enum(u8) { d0, d1, rr, rg, rb, fr };
+pub const LightLookupSlot = enum(u8) { da, sp };
+
+pub const LightEnvironmentEnable = extern struct {
+    distribution: [2]bool = @splat(false),
+    reflection: [3]bool = @splat(false),
+    fresnel: LightFresnelSelector = .none,
+    /// It is forbidden to bind lights with spotlight parameters
+    /// when they are disabled.
+    spotlight: bool = false,
+
+    pub fn nativeEnabledLookupTables(enable: LightEnvironmentEnable) Graphics.FragmentLighting.LookupTable.Enabled {
+        const extended_reflection = enable.reflection[1] or enable.reflection[2];
+
+        // XXX: I don't really like this but this should NOT be a hot path.
+        return if (extended_reflection)
+            if (enable.distribution[1] and enable.fresnel != .none)
+                .all
+            else if (enable.distribution[1])
+                .d0_d1_rx_sp_da
+            else
+                .d0_fr_rx_sp_da
+        else if (enable.fresnel != .none)
+            if (enable.distribution[0] and enable.distribution[1] and !enable.reflection[0] and !enable.spotlight)
+                .d0_d1_fr_da
+            else if (enable.distribution[0] or enable.distribution[1])
+                .d0_d1_fr_rr_sp_da
+            else
+                .fr_rr_sp_da
+        else if (enable.distribution[1] and !enable.spotlight)
+            .d0_d1_rr_da
+        else if (enable.distribution[1])
+            .d0_d1_rx_sp_da // NOTE: can use either d0_d1_rx_sp_da or d0_d1_fr_rr_sp_da
+        else
+            .d0_rr_sp_da;
+    }
+};
+
+pub const LightEnvironmentInput = extern struct {
+    distribution: [2]LightLookupInput = @splat(.@"N * H"),
+    reflection: [3]LightLookupInput = @splat(.@"N * H"),
+    fresnel: LightLookupInput = .@"N * H",
+    spotlight: LightLookupInput = .@"N * H",
+};
+
+pub const LightEnvironmentRange = extern struct {
+    distribution: [2]LightLookupRange = @splat(.positive),
+    reflection: [3]LightLookupRange = @splat(.positive),
+    fresnel: LightLookupRange = .positive,
+    spotlight: LightLookupRange = .positive,
+};
+
+pub const LightEnvironmentScale = extern struct {
+    distribution: [2]Multiplier = @splat(.@"1x"),
+    reflection: [3]Multiplier = @splat(.@"1x"),
+    fresnel: Multiplier = .@"1x",
+    spotlight: Multiplier = .@"1x",
+};
+
+pub const LightEnvironmentCreateInfo = extern struct {
     // TODO: Investigate shadow state and add it here.
 
     enable_distribution: [2]bool = @splat(false),
@@ -1483,32 +1422,6 @@ pub const LightEnvironment = extern struct {
     spotlight_input: LightLookupInput = .@"N * H",
     spotlight_range: LightLookupRange = .full,
     spotlight_scale: Multiplier = .@"1x",
-
-    pub fn nativeEnabledLookupTables(environment: LightEnvironment) Graphics.FragmentLighting.LookupTable.Enabled {
-        const extended_reflection = environment.enable_reflection[1] or environment.enable_reflection[2];
-
-        // XXX: I don't really like this but this should NOT be a hot path.
-        return if (extended_reflection)
-            if (environment.enable_distribution[1] and environment.enable_fresnel != .none)
-                .all
-            else if (environment.enable_distribution[1])
-                .d0_d1_rx_sp_da
-            else
-                .d0_fr_rx_sp_da
-        else if (environment.enable_fresnel != .none)
-            if (environment.enable_distribution[0] and environment.enable_distribution[1] and !environment.enable_reflection[0] and !environment.enable_spotlight)
-                .d0_d1_fr_da
-            else if (environment.enable_distribution[0] or environment.enable_distribution[1])
-                .d0_d1_fr_rr_sp_da
-            else
-                .fr_rr_sp_da
-        else if (environment.enable_distribution[1] and !environment.enable_spotlight)
-            .d0_d1_rr_da
-        else if (environment.enable_distribution[1])
-            .d0_d1_rx_sp_da // NOTE: can use either d0_d1_rx_sp_da or d0_d1_fr_rr_sp_da
-        else
-            .d0_rr_sp_da;
-    }
 };
 
 pub const LightFactors = extern struct {
@@ -1616,28 +1529,13 @@ pub const Light = extern struct {
     enable_shadow: bool = false,
 };
 
-pub const HorizonBackedDeviceCreateInfo = struct {
-    /// The GSP session the device will use to communicate with the
-    /// process.
-    gsp: horizon.services.GspGpu,
-
-    /// The address arbiter the device will use when it needs to wait
-    /// and signal threads.
-    arbiter: horizon.AddressArbiter,
-
-    /// The driver's thread priority, by default is `0x1A` (Very high)
-    driver_priority: horizon.Thread.Priority = .priority(0x1A),
-
-    /// The driver's thread processor, by default is `-2`
-    driver_processor: horizon.Thread.Processor = .default,
-};
+pub const HorizonBackedDeviceCreateInfo = backend.Horizon.CreateInfo;
 
 /// Zig entrypoint for creating a device backed by the Horizon GSP.
 ///
-/// Device owns GSP process state after this point. However the app is still able
-/// to interact with it and use requests such as `SetLcdForceBlack`.
-pub fn createHorizonBackedDevice(create_info: HorizonBackedDeviceCreateInfo, allocator: std.mem.Allocator) !Device {
-    return (try backend.Device.initHorizonBacked(create_info, allocator)).toHandle();
+/// Device owns GSP process state after this point.
+pub fn createHorizonBackedDevice(create_info: HorizonBackedDeviceCreateInfo, gpa: std.mem.Allocator) !Device {
+    return (try backend.Horizon.create(create_info, gpa)).device.toHandle();
 }
 
 pub const Device = backend.Device.Handle;
@@ -1647,9 +1545,10 @@ pub const Semaphore = backend.Semaphore.Handle;
 pub const Buffer = backend.Buffer.Handle;
 pub const Image = backend.Image.Handle;
 pub const ImageView = backend.ImageView.Handle;
-pub const Pipeline = backend.Pipeline.Handle;
+pub const Shader = backend.Shader.Handle;
 pub const CommandPool = backend.CommandPool.Handle;
 pub const CommandBuffer = backend.CommandBuffer.Handle;
+pub const VertexInputLayout = backend.VertexInputLayout.Handle;
 pub const Sampler = backend.Sampler.Handle;
 pub const Surface = backend.Surface.Handle;
 pub const Swapchain = backend.Swapchain.Handle;
@@ -1663,6 +1562,9 @@ pub const BindMemoryError = error{Unexpected};
 pub const AcquireNextImageError = error{ Timeout, Unexpected };
 pub const SignalSemaphoreError = error{Unexpected};
 pub const WaitSemaphoreError = error{ Timeout, Unexpected };
+pub const ReleaseDeviceError = error{Unexpected};
+pub const ReacquireDeviceError = error{Unexpected};
+pub const GetSwapchainImagesError = error{Unexpected};
 
 comptime {
     _ = backend;

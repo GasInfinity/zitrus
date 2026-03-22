@@ -1,15 +1,12 @@
-//! Presentation Engine a.k.a handles swapchains, presentation and their images
-//!
-//! Like `Device`, this depends on the platform to truly present images!
+//! Presentation Engine, a.k.a handles swapchains, presentation and their images
+//! through GSP.
 
-queue: Queue.Presentation,
 chain_created: std.enums.EnumArray(pica.Screen, std.atomic.Value(bool)),
 chain_presents: std.enums.EnumArray(pica.Screen, std.atomic.Value(u8)),
 chains: std.enums.EnumArray(pica.Screen, Swapchain),
 
-pub fn init(device: *backend.Device) PresentationEngine {
+pub fn init() PresentationEngine {
     return .{
-        .queue = .init(device),
         .chain_created = .initDefault(.init(false), .{}),
         .chain_presents = .initDefault(.init(0), .{}),
         .chains = .initUndefined(),
@@ -79,8 +76,10 @@ pub fn initSwapchain(pe: *PresentationEngine, create_info: mango.SwapchainCreate
     return backend.Swapchain.toHandle(screen);
 }
 
-pub fn deinitSwapchain(pe: *PresentationEngine, swapchain: mango.Swapchain, allocator: std.mem.Allocator) void {
+pub fn deinitSwapchain(pe: *PresentationEngine, gsp: GspGpu, gsp_owned: bool, swapchain: mango.Swapchain, allocator: std.mem.Allocator) void {
     _ = allocator;
+
+    if (gsp_owned) gsp.sendSetLcdForceBlack(true) catch unreachable;
 
     const screen = backend.Swapchain.fromHandle(swapchain);
     std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
@@ -88,6 +87,15 @@ pub fn deinitSwapchain(pe: *PresentationEngine, swapchain: mango.Swapchain, allo
 
     pe.chains.getPtr(screen).* = undefined;
     pe.chain_created.getPtr(screen).store(false, .release);
+}
+
+pub fn reacquire(pe: *PresentationEngine, gsp: GspGpu) mango.ReacquireDeviceError!void {
+    for (std.enums.values(pica.Screen)) |screen| {
+        if (!pe.chain_created.get(screen).load(.acquire)) return;
+        if (!pe.chains.get(screen).misc.contents_available) return;
+    }
+
+    gsp.sendSetLcdForceBlack(false) catch unreachable;
 }
 
 pub fn getSwapchainImages(pe: *PresentationEngine, swapchain: mango.Swapchain, images: []mango.Image) u8 {
@@ -104,28 +112,15 @@ pub fn getSwapchainImages(pe: *PresentationEngine, swapchain: mango.Swapchain, i
     return chain.image_count;
 }
 
-pub fn acquireNextImage(pe: *PresentationEngine, swapchain: mango.Swapchain, timeout: i64) !u8 {
+pub fn acquireNextImage(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, swapchain: mango.Swapchain, timeout: u64) !u8 {
     const screen = backend.Swapchain.fromHandle(swapchain);
     std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
 
     const chain = pe.chains.getPtr(screen);
-    return chain.acquireNextIndex(@enumFromInt(timeout), pe.queue.device.arbiter);
+    return chain.acquireNextIndex(timeout, arbiter);
 }
 
-pub fn present(pe: *PresentationEngine, info: mango.PresentInfo) !void {
-    const screen = backend.Swapchain.fromHandle(info.swapchain);
-    std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
-
-    return pe.queue.wakePushFront(.{
-        .misc = .{
-            .screen = screen,
-            .ignore_stereo = info.flags.ignore_stereoscopic,
-        },
-        .index = info.image_index,
-    }, .initSemaphoreOperation(info.wait_semaphore), null);
-}
-
-pub fn queueWork(pe: *PresentationEngine, gsp_framebuffers: *[2]GspGpu.FramebufferInfo, item: Queue.PresentationItem) void {
+pub fn queueWork(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp_framebuffers: *[2]GspGpu.FramebufferInfo, item: Queue.PresentationItem) void {
     const screen = item.misc.screen;
 
     std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
@@ -142,7 +137,7 @@ pub fn queueWork(pe: *PresentationEngine, gsp_framebuffers: *[2]GspGpu.Framebuff
         .index = item.index,
     };
 
-    const is_next_present = chain.present(slot, pe.queue.device.arbiter);
+    const is_next_present = chain.present(slot, arbiter);
 
     if (is_next_present) {
         // NOTE: The GSP DOES process presents at vblank but we MUST present BEFORE vblank!
@@ -150,7 +145,7 @@ pub fn queueWork(pe: *PresentationEngine, gsp_framebuffers: *[2]GspGpu.Framebuff
     }
 }
 
-pub fn refresh(pe: *PresentationEngine, gsp_framebuffers: *[2]GspGpu.FramebufferInfo, screen: pica.Screen) void {
+pub fn refresh(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp: GspGpu, gsp_framebuffers: *[2]GspGpu.FramebufferInfo, screen: pica.Screen) void {
     const presents = pe.chain_presents.getPtr(screen);
 
     if (presents.load(.monotonic) == 0) {
@@ -163,14 +158,27 @@ pub fn refresh(pe: *PresentationEngine, gsp_framebuffers: *[2]GspGpu.Framebuffer
     std.debug.assert(created);
 
     const chain = pe.chains.getPtr(screen);
+    const was_available = chain.misc.contents_available;
 
     // NOTE: We MUST have a present as we had a request!
-    _ = chain.consumeNextPresent(pe.queue.device.arbiter) orelse unreachable;
+    _ = chain.consumeNextPresent(arbiter) orelse unreachable;
 
     // This must be done as if, e.g: we're using a fifo with 3 images (triple buffering),
     // we must present the next queued present if available.
     if (chain.peekNextPresent()) |next_queued| {
         updateNextPresent(&gsp_framebuffers[@intFromEnum(screen)], screen, chain, next_queued);
+    }
+
+    if (!was_available) {
+        @branchHint(.unlikely); // Yes, unlikely as it should only be hit in the first frame for each screen.
+
+        const other_screen = screen.other();
+        const other_created = pe.chain_created.get(other_screen).load(.acquire);
+        const other_chain = pe.chains.getPtr(other_screen);
+
+        if (other_created and other_chain.misc.contents_available) {
+            gsp.sendSetLcdForceBlack(false) catch unreachable;
+        }
     }
 }
 
@@ -190,7 +198,8 @@ fn updateNextPresent(gsp_framebuffer: *GspGpu.FramebufferInfo, screen: pica.Scre
     else
         (left + (stride * chain.misc.height()));
 
-    const was_updating = gsp_framebuffer.update(.{
+    // OK, GSP may tell us that the FB was dirty even when it wasn't. We don't care
+    _ = gsp_framebuffer.update(.{
         .active = @enumFromInt(chain.misc.id),
         .left_vaddr = left,
         .right_vaddr = right,
@@ -208,8 +217,6 @@ fn updateNextPresent(gsp_framebuffer: *GspGpu.FramebufferInfo, screen: pica.Scre
     });
 
     chain.misc.id +%= 1;
-    // Should NOT happen, we're literally updating the FB when we should!
-    std.debug.assert(!was_updating);
 }
 
 const Swapchain = struct {
@@ -232,7 +239,8 @@ const Swapchain = struct {
         width_minus_one: u10,
         height_minus_one: u10,
         id: u1 = 0,
-        _: u6 = 0,
+        contents_available: bool = false,
+        _: u5 = 0,
 
         pub fn width(misc: Misc) usize {
             return @as(usize, misc.width_minus_one) + 1;
@@ -325,6 +333,7 @@ const Swapchain = struct {
             presentation.displayed = new.index;
         }
 
+        chain.misc.contents_available = true;
         return new;
     }
 
@@ -349,7 +358,9 @@ const Swapchain = struct {
     /// Can only be called by client code, the driver NEVER acquires indices.
     ///
     /// Externally synchronized
-    pub fn acquireNextIndex(chain: *Swapchain, timeout: horizon.Timeout, arbiter: horizon.AddressArbiter) !u8 {
+    pub fn acquireNextIndex(chain: *Swapchain, timeout: u64, arbiter: horizon.AddressArbiter) !u8 {
+        const h_timeout: horizon.Timeout = if (timeout > std.math.maxInt(u63)) .none else .fromNanoseconds(@intCast(timeout));
+
         while (true) {
             if (chain.tryAcquireNextIndex()) |idx| return idx;
 
@@ -357,14 +368,11 @@ const Swapchain = struct {
             //   1 - The driver pushes a new index and this doesn't wait
             //   2 - We wait and we're signaled, we'll get the new index in the next iteration.
             //   3 - We wait and we get a Timeout, in that case we have to check again if we have an index available (we may get a Timeout before waking up)
-            arbiter.arbitrate(&chain.available_wake.raw, .{
-                .wait_if_less_than_timeout = .{
-                    .value = 1,
-                    .timeout = timeout,
-                    // Try to acquire again before erroring if somehow we got a Timeout before the driver called wake.
-                    // XXX: Azahar does not have the same behavior as ofw, this somehow becomes a timeout even if timeout == -1. Worked around directly in AddressArbiter
-                },
-            }) catch return if (chain.tryAcquireNextIndex()) |idx| idx else error.Timeout;
+            arbiter.waitTimeout(i32, &chain.available_wake.raw, 1, h_timeout) catch {
+                // XXX: Azahar does not have the same behavior as ofw, this somehow becomes a timeout even if timeout == -1. Worked around directly in AddressArbiter
+                // Try to acquire again before erroring if somehow we got a Timeout before the driver called wake.
+                return if (chain.tryAcquireNextIndex()) |idx| idx else error.Timeout;
+            };
         }
     }
 };
@@ -374,7 +382,7 @@ const testing = std.testing;
 const PresentationEngine = @This();
 const Queue = backend.Queue;
 
-const backend = @import("backend.zig");
+const backend = @import("../../backend.zig");
 
 const std = @import("std");
 const zitrus = @import("zitrus");
