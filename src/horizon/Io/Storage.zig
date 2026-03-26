@@ -1,4 +1,12 @@
-pub const empty: Storage = .init(false, null, null, &.{}, .none);
+pub const empty: Storage = .{
+    .lock = .init,
+    .net = .empty,
+    .filesystem = .empty,
+    .cwd = .invalid,
+    .fds = .empty,
+    .descriptions = .empty,
+    .paths = .empty,
+};
 pub const separator = '/';
 
 // This is a workaround to not stall any soc:U IPC call. We'll
@@ -6,7 +14,11 @@ pub const separator = '/';
 //
 // Time we'll sleep when waiting some operation,
 // has been arbitrarily chosen.
+// NOTE: We choose this instead of multiple sessions because cancellation needs it.
+// You can't cancel an IPC call! (AFAIK)
 const socket_busy_loop_workaround_ns = 100000;
+
+pub const Ownage = enum(u1) { unowned, owned };
 
 pub const Descriptor = enum(u32) {
     invalid = std.math.maxInt(u32),
@@ -19,30 +31,31 @@ pub const Description = struct {
     pub const Table = Storage.Table(Description);
     pub const Stored = extern union {
         romfs: romfs.View.Entry,
-        file: Filesystem.File,
+        file: FilesystemSrv.File,
         /// `invalid` is a sentinel for root.
         path: Builder.Table.Index,
         socket: SocketUser.Descriptor,
     };
 
-    pub const Flags = packed struct {
+    pub const Flags = packed struct(u16) {
         pub const Kind = enum(u2) {
             file,
             directory,
             socket,
         };
 
-        device: Device.Kind,
+        mount: u8,
         kind: Kind,
+        _: u6 = 0,
     };
 
     pub const Extra = extern union {
         pub const Directory = extern union {
-            pub const min_reader_buffer_len = @sizeOf(NameBuffer) + @sizeOf(Filesystem.Directory.Entry);
+            pub const min_reader_buffer_len = @sizeOf(NameBuffer) + @sizeOf(FilesystemSrv.Directory.Entry);
             pub const NameBuffer = [Io.Dir.max_name_bytes * 4]u8;
 
             romfs: romfs.View.Iterator,
-            archive: Filesystem.Directory,
+            archive: FilesystemSrv.Directory,
         };
 
         // XXX: I would like to use atomics but its an upstream issue...
@@ -59,7 +72,7 @@ pub const Description = struct {
     pub fn initSocket(sock: SocketUser.Descriptor) Description {
         return .{
             .ref = .init(1),
-            .flags = .{ .device = .soc, .kind = .socket },
+            .flags = .{ .mount = 0, .kind = .socket },
             .stored = .{ .socket = sock },
             .extra = .{ .none = {} },
         };
@@ -159,108 +172,206 @@ pub const Builder = struct {
     }
 };
 
-pub const Device = struct {
-    pub const empty: Device = .{
-        .romfs = .empty,
-        .sdmc = .none,
+pub const Filesystem = struct {
+    pub const empty: Filesystem = .{
+        .owned = .unowned,
+        .fs = .{ .session = .none },
+        .mounts = .empty,
     };
 
-    pub const Kind = enum(u4) {
-        soc,
-        romfs,
-        sdmc,
+    pub const Init = struct {
+        fs: FilesystemSrv,
+        extra: Ownage,
+    };
 
-        pub fn archiveId(kind: Kind) ?Filesystem.ArchiveId {
-            return switch (kind) {
-                .soc, .romfs => null,
-                .sdmc => .sdmc,
-            };
+    pub const MountError = error{SystemResources};
+    pub const Mount = struct {
+        pub const empty: Mount = .{
+            .name = &.{},
+            .data = undefined,
+        };
+
+        pub const Kind = enum { romfs, archive };
+        pub const Data = union(Kind) {
+            romfs: FilesystemSrv.RomFs,
+            archive: FilesystemSrv.Archive,
+        };
+
+        name: []const u8,
+        data: Data,
+
+        pub fn deinit(mnt: *Mount, gpa: std.mem.Allocator, fs: FilesystemSrv) void {
+            defer mnt.* = .empty;
+
+            switch (mnt.data) {
+                .romfs => |rfs| rfs.deinit(gpa),
+                .archive => mnt.data.archive.close(fs)
+            }
         }
     };
 
-    romfs: Filesystem.RomFs,
-    sdmc: Filesystem.Archive,
+    owned: Ownage,
+    fs: FilesystemSrv,
+    /// Not Thread-Safe
+    mounts: std.ArrayList(Mount),
 
-    pub fn deinit(device: *Device, gpa: std.mem.Allocator, fs: Filesystem) void {
-        device.romfs.deinit(gpa);
-        if (device.sdmc != .none) device.sdmc.close(fs);
-        device.* = .empty;
+    pub fn init(filesystem: *Filesystem, opts: Init) !void {
+        filesystem.* = .{
+            .owned = opts.extra,
+            .fs = opts.fs,
+            .mounts = .empty,
+        };
     }
 
-    pub fn archive(device: *Device, kind: Kind) ?*Filesystem.Archive {
-        return switch (kind) {
-            .soc, .romfs => null,
-            .sdmc => &device.sdmc,
+    pub fn find(filesystem: *Filesystem, name: []const u8) ?u8 {
+        return blk: for (filesystem.mounts.items, 0..) |mnt, i| {
+            if (std.mem.eql(u8, mnt.name, name)) break :blk @intCast(i);
+        } else null;
+    }
+
+    /// Not Thread-Safe
+    pub fn mountArchive(filesystem: *Filesystem, gpa: std.mem.Allocator, name: []const u8, id: FilesystemSrv.ArchiveId, path_type: FilesystemSrv.PathType, path: []const u8) !void {
+        return try filesystem.mount(gpa, name, .{
+            .archive = try filesystem.fs.sendOpenArchive(id, path_type, path),
+        });
+    }
+
+    /// Not Thread-Safe
+    pub fn mountSelfRomFs(filesystem: *Filesystem, gpa: std.mem.Allocator, name: []const u8) !void {
+        return try filesystem.mount(gpa, name, .{
+            .romfs = try .initSelf(filesystem.fs, gpa),
+        });
+    }
+
+    /// Not Thread-Safe
+    pub fn mount(filesystem: *Filesystem, gpa: std.mem.Allocator, name: []const u8, data: Mount.Data) MountError!void {
+        std.debug.assert(name.len > 0);
+
+        const mnt = mnt: for (filesystem.mounts.items) |*mnt| {
+            if (mnt.name.len == 0) break :mnt mnt;
+        } else if (filesystem.mounts.items.len <= std.math.maxInt(u8))
+            filesystem.mounts.addOne(gpa) catch return error.SystemResources
+        else
+            return error.SystemResources;
+
+        mnt.* = .{
+            .name = name,
+            .data = data,
         };
+    }
+
+    /// Not Thread-Safe, asserts all file handled associated with this mount have been closed.
+    ///
+    /// Remember to unlinkCurrentDir if you set any!
+    pub fn umount(filesystem: *Filesystem, gpa: std.mem.Allocator, name: []const u8) void {
+        std.debug.assert(name.len > 0);
+
+        const mnt: *Mount = mnt: for (filesystem.mounts.items) |mnt| {
+            if (std.mem.eql(u8, mnt.name, name)) break :mnt mnt;
+        } else unreachable;
+
+        mnt.deinit(gpa, filesystem.fs);
+    }
+
+    pub fn deinit(filesystem: *Filesystem, gpa: std.mem.Allocator) void {
+        defer filesystem.* = .empty;
+
+        for (filesystem.mounts.items) |*mnt| {
+            if (mnt.name.len > 0) mnt.deinit(gpa, filesystem.fs);
+        }
+
+        filesystem.mounts.deinit(gpa);
+        if (filesystem.owned == .owned) filesystem.fs.close();
     }
 };
 
-/// Whether this `Storage` owns `fs` and `soc` or they're externally managed.
-owned: bool,
+pub const Network = struct {
+    pub const empty: Network = .{
+        .soc = .{ .session = .none },
+        .buffer = &.{},
+        .memory = .none,
+    };
 
-soc: SocketUser,
-soc_buffer: []align(horizon.heap.page_size) u8,
-soc_memory: horizon.MemoryBlock,
+    pub const Init = struct {
+        pub const Extra = union(Ownage) {
+            unowned: void,
+            owned: u32,
+        };
 
-fs: Filesystem,
-device: Device,
+        soc: SocketUser,
+        extra: Extra,
+    };
 
-/// Protects `descriptors`, `table` and `cwd`
+    soc: SocketUser,
+    buffer: []align(horizon.heap.page_size) u8,
+    memory: horizon.MemoryBlock,
+
+    pub fn init(net: *Network, gpa: std.mem.Allocator, opts: Init) !void {
+        const soc = opts.soc;
+        const buffer: []align(horizon.heap.page_size) u8, const memory: horizon.MemoryBlock = switch (opts.extra) {
+            .owned => |buffer_size| blk: {
+                const buffer = try gpa.alignedAlloc(u8, .fromByteUnits(horizon.heap.page_size), buffer_size);
+                errdefer gpa.free(buffer);
+
+                const memory: horizon.MemoryBlock = try .create(buffer.ptr, buffer.len, .none, .rw);
+                errdefer memory.close();
+
+                try soc.sendInitialize(memory, buffer.len);
+                break :blk .{ buffer, memory };
+            },
+            .unowned => .{ &.{}, .none },
+        };
+
+        net.* = .{
+            .soc = soc,
+            .buffer = buffer,
+            .memory = memory,
+        };
+    }
+
+    pub fn deinit(net: *Network, gpa: std.mem.Allocator) void {
+        defer net.* = .empty;
+        
+        if (net.memory == horizon.MemoryBlock.none) return;
+
+        net.soc.sendDeinitialize();
+        net.memory.close();
+        gpa.free(net.buffer);
+        net.soc.close();
+    }
+};
+
+/// Protects `descriptors`, `table` and `cwd`. 
+///
+/// Hold a write lock if you have any pointer.
 lock: Io.RwLock,
 
-/// May be `invalid`, in that case non-device paths *will* return `error.FileNotFound`
+net: Network,
+filesystem: Filesystem,
+
+/// May be `invalid`, in that case non-device paths *will* return `error.NoDevice`
 cwd: Description.Table.Index,
 fds: std.ArrayList(Description.Table.Index),
 descriptions: Description.Table,
 paths: Builder.Table,
 
-/// This `Storage` now owns `fs` and the resources associated with `soc`.
-///
-/// Both are assumed to be initialized if non-null (`sendInitialize` has been called for both) and alive until `deinit`. It is valid
-/// to call `deinit` multiple times.
-///
-/// If `owned`, all resources will be deinitialized on `deinit` and `soc_buffer` must be allocated with same `gpa` passed in it.
-pub fn init(owned: bool, fs: ?Filesystem, soc: ?SocketUser, soc_buffer: []align(horizon.heap.page_size) u8, soc_shm: horizon.MemoryBlock) Storage {
-    return .{
-        .owned = owned,
-        // NOTE: We use a `none` session to save memory but this shouldn't be done usually
-        // (maybe when null optimization comes some day we won't have to do this)
-        .soc = soc orelse .{ .session = .none },
-        .soc_buffer = soc_buffer,
-        .soc_memory = soc_shm,
-        .fs = fs orelse .{ .session = .none },
-        .device = .empty,
-        .lock = .init,
-        .cwd = .invalid,
-        .fds = .empty,
-        .descriptions = .empty,
-        .paths = .empty,
-    };
-}
-
 pub fn deinit(storage: *Storage, io: std.Io, gpa: std.mem.Allocator) void {
-    switch (storage.cwd) {
-        .invalid => {},
-        _ => |idx| storage.closeDescription(io, gpa, idx),
-    }
-
-    if (storage.fs.session != horizon.Session.Client.none) {
-        storage.device.deinit(gpa, storage.fs);
-        if (storage.owned) storage.fs.close();
-    }
-
-    if (storage.owned and storage.soc.session != horizon.Session.Client.none) {
-        storage.soc.sendDeinitialize();
-        storage.soc.close();
-
-        storage.soc_memory.close();
-        gpa.free(storage.soc_buffer);
-    }
-
+    storage.unlinkCurrentDir(io, gpa);
+    storage.filesystem.deinit(gpa);
+    storage.net.deinit(gpa);
     storage.paths.deinit(gpa);
     storage.descriptions.deinit(gpa);
     storage.fds.deinit(gpa);
     storage.* = .empty;
+}
+
+pub fn unlinkCurrentDir(storage: *Storage, io: std.Io, gpa: std.mem.Allocator) void {
+    defer storage.cwd = .invalid;
+
+    switch (storage.cwd) {
+        .invalid => {},
+        _ => |idx| storage.closeDescription(io, gpa, idx),
+    }
 }
 
 pub const OpenPathError = error{
@@ -282,6 +393,7 @@ pub const OpenFlags = struct {
         directory,
         any,
     };
+
     pub const Create = enum {
         none,
         create,
@@ -306,27 +418,25 @@ pub fn openPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_di
     const fd = try storage.allocateDescription(io, gpa);
     errdefer storage.closeUninitialized(io, fd);
 
-    const maybe_device, const device_path = try splitParsePath(sub_path);
-    const maybe_dir_stored, const maybe_dir_device = (try storage.getDirectoryDescription(io, parent_dir)) orelse .{ null, null };
+    const maybe_mnt_idx, const mnt_path = try storage.splitParsePath(sub_path);
+    const maybe_dir_stored, const maybe_dir_mnt_idx = (try storage.getDirectoryDescription(io, parent_dir)) orelse .{ null, null };
 
     const description: Description = des: {
-        const device = maybe_device orelse maybe_dir_device orelse return error.NoDevice;
+        const mnt_idx = maybe_mnt_idx orelse maybe_dir_mnt_idx orelse return error.NoDevice;
+        const mnt = &storage.filesystem.mounts.items[mnt_idx];
 
-        try storage.tryMount(io, gpa, device);
-
-        switch (device) {
-            .soc => unreachable,
-            .romfs => {
+        switch (mnt.data) {
+            .romfs => |rfs| {
                 if (opts.create != .none) return error.ReadOnlyFileSystem;
-
-                const parent: romfs.View.Directory = if (Io.Dir.path.isAbsolutePosix(device_path))
+                
+                const parent: romfs.View.Directory = if (Io.Dir.path.isAbsolutePosix(mnt_path))
                     .root
                 else
                     maybe_dir_stored.?.romfs.asDirectory(); // We already return NoDevice above
 
                 var utf16_device_path_buffer: [Io.Dir.max_path_bytes]u16 = undefined;
-                const utf16_device_path = utf16_device_path_buffer[0 .. std.unicode.utf8ToUtf16Le(&utf16_device_path_buffer, device_path) catch return error.BadPathName];
-                const entry = try storage.device.romfs.openAny(parent, utf16_device_path);
+                const utf16_device_path = utf16_device_path_buffer[0 .. std.unicode.utf8ToUtf16Le(&utf16_device_path_buffer, mnt_path) catch return error.BadPathName];
+                const entry = try rfs.openAny(parent, utf16_device_path);
 
                 if ((opts.allow == .file or opts.mode != .read_only) and entry.kind == .directory) return error.IsDir;
                 if ((opts.allow == .directory) and entry.kind == .file) return error.NotDir;
@@ -336,7 +446,7 @@ pub fn openPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_di
                     .ref = .init(1),
                     .stored = .{ .romfs = entry },
                     .flags = .{
-                        .device = .romfs,
+                        .mount = mnt_idx,
                         .kind = switch (entry.kind) {
                             .file => .file,
                             .directory => .directory,
@@ -344,23 +454,21 @@ pub fn openPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_di
                     },
                     .extra = switch (entry.kind) {
                         .file => .{ .seek = .init(0) },
-                        .directory => .{ .dir = .{ .romfs = entry.asDirectory().iterator(storage.device.romfs.view) } },
+                        .directory => .{ .dir = .{ .romfs = entry.asDirectory().iterator(rfs.view) } },
                     },
                 };
             },
-            .sdmc => {
-                // NOTE: We already check in tryMount that fs is valid and we've opened the archive.
-                const fs = storage.fs;
-                const archive = storage.device.archive(device).?.*;
+            .archive => |archive| {
+                const fs = storage.filesystem.fs;
 
                 var builder: Builder = .init;
-                const path_z = try storage.buildPath(&builder, io, device_path, maybe_dir_stored);
+                const path_z = try storage.buildPath(&builder, io, mnt_path, maybe_dir_stored);
 
                 if (std.mem.eql(u16, path_z, Builder.root)) break :des .{
                     .ref = .init(1),
                     .stored = .{ .path = .invalid },
                     .flags = .{
-                        .device = device,
+                        .mount = mnt_idx,
                         .kind = .directory,
                     },
                     .extra = .{ .dir = .{ .archive = .none } },
@@ -396,7 +504,7 @@ pub fn openPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_di
                         .ref = .init(1),
                         .stored = .{ .file = file },
                         .flags = .{
-                            .device = device,
+                            .mount = mnt_idx,
                             .kind = .file,
                         },
                         .extra = .{ .seek = .init(0) },
@@ -416,7 +524,7 @@ pub fn openPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_di
                     .ref = .init(1),
                     .stored = .{ .path = stored_path_idx },
                     .flags = .{
-                        .device = device,
+                        .mount = mnt_idx,
                         .kind = .directory,
                     },
                     .extra = .{ .dir = .{ .archive = .none } },
@@ -493,28 +601,27 @@ pub fn createFileAtomic(io: std.Io, dir: Io.Dir, sub_path: []const u8, opts: Io.
     }
 }
 
-pub const AccessPathError = TryMountError || error{
+pub const AccessPathError = error{
     ReadOnlyFileSystem,
     FileNotFound,
     NameTooLong,
     BadPathName,
     AccessDenied,
+    NoDevice,
+    Unexpected,
 };
 
 /// Assumes `lock` is held as non-shareable.
-pub fn accessPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_dir: Descriptor, sub_path: []const u8, read: bool, write: bool) AccessPathError!void {
+pub fn accessPath(storage: *Storage, io: std.Io, parent_dir: Descriptor, sub_path: []const u8, read: bool, write: bool) AccessPathError!void {
     if (sub_path.len > Io.Dir.max_path_bytes) return error.NameTooLong;
     if (sub_path.len == 0) return error.BadPathName;
 
-    const maybe_device, const device_path = try splitParsePath(sub_path);
+    const maybe_mnt_idx, const device_path = try storage.splitParsePath(sub_path);
     const maybe_dir_stored, const maybe_dir_device = (try storage.getDirectoryDescription(io, parent_dir)) orelse .{ null, null };
-    const device = maybe_device orelse maybe_dir_device orelse return error.NoDevice;
+    const mnt = maybe_mnt_idx orelse maybe_dir_device orelse return error.NoDevice;
 
-    try storage.tryMount(io, gpa, device);
-
-    switch (device) {
-        .soc => unreachable,
-        .romfs => {
+    switch (storage.filesystem.mounts.items[mnt].data) {
+        .romfs => |rfs| {
             const parent: romfs.View.Directory = if (Io.Dir.path.isAbsolutePosix(device_path))
                 .root
             else
@@ -522,18 +629,16 @@ pub fn accessPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_
 
             var utf16_device_path_buffer: [Io.Dir.max_path_bytes]u16 = undefined;
             const utf16_device_path = utf16_device_path_buffer[0 .. std.unicode.utf8ToUtf16Le(&utf16_device_path_buffer, device_path) catch return error.BadPathName];
-            _ = try storage.device.romfs.openAny(parent, utf16_device_path);
+            _ = try rfs.openAny(parent, utf16_device_path);
 
             if (write) return error.ReadOnlyFileSystem;
         },
-        .sdmc => {
-            const fs = storage.fs;
-            const archive = storage.device.archive(device).?.*;
+        .archive => |archive| {
+            const fs = storage.filesystem.fs;
 
             var builder: Builder = .init;
             const path_z = try storage.buildPath(&builder, io, device_path, maybe_dir_stored);
 
-            // NOTE: We already check in tryMount that fs is valid and we've opened the archive.
             if (std.mem.eql(u16, path_z, Builder.root)) return if (write) error.AccessDenied;
 
             var current_read = read;
@@ -568,7 +673,7 @@ pub const ModifyPathOperation = enum {
     delete_file,
 };
 
-pub const ModifyError = TryMountError || error{
+pub const ModifyError = error{
     ReadOnlyFileSystem,
     FileNotFound,
     PathAlreadyExists,
@@ -576,25 +681,23 @@ pub const ModifyError = TryMountError || error{
     BadPathName,
     IsDir,
     NotDir,
+    NoDevice,
+    Unexpected,
 };
 
 /// Assumes `lock` is held as non-shareable.
-pub fn modifyPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_dir: Descriptor, sub_path: []const u8, operation: ModifyPathOperation) ModifyError!void {
+pub fn modifyPath(storage: *Storage, io: std.Io, parent_dir: Descriptor, sub_path: []const u8, operation: ModifyPathOperation) ModifyError!void {
     if (sub_path.len > Io.Dir.max_path_bytes) return error.NameTooLong;
     if (sub_path.len == 0) return error.BadPathName;
 
-    const maybe_device, const device_path = try splitParsePath(sub_path);
+    const maybe_mnt_idx, const device_path = try storage.splitParsePath(sub_path);
     const maybe_dir_stored, const maybe_dir_device = (try storage.getDirectoryDescription(io, parent_dir)) orelse .{ null, null };
-    const device = maybe_device orelse maybe_dir_device orelse return error.NoDevice;
+    const mnt = maybe_mnt_idx orelse maybe_dir_device orelse return error.NoDevice;
 
-    try storage.tryMount(io, gpa, device);
-
-    switch (device) {
-        .soc => unreachable,
+    switch (storage.filesystem.mounts.items[mnt].data) {
         .romfs => return error.ReadOnlyFileSystem,
-        .sdmc => {
-            const fs = storage.fs;
-            const archive = storage.device.archive(device).?.*;
+        .archive => |archive| {
+            const fs = storage.filesystem.fs;
 
             var builder: Builder = .init;
             const path_z = try storage.buildPath(&builder, io, device_path, maybe_dir_stored);
@@ -618,7 +721,7 @@ pub fn modifyPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_
 }
 
 /// Assumes `lock` is held as non-shareable.
-pub fn renamePath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, src_parent_dir: Descriptor, src_path: []const u8, dst_parent_dir: Descriptor, dst_path: []const u8, preserve: bool) Io.Dir.RenamePreserveError!void {
+pub fn renamePath(storage: *Storage, io: std.Io, src_parent_dir: Descriptor, src_path: []const u8, dst_parent_dir: Descriptor, dst_path: []const u8, preserve: bool) Io.Dir.RenamePreserveError!void {
     if (src_path.len > Io.Dir.max_path_bytes) return error.NameTooLong;
     if (src_path.len == 0) return error.BadPathName;
     if (dst_path.len > Io.Dir.max_path_bytes) return error.NameTooLong;
@@ -627,23 +730,23 @@ pub fn renamePath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, src_par
     const maybe_src_stored, const maybe_src_dir_device = (try storage.getDirectoryDescription(io, src_parent_dir)) orelse .{ null, null };
     const maybe_dst_stored, const maybe_dst_dir_device = (try storage.getDirectoryDescription(io, dst_parent_dir)) orelse .{ null, null };
 
-    const maybe_src_device, const src_device_path = try splitParsePath(src_path);
-    const src_device = maybe_src_device orelse maybe_src_dir_device orelse return error.NoDevice;
+    const maybe_src_mnt, const src_device_path = try storage.splitParsePath(src_path);
+    const src_mnt = maybe_src_mnt orelse maybe_src_dir_device orelse return error.NoDevice;
 
-    const maybe_dst_device, const dst_device_path = try splitParsePath(dst_path);
-    const dst_device = maybe_dst_device orelse maybe_dst_dir_device orelse return error.NoDevice;
+    const maybe_dst_mnt, const dst_device_path = try storage.splitParsePath(dst_path);
+    const dst_mnt = maybe_dst_mnt orelse maybe_dst_dir_device orelse return error.NoDevice;
 
-    if (src_device != dst_device) return error.CrossDevice;
+    const src_mnt_data = &storage.filesystem.mounts.items[src_mnt].data;
+    const dst_mnt_data = &storage.filesystem.mounts.items[dst_mnt].data;
 
-    try storage.tryMount(io, gpa, src_device);
-
-    switch (dst_device) {
-        .soc => unreachable,
+    switch (src_mnt_data.*) {
         .romfs => return error.ReadOnlyFileSystem,
-        .sdmc => {
-            const fs = storage.fs;
-            const src_archive = storage.device.archive(src_device).?.*;
-            const dst_archive = storage.device.archive(dst_device).?.*;
+        .archive => |archive| {
+            if (dst_mnt_data.* != .archive) return error.CrossDevice;
+
+            const fs = storage.filesystem.fs;
+            const src_archive = archive;
+            const dst_archive = dst_mnt_data.archive;
 
             var src_builder: Builder = .init;
             const src_path_z = try storage.buildPath(&src_builder, io, src_device_path, maybe_src_stored);
@@ -694,22 +797,18 @@ pub fn renamePath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, src_par
     }
 }
 
-pub fn createDirPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_dir: Descriptor, sub_path: []const u8) Io.Dir.CreateDirPathError!Io.Dir.CreatePathStatus {
+pub fn createDirPath(storage: *Storage, io: std.Io, parent_dir: Descriptor, sub_path: []const u8) Io.Dir.CreateDirPathError!Io.Dir.CreatePathStatus {
     if (sub_path.len > Io.Dir.max_path_bytes) return error.NameTooLong;
     if (sub_path.len == 0) return error.BadPathName;
 
-    const maybe_device, const device_path = try splitParsePath(sub_path);
+    const maybe_mnt_idx, const device_path = try storage.splitParsePath(sub_path);
     const maybe_dir_stored, const maybe_dir_device = (try storage.getDirectoryDescription(io, parent_dir)) orelse .{ null, null };
-    const device = maybe_device orelse maybe_dir_device orelse return error.NoDevice;
+    const mnt = maybe_mnt_idx orelse maybe_dir_device orelse return error.NoDevice;
 
-    try storage.tryMount(io, gpa, device);
-
-    switch (device) {
-        .soc => unreachable,
+    switch (storage.filesystem.mounts.items[mnt].data) {
         .romfs => return error.ReadOnlyFileSystem,
-        .sdmc => {
-            const fs = storage.fs;
-            const archive = storage.device.archive(device).?.*;
+        .archive => |archive| {
+            const fs = storage.filesystem.fs;
 
             const parent: []const u16 = if (Io.Dir.path.isAbsolutePosix(device_path))
                 Builder.root
@@ -770,7 +869,7 @@ pub fn createDirPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, pare
 }
 
 pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.ListenOptions) Io.net.IpAddress.ListenError!Io.net.Socket {
-    if (storage.soc.session == horizon.Session.Client.none) return error.NetworkDown;
+    if (storage.net.soc.session == horizon.Session.Client.none) return error.NetworkDown;
     if (address.* != .ip4) return error.AddressFamilyUnsupported;
 
     switch (opts.protocol) {
@@ -781,7 +880,7 @@ pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: *const 
         else => return error.ProtocolUnsupportedBySystem,
     }
 
-    const soc = storage.soc;
+    const soc = storage.net.soc;
     const addr = address.ip4;
 
     const fd = try storage.allocateDescription(io, gpa);
@@ -816,7 +915,7 @@ pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: *const 
 
     // NOTE: workaround as it seems the 3ds doesn't support ephemeral ports
     while (true) {
-        if (addr.port == 0) soc_address.ip4.port = randomEphemeralPort(io);
+        if (addr.port == 0) soc_address.ip4.port = std.mem.nativeToBig(u16, randomEphemeralPort(io));
 
         switch ((soc.sendBind(sock, &soc_address) catch |err| switch (err) {
             else => return error.Unexpected,
@@ -854,7 +953,7 @@ pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: *const 
 }
 
 pub fn netBind(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.BindOptions) Io.net.IpAddress.BindError!Io.net.Socket {
-    if (storage.soc.session == horizon.Session.Client.none) return error.NetworkDown;
+    if (storage.net.soc.session == horizon.Session.Client.none) return error.NetworkDown;
     if (opts.ip6_only or address.* != .ip4) return error.AddressFamilyUnsupported;
 
     const proto = opts.protocol orelse .udp;
@@ -867,7 +966,7 @@ pub fn netBind(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io
         else => return error.ProtocolUnsupportedBySystem,
     }
 
-    const soc = storage.soc;
+    const soc = storage.net.soc;
     const addr = address.ip4;
 
     const fd = try storage.allocateDescription(io, gpa);
@@ -895,7 +994,7 @@ pub fn netBind(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io
 
     // NOTE: workaround as it seems the 3ds doesn't support ephemeral ports
     while (true) {
-        if (addr.port == 0) soc_address.ip4.port = randomEphemeralPort(io);
+        if (addr.port == 0) soc_address.ip4.port = std.mem.nativeToBig(u16, randomEphemeralPort(io));
 
         switch ((soc.sendBind(sock, &soc_address) catch |err| switch (err) {
             else => return error.Unexpected,
@@ -926,9 +1025,8 @@ pub fn netAccept(storage: *Storage, io: std.Io, gpa: Allocator, handle: Descript
     _ = opts;
     const desc = try storage.getDescription(handle);
     std.debug.assert(desc.flags.kind == .socket);
-    std.debug.assert(desc.flags.device == .soc);
 
-    const soc = storage.soc;
+    const soc = storage.net.soc;
     const sock = desc.stored.socket;
 
     const fd = try storage.allocateDescription(io, gpa);
@@ -966,7 +1064,7 @@ pub fn netAccept(storage: *Storage, io: std.Io, gpa: Allocator, handle: Descript
 }
 
 pub fn netConnect(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.ConnectOptions) Io.net.IpAddress.ConnectError!Io.net.Socket {
-    if (storage.soc.session == horizon.Session.Client.none) return error.NetworkDown;
+    if (storage.net.soc.session == horizon.Session.Client.none) return error.NetworkDown;
     if (address.* != .ip4) return error.AddressFamilyUnsupported;
     if (opts.timeout != .none) @panic("TODO: Timeout");
 
@@ -980,7 +1078,7 @@ pub fn netConnect(storage: *Storage, io: std.Io, gpa: Allocator, address: *const
         else => return error.ProtocolUnsupportedBySystem,
     }
 
-    const soc = storage.soc;
+    const soc = storage.net.soc;
     const addr = address.ip4;
 
     const fd = try storage.allocateDescription(io, gpa);
@@ -1102,10 +1200,11 @@ fn setSocketNonBlocking(soc: SocketUser, sock: SocketUser.Descriptor, non_blocki
 
 pub fn netShutdown(storage: *Storage, io: std.Io, handle: Descriptor, how: Io.net.ShutdownHow) Io.net.ShutdownError!void {
     const stored, const flags = try storage.getDescriptionStoredFlags(io, handle);
+    const soc = storage.net.soc;
 
     return switch (flags.kind) {
         .directory, .file => error.Unexpected,
-        .socket => switch ((storage.soc.sendShutdown(stored.socket, switch (how) {
+        .socket => switch ((soc.sendShutdown(stored.socket, switch (how) {
             .recv => .recv,
             .send => .send,
             .both => .both,
@@ -1122,7 +1221,7 @@ pub fn netShutdown(storage: *Storage, io: std.Io, handle: Descriptor, how: Io.ne
 pub fn netLookup(storage: *Storage, io: std.Io, gpa: Allocator, host_name: Io.net.HostName, resolved: *Io.Queue(Io.net.HostName.LookupResult), opts: Io.net.HostName.LookupOptions) Io.net.HostName.LookupError!void {
     defer resolved.close(io); // "Closes `resolved`, even on error."
 
-    if (storage.soc.session == horizon.Session.Client.none) return error.NetworkDown;
+    if (storage.net.soc.session == horizon.Session.Client.none) return error.NetworkDown;
 
     // NOTE: it seems soc:u doesn't handle localhost
     if (std.mem.eql(u8, "localhost", host_name.bytes)) {
@@ -1134,7 +1233,7 @@ pub fn netLookup(storage: *Storage, io: std.Io, gpa: Allocator, host_name: Io.ne
         return;
     }
 
-    const soc = storage.soc;
+    const soc = storage.net.soc;
 
     var name_buffer: [Io.net.HostName.max_len + 1]u8 = undefined;
     var port_buffer: [8]u8 = undefined;
@@ -1188,17 +1287,17 @@ pub fn netLookup(storage: *Storage, io: std.Io, gpa: Allocator, host_name: Io.ne
             error.Canceled => |e| return e,
         };
 
-        if (!canonical_name) {
+        if (opts.canonical_name_buffer) |canonical_name_buf| if (!canonical_name) {
             const name = entry.canonical_name[0 .. std.mem.findScalar(u8, &entry.canonical_name, 0) orelse entry.canonical_name.len];
             if (name.len == 0) continue;
 
-            @memcpy(opts.canonical_name_buffer[0..name.len], name);
-            resolved.putOne(io, .{ .canonical_name = .{ .bytes = opts.canonical_name_buffer[0..name.len] } }) catch |err| switch (err) {
+            @memcpy(canonical_name_buf[0..name.len], name);
+            resolved.putOne(io, .{ .canonical_name = .{ .bytes = canonical_name_buf[0..name.len] } }) catch |err| switch (err) {
                 error.Closed => unreachable,
                 error.Canceled => |e| return e,
             };
             canonical_name = true;
-        }
+        };
     }
 }
 
@@ -1216,9 +1315,8 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
 
     return switch (flags.kind) {
         .socket, .file => error.Unexpected,
-        .directory => switch (flags.device) {
-            .soc => unreachable,
-            .romfs => {
+        .directory => switch (storage.filesystem.mounts.items[flags.mount].data) {
+            .romfs => |rfs| {
                 storage.lock.lockSharedUncancelable(io);
                 defer storage.lock.unlockShared(io);
 
@@ -1227,7 +1325,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                 switch (r.state) {
                     .finished => return 0,
                     .reset => {
-                        desc.extra.dir.romfs = desc.stored.romfs.asDirectory().iterator(storage.device.romfs.view);
+                        desc.extra.dir.romfs = desc.stored.romfs.asDirectory().iterator(rfs.view);
 
                         r.state = .reading;
                         r.end = 0;
@@ -1241,12 +1339,12 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                 var consumed: usize = 0;
                 var i: usize = 0;
                 while (i < entries.len) {
-                    const e = desc.extra.dir.romfs.next(storage.device.romfs.view) orelse {
+                    const e = desc.extra.dir.romfs.next(rfs.view) orelse {
                         r.state = .finished;
                         break;
                     };
 
-                    const utf16_name = e.name(storage.device.romfs.view);
+                    const utf16_name = e.name(rfs.view);
                     if (utf16_name.len * 2 > (bytes.len - consumed)) break;
 
                     const name_len = std.unicode.utf16LeToUtf8(bytes[consumed..], utf16_name) catch return error.Unexpected;
@@ -1266,9 +1364,8 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
 
                 return i;
             },
-            .sdmc => {
-                const fs = storage.fs;
-                const archive = storage.device.archive(flags.device).?.*;
+            .archive => |archive| {
+                const fs = storage.filesystem.fs;
                 const path_z, var dir = blk: {
                     storage.lock.lockSharedUncancelable(io);
                     defer storage.lock.unlockShared(io);
@@ -1277,19 +1374,19 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                     break :blk .{ switch (desc.stored.path) {
                         .invalid => Builder.root,
                         _ => |idx| storage.paths.list.items[@intFromEnum(idx)].value,
-                    }, @atomicLoad(Filesystem.Directory, &desc.extra.dir.archive, .monotonic) };
+                    }, @atomicLoad(FilesystemSrv.Directory, &desc.extra.dir.archive, .monotonic) };
                 };
 
                 switch (r.state) {
                     .finished => return 0,
                     .reset => {
-                        if (dir != Filesystem.Directory.none) {
+                        if (dir != FilesystemSrv.Directory.none) {
                             dir.close();
 
                             storage.lock.lockSharedUncancelable(io);
                             defer storage.lock.unlockShared(io);
 
-                            @atomicStore(Filesystem.Directory, &(try storage.getDescription(handle)).extra.dir.archive, .none, .monotonic);
+                            @atomicStore(FilesystemSrv.Directory, &(try storage.getDescription(handle)).extra.dir.archive, .none, .monotonic);
                         }
 
                         r.state = .reading;
@@ -1299,7 +1396,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                     .reading => {},
                 }
 
-                if (dir == Filesystem.Directory.none) {
+                if (dir == FilesystemSrv.Directory.none) {
                     dir = fs.sendOpenDirectory(archive, .utf16, @ptrCast(path_z)) catch |err| switch (err) {
                         // This can happen if the directory is deleted while iterating.
                         error.FileNotFound => {
@@ -1312,7 +1409,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                     storage.lock.lockSharedUncancelable(io);
                     defer storage.lock.unlockShared(io);
 
-                    @atomicStore(Filesystem.Directory, &(try storage.getDescription(handle)).extra.dir.archive, dir, .monotonic);
+                    @atomicStore(FilesystemSrv.Directory, &(try storage.getDescription(handle)).extra.dir.archive, dir, .monotonic);
                 }
 
                 const bytes = r.buffer[0..@sizeOf(Description.Extra.Directory.NameBuffer)];
@@ -1320,12 +1417,12 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                 var consumed: usize = 0;
                 var i: usize = 0;
                 while (i < entries.len) {
-                    if (r.end - r.index < @sizeOf(Filesystem.Directory.Entry)) {
-                        const entries_buf: []align(@alignOf(usize)) Filesystem.Directory.Entry = buf: {
+                    if (r.end - r.index < @sizeOf(FilesystemSrv.Directory.Entry)) {
+                        const entries_buf: []align(@alignOf(usize)) FilesystemSrv.Directory.Entry = buf: {
                             const remaining = r.buffer[@sizeOf(Description.Extra.Directory.NameBuffer)..];
                             // NOTE: This is always aligned as it has @alignOf(u32) and the name buffer is aligned to 4 bytes.
-                            const entry_ptr: [*]align(@alignOf(usize)) Filesystem.Directory.Entry = @ptrCast(@alignCast(remaining.ptr));
-                            break :buf entry_ptr[0..(remaining.len / @sizeOf(Filesystem.Directory.Entry))];
+                            const entry_ptr: [*]align(@alignOf(usize)) FilesystemSrv.Directory.Entry = @ptrCast(@alignCast(remaining.ptr));
+                            break :buf entry_ptr[0..(remaining.len / @sizeOf(FilesystemSrv.Directory.Entry))];
                         };
 
                         const read = dir.sendRead(entries_buf) catch return error.Unexpected;
@@ -1340,15 +1437,15 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                             storage.lock.lockSharedUncancelable(io);
                             defer storage.lock.unlockShared(io);
 
-                            @atomicStore(Filesystem.Directory, &(try storage.getDescription(handle)).extra.dir.archive, .none, .monotonic);
+                            @atomicStore(FilesystemSrv.Directory, &(try storage.getDescription(handle)).extra.dir.archive, .none, .monotonic);
                             return 0;
                         }
 
-                        r.end = @sizeOf(Description.Extra.Directory.NameBuffer) + read * @sizeOf(Filesystem.Directory.Entry);
+                        r.end = @sizeOf(Description.Extra.Directory.NameBuffer) + read * @sizeOf(FilesystemSrv.Directory.Entry);
                         r.index = @sizeOf(Description.Extra.Directory.NameBuffer);
                     }
 
-                    const entry: *align(@alignOf(usize)) Filesystem.Directory.Entry = @ptrCast(@alignCast(r.buffer[r.index..][0..@sizeOf(Filesystem.Directory.Entry)]));
+                    const entry: *align(@alignOf(usize)) FilesystemSrv.Directory.Entry = @ptrCast(@alignCast(r.buffer[r.index..][0..@sizeOf(FilesystemSrv.Directory.Entry)]));
                     const utf16_name = entry.utf16_name[0 .. std.mem.findScalar(u16, &entry.utf16_name, 0) orelse entry.utf16_name.len];
                     if (utf16_name.len * 2 > (bytes.len - consumed)) break;
 
@@ -1360,7 +1457,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                         .kind = if (entry.attributes.directory) .directory else .file,
                     };
 
-                    r.index += @sizeOf(Filesystem.Directory.Entry);
+                    r.index += @sizeOf(FilesystemSrv.Directory.Entry);
                     consumed += name_len;
                     i += 1;
                 }
@@ -1377,10 +1474,9 @@ pub fn length(storage: *Storage, io: std.Io, handle: Descriptor) Io.File.LengthE
     return switch (flags.kind) {
         .socket => return error.Streaming,
         .directory => 0,
-        .file => switch (flags.device) {
-            .soc => unreachable,
-            .romfs => stored.romfs.asFile().stat(storage.device.romfs.view).size,
-            .sdmc => stored.file.sendGetSize() catch return error.Unexpected,
+        .file => switch (storage.filesystem.mounts.items[flags.mount].data) {
+            .romfs => |rfs| stored.romfs.asFile().stat(rfs.view).size,
+            .archive => stored.file.sendGetSize() catch return error.Unexpected,
         },
     };
 }
@@ -1401,12 +1497,11 @@ pub fn stat(storage: *Storage, io: std.Io, handle: Descriptor) Io.File.StatError
             .ctime = .fromNanoseconds(0),
             .block_size = 512,
         },
-        .file => switch (flags.device) {
-            .soc => unreachable,
-            .romfs => .{
+        .file => switch (storage.filesystem.mounts.items[flags.mount].data) {
+            .romfs => |rfs| .{
                 .inode = {},
                 .nlink = 0,
-                .size = stored.romfs.asFile().stat(storage.device.romfs.view).size, // No lock because this is initialized if we're here.
+                .size = stored.romfs.asFile().stat(rfs.view).size, // No lock because this is initialized if we're here.
                 .permissions = .default_file,
                 .kind = .file,
                 .atime = null,
@@ -1414,7 +1509,7 @@ pub fn stat(storage: *Storage, io: std.Io, handle: Descriptor) Io.File.StatError
                 .ctime = .fromNanoseconds(0),
                 .block_size = 512,
             },
-            .sdmc => .{
+            .archive => .{
                 .inode = {},
                 .nlink = 0,
                 .size = stored.file.sendGetSize() catch return error.Unexpected,
@@ -1434,10 +1529,9 @@ pub fn setLength(storage: *Storage, io: std.Io, handle: Descriptor, new_length: 
 
     return switch (flags.kind) {
         .socket, .directory => return error.NonResizable,
-        .file => switch (flags.device) {
-            .soc => unreachable,
+        .file => switch (storage.filesystem.mounts.items[flags.mount].data) {
             .romfs => return error.NonResizable,
-            .sdmc => stored.file.sendSetSize(new_length) catch return error.Unexpected,
+            .archive => stored.file.sendSetSize(new_length) catch return error.Unexpected,
         },
     };
 }
@@ -1448,12 +1542,11 @@ pub fn readPositional(storage: *Storage, io: std.Io, handle: Descriptor, buffer:
     return switch (flags.kind) {
         .socket => return error.Unseekable,
         .directory => error.IsDir,
-        .file => switch (flags.device) {
-            .soc => unreachable,
-            .romfs => storage.device.romfs.readPositional(stored.romfs.asFile(), offset, buffer) catch |e| switch (e) {
+        .file => switch (storage.filesystem.mounts.items[flags.mount].data) {
+            .romfs => |rfs| rfs.readPositional(stored.romfs.asFile(), offset, buffer) catch |e| switch (e) {
                 else => error.Unexpected,
             },
-            .sdmc => stored.file.sendRead(offset, buffer) catch |e| switch (e) {
+            .archive => stored.file.sendRead(offset, buffer) catch |e| switch (e) {
                 else => error.Unexpected,
             },
         },
@@ -1466,10 +1559,9 @@ pub fn writePositional(storage: *Storage, io: std.Io, handle: Descriptor, buffer
     return switch (flags.kind) {
         .socket => return error.Unseekable,
         .directory => error.NotOpenForWriting,
-        .file => switch (flags.device) {
-            .soc => unreachable,
+        .file => switch (storage.filesystem.mounts.items[flags.mount].data) {
             .romfs => error.NotOpenForWriting,
-            .sdmc => stored.file.sendWrite(offset, buffer, .{}) catch |e| switch (e) {
+            .archive => stored.file.sendWrite(offset, buffer, .{}) catch |e| switch (e) {
                 else => error.Unexpected,
             },
         },
@@ -1491,9 +1583,8 @@ pub fn readStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer: 
     const initial_offset, const read = switch (flags.kind) {
         .directory => return error.IsDir,
         .socket => return error.Unexpected,
-        .file => switch (flags.device) {
-            .soc => unreachable,
-            .romfs => blk: {
+        .file => switch (storage.filesystem.mounts.items[flags.mount].data) {
+            .romfs => |rfs| blk: {
                 const file, const initial_offset = seek: {
                     storage.lock.lockSharedUncancelable(io);
                     defer storage.lock.unlockShared(io);
@@ -1502,11 +1593,14 @@ pub fn readStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer: 
                     break :seek .{ desc.stored.romfs.asFile(), desc.extra.seek.load() };
                 };
 
-                break :blk .{ initial_offset, storage.device.romfs.readPositional(file, initial_offset, buffer) catch |e| switch (e) {
-                    else => return error.Unexpected,
-                } };
+                break :blk .{
+                    initial_offset,
+                    rfs.readPositional(file, initial_offset, buffer) catch |e| switch (e) {
+                        else => return error.Unexpected,
+                    },
+                };
             },
-            .sdmc => blk: {
+            .archive => blk: {
                 const file, const initial_offset = seek: {
                     storage.lock.lockSharedUncancelable(io);
                     defer storage.lock.unlockShared(io);
@@ -1515,9 +1609,12 @@ pub fn readStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer: 
                     break :seek .{ desc.stored.file, desc.extra.seek.load() };
                 };
 
-                break :blk .{ initial_offset, file.sendRead(initial_offset, buffer) catch |e| switch (e) {
-                    else => return error.Unexpected,
-                } };
+                break :blk .{
+                    initial_offset,
+                    file.sendRead(initial_offset, buffer) catch |e| switch (e) {
+                        else => return error.Unexpected,
+                    },
+                };
             },
         },
     };
@@ -1550,10 +1647,9 @@ pub fn writeStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer:
     return switch (flags.kind) {
         .directory => error.NotOpenForWriting,
         .socket => error.Unexpected,
-        .file => switch (flags.device) {
-            .soc => unreachable,
+        .file => switch (storage.filesystem.mounts.items[flags.mount].data) {
             .romfs => error.NotOpenForWriting,
-            .sdmc => blk: {
+            .archive => blk: {
                 const file, const initial_offset = seek: {
                     storage.lock.lockSharedUncancelable(io);
                     defer storage.lock.unlockShared(io);
@@ -1589,7 +1685,7 @@ pub fn netRead(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []u8) 
 
     if (flags.kind != .socket) return error.Unexpected;
 
-    const soc = storage.soc;
+    const soc = storage.net.soc;
     const sock = stored.socket;
 
     while (true) {
@@ -1614,7 +1710,7 @@ pub fn netReceive(storage: *Storage, io: std.Io, handle: Descriptor, messages: [
 
     if (desc_flags.kind != .socket) return .{ error.Unexpected, 0 };
 
-    const soc = storage.soc;
+    const soc = storage.net.soc;
     const sock = stored.socket;
 
     var message_i: usize = 0;
@@ -1675,7 +1771,7 @@ pub fn netWrite(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []con
 
     if (flags.kind != .socket) return error.Unexpected;
 
-    const soc = storage.soc;
+    const soc = storage.net.soc;
     const sock = stored.socket;
 
     while (true) {
@@ -1698,7 +1794,7 @@ pub fn netSend(storage: *Storage, io: std.Io, handle: Descriptor, messages: []Io
 
     if (desc_flags.kind != .socket) return .{ error.Unexpected, 0 };
 
-    const soc = storage.soc;
+    const soc = storage.net.soc;
     const sock = stored.socket;
 
     for (messages, 0..) |mes, i| {
@@ -1831,24 +1927,18 @@ fn addressFromSoc(address: SocketUser.IpAddress) Io.net.IpAddress {
 }
 
 fn randomEphemeralPort(io: std.Io) u16 {
-    var ephemeral: [3]u8 = undefined;
+    var ephemeral: [2]u8 = undefined;
     io.random(&ephemeral);
 
     return @as(u16, 60000) + std.mem.readPackedInt(u12, &ephemeral, 0, .native);
 }
 
-fn splitParsePath(path: []const u8) error{BadPathName}!struct { ?Device.Kind, []const u8 } {
+fn splitParsePath(storage: *Storage, path: []const u8) error{BadPathName}!struct { ?u8, []const u8 } {
     return if (std.mem.findScalar(u8, path, '/')) |first_slash| dev: {
         break :dev if (std.mem.findScalar(u8, path[0..first_slash], ':')) |first_colon| {
             if (first_colon != first_slash - 1) return error.BadPathName;
-            const device = std.meta.stringToEnum(Device.Kind, path[0..first_colon]) orelse return error.BadPathName;
 
-            switch (device) {
-                .soc => return error.BadPathName,
-                else => {},
-            }
-
-            break :dev .{ device, path[(first_colon + 1)..] };
+            break :dev .{ storage.filesystem.find(path[0..first_colon]), path[(first_colon + 1)..] };
         } else .{ null, path };
     } else .{ null, path };
 }
@@ -1927,7 +2017,7 @@ fn getDescription(storage: *Storage, handle: Descriptor) Io.UnexpectedError!*Des
 }
 
 /// May return null if `cwd` is unlinked
-fn getDirectoryDescription(storage: *Storage, io: std.Io, handle: Descriptor) Io.UnexpectedError!?struct { Description.Stored, Device.Kind } {
+fn getDirectoryDescription(storage: *Storage, io: std.Io, handle: Descriptor) Io.UnexpectedError!?struct { Description.Stored, u8 } {
     storage.lock.lockSharedUncancelable(io);
     defer storage.lock.unlockShared(io);
 
@@ -1946,7 +2036,7 @@ fn getDirectoryDescription(storage: *Storage, io: std.Io, handle: Descriptor) Io
         _ => blk: {
             const desc = &storage.descriptions.list.items[@intFromEnum(dir_index)].value;
             if (desc.flags.kind != .directory) return programmerBug("non-dir fd");
-            break :blk .{ desc.stored, desc.flags.device };
+            break :blk .{ desc.stored, desc.flags.mount };
         },
     };
 }
@@ -1970,31 +2060,34 @@ fn closeDescription(storage: *Storage, io: std.Io, gpa: Allocator, index: Descri
     };
 
     if (free) {
-        switch (flags.device) {
-            .romfs => {}, // Opened files/directories are just offsets.
-            .sdmc => switch (flags.kind) {
-                .socket => unreachable,
-                .directory => free: {
-                    if (extra.dir.archive != Filesystem.Directory.none) extra.dir.archive.close();
 
-                    const path = blk: {
-                        storage.lock.lockUncancelable(io);
-                        defer storage.lock.unlock(io);
+        switch (flags.kind) {
+            .socket => stored.socket.close(storage.net.soc),
+            .file, .directory => switch (storage.filesystem.mounts.items[flags.mount].data) {
+                .romfs => {},
+                .archive => switch (flags.kind) {
+                    .socket => unreachable,
+                    .file => stored.file.close(),
+                    .directory => free: {
+                        if (extra.dir.archive != FilesystemSrv.Directory.none) extra.dir.archive.close();
 
-                        const idx = switch (stored.path) {
-                            .invalid => break :free,
-                            _ => |idx| idx,
+                        const path = blk: {
+                            storage.lock.lockUncancelable(io);
+                            defer storage.lock.unlock(io);
+
+                            const idx = switch (stored.path) {
+                                .invalid => break :free,
+                                _ => |idx| idx,
+                            };
+                            defer storage.paths.free(idx);
+
+                            break :blk storage.paths.list.items[@intFromEnum(idx)].value;
                         };
-                        defer storage.paths.free(idx);
 
-                        break :blk storage.paths.list.items[@intFromEnum(idx)].value;
-                    };
-
-                    gpa.free(path);
+                        gpa.free(path);
+                    },
                 },
-                .file => stored.file.close(),
             },
-            .soc => stored.socket.close(storage.soc),
         }
 
         {
@@ -2004,7 +2097,7 @@ fn closeDescription(storage: *Storage, io: std.Io, gpa: Allocator, index: Descri
             storage.descriptions.free(index);
         }
 
-        log.debug("description {d} closed ({}, {})", .{ @intFromEnum(index), flags.device, flags.kind });
+        log.debug("description {d} closed ({}, {})", .{ @intFromEnum(index), flags.mount, flags.kind });
     }
 }
 
@@ -2016,35 +2109,6 @@ fn allocateLowestDescriptor(storage: *Storage, gpa: Allocator) Allocator.Error!D
 
     _ = try storage.fds.addOne(gpa);
     return @enumFromInt(storage.fds.items.len - 1);
-}
-
-pub const TryMountError = error{ NoDevice, SystemResources, Unexpected };
-
-/// Assumes `lock` is held as non-shareable.
-fn tryMount(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, kind: Device.Kind) TryMountError!void {
-    if (storage.fs.session == horizon.Session.Client.none) return error.NoDevice;
-
-    storage.lock.lockUncancelable(io);
-    defer storage.lock.unlock(io);
-
-    switch (kind) {
-        .soc => unreachable,
-        .romfs => if (storage.device.romfs.file == Filesystem.File.none) {
-            storage.device.romfs = Filesystem.RomFs.initSelf(storage.fs, gpa) catch |err| switch (err) {
-                error.NoRomFs => return error.NoDevice,
-                error.OutOfMemory => return error.SystemResources,
-                else => return error.Unexpected,
-            };
-        },
-        .sdmc => {
-            const dev = storage.device.archive(kind).?;
-
-            switch (dev.*) {
-                .none => dev.* = storage.fs.sendOpenArchive(kind.archiveId().?, .empty, &.{}) catch return error.Unexpected,
-                _ => {}, // nothing to do
-            }
-        },
-    }
 }
 
 fn Table(comptime T: type) type {
@@ -2151,5 +2215,5 @@ const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
 
 const romfs = horizon.fmt.ncch.romfs;
-const Filesystem = horizon.services.Filesystem;
+const FilesystemSrv = horizon.services.Filesystem;
 const SocketUser = horizon.services.SocketUser;

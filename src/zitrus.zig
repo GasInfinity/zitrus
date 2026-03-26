@@ -27,6 +27,8 @@ comptime {
     _ = fmt;
     _ = horizon;
     _ = hardware;
+    _ = math;
+    _ = debug;
 
     _ = mango;
 }
@@ -39,6 +41,7 @@ pub const memory = @import("memory.zig");
 pub const horizon = @import("horizon.zig");
 pub const hardware = @import("hardware.zig");
 pub const math = @import("math.zig");
+pub const debug = @import("debug.zig");
 
 pub const mango = @import("mango.zig");
 

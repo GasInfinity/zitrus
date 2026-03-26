@@ -49,9 +49,9 @@ pub const LockedStderr = struct {
         return ls.term;
     }
 
-    pub fn clear(ls: LockedStderr, _: []u8) Cancelable!void {
+    pub fn clear(ls: LockedStderr, buffer: []u8) Cancelable!void {
         ls.term.writer.flush() catch unreachable; // NOTE: Uncancelable & never fails
-        // ls.term.writer.buffer = buffer;
+        ls.term.writer.buffer = buffer;
     }
 };
 
@@ -237,33 +237,57 @@ pub fn init(
     };
 }
 
-/// Initializes `hio.storage` with the specified backends, will be closed on `deinit`.
+/// Initializes `hio.storage`, owning the specified backends.
+/// Will be closed on `deinit`.
 pub fn initStorage(hio: *HIo, srv: horizon.ServiceManager, backends: enum { fs, soc, both }, soc_buffer_len: usize) !void {
-    const gpa = hio.gpa;
-    const maybe_fs = if (backends == .soc) null else blk: {
+    if (backends != .soc) {
         const fs = try Filesystem.open(.user, srv);
         errdefer fs.close();
 
         try fs.sendInitialize();
-        break :blk fs;
-    };
-    errdefer if (maybe_fs) |fs| fs.close();
+        try hio.initFilesystem(.{ .fs = fs, .extra = .owned });
+    }
+    errdefer hio.deinitFilesystem();
 
-    const maybe_soc, const soc_buffer: []align(horizon.heap.page_size) u8, const soc_shm: horizon.MemoryBlock = if (backends == .fs) .{ null, &.{}, .none } else blk: {
+    if (backends != .fs) {
         const soc = try SocketUser.open(srv);
+        errdefer soc.close();
 
-        const soc_buffer = try gpa.alignedAlloc(u8, .fromByteUnits(horizon.heap.page_size), soc_buffer_len);
-        errdefer gpa.free(soc_buffer);
+        try hio.initNetwork(.{ .soc = soc, .extra = .{ .owned = soc_buffer_len }});
+    }
+    errdefer hio.deinitNetwork();
+}
 
-        const soc_shm: horizon.MemoryBlock = try .create(soc_buffer.ptr, soc_buffer.len, .none, .rw);
-        errdefer soc_shm.close();
+pub fn initFilesystem(hio: *HIo, opts: Storage.Filesystem.Init) !void {
+    try hio.storage.filesystem.init(opts);
+}
 
-        try soc.sendInitialize(soc_shm, soc_buffer.len);
-        break :blk .{ soc, soc_buffer, soc_shm };
-    };
-    errdefer if (maybe_soc) |soc| soc.close();
+pub fn initNetwork(hio: *HIo, opts: Storage.Network.Init) !void {
+    try hio.storage.net.init(hio.gpa, opts);
+}
 
-    hio.storage = .init(true, maybe_fs, maybe_soc, soc_buffer, soc_shm);
+pub fn deinitFilesystem(hio: *HIo) void {
+    hio.storage.filesystem.deinit(hio.gpa);
+}
+
+pub fn deinitNetwork(hio: *HIo) void {
+    hio.storage.net.deinit(hio.gpa);
+}
+
+pub fn mountArchive(hio: *HIo, name: []const u8, id: Filesystem.ArchiveId, path_type: Filesystem.PathType, path: []const u8) !void {
+    try hio.storage.filesystem.mountArchive(hio.gpa, name, id, path_type, path);
+}
+
+pub fn mountSelfRomFs(hio: *HIo, name: []const u8) !void {
+    try hio.storage.filesystem.mountSelfRomFs(hio.gpa, name);
+}
+
+pub fn umount(hio: *HIo, name: []const u8) void {
+    hio.storage.filesystem.umount(hio.gpa, name);
+}
+
+pub fn unlinkCurrentDir(hio: *HIo) void {
+    hio.storage.unlinkCurrentDir(hio.io(), hio.gpa);
 }
 
 pub fn deinit(hio: *HIo) void {
@@ -427,7 +451,7 @@ pub const VTable = enum(u0) {
     pub fn dirCreateDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
-        return hio.storage.modifyPath(hio.io(), hio.gpa, dir.handle, path, .create_dir) catch |err| switch (err) {
+        return hio.storage.modifyPath(hio.io(), dir.handle, path, .create_dir) catch |err| switch (err) {
             error.IsDir => unreachable,
             else => |e| return e,
         };
@@ -436,7 +460,7 @@ pub const VTable = enum(u0) {
     pub fn dirCreateDirPath(_: VTable, ud: ?*anyopaque, dir: Io.Dir, sub_path: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirPathError!Io.Dir.CreatePathStatus {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
-        return try hio.storage.createDirPath(hio.io(), hio.gpa, dir.handle, sub_path);
+        return try hio.storage.createDirPath(hio.io(), dir.handle, sub_path);
     }
 
     pub fn dirCreateDirPathOpen(_: VTable, ud: ?*anyopaque, dir: Io.Dir, sub_path: []const u8, _: Io.Dir.Permissions, opts: Io.Dir.OpenOptions) Io.Dir.CreateDirPathOpenError!Io.Dir {
@@ -479,7 +503,7 @@ pub const VTable = enum(u0) {
         if (opts.execute) return error.PermissionDenied;
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
-        return hio.storage.accessPath(hio.io(), hio.gpa, dir.handle, path, opts.read, opts.write) catch |err| switch (err) {
+        return hio.storage.accessPath(hio.io(), dir.handle, path, opts.read, opts.write) catch |err| switch (err) {
             error.NoDevice => return error.InputOutput,
             else => |e| return e,
         };
@@ -557,7 +581,7 @@ pub const VTable = enum(u0) {
     pub fn dirDeleteFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, sub_path: []const u8) Io.Dir.DeleteFileError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
-        return hio.storage.modifyPath(hio.io(), hio.gpa, dir.handle, sub_path, .delete_file) catch |err| switch (err) {
+        return hio.storage.modifyPath(hio.io(), dir.handle, sub_path, .delete_file) catch |err| switch (err) {
             error.PathAlreadyExists => unreachable,
             error.NoDevice => return error.FileSystem,
             else => |e| return e,
@@ -567,7 +591,7 @@ pub const VTable = enum(u0) {
     pub fn dirDeleteDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir, sub_path: []const u8) Io.Dir.DeleteDirError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
-        return hio.storage.modifyPath(hio.io(), hio.gpa, dir.handle, sub_path, .delete_dir) catch |err| switch (err) {
+        return hio.storage.modifyPath(hio.io(), dir.handle, sub_path, .delete_dir) catch |err| switch (err) {
             error.PathAlreadyExists => unreachable,
             error.NoDevice => return error.FileSystem,
             error.IsDir => unreachable,
@@ -578,7 +602,7 @@ pub const VTable = enum(u0) {
     pub fn dirRename(_: VTable, ud: ?*anyopaque, src_dir: Io.Dir, src_path: []const u8, dst_dir: Io.Dir, dst_path: []const u8) Io.Dir.RenameError!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
-        return hio.storage.renamePath(hio.io(), hio.gpa, src_dir.handle, src_path, dst_dir.handle, dst_path, false) catch |err| switch (err) {
+        return hio.storage.renamePath(hio.io(), src_dir.handle, src_path, dst_dir.handle, dst_path, false) catch |err| switch (err) {
             error.PathAlreadyExists, error.OperationUnsupported, error.AccessDenied => unreachable,
             else => |e| return e,
         };
@@ -849,6 +873,7 @@ pub const VTable = enum(u0) {
 
     pub fn unlockStderr(_: VTable, ud: ?*anyopaque) void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        hio.debug_writer.flush() catch unreachable; // NOTE: uncancelable & cannot fail
 
         hio.debug_mutex_lock_count -= 1;
         if (hio.debug_mutex_lock_count == 0) {

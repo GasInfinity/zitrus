@@ -8,14 +8,14 @@
 //! Use this for prototypes or simple apps as `mango` is preferred!
 
 pub const Config = struct {
-    top_mode: pica.FramebufferFormat.Mode,
-    double_buffer: std.EnumArray(pica.Screen, bool),
-    color_format: std.EnumArray(pica.Screen, pica.ColorFormat),
+    top_mode: pica.FramebufferFormat.Mode = .@"2d",
+    double_buffer: std.EnumArray(pica.Screen, bool) = .initFill(true),
+    color_format: std.EnumArray(pica.Screen, pica.ColorFormat) = .initFill(.bgr888),
     /// The initial contents to copy into the framebuffer before turning
     /// LCD fill off. If null it'll be filled with black.
     ///
     /// Asserts that the buffer has at least W * H * BPP bytes.
-    initial_contents: std.EnumArray(pica.Screen, ?[]const u8),
+    initial_contents: std.EnumArray(pica.Screen, ?[]const u8) = .initFill(null),
 };
 
 gfx: Graphics,

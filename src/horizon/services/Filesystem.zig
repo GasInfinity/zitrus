@@ -102,23 +102,25 @@ pub const OpenFlags = packed struct(u32) {
     _unused0: u29 = 0,
 };
 
-pub const ArchiveId = enum(u32) {
-    self_ncch = 0x00000003,
-    save_data = 0x00000004,
-    ext_save_data = 0x00000006,
-    shared_ext_save_data,
-    system_save_data,
-    sdmc,
-    sdmc_write_only,
-    boss_ext_save_data = 0x12345678,
-    card_spi_fs,
-    nand_rw = 0x1234567D,
-    nand_ro,
-
-    // TODO: finish this with fs accesible archives
-};
+pub const ArchiveId = Archive.Id;
 
 pub const Archive = enum(u64) {
+    pub const Id = enum(u32) {
+        self_ncch = 0x00000003,
+        save_data = 0x00000004,
+        ext_save_data = 0x00000006,
+        shared_ext_save_data,
+        system_save_data,
+        sdmc,
+        sdmc_write_only,
+        boss_ext_save_data = 0x12345678,
+        card_spi_fs,
+        nand_rw = 0x1234567D,
+        nand_ro,
+
+        // TODO: finish this with fs accesible archives
+    };
+
     none = 0,
     _,
 

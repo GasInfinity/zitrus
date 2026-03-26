@@ -40,11 +40,10 @@ free_command_buffers: std.DoublyLinkedList,
 
 free_native_buffers: [native_size_classes]usize,
 
-pub fn init(create_info: mango.CommandPoolCreateInfo, gpa: std.mem.Allocator) !CommandPool {
+pub fn init(create_info: mango.CommandPoolCreateInfo, native_gpa: std.mem.Allocator, gpa: std.mem.Allocator) !CommandPool {
     var pool: CommandPool = .{
         .gpa = gpa,
-        // TODO: This will be backend-independent (in the 3ds), yay!
-        .native_gpa = horizon.heap.linear_page_allocator,
+        .native_gpa = native_gpa,
         .allocated_command_buffers = .{},
         .free_command_buffers = .{},
 

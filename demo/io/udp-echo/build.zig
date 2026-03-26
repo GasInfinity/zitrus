@@ -8,7 +8,7 @@ pub fn build(b: *std.Build) void {
     const zitrus_mod = zitrus_dep.module("zitrus");
 
     const exe = b.addExecutable(.{
-        .name = "info.elf",
+        .name = "udp-echo.elf",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = b.resolveTargetQuery(.{
@@ -32,14 +32,9 @@ pub fn build(b: *std.Build) void {
         .settings = b.path("smdh-settings.zon"),
     });
 
-    const romfs = zitrus.MakeRomFs.init(zitrus_dep, .{
-        .root = b.path("assets/"),
-    });
-
     const final_3dsx = zitrus.Make3dsx.init(zitrus_dep, .{
         .exe = exe,
         .smdh = smdh.out,
-        .romfs = romfs.out,
     });
 
     final_3dsx.install(b, .default);

@@ -327,6 +327,15 @@ pub const GxCommand = extern struct {
         _unused0: [6]u32 = @splat(0),
         commands: [max_commands]GxCommand,
 
+        pub fn clear(queue: *Queue) void {
+            @atomicStore(Queue.Header, &queue.header, .{
+                .current_command_index = 0,
+                .total_commands = 0,
+                .halted = false,
+                .fatal_error = false,
+                .halt_processing = false,
+            }, .monotonic);
+        }
         pub fn pushFrontAssumeCapacity(queue: *Queue, cmd: GxCommand) void {
             const hdr = @atomicLoad(Queue.Header, &queue.header, .monotonic);
             std.debug.assert(hdr.total_commands < max_commands);

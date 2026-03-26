@@ -54,7 +54,7 @@ pub export fn mgFreeMemory(device: mango.Device, memory: mango.DeviceMemory, all
     return device.freeMemory(memory, allocator.allocator());
 }
 
-pub export fn mgMapMemory(device: mango.Device, memory: mango.DeviceMemory, offset: u32, size: mango.DeviceSize, data: *[*]u8) MgResult {
+pub export fn mgMapMemory(device: mango.Device, memory: mango.DeviceMemory, offset: mango.DeviceSize, size: mango.DeviceSize, data: *[*]u8) MgResult {
     data.* = (device.mapMemory(memory, offset, size) catch |err| return translateError(err)).ptr;
 
     return .success;

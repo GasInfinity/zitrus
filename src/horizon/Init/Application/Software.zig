@@ -5,9 +5,10 @@
 //!
 //! Sleeps and jumps to home are handled automatically, if you want more control
 //! use methods in `horizon.Init.Application`.
+pub const Options = Soft.Config;
 
 app: horizon.Init.Application,
-soft: *horizon.services.GspGpu.Graphics.Software,
+soft: *Soft,
 
 /// Same behaviour as `sft.waitEventTimeout(.none)`
 pub fn waitEvent(sft: Software) !horizon.Init.Application.Event.Minimal {
@@ -46,6 +47,8 @@ pub fn waitEventTimeout(sft: Software, timeout: horizon.Timeout) !?horizon.Init.
 }
 
 const Software = @This();
+const Soft = horizon.services.GspGpu.Graphics.Software;
+
 const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;

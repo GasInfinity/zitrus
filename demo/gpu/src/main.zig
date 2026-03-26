@@ -437,7 +437,7 @@ pub const Scene = struct {
             .image = scene.top_renderbuffer.depth.image,
             .depth = 0.0,
             .stencil = 0x00,
-            // .subresource_range = .full,
+            .subresource_range = .full,
             .signal_semaphore = &.init(scene.semaphore, scene.current_timeline + 1),
         });
         scene.current_timeline += 1;
@@ -624,7 +624,7 @@ pub const SingleImage = struct {
         defer device.freeMemory(memory, gpa);
 
         {
-            const mapped = try device.mapMemory(memory, 0, .whole);
+            const mapped = try device.mapMemory(memory, .size(0), .whole);
             defer device.unmapMemory(memory);
 
             @memcpy(mapped[0..data.len], data);
@@ -679,7 +679,7 @@ pub const Mesh = struct {
         errdefer device.freeMemory(mesh_memory, gpa);
 
         {
-            const mapped = try device.mapMemory(mesh_memory, 0, .whole);
+            const mapped = try device.mapMemory(mesh_memory, .size(0), .whole);
             defer device.unmapMemory(mesh_memory);
 
             @memcpy(mapped[0..vertex_data.len], vertex_data);

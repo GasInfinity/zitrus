@@ -1,0 +1,9 @@
+.{
+    .titles = .{
+        .english = .{
+            .title = "UDP Echo",
+            .description = "an udp echo server",
+            .publisher = "zitrus",
+        },
+    },
+}

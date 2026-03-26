@@ -3,14 +3,9 @@
 //! As the PICA200 is limited to what it can do with 3D drawing commands,
 //! things like clearing an `Image` or copying data is done with the `Device`.
 //!
-//!
 //! ## Things to consider
 //!
 //! **mango** follows some assumptions about its state:
-//!
-//! * `primitive_engine.mode` (GPUREG_START_DRAW_FUNC0) is always in `draw`, it's only changed when binding new uniforms
-//! OR changing pipelines. Why this design decision? You usually (and should) issue more drawcalls than you change
-//! pipelines or bind new uniforms. Can be trivially changed so its not an issue.
 //!
 //! * `config` (GPUREG_GEOSTAGE_CONFIG) and `config_2` (GPUREG_GEOSTAGE_CONFIG2) are
 //! initialized with `Drawing triangle elements` to `true` when binding a pipeline or changing primitive topology. Don't

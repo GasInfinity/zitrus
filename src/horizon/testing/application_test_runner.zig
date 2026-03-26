@@ -78,18 +78,21 @@ pub fn main(init: horizon.Init) !void {
         testing.log_level = .warn;
 
         horizon.testing.allocator_instance = .{ .backing_allocator = gpa };
-        horizon.testing.io_instance = .init(horizon.testing.allocator, arbiter);
-        horizon.testing.io_instance.storage = .init(false, fs, soc, soc_buffer, soc_shm);
+        const t_io_instance = &horizon.testing.io_instance;
+
+        t_io_instance.* = .init(horizon.testing.allocator, arbiter);
         defer {
-            horizon.testing.io_instance.deinit();
+            t_io_instance.deinit();
             if (horizon.testing.allocator_instance.deinit() == .leak) leaks += 1;
         }
 
-        {
-            const t_io = horizon.testing.io_instance.io();
+        try t_io_instance.initFilesystem(.{ .fs = fs, .extra = .unowned });
+        try t_io_instance.initNetwork(.{ .soc = soc, .extra = .unowned });
+        try t_io_instance.mountArchive("sdmc", .sdmc, .empty, &.{}); 
 
-            try std.process.setCurrentPath(t_io, "sdmc:/");
-        }
+        const t_io = horizon.testing.io_instance.io();
+
+        try std.process.setCurrentPath(t_io, "sdmc:/");
 
         debug_writer.print("{d}/{d} {s}... ", .{ i + 1, test_fn_list.len, test_fn.name }) catch {};
         debug_writer.flush() catch {};

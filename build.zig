@@ -311,11 +311,16 @@ fn makeScriptSteps(b: *Build, zitrus: *Build.Module, plz: *Build.Module) void {
 const StandaloneTest = struct {
     name: []const u8,
     path: []const u8,
+    psm: []const []const u8 = &.{},
 };
 
 const standalone_tests: []const StandaloneTest = &.{
     .{ .name = "hos", .path = "test/hos.zig" },
-    .{ .name = "mango", .path = "test/mango.zig" },
+    .{
+        .name = "mango",
+        .path = "test/mango.zig",
+        .psm = &.{"test/mango/render/pos.psm"},
+    },
 };
 
 fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Compile) void {
@@ -377,6 +382,17 @@ fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Com
         });
         tests_exe.pie = true;
         tests_exe.setLinkerScript(b.named_lazy_paths.get("horizon/ld").?);
+
+        for (standalone_test.psm) |psm| {
+            const assemble: AssemblePsm = .initInner(b, .{
+                .tools_artifact = zitrus_tools,
+            }, .{
+                .name = psm,
+                .root_source_file = b.path(psm),
+            });
+
+            tests_exe.root_module.addAnonymousImport(std.Io.Dir.path.basename(psm), .{ .root_source_file = assemble.out });
+        }
 
         const tests_3dsx = Make3dsx.initInner(b, .{
             .tools_artifact = zitrus_tools,

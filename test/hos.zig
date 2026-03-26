@@ -1,3 +1,7 @@
+//! Simple behavior checks to test:
+//! 1 - The syscalls are correct
+//! 2 - The kernel behaves as it should
+
 const builtin = @import("builtin");
 
 comptime {

@@ -40,7 +40,7 @@ pub const Handle = enum(u32) {
         return b_device.freeMemory(memory, maybe_gpa);
     }
 
-    pub fn mapMemory(device: Handle, memory: mango.DeviceMemory, offset: u32, size: mango.DeviceSize) ![]u8 {
+    pub fn mapMemory(device: Handle, memory: mango.DeviceMemory, offset: mango.DeviceSize, size: mango.DeviceSize) ![]u8 {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return b_device.mapMemory(memory, offset, size);
     }
@@ -53,6 +53,11 @@ pub const Handle = enum(u32) {
     pub fn flushMappedMemoryRanges(device: Handle, ranges: []const mango.MappedMemoryRange) !void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return b_device.flushMappedMemoryRanges(ranges);
+    }
+
+    pub fn invalidateMappedMemoryRanges(device: Handle, ranges: []const mango.MappedMemoryRange) !void {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return b_device.invalidateMappedMemoryRanges(ranges);
     }
 
     pub fn createSemaphore(device: Handle, create_info: mango.SemaphoreCreateInfo, maybe_gpa: ?std.mem.Allocator) !mango.Semaphore {
@@ -226,9 +231,10 @@ pub const VTable = struct {
 
     allocateMemory: *const fn (dev: *Device, allocate_info: mango.MemoryAllocateInfo, gpa: std.mem.Allocator) mango.ObjectCreationError!mango.DeviceMemory,
     freeMemory: *const fn (dev: *Device, memory: mango.DeviceMemory, gpa: std.mem.Allocator) void,
-    mapMemory: *const fn (dev: *Device, memory: mango.DeviceMemory, offset: u32, size: mango.DeviceSize) MapMemoryError![]u8,
+    mapMemory: *const fn (dev: *Device, memory: mango.DeviceMemory, offset: mango.DeviceSize, size: mango.DeviceSize) MapMemoryError![]u8,
     unmapMemory: *const fn (device: *Device, memory: mango.DeviceMemory) void,
     flushMappedMemoryRanges: *const fn (dev: *Device, ranges: []const mango.MappedMemoryRange) FlushMemoryError!void,
+    invalidateMappedMemoryRanges: *const fn(dev: *Device, ranges: []const mango.MappedMemoryRange) InvalidateMemoryError!void,
 
     createSwapchain: *const fn (dev: *Device, create_info: mango.SwapchainCreateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.Swapchain,
     destroySwapchain: *const fn (dev: *Device, swapchain: mango.Swapchain, gpa: std.mem.Allocator) void,
@@ -242,6 +248,7 @@ pub const VTable = struct {
 const ObjectCreationError = mango.ObjectCreationError;
 const MapMemoryError = mango.MapMemoryError;
 const FlushMemoryError = mango.FlushMemoryError;
+const InvalidateMemoryError = mango.InvalidateMemoryError;
 const BindMemoryError = mango.BindMemoryError;
 const AcquireNextImageError = mango.AcquireNextImageError;
 const SignalSemaphoreError = mango.SignalSemaphoreError;
@@ -253,6 +260,8 @@ const GetSwapchainImagesError = mango.GetSwapchainImagesError;
 vtable: VTable,
 
 gpa: std.mem.Allocator,
+linear_gpa: std.mem.Allocator,
+
 fill_queue: backend.Queue.Fill,
 transfer_queue: backend.Queue.Transfer,
 submit_queue: backend.Queue.Submit,
@@ -293,7 +302,7 @@ pub fn freeMemory(device: *Device, memory: mango.DeviceMemory, maybe_gpa: ?std.m
     return device.vtable.freeMemory(device, memory, gpa);
 }
 
-pub fn mapMemory(device: *Device, memory: mango.DeviceMemory, offset: u32, size: mango.DeviceSize) MapMemoryError![]u8 {
+pub fn mapMemory(device: *Device, memory: mango.DeviceMemory, offset: mango.DeviceSize, size: mango.DeviceSize) MapMemoryError![]u8 {
     return try device.vtable.mapMemory(device, memory, offset, size);
 }
 
@@ -303,6 +312,10 @@ pub fn unmapMemory(device: *Device, memory: mango.DeviceMemory) void {
 
 pub fn flushMappedMemoryRanges(device: *Device, ranges: []const mango.MappedMemoryRange) FlushMemoryError!void {
     return try device.vtable.flushMappedMemoryRanges(device, ranges);
+}
+
+pub fn invalidateMappedMemoryRanges(device: *Device, ranges: []const mango.MappedMemoryRange) InvalidateMemoryError!void {
+    return try device.vtable.invalidateMappedMemoryRanges(device, ranges);
 }
 
 pub fn createSemaphore(device: *Device, create_info: mango.SemaphoreCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.Semaphore {
@@ -321,7 +334,7 @@ pub fn destroySemaphore(device: *Device, semaphore: mango.Semaphore, maybe_gpa: 
 pub fn createCommandPool(device: *Device, create_info: mango.CommandPoolCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.CommandPool {
     const gpa = maybe_gpa orelse device.gpa;
     const b_command_pool: *backend.CommandPool = try gpa.create(backend.CommandPool);
-    b_command_pool.* = try .init(create_info, gpa);
+    b_command_pool.* = try .init(create_info, device.linear_gpa, gpa);
     return b_command_pool.toHandle();
 }
 

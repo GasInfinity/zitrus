@@ -143,8 +143,13 @@ pub const Handle = enum(u32) {
 
         std.debug.assert(src_blitting_layers == dst_blitting_layers); // Obvously, we must have matching layers to copy.
 
-        const src_color_format = b_src_image.info.format.nativeColorFormat();
-        const dst_color_format = b_dst_image.info.format.nativeColorFormat();
+        const src_color_format, const dst_color_format = switch (b_src_image.info.format) {
+            // NOTE: we can (ab)use the GPU DMA for unswizzling images of the same format.
+            .d16_unorm, .g8r8_unorm, .i8a8_unorm => |f| if (b_dst_image.info.format == f) .{ .rgb565, .rgb565 } else unreachable,
+            .d24_unorm => |f| if (b_dst_image.info.format == f) .{ .bgr888, .bgr888 } else unreachable,
+            .d24_unorm_s8_uint => |f| if (b_dst_image.info.format == f) .{ .abgr8888, .abgr8888 } else unreachable,
+            else => |fmt| .{ fmt.nativeColorFormat(), b_dst_image.info.format.nativeColorFormat() }, // it must be a valid color format if not
+        };
 
         const src_width: usize = b_src_image.info.width();
         const src_height: usize = b_src_image.info.height();
@@ -161,7 +166,7 @@ pub const Handle = enum(u32) {
         std.debug.assert(src_mip_width >= dst_mip_width and src_mip_height >= dst_mip_height); // Output must not be bigger than input.
 
         // Only allow downscale of the X or XY axes. Otherwise sizes must match (for simplicity, the hardware allows bigger inputs than outputs, does that have an use-case?).
-        // XXX: Yes dummy, if you have a bigger input you're basically blitting subimages!
+        // TODO: Yes dummy, if you have a bigger input you're basically blitting subimages!
         const downscale: pica.MemoryCopy.Flags.Downscale = if (dst_mip_width < src_mip_width and dst_mip_height < src_mip_height) blk: {
             std.debug.assert(dst_mip_width == (src_mip_width >> 1) and dst_mip_height == (src_mip_height >> 1));
             break :blk .@"2x2";
@@ -230,28 +235,29 @@ pub const Handle = enum(u32) {
                 },
                 .src = @alignCast(src_image_layer_virt_offset),
                 .dst = @alignCast(dst_image_layer_virt_offset),
-                .input_gap_size = .{ b_src_image.info.width(), b_src_image.info.height() },
-                .output_gap_size = .{ b_src_image.info.width(), b_src_image.info.height() },
+                .input_gap_size = .{ @intCast(src_mip_width), @intCast(src_mip_height) },
+                .output_gap_size = .{ @intCast(src_mip_width), @intCast(src_mip_height) },
             }, wait_op, signal_op);
         }
     }
 
-    pub fn fillBuffer(queue: Handle, dst_buffer: mango.Buffer, dst_offset: usize, data: u32) !void {
+    pub fn fillBuffer(queue: Handle, info: mango.FillBufferInfo) !void {
         const fill: *Fill = .fromHandleMutable(queue);
-        _ = fill;
-        _ = dst_buffer;
-        _ = dst_offset;
-        _ = data;
-        @panic("TODO");
-        // const b_dst_buffer: backend.Buffer = .fromHandle(dst_buffer);
-        //
-        // std.debug.assert(dst_offset <= b_dst_buffer.size);
-        //
-        // const b_dst_virt = b_dst_buffer.memory_info.boundVirtualAddress() + dst_offset;
-        // const dst_fill_size = b_dst_buffer.size - dst_offset;
-        //
-        // gsp.submitMemoryFill(.{ .init(@alignCast(b_dst_virt[0..dst_fill_size]), .fill32(data)), null }, .none) catch unreachable;
-        //
+        const buffer: *backend.Buffer = .fromHandleMutable(info.buffer);
+
+        const virt = buffer.memory_info.boundVirtualAddress();
+        const size = buffer.sizeByAmount(info.size, info.offset);
+
+        const dst = virt[@intFromEnum(info.offset)..][0..size];
+
+        try fill.wakePushFront(.{
+            .data = @alignCast(dst),
+            .value = switch (info.pattern_type) {
+                .u16 => .fill16(@truncate(info.pattern)),
+                .u24 => .fill24(@truncate(info.pattern)),
+                .u32 => .fill32(info.pattern),
+            },
+        }, .initSemaphoreOperation(info.wait_semaphore), .initSemaphoreOperation(info.signal_semaphore));
     }
 
     /// Clear one color attachment image.
@@ -350,10 +356,10 @@ pub const Handle = enum(u32) {
         }
     }
 
-    // TODO: Subresource range
     pub fn clearDepthStencilImage(queue: Handle, info: mango.ClearDepthStencilInfo) !void {
         std.debug.assert(0.0 <= info.depth and info.depth <= 1.0);
 
+        // TODO: Subresource range
         const fill: *Fill = .fromHandleMutable(queue);
         const depth = info.depth;
         const stencil = info.stencil;

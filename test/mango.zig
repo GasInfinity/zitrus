@@ -1,3 +1,7 @@
+//! Simple behavior checks to test:
+//! 1 - mango does what it *should*
+//! 2 - The GPU behaves as expected
+
 const builtin = @import("builtin");
 
 comptime {
@@ -5,5 +9,7 @@ comptime {
         @compileError("mango tests should be run on Horizon!");
     }
 
-    // TODO: Start working on mango behavior tests
+    _ = @import("mango/transfer_queue.zig");
+    _ = @import("mango/fill_queue.zig");
+    _ = @import("mango/render.zig");
 }

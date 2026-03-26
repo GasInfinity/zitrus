@@ -1,0 +1,15 @@
+.{
+    .name = .udp_echo,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0x794a929e87d0637e,
+    .dependencies = .{
+        .zitrus = .{ .path = "../../../" },
+    },
+    .paths = .{
+        "assets",
+        "src",
+        "build.zig",
+        "build.zig.zon",
+    },
+}

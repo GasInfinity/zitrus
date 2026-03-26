@@ -31,6 +31,7 @@ const vtable: Device.VTable = .{
     .mapMemory = mapMemory,
     .unmapMemory = unmapMemory,
     .flushMappedMemoryRanges = flushMappedMemoryRanges,
+    .invalidateMappedMemoryRanges = invalidateMappedMemoryRanges,
 
     .createSwapchain = createSwapchain,
     .destroySwapchain = destroySwapchain,
@@ -62,6 +63,11 @@ const CodeCache = struct {
     uid: std.atomic.Value(u32),
     entries: std.ArrayHashMapUnmanaged(Key, *backend.Shader.Code, Context, false),
     mutex: AddressArbiter.Mutex,
+
+    pub fn deinit(cache: *CodeCache, gpa: std.mem.Allocator) void {
+        cache.entries.deinit(gpa);
+        cache.* = undefined; 
+    }
 
     pub fn getOrAdd(cache: *CodeCache, gpa: std.mem.Allocator, arbiter: AddressArbiter, key: Key) !*backend.Shader.Code {
         cache.mutex.lock(arbiter);
@@ -152,6 +158,7 @@ pub fn create(create_info: mango.HorizonBackedDeviceCreateInfo, gpa: std.mem.All
     h_device.* = .{
         .device = .{
             .gpa = gpa,
+            .linear_gpa = horizon.heap.linear_page_allocator,
             .vtable = vtable,
             .fill_queue = .init(&h_device.device),
             .transfer_queue = .init(&h_device.device),
@@ -193,7 +200,9 @@ fn destroy(dev: *Device) void {
     const gpa = dev.gpa;
     const h_dev: *Horizon = @alignCast(@fieldParentPtr("device", dev));
 
+    h_dev.code_cache.deinit(dev.gpa);
     h_dev.running.store(false, .monotonic);
+    h_dev.interrupt_event.signal(); // NOTE: technically not needed as it is always signaled but better be safe than sorry.
     h_dev.driver.join();
     h_dev.gsp_shm_memory_block.unmap(@ptrCast(@alignCast(h_dev.gsp_shm)));
 
@@ -333,19 +342,20 @@ fn freeMemory(dev: *Device, memory: mango.DeviceMemory, gpa: std.mem.Allocator) 
     }
 }
 
-fn mapMemory(dev: *Device, memory: mango.DeviceMemory, offset: u32, size: mango.DeviceSize) mango.MapMemoryError![]u8 {
+fn mapMemory(dev: *Device, memory: mango.DeviceMemory, offset: mango.DeviceSize, size: mango.DeviceSize) mango.MapMemoryError![]u8 {
     _ = dev;
     const b_memory: backend.DeviceMemory = .fromHandle(memory);
+    const b_offset = @intFromEnum(offset);
 
-    std.debug.assert(std.mem.isAligned(offset, horizon.heap.page_size) and offset <= b_memory.size());
+    std.debug.assert(std.mem.isAligned(b_offset, horizon.heap.page_size) and b_offset <= b_memory.size());
 
     if (size != .whole) {
-        std.debug.assert(@intFromEnum(size) <= (b_memory.size() - offset));
+        std.debug.assert(@intFromEnum(size) <= (b_memory.size() - b_offset));
 
-        return (b_memory.virtualAddress() + offset)[0..@intFromEnum(size)];
+        return (b_memory.virtualAddress() + b_offset)[0..@intFromEnum(size)];
     }
 
-    return (b_memory.virtualAddress() + offset)[0 .. b_memory.size() - offset];
+    return (b_memory.virtualAddress() + b_offset)[0 .. b_memory.size() - b_offset];
 }
 
 fn unmapMemory(device: *Device, memory: mango.DeviceMemory) void {
@@ -374,6 +384,29 @@ fn flushMappedMemoryRanges(dev: *Device, ranges: []const mango.MappedMemoryRange
 
         // TODO: error handling
         _ = horizon.flushProcessDataCache(.current, flushed_memory);
+    }
+}
+
+fn invalidateMappedMemoryRanges(dev: *Device, ranges: []const mango.MappedMemoryRange) mango.InvalidateMemoryError!void {
+    _ = dev;
+
+    for (ranges) |range| {
+        const b_memory: backend.DeviceMemory = .fromHandle(range.memory);
+
+        const offset = @intFromEnum(range.offset);
+        const invalidated_memory = switch (range.size) {
+            .whole => b_memory.virtualAddress()[offset..][0..(b_memory.size() - offset)],
+            _ => |sz| sz: {
+                const size = @intFromEnum(sz);
+
+                std.debug.assert(size <= (b_memory.size() - offset));
+
+                break :sz b_memory.virtualAddress()[offset..][0..size];
+            },
+        };
+
+        // TODO: error handling
+        _ = horizon.invalidateProcessDataCache(.current, invalidated_memory);
     }
 }
 
@@ -460,6 +493,9 @@ fn driverMain(h_dev: *Horizon) void {
     const fbs = &h_dev.gsp_shm.framebuffers[h_dev.gsp_thread_index];
     const presentation_engine = &h_dev.presentation_engine;
 
+    // NOTE: it isn't cleared by GSP
+    gx.clear();
+    int_que.clear();
     for (fbs, 0..) |*fb, i| _ = fb.update(.{
         .active = .first,
         .left_vaddr = null,

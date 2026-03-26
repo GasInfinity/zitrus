@@ -1140,6 +1140,18 @@ pub const CopyBufferInfo = extern struct {
     signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
+pub const FillPatternType = enum(u8) { u16, u24, u32 };
+
+pub const FillBufferInfo = extern struct {
+    wait_semaphore: ?*const SemaphoreQueueOperation = null,
+    buffer: Buffer,
+    offset: DeviceSize,
+    size: DeviceSize,
+    pattern_type: FillPatternType,
+    pattern: u32,
+    signal_semaphore: ?*const SemaphoreQueueOperation = null,
+};
+
 pub const CopyBufferToImageInfo = extern struct {
     wait_semaphore: ?*const SemaphoreQueueOperation = null,
     src_buffer: Buffer,
@@ -1168,6 +1180,7 @@ pub const ClearColorInfo = extern struct {
 
 pub const ClearDepthStencilInfo = extern struct {
     wait_semaphore: ?*const SemaphoreQueueOperation = null,
+    subresource_range: ImageSubresourceRange,
     image: Image,
     depth: f32,
     stencil: u8,
@@ -1558,6 +1571,7 @@ pub const LightLookupTable = backend.LightLookupTable.Handle;
 pub const ObjectCreationError = error{ ValidationFailed, OutOfMemory, Unexpected };
 pub const MapMemoryError = error{Unexpected};
 pub const FlushMemoryError = error{Unexpected};
+pub const InvalidateMemoryError = error{Unexpected};
 pub const BindMemoryError = error{Unexpected};
 pub const AcquireNextImageError = error{ Timeout, Unexpected };
 pub const SignalSemaphoreError = error{Unexpected};

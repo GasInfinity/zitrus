@@ -172,12 +172,12 @@ inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !U
         return switch (First) {
             Init.Application => root.main(app_init),
             Init.Application.Software => blk: {
-                var soft: services.GspGpu.Graphics.Software = try .init(.{
-                    .top_mode = .@"2d",
-                    .double_buffer = .initFill(true),
-                    .color_format = .initFill(.bgr888),
-                    .initial_contents = .initFill(null),
-                }, gsp, horizon.heap.linear_page_allocator);
+                const config: services.GspGpu.Graphics.Software.Config = if (@hasDecl(root, "init_options"))
+                    @field(root, "init_options")
+                else 
+                    .{};
+
+                var soft: services.GspGpu.Graphics.Software = try .init(config, gsp, horizon.heap.linear_page_allocator);
                 defer soft.deinit(gsp, horizon.heap.linear_page_allocator, app.flags.must_close);
 
                 break :blk root.main(.{

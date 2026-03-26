@@ -156,10 +156,10 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
     //
     // Same as in Vulkan.
     {
-        const mapped_vtx = try device.mapMemory(vtx_buffer_memory, 0, .whole);
+        const mapped_vtx = try device.mapMemory(vtx_buffer_memory, .size(0), .whole);
         defer device.unmapMemory(vtx_buffer_memory);
 
-        const mapped_idx = try device.mapMemory(index_buffer_memory, 0, .whole);
+        const mapped_idx = try device.mapMemory(index_buffer_memory, .size(0), .whole);
         defer device.unmapMemory(index_buffer_memory);
 
         const vtx_data: *[3]Vertex = @alignCast(std.mem.bytesAsValue([3]Vertex, mapped_vtx));
