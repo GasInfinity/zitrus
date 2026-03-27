@@ -519,8 +519,8 @@ pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, se
     };
 }
 
-pub fn start(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, gsp: GspGpu) !Result {
-    return swkbd.startContext(app, apt, service, srv, gsp, {});
+pub fn start(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture) !Result {
+    return swkbd.startContext(app, apt, service, srv, capture, {});
 }
 
 const SoftwareKeyboard = @This();

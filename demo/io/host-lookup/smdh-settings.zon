@@ -1,0 +1,9 @@
+.{
+    .titles = .{
+        .english = .{
+            .title = "Host Lookup",
+            .description = "Lookup the ip address of hostnames",
+            .publisher = "zitrus",
+        },
+    },
+}

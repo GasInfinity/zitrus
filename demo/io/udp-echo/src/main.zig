@@ -56,7 +56,6 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     soft.swap(.none);
     try soft.waitVBlank();
 
-    // TODO: receiveTimeout needs batchAwaitConcurrent!
     var udp_buf: [64]u8 = undefined;
     main_loop: while (true) {
         while (try init.pollEvent()) |ev| switch (ev) {
@@ -64,20 +63,25 @@ pub fn main(init: horizon.Init.Application.Software) !void {
             .quit => break :main_loop,
         };
 
-        const msg = bound.receive(io, &udp_buf) catch |err| switch (err) {
-            else => |e| return e,
-        };
+        const input = init.app.input;
+        const pad = input.pollPad();
 
-        const trimmed = std.mem.trim(u8, msg.data, " \t\n");
-        try bottom_w.print("{f} -> {s} ", .{msg.from, trimmed});
-        if (msg.flags.trunc) try bottom_w.writeAll(" (truncated)");
-        try bottom_w.writeByte('\n');
-        try bottom_w.flush();
+        if (pad.current.start) break :main_loop;
 
-        // XXX: remove this when the TODO is addressed and use a timeout of 0.
-        if (std.mem.eql(u8, trimmed, "quit")) break :main_loop;
+        msg: {
+            const msg = bound.receiveTimeout(io, &udp_buf, zero_timeout) catch |err| switch (err) {
+                error.Timeout => break :msg,
+                else => |e| return e,
+            };
 
-        try bound.send(io, &msg.from, msg.data);
+            const trimmed = std.mem.trim(u8, msg.data, " \t\n");
+            try bottom_w.print("{f} -> {s} ", .{msg.from, trimmed});
+            if (msg.flags.trunc) try bottom_w.writeAll(" (truncated)");
+            try bottom_w.writeByte('\n');
+            try bottom_w.flush();
+
+            try bound.send(io, &msg.from, msg.data);
+        }
 
         soft.flush();
         soft.swap(.none);
@@ -85,6 +89,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     }
 }
 
+const zero_timeout: Io.Timeout = .{ .duration = .{ .raw = .fromNanoseconds(0), .clock = .awake } };
 const unspecified: net.IpAddress = .{ .ip4 = net.Ip4Address.unspecified(0) };
 
 const horizon = zitrus.horizon;

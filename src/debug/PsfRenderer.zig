@@ -310,7 +310,7 @@ pub fn writeCharacter(psf_w: *PsfWriter, c: u16) Writer.Error!void {
     const end_x = blk: {
         const end = psf_w.cx + psf.glyph_width;
 
-        const w = if (end >= psf_w.width)
+        const w = if (end > psf_w.width)
             w: switch (psf_w.horizontal_overflow) {
                 .wrap => {
                     psf_w.cx = 0;
@@ -330,7 +330,7 @@ pub fn writeCharacter(psf_w: *PsfWriter, c: u16) Writer.Error!void {
 
     const end_y = psf_w.cy + psf.glyph_height;
 
-    const h: usize = if (end_y >= psf_w.height)
+    const h: usize = if (end_y > psf_w.height)
         h: switch (psf_w.vertical_overflow) {
             .@"error" => return error.WriteFailed,
             .scroll => {
@@ -413,6 +413,16 @@ pub fn clear(psf_w: *PsfWriter) void {
             @memcpy(line[i..][0..psf_w.bytes_per_pixel], psf_w.clear_color[0..psf_w.bytes_per_pixel]);
         }
     }
+}
+
+pub fn setColor(psf_w: *PsfWriter, comptime T: type, color: T) void {
+    std.debug.assert(psf_w.bytes_per_pixel == @sizeOf(T));
+    psf_w.color[0..@sizeOf(T)].* = @bitCast(color);
+}
+
+pub fn setClearColor(psf_w: *PsfWriter, comptime T: type, color: T) void {
+    std.debug.assert(psf_w.bytes_per_pixel == @sizeOf(T));
+    psf_w.clear_color[0..@sizeOf(T)].* = @bitCast(color);
 }
 
 const PsfWriter = @This();

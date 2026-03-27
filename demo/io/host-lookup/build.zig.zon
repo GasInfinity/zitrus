@@ -1,0 +1,15 @@
+.{
+    .name = .host_lookup,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0xd40b70eee4342317,
+    .dependencies = .{
+        .zitrus = .{ .path = "../../../" },
+    },
+    .paths = .{
+        "assets",
+        "src",
+        "build.zig",
+        "build.zig.zon",
+    },
+}

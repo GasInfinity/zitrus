@@ -379,7 +379,10 @@ pub const VTable = enum(u0) {
         return .blocked; // NOTE: We cannot cancel (AFAIK) so we're always blocked
     }
 
-    pub fn checkCancel(_: VTable, _: ?*anyopaque) Cancelable!void {}
+    pub fn checkCancel(_: VTable, ud: ?*anyopaque) Cancelable!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        _ = hio;
+    }
 
     pub fn futexWait(_: VTable, ud: ?*anyopaque, ptr: *const u32, expected: u32, timeout: Io.Timeout) Cancelable!void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
@@ -407,45 +410,22 @@ pub const VTable = enum(u0) {
 
     pub fn operate(_: VTable, ud: ?*anyopaque, operation: Io.Operation) Cancelable!Io.Operation.Result {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
-
-        return switch (operation) {
-            .file_read_streaming => |op| blk: {
-                for (op.data) |buf| {
-                    if (buf.len == 0) continue;
-
-                    break :blk .{ .file_read_streaming = hio.storage.readStreaming(hio.io(), op.file.handle, buf) };
-                }
-
-                break :blk .{ .file_read_streaming = 0 };
-            },
-            .file_write_streaming => |op| blk: {
-                const buf = if (op.header.len != 0)
-                    op.header
-                else buf: for (op.data[0 .. op.data.len - 1]) |buf| {
-                    if (buf.len == 0) continue;
-                    break :buf buf;
-                } else if (op.data[op.data.len - 1].len > 0 and op.splat > 0)
-                    op.data[op.data.len - 1]
-                else
-                    break :blk .{ .file_write_streaming = 0 };
-
-                break :blk .{ .file_write_streaming = hio.storage.writeStreaming(hio.io(), op.file.handle, buf) };
-            },
-            .net_receive => |op| .{ .net_receive = hio.storage.netReceive(hio.io(), op.socket_handle, op.message_buffer, op.data_buffer, op.flags) },
-            .device_io_control => unreachable,
-        };
+        return try hio.storage.operate(hio.io(), operation);
     }
 
-    pub fn batchAwaitAsync(_: VTable, _: ?*anyopaque, _: *Io.Batch) Cancelable!void {
-        @compileError("TODO");
+    pub fn batchAwaitAsync(_: VTable, ud: ?*anyopaque, b: *Io.Batch) Cancelable!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        return try hio.storage.batchAwaitAsync(hio.io(), hio.gpa, b);
     }
 
-    pub fn batchAwaitConcurrent(_: VTable, _: ?*anyopaque, _: *Io.Batch, _: Io.Timeout) Io.Batch.AwaitConcurrentError!void {
-        @compileError("TODO");
+    pub fn batchAwaitConcurrent(_: VTable, ud: ?*anyopaque, b: *Io.Batch, timeout: Io.Timeout) Io.Batch.AwaitConcurrentError!void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        return try hio.storage.batchAwaitConcurrent(hio.io(), hio.gpa, b, timeout);
     }
 
-    pub fn batchCancel(_: ?*anyopaque, _: *Io.Batch) void {
-        @compileError("TODO");
+    pub fn batchCancel(_: VTable, ud: ?*anyopaque, b: *Io.Batch) void {
+        const hio: *HIo = @ptrCast(@alignCast(ud.?));
+        return hio.storage.batchCancel(hio.gpa, b);
     }
 
     pub fn dirCreateDir(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, _: Io.Dir.Permissions) Io.Dir.CreateDirError!void {

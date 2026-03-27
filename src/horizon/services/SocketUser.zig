@@ -241,6 +241,10 @@ pub const Descriptor = enum(u32) {
             wrband: bool = false,
             nval: bool = false,
             _unused1: u26 = 0,
+
+            pub fn isEmpty(events: Events) bool {
+                return @as(u32, @bitCast(events)) == 0;
+            }
         };
 
         fd: Descriptor,

@@ -7,6 +7,7 @@ pub const empty: Storage = .{
     .descriptions = .empty,
     .paths = .empty,
 };
+
 pub const separator = '/';
 
 // This is a workaround to not stall any soc:U IPC call. We'll
@@ -374,6 +375,228 @@ pub fn unlinkCurrentDir(storage: *Storage, io: std.Io, gpa: std.mem.Allocator) v
     }
 }
 
+pub fn operate(storage: *Storage, io: std.Io, operation: Io.Operation) Io.Cancelable!Io.Operation.Result {
+    return switch (operation) {
+        .file_read_streaming => |op| blk: {
+            for (op.data) |buf| {
+                if (buf.len == 0) continue;
+
+                break :blk .{ .file_read_streaming = storage.readStreaming(io, op.file.handle, buf) };
+            }
+
+            break :blk .{ .file_read_streaming = 0 };
+        },
+        .file_write_streaming => |op| blk: {
+            const buf = if (op.header.len != 0)
+                op.header
+            else buf: for (op.data[0 .. op.data.len - 1]) |buf| {
+                if (buf.len == 0) continue;
+                break :buf buf;
+            } else if (op.data[op.data.len - 1].len > 0 and op.splat > 0)
+                op.data[op.data.len - 1]
+            else
+                break :blk .{ .file_write_streaming = 0 };
+
+            break :blk .{ .file_write_streaming = storage.writeStreaming(io, op.file.handle, buf) };
+        },
+        .net_receive => |op| .{
+            .net_receive = nr: {
+                const stored, const flags = storage.getDescriptionStoredFlags(io, op.socket_handle);
+                std.debug.assert(flags.kind == .socket);
+
+                break :nr storage.netReceive(stored.socket, op.message_buffer, op.data_buffer, op.flags);
+            }, 
+        }, 
+        .device_io_control => unreachable,
+    };
+}
+
+pub fn batchAwaitAsync(storage: *Storage, io: std.Io, b: *Io.Batch) Io.Cancelable!void {
+    return storage.batchAwait(io, .failing, b, false, .none) catch unreachable; // concurrency == false
+}
+
+pub fn batchAwaitConcurrent(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, b: *Io.Batch, timeout: Io.Timeout) Io.Batch.AwaitConcurrentError!void {
+    return try storage.batchAwait(io, gpa, b, true, timeout);
+}
+
+pub fn batchCancel(storage: *Storage, gpa: std.mem.Allocator, b: *Io.Batch) void {
+    _ = storage;
+
+    if (b.userdata) |ud| {
+        const polls_ptr: [*]SocketUser.Descriptor.Poll = @alignCast(@ptrCast(ud));
+        const polls = polls_ptr[b.storage.len];
+
+        gpa.free(polls);
+    }
+}
+
+const poll_buffer_len = 16;
+fn batchAwait(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, b: *Io.Batch, concurrency: bool, timeout: Io.Timeout) !void {
+    var poll_buffer: [poll_buffer_len]SocketUser.Descriptor.Poll = undefined;
+    var polls: struct {
+        buf: []SocketUser.Descriptor.Poll,
+        len: usize,
+
+        pub fn add(polls: *@This(), p_gpa: std.mem.Allocator, p_b: *Io.Batch, sock: SocketUser.Descriptor, events: SocketUser.Descriptor.Poll.Events) Allocator.Error!void {
+            if (polls.len == polls.buf.len) {
+                const new: []SocketUser.Descriptor.Poll = if (p_b.userdata) |ud| 
+                    @as([*]SocketUser.Descriptor.Poll, @alignCast(@ptrCast(ud)))[0..p_b.storage.len]
+                else try p_gpa.alloc(SocketUser.Descriptor.Poll, p_b.storage.len);
+
+                @memcpy(new[0..polls.len], polls.buf);
+                polls.buf = new;
+            }
+            
+            polls.buf[polls.len] = .{
+                .fd = sock,
+                .events = events,
+                .poll = .{},
+            };
+            polls.len += 1;
+        }
+
+    } = .{ .buf = &poll_buffer, .len = 0 };
+
+    var completions: usize = 0;
+
+    grab_poll: {
+        var prev_index: Io.Operation.OptionalIndex = .none;
+        var index = b.submitted.head;
+
+        while (index != .none) {
+            const b_storage = &b.storage[index.toIndex()];
+            const submission = &b_storage.submission;
+            const next_index = submission.node.next;
+            defer index = next_index;
+
+            nb: {
+                const result: Io.Operation.Result = switch (submission.operation) {
+                    .device_io_control => unreachable,
+                    .file_read_streaming, .file_write_streaming => try storage.operate(io, submission.operation),
+                    .net_receive => |recv| .{
+                        .net_receive = nr: {
+                            const stored, const flags = storage.getDescriptionStoredFlags(io, recv.socket_handle);
+                            std.debug.assert(flags.kind == .socket);
+
+                            const sock = stored.socket;
+                            var data_i: usize = 0;
+
+                            for (recv.message_buffer, 0..) |*msg, i| {
+                                const remaining_data_buffer = recv.data_buffer[data_i..];
+                                storage.netReceiveOne(sock, msg, remaining_data_buffer, recv.flags) catch |err| switch (err) {
+                                    error.WouldBlock => {
+                                        if (i > 0) break :nr .{ null, i };
+
+                                        polls.add(gpa, b, sock, .{
+                                            .in = true,
+                                        }) catch |e| switch (e) {
+                                            error.OutOfMemory => {
+                                                if (concurrency) return error.ConcurrencyUnavailable;
+                                                break :grab_poll;
+                                            },
+                                        };
+                                        break :nb;
+                                    },
+                                    else => |e| break :nr .{ e, i },
+                                };
+
+                                data_i += msg.data.len;
+                            }
+
+                            break :nr .{ null, recv.message_buffer.len };
+                        },
+                    },
+                };
+                defer completions += 1;
+
+                switch (prev_index) {
+                    .none => b.submitted.head = next_index,
+                    else => b.storage[prev_index.toIndex()].submission.node.next = next_index,
+                }
+
+                if (next_index == .none) b.submitted.tail = prev_index;
+
+                switch (b.completed.tail) {
+                    .none => b.completed.head = index,
+                    else => |tail| b.storage[tail.toIndex()].completion.node.next = index,
+                }
+
+                b_storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+                b.completed.tail = index;
+            }
+        }
+    }
+
+    if (completions > 0) return;
+
+    const soc = storage.net.soc;
+    const maybe_until = timeout.toTimestamp(io);
+
+    while (true) {
+        var maybe_polled: SocketUser.E.Maybe = soc.sendPoll(polls.buf[0..polls.len], 0) catch |err| switch (err) {
+            else => if (concurrency) return error.ConcurrencyUnavailable else blk: {
+                // HACK: when not concurrent just say that the first fd completed, we'll block on that later with `operate`.
+                polls.buf[0].events = @bitCast(@as(u32, std.math.maxInt(u32)));
+                break :blk @enumFromInt(1); 
+            },
+        };
+
+        poll_result: switch (maybe_polled.errno()) {
+            .SUCCESS => {
+                const polled = @intFromEnum(maybe_polled);
+
+                if (polled == 0) {
+                    if (b.completed.head != .none) return;
+
+                    if (maybe_until) |until| {
+                        const duration = until.durationFromNow(io);
+                        
+                        if (duration.raw.nanoseconds < socket_busy_loop_workaround_ns) return error.Timeout;
+                    }
+
+                    horizon.sleepThread(socket_busy_loop_workaround_ns);
+                    continue;
+                }
+                
+                var prev_index: Io.Operation.OptionalIndex = .none;
+                var index = b.submitted.head;
+                for (polls.buf[0..polls.len]) |poll| {
+                    const b_storage = &b.storage[index.toIndex()];
+                    const submission = &b_storage.submission;
+                    const next_index = submission.node.next;
+                    defer index = next_index;
+
+                    if (poll.events.isEmpty()) continue;
+
+                    const result = try storage.operate(io, submission.operation);
+
+                    switch (prev_index) {
+                        .none => b.submitted.head = next_index,
+                        else => b.storage[prev_index.toIndex()].submission.node.next = next_index,
+                    }
+
+                    if (next_index == .none) b.submitted.tail = prev_index;
+
+                    switch (b.completed.tail) {
+                        .none => b.completed.head = index,
+                        else => |tail| b.storage[tail.toIndex()].completion.node.next = index,
+                    }
+
+                    b_storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
+                    b.completed.tail = index;                
+                }
+
+                return;
+            },
+            else => if (concurrency) return error.ConcurrencyUnavailable else {
+                polls.buf[0].events = @bitCast(@as(u32, std.math.maxInt(u32)));
+                maybe_polled = @enumFromInt(1); // see above
+                continue :poll_result .SUCCESS;
+            }
+        }
+    }
+}
+
 pub const OpenPathError = error{
     ReadOnlyFileSystem,
     SystemResources,
@@ -537,8 +760,7 @@ pub fn openPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_di
         storage.lock.lockSharedUncancelable(io);
         defer storage.lock.unlockShared(io);
 
-        // NOTE: catch unreachable because we know the fd is valid.
-        (storage.getDescription(fd) catch unreachable).* = description;
+        storage.getDescription(fd).* = description;
     }
 
     return fd;
@@ -940,7 +1162,7 @@ pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: *const 
         storage.lock.lockSharedUncancelable(io);
         defer storage.lock.unlockShared(io);
 
-        (storage.getDescription(fd) catch unreachable).* = .initSocket(sock);
+        storage.getDescription(fd).* = .initSocket(sock);
     }
 
     return .{
@@ -1009,7 +1231,7 @@ pub fn netBind(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io
         storage.lock.lockSharedUncancelable(io);
         defer storage.lock.unlockShared(io);
 
-        (storage.getDescription(fd) catch unreachable).* = .initSocket(sock);
+        storage.getDescription(fd).* = .initSocket(sock);
     }
 
     return .{
@@ -1023,7 +1245,7 @@ pub fn netBind(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io
 
 pub fn netAccept(storage: *Storage, io: std.Io, gpa: Allocator, handle: Descriptor, opts: Io.net.Server.AcceptOptions) Io.net.Server.AcceptError!Io.net.Socket {
     _ = opts;
-    const desc = try storage.getDescription(handle);
+    const desc = storage.getDescription(handle);
     std.debug.assert(desc.flags.kind == .socket);
 
     const soc = storage.net.soc;
@@ -1054,7 +1276,7 @@ pub fn netAccept(storage: *Storage, io: std.Io, gpa: Allocator, handle: Descript
         storage.lock.lockSharedUncancelable(io);
         defer storage.lock.unlockShared(io);
 
-        (storage.getDescription(fd) catch unreachable).* = .initSocket(accepted_sock);
+        storage.getDescription(fd).* = .initSocket(accepted_sock);
     }
 
     return .{
@@ -1166,7 +1388,7 @@ pub fn netConnect(storage: *Storage, io: std.Io, gpa: Allocator, address: *const
         storage.lock.lockSharedUncancelable(io);
         defer storage.lock.unlockShared(io);
 
-        (storage.getDescription(fd) catch unreachable).* = .initSocket(sock);
+        storage.getDescription(fd).* = .initSocket(sock);
     }
 
     return .{
@@ -1199,7 +1421,7 @@ fn setSocketNonBlocking(soc: SocketUser, sock: SocketUser.Descriptor, non_blocki
 }
 
 pub fn netShutdown(storage: *Storage, io: std.Io, handle: Descriptor, how: Io.net.ShutdownHow) Io.net.ShutdownError!void {
-    const stored, const flags = try storage.getDescriptionStoredFlags(io, handle);
+    const stored, const flags = storage.getDescriptionStoredFlags(io, handle);
     const soc = storage.net.soc;
 
     return switch (flags.kind) {
@@ -1310,7 +1532,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
         storage.lock.lockSharedUncancelable(io);
         defer storage.lock.unlockShared(io);
 
-        break :blk (try storage.getDescription(handle)).flags;
+        break :blk storage.getDescription(handle).flags;
     };
 
     return switch (flags.kind) {
@@ -1320,7 +1542,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                 storage.lock.lockSharedUncancelable(io);
                 defer storage.lock.unlockShared(io);
 
-                const desc = try storage.getDescription(handle);
+                const desc = storage.getDescription(handle);
 
                 switch (r.state) {
                     .finished => return 0,
@@ -1370,7 +1592,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                     storage.lock.lockSharedUncancelable(io);
                     defer storage.lock.unlockShared(io);
 
-                    const desc = try storage.getDescription(handle);
+                    const desc = storage.getDescription(handle);
                     break :blk .{ switch (desc.stored.path) {
                         .invalid => Builder.root,
                         _ => |idx| storage.paths.list.items[@intFromEnum(idx)].value,
@@ -1386,7 +1608,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                             storage.lock.lockSharedUncancelable(io);
                             defer storage.lock.unlockShared(io);
 
-                            @atomicStore(FilesystemSrv.Directory, &(try storage.getDescription(handle)).extra.dir.archive, .none, .monotonic);
+                            @atomicStore(FilesystemSrv.Directory, &storage.getDescription(handle).extra.dir.archive, .none, .monotonic);
                         }
 
                         r.state = .reading;
@@ -1409,7 +1631,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                     storage.lock.lockSharedUncancelable(io);
                     defer storage.lock.unlockShared(io);
 
-                    @atomicStore(FilesystemSrv.Directory, &(try storage.getDescription(handle)).extra.dir.archive, dir, .monotonic);
+                    @atomicStore(FilesystemSrv.Directory, &storage.getDescription(handle).extra.dir.archive, dir, .monotonic);
                 }
 
                 const bytes = r.buffer[0..@sizeOf(Description.Extra.Directory.NameBuffer)];
@@ -1437,7 +1659,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                             storage.lock.lockSharedUncancelable(io);
                             defer storage.lock.unlockShared(io);
 
-                            @atomicStore(FilesystemSrv.Directory, &(try storage.getDescription(handle)).extra.dir.archive, .none, .monotonic);
+                            @atomicStore(FilesystemSrv.Directory, &storage.getDescription(handle).extra.dir.archive, .none, .monotonic);
                             return 0;
                         }
 
@@ -1469,7 +1691,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
 }
 
 pub fn length(storage: *Storage, io: std.Io, handle: Descriptor) Io.File.LengthError!u64 {
-    const stored, const flags = try storage.getDescriptionStoredFlags(io, handle);
+    const stored, const flags = storage.getDescriptionStoredFlags(io, handle);
 
     return switch (flags.kind) {
         .socket => return error.Streaming,
@@ -1482,7 +1704,7 @@ pub fn length(storage: *Storage, io: std.Io, handle: Descriptor) Io.File.LengthE
 }
 
 pub fn stat(storage: *Storage, io: std.Io, handle: Descriptor) Io.File.StatError!Io.File.Stat {
-    const stored, const flags = try storage.getDescriptionStoredFlags(io, handle);
+    const stored, const flags = storage.getDescriptionStoredFlags(io, handle);
 
     return switch (flags.kind) {
         .socket => return error.Unexpected,
@@ -1525,7 +1747,7 @@ pub fn stat(storage: *Storage, io: std.Io, handle: Descriptor) Io.File.StatError
 }
 
 pub fn setLength(storage: *Storage, io: std.Io, handle: Descriptor, new_length: u64) Io.File.SetLengthError!void {
-    const stored, const flags = try storage.getDescriptionStoredFlags(io, handle);
+    const stored, const flags = storage.getDescriptionStoredFlags(io, handle);
 
     return switch (flags.kind) {
         .socket, .directory => return error.NonResizable,
@@ -1537,7 +1759,7 @@ pub fn setLength(storage: *Storage, io: std.Io, handle: Descriptor, new_length: 
 }
 
 pub fn readPositional(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []u8, offset: u64) Io.File.ReadPositionalError!usize {
-    const stored, const flags = try storage.getDescriptionStoredFlags(io, handle);
+    const stored, const flags = storage.getDescriptionStoredFlags(io, handle);
 
     return switch (flags.kind) {
         .socket => return error.Unseekable,
@@ -1554,7 +1776,7 @@ pub fn readPositional(storage: *Storage, io: std.Io, handle: Descriptor, buffer:
 }
 
 pub fn writePositional(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []const u8, offset: u64) Io.File.WritePositionalError!usize {
-    const stored, const flags = try storage.getDescriptionStoredFlags(io, handle);
+    const stored, const flags = storage.getDescriptionStoredFlags(io, handle);
 
     return switch (flags.kind) {
         .socket => return error.Unseekable,
@@ -1574,7 +1796,7 @@ pub fn readStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer: 
         storage.lock.lockSharedUncancelable(io);
         defer storage.lock.unlockShared(io);
 
-        break :blk (try storage.getDescription(handle)).flags;
+        break :blk storage.getDescription(handle).flags;
     };
 
     // NOTE: This is NOT fully atomic, its the user's fault if seek races occur.
@@ -1589,7 +1811,7 @@ pub fn readStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer: 
                     storage.lock.lockSharedUncancelable(io);
                     defer storage.lock.unlockShared(io);
 
-                    const desc = try storage.getDescription(handle);
+                    const desc = storage.getDescription(handle);
                     break :seek .{ desc.stored.romfs.asFile(), desc.extra.seek.load() };
                 };
 
@@ -1605,7 +1827,7 @@ pub fn readStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer: 
                     storage.lock.lockSharedUncancelable(io);
                     defer storage.lock.unlockShared(io);
 
-                    const desc = try storage.getDescription(handle);
+                    const desc = storage.getDescription(handle);
                     break :seek .{ desc.stored.file, desc.extra.seek.load() };
                 };
 
@@ -1625,7 +1847,7 @@ pub fn readStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer: 
         storage.lock.lockSharedUncancelable(io);
         defer storage.lock.unlockShared(io);
 
-        const desc = try storage.getDescription(handle);
+        const desc = storage.getDescription(handle);
 
         while (true) {
             _ = desc.extra.seek.load();
@@ -1641,7 +1863,7 @@ pub fn writeStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer:
         storage.lock.lockSharedUncancelable(io);
         defer storage.lock.unlockShared(io);
 
-        break :blk (try storage.getDescription(handle)).flags;
+        break :blk storage.getDescription(handle).flags;
     };
 
     return switch (flags.kind) {
@@ -1654,7 +1876,7 @@ pub fn writeStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer:
                     storage.lock.lockSharedUncancelable(io);
                     defer storage.lock.unlockShared(io);
 
-                    const desc = try storage.getDescription(handle);
+                    const desc = storage.getDescription(handle);
                     break :seek .{ desc.stored.file, desc.extra.seek.load() };
                 };
 
@@ -1666,7 +1888,7 @@ pub fn writeStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer:
                     storage.lock.lockSharedUncancelable(io);
                     defer storage.lock.unlockShared(io);
 
-                    const desc = try storage.getDescription(handle);
+                    const desc = storage.getDescription(handle);
 
                     while (true) {
                         _ = desc.extra.seek.load();
@@ -1681,7 +1903,7 @@ pub fn writeStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer:
 }
 
 pub fn netRead(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []u8) Io.net.Stream.Reader.Error!usize {
-    const stored, const flags = try storage.getDescriptionStoredFlags(io, handle);
+    const stored, const flags = storage.getDescriptionStoredFlags(io, handle);
 
     if (flags.kind != .socket) return error.Unexpected;
 
@@ -1703,71 +1925,81 @@ pub fn netRead(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []u8) 
     }
 }
 
-pub fn netReceive(storage: *Storage, io: std.Io, handle: Descriptor, messages: []Io.net.IncomingMessage, data: []u8, flags: Io.net.ReceiveFlags) Io.Operation.NetReceive.Result {
-    const stored, const desc_flags = storage.getDescriptionStoredFlags(io, handle) catch |err| switch (err) {
-        error.Unexpected => |e| return .{ e, 0 },
-    };
-
-    if (desc_flags.kind != .socket) return .{ error.Unexpected, 0 };
-
-    const soc = storage.net.soc;
-    const sock = stored.socket;
-
+fn netReceive(storage: *Storage, sock: SocketUser.Descriptor, msgs: []Io.net.IncomingMessage, data: []u8, flags: Io.net.ReceiveFlags) Io.Operation.NetReceive.Result {
     var message_i: usize = 0;
     var data_i: usize = 0;
-    var src_address: SocketUser.IpAddress = undefined;
 
     while (true) {
-        if (message_i == messages.len) return .{ null, message_i };
+        if (message_i == msgs.len) return .{ null, message_i };
         if (data_i == data.len) return .{ null, message_i };
 
-        const message = &messages[message_i];
+        const msg = &msgs[message_i];
         const remaining_data_buffer = data[data_i..];
 
-        msg_recvd: while (true) {
-            // XXX: MSG_TRUNC not supported
-            const maybe_recvd = soc.sendReceiveFromMapped(sock, .{
-                .out_of_band = flags.oob,
-                .peek = flags.peek,
-                .dont_wait = true,
-            }, remaining_data_buffer, &src_address) catch |err| switch (err) {
-                else => return .{ error.Unexpected, message_i },
-            };
-
-            switch (maybe_recvd.errno()) {
-                .SUCCESS => {
-                    const recvd: u32 = @intCast(@intFromEnum(maybe_recvd));
-                    const recvd_written = @min(remaining_data_buffer.len, recvd);
-                    data_i += recvd_written;
-                    message_i += 1;
-                    message.* = .{
-                        .from = addressFromSoc(src_address),
-                        .data = remaining_data_buffer[0..recvd_written],
-                        .control = &.{},
-                        .flags = .{
-                            .eor = false,
-                            .trunc = recvd > recvd_written,
-                            .ctrunc = false,
-                            .oob = false,
-                            .errqueue = false,
-                        },
-                    };
-                    break :msg_recvd;
-                },
-                .AGAIN => {
-                    if (message_i != 0) return .{ null, message_i };
+        recv_one: while (true) {
+            storage.netReceiveOne(sock, msg, remaining_data_buffer, flags) catch |err| switch (err) {
+                error.WouldBlock => {
+                    if (message_i > 0) return .{ null, message_i };
 
                     horizon.sleepThread(socket_busy_loop_workaround_ns);
+                    continue :recv_one;
                 },
-                .NOBUFS, .NOMEM => return .{ error.SystemResources, message_i },
-                else => |e| return .{ unexpectedSocErrno(e), message_i },
-            }
+                else => |e| return .{ e, message_i },
+            };
+
+            message_i += 1;
+            data_i += msg.data.len;
+        }
+    }
+}
+
+const NetReceiveOneError = Io.UnexpectedError || error{
+    SystemResources,
+    WouldBlock,
+};
+
+fn netReceiveOne(storage: *Storage, sock: SocketUser.Descriptor, msg: *Io.net.IncomingMessage, data: []u8, flags: Io.net.ReceiveFlags) NetReceiveOneError!void {
+    const soc = storage.net.soc;
+    var src_address: SocketUser.IpAddress = undefined;
+
+    msg_recvd: while (true) {
+        // XXX: MSG_TRUNC not supported
+        const maybe_recvd = soc.sendReceiveFromMapped(sock, .{
+            .out_of_band = flags.oob,
+            .peek = flags.peek,
+            .dont_wait = true,
+        }, data, &src_address) catch |err| switch (err) {
+            else => return error.Unexpected,
+        };
+
+        switch (maybe_recvd.errno()) {
+            .SUCCESS => {
+                const recvd: u32 = @intCast(@intFromEnum(maybe_recvd));
+                const recvd_written = @min(data.len, recvd);
+
+                msg.* = .{
+                    .from = addressFromSoc(src_address),
+                    .data = data[0..recvd_written],
+                    .control = &.{},
+                    .flags = .{
+                        .eor = false,
+                        .trunc = recvd > recvd_written,
+                        .ctrunc = false,
+                        .oob = false,
+                        .errqueue = false,
+                    },
+                };
+                break :msg_recvd;
+            },
+            .AGAIN => return error.WouldBlock,
+            .NOBUFS, .NOMEM => return error.SystemResources,
+            else => |e| return unexpectedSocErrno(e),
         }
     }
 }
 
 pub fn netWrite(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []const u8) Io.net.Stream.Writer.Error!usize {
-    const stored, const flags = try storage.getDescriptionStoredFlags(io, handle);
+    const stored, const flags = storage.getDescriptionStoredFlags(io, handle);
 
     if (flags.kind != .socket) return error.Unexpected;
 
@@ -1790,7 +2022,7 @@ pub fn netWrite(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []con
 }
 
 pub fn netSend(storage: *Storage, io: std.Io, handle: Descriptor, messages: []Io.net.OutgoingMessage, flags: Io.net.SendFlags) struct { ?Io.net.Socket.SendError, usize } {
-    const stored, const desc_flags = storage.getDescriptionStoredFlags(io, handle) catch |err| return .{ err, 0 };
+    const stored, const desc_flags = storage.getDescriptionStoredFlags(io, handle);
 
     if (desc_flags.kind != .socket) return .{ error.Unexpected, 0 };
 
@@ -1824,7 +2056,7 @@ pub fn seekBy(storage: *Storage, io: std.Io, handle: Descriptor, offset: i64) Io
     storage.lock.lockSharedUncancelable(io);
     defer storage.lock.unlockShared(io);
 
-    const desc = try storage.getDescription(handle);
+    const desc = storage.getDescription(handle);
 
     return switch (desc.flags.kind) {
         .socket, .directory => error.Unseekable,
@@ -1844,7 +2076,7 @@ pub fn seekTo(storage: *Storage, io: std.Io, handle: Descriptor, offset: u64) Io
     storage.lock.lockSharedUncancelable(io);
     defer storage.lock.unlockShared(io);
 
-    const desc = try storage.getDescription(handle);
+    const desc = storage.getDescription(handle);
 
     return switch (desc.flags.kind) {
         .socket, .directory => error.Unseekable,
@@ -1996,21 +2228,21 @@ fn closeUninitialized(storage: *Storage, io: std.Io, handle: Descriptor) void {
     fd.* = .invalid;
 }
 
-fn getDescriptionStoredFlags(storage: *Storage, io: std.Io, handle: Descriptor) Io.UnexpectedError!struct { Description.Stored, Description.Flags } {
+fn getDescriptionStoredFlags(storage: *Storage, io: std.Io, handle: Descriptor) struct { Description.Stored, Description.Flags } {
     storage.lock.lockSharedUncancelable(io);
     defer storage.lock.unlockShared(io);
 
-    const desc = try storage.getDescription(handle);
+    const desc = storage.getDescription(handle);
     // NOTE: These are basically RO after a description is created.
     return .{ desc.stored, desc.flags };
 }
 
 /// Assumes `lock` is held as shareable while the pointer is alive.
-fn getDescription(storage: *Storage, handle: Descriptor) Io.UnexpectedError!*Description {
+fn getDescription(storage: *Storage, handle: Descriptor) *Description {
     return switch (handle) {
-        .invalid, .cwd => return programmerBug("invalid fd"), // cwd is only valid in open
+        .invalid, .cwd => unreachable, // cwd is only valid in open
         _ => switch (storage.fds.items[@intFromEnum(handle)]) {
-            .invalid => return programmerBug("fd not pointing to anything, possibly UAF"),
+            .invalid => unreachable,
             else => |idx| &storage.descriptions.list.items[@intFromEnum(idx)].value,
         },
     };
