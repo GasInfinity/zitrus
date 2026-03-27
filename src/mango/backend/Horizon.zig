@@ -66,7 +66,7 @@ const CodeCache = struct {
 
     pub fn deinit(cache: *CodeCache, gpa: std.mem.Allocator) void {
         cache.entries.deinit(gpa);
-        cache.* = undefined; 
+        cache.* = undefined;
     }
 
     pub fn getOrAdd(cache: *CodeCache, gpa: std.mem.Allocator, arbiter: AddressArbiter, key: Key) !*backend.Shader.Code {

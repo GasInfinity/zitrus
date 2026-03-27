@@ -206,7 +206,7 @@ pub const Filesystem = struct {
 
             switch (mnt.data) {
                 .romfs => |rfs| rfs.deinit(gpa),
-                .archive => mnt.data.archive.close(fs)
+                .archive => mnt.data.archive.close(fs),
             }
         }
     };
@@ -332,7 +332,7 @@ pub const Network = struct {
 
     pub fn deinit(net: *Network, gpa: std.mem.Allocator) void {
         defer net.* = .empty;
-        
+
         if (net.memory == horizon.MemoryBlock.none) return;
 
         net.soc.sendDeinitialize();
@@ -342,7 +342,7 @@ pub const Network = struct {
     }
 };
 
-/// Protects `descriptors`, `table` and `cwd`. 
+/// Protects `descriptors`, `table` and `cwd`.
 ///
 /// Hold a write lock if you have any pointer.
 lock: Io.RwLock,
@@ -405,8 +405,8 @@ pub fn operate(storage: *Storage, io: std.Io, operation: Io.Operation) Io.Cancel
                 std.debug.assert(flags.kind == .socket);
 
                 break :nr storage.netReceive(stored.socket, op.message_buffer, op.data_buffer, op.flags);
-            }, 
-        }, 
+            },
+        },
         .device_io_control => unreachable,
     };
 }
@@ -423,7 +423,7 @@ pub fn batchCancel(storage: *Storage, gpa: std.mem.Allocator, b: *Io.Batch) void
     _ = storage;
 
     if (b.userdata) |ud| {
-        const polls_ptr: [*]SocketUser.Descriptor.Poll = @alignCast(@ptrCast(ud));
+        const polls_ptr: [*]SocketUser.Descriptor.Poll = @ptrCast(@alignCast(ud));
         const polls = polls_ptr[b.storage.len];
 
         gpa.free(polls);
@@ -439,14 +439,15 @@ fn batchAwait(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, b: *Io.Batc
 
         pub fn add(polls: *@This(), p_gpa: std.mem.Allocator, p_b: *Io.Batch, sock: SocketUser.Descriptor, events: SocketUser.Descriptor.Poll.Events) Allocator.Error!void {
             if (polls.len == polls.buf.len) {
-                const new: []SocketUser.Descriptor.Poll = if (p_b.userdata) |ud| 
-                    @as([*]SocketUser.Descriptor.Poll, @alignCast(@ptrCast(ud)))[0..p_b.storage.len]
-                else try p_gpa.alloc(SocketUser.Descriptor.Poll, p_b.storage.len);
+                const new: []SocketUser.Descriptor.Poll = if (p_b.userdata) |ud|
+                    @as([*]SocketUser.Descriptor.Poll, @ptrCast(@alignCast(ud)))[0..p_b.storage.len]
+                else
+                    try p_gpa.alloc(SocketUser.Descriptor.Poll, p_b.storage.len);
 
                 @memcpy(new[0..polls.len], polls.buf);
                 polls.buf = new;
             }
-            
+
             polls.buf[polls.len] = .{
                 .fd = sock,
                 .events = events,
@@ -454,7 +455,6 @@ fn batchAwait(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, b: *Io.Batc
             };
             polls.len += 1;
         }
-
     } = .{ .buf = &poll_buffer, .len = 0 };
 
     var completions: usize = 0;
@@ -537,7 +537,7 @@ fn batchAwait(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, b: *Io.Batc
             else => if (concurrency) return error.ConcurrencyUnavailable else blk: {
                 // HACK: when not concurrent just say that the first fd completed, we'll block on that later with `operate`.
                 polls.buf[0].events = @bitCast(@as(u32, std.math.maxInt(u32)));
-                break :blk @enumFromInt(1); 
+                break :blk @enumFromInt(1);
             },
         };
 
@@ -550,14 +550,14 @@ fn batchAwait(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, b: *Io.Batc
 
                     if (maybe_until) |until| {
                         const duration = until.durationFromNow(io);
-                        
+
                         if (duration.raw.nanoseconds < socket_busy_loop_workaround_ns) return error.Timeout;
                     }
 
                     horizon.sleepThread(socket_busy_loop_workaround_ns);
                     continue;
                 }
-                
+
                 var prev_index: Io.Operation.OptionalIndex = .none;
                 var index = b.submitted.head;
                 for (polls.buf[0..polls.len]) |poll| {
@@ -583,7 +583,7 @@ fn batchAwait(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, b: *Io.Batc
                     }
 
                     b_storage.* = .{ .completion = .{ .node = .{ .next = .none }, .result = result } };
-                    b.completed.tail = index;                
+                    b.completed.tail = index;
                 }
 
                 return;
@@ -592,7 +592,7 @@ fn batchAwait(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, b: *Io.Batc
                 polls.buf[0].events = @bitCast(@as(u32, std.math.maxInt(u32)));
                 maybe_polled = @enumFromInt(1); // see above
                 continue :poll_result .SUCCESS;
-            }
+            },
         }
     }
 }
@@ -651,7 +651,7 @@ pub fn openPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_di
         switch (mnt.data) {
             .romfs => |rfs| {
                 if (opts.create != .none) return error.ReadOnlyFileSystem;
-                
+
                 const parent: romfs.View.Directory = if (Io.Dir.path.isAbsolutePosix(mnt_path))
                     .root
                 else
@@ -2292,7 +2292,6 @@ fn closeDescription(storage: *Storage, io: std.Io, gpa: Allocator, index: Descri
     };
 
     if (free) {
-
         switch (flags.kind) {
             .socket => stored.socket.close(storage.net.soc),
             .file, .directory => switch (storage.filesystem.mounts.items[flags.mount].data) {

@@ -88,7 +88,7 @@ pub fn main(init: horizon.Init) !void {
 
         try t_io_instance.initFilesystem(.{ .fs = fs, .extra = .unowned });
         try t_io_instance.initNetwork(.{ .soc = soc, .extra = .unowned });
-        try t_io_instance.mountArchive("sdmc", .sdmc, .empty, &.{}); 
+        try t_io_instance.mountArchive("sdmc", .sdmc, .empty, &.{});
 
         const t_io = horizon.testing.io_instance.io();
 

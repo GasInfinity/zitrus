@@ -49,7 +49,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
         .features = .{},
         .password_mode = .none,
         .dictionary = &.{},
-    }, gpa); 
+    }, gpa);
     defer swkbd.deinit(gpa);
 
     const top_w = &top_renderer.writer;
@@ -95,9 +95,9 @@ pub fn main(init: horizon.Init.Application.Software) !void {
                             try top_w.print("Invalid host name '{s}'", .{host_name_bytes});
                             try top_w.flush();
                             break :print_host;
-                        }
+                        },
                     };
-                    
+
                     try top_w.print("Resolving '{s}'... ", .{host_name_bytes});
                     try top_w.flush();
 

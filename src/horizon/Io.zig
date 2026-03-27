@@ -253,7 +253,7 @@ pub fn initStorage(hio: *HIo, srv: horizon.ServiceManager, backends: enum { fs, 
         const soc = try SocketUser.open(srv);
         errdefer soc.close();
 
-        try hio.initNetwork(.{ .soc = soc, .extra = .{ .owned = soc_buffer_len }});
+        try hio.initNetwork(.{ .soc = soc, .extra = .{ .owned = soc_buffer_len } });
     }
     errdefer hio.deinitNetwork();
 }

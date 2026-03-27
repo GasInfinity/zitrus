@@ -669,8 +669,7 @@ pub const Buffer = extern struct {
 
         if (!code.isSuccess()) return .of(code, undefined);
 
-        if (buffer.packed_command.header.parameters.normal != DefinedCommand.response_parameters.normal + 1
-        or  buffer.packed_command.header.parameters.translate != DefinedCommand.response_parameters.translate) {
+        if (buffer.packed_command.header.parameters.normal != DefinedCommand.response_parameters.normal + 1 or buffer.packed_command.header.parameters.translate != DefinedCommand.response_parameters.translate) {
             return unexpectedResponseParameters(DefinedCommand.response_parameters, buffer.packed_command.header.parameters);
         }
 
@@ -686,7 +685,7 @@ pub const Buffer = extern struct {
 
     fn unexpectedResponseParameters(expected: PackedCommand.Parameters, actual: PackedCommand.Parameters) ReadError {
         if (is_debug) {
-            std.debug.print("bad IPC response params, expected [n: {d}, t: {d}], got [n: {d}, t: {d}]", .{expected.normal + 1, expected.translate, actual.normal, actual.translate});
+            std.debug.print("bad IPC response params, expected [n: {d}, t: {d}], got [n: {d}, t: {d}]", .{ expected.normal + 1, expected.translate, actual.normal, actual.translate });
         }
 
         return error.BadIpcHeader;

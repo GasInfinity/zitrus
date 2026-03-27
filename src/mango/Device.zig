@@ -234,7 +234,7 @@ pub const VTable = struct {
     mapMemory: *const fn (dev: *Device, memory: mango.DeviceMemory, offset: mango.DeviceSize, size: mango.DeviceSize) MapMemoryError![]u8,
     unmapMemory: *const fn (device: *Device, memory: mango.DeviceMemory) void,
     flushMappedMemoryRanges: *const fn (dev: *Device, ranges: []const mango.MappedMemoryRange) FlushMemoryError!void,
-    invalidateMappedMemoryRanges: *const fn(dev: *Device, ranges: []const mango.MappedMemoryRange) InvalidateMemoryError!void,
+    invalidateMappedMemoryRanges: *const fn (dev: *Device, ranges: []const mango.MappedMemoryRange) InvalidateMemoryError!void,
 
     createSwapchain: *const fn (dev: *Device, create_info: mango.SwapchainCreateInfo, gpa: std.mem.Allocator) ObjectCreationError!mango.Swapchain,
     destroySwapchain: *const fn (dev: *Device, swapchain: mango.Swapchain, gpa: std.mem.Allocator) void,

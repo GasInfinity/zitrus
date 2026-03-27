@@ -45,7 +45,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     const bottom_w = &bottom_renderer.writer;
 
     const bound = try unspecified.bind(io, .{
-        .mode = .dgram, 
+        .mode = .dgram,
     });
     defer bound.close(io);
 
@@ -75,7 +75,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
             };
 
             const trimmed = std.mem.trim(u8, msg.data, " \t\n");
-            try bottom_w.print("{f} -> {s} ", .{msg.from, trimmed});
+            try bottom_w.print("{f} -> {s} ", .{ msg.from, trimmed });
             if (msg.flags.trunc) try bottom_w.writeAll(" (truncated)");
             try bottom_w.writeByte('\n');
             try bottom_w.flush();

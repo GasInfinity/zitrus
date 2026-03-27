@@ -174,7 +174,7 @@ inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !U
             Init.Application.Software => blk: {
                 const config: services.GspGpu.Graphics.Software.Config = if (@hasDecl(root, "init_options"))
                     @field(root, "init_options")
-                else 
+                else
                     .{};
 
                 var soft: services.GspGpu.Graphics.Software = try .init(config, gsp, horizon.heap.linear_page_allocator);

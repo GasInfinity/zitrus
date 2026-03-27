@@ -1,10 +1,10 @@
-//! Software bitmap font renderer using PSF fonts. 
+//! Software bitmap font renderer using PSF fonts.
 //!
 //! Assumes 3DS framebuffers as such it will render the text rotated.
 //!
 //! Can be used for both general purpose text rendering (by setting x and y)
 //! or as a debug console.
-//!   
+//!
 //! All coordinates should be given as if you were rendering to the rotated screen,
 //! i.e rendering to 400x240 instead of 240x400. Rotation is handled transparently.
 
@@ -41,7 +41,7 @@ pub const Font = struct {
 
     pub const HeaderV1 = extern struct {
         pub const CheckError = error{NotPsf1};
-        pub const magic_value: [2]u8 = .{0x36, 0x04};
+        pub const magic_value: [2]u8 = .{ 0x36, 0x04 };
 
         pub const Mode = packed struct(u8) {
             @"512": bool = false,
@@ -61,7 +61,7 @@ pub const Font = struct {
 
     pub const HeaderV2 = extern struct {
         pub const CheckError = error{NotPsf2};
-        pub const magic_value: [4]u8 = .{0x72, 0xB5, 0x4A, 0x86};
+        pub const magic_value: [4]u8 = .{ 0x72, 0xB5, 0x4A, 0x86 };
 
         pub const Flags = packed struct(u8) {
             has_unicode: bool = false,
@@ -91,7 +91,7 @@ pub const Font = struct {
 
     pub fn initComptime(comptime unicode_map_len: usize, comptime data: []const u8) Font {
         var unicode_map_buffer: [unicode_map_len]u32 = undefined;
-        const fnt = Font.init(&unicode_map_buffer, data) catch unreachable; 
+        const fnt = Font.init(&unicode_map_buffer, data) catch unreachable;
         const unicode_map = unicode_map_buffer; // needed to avoid "X depends on comptime var"
 
         return .{
@@ -104,7 +104,7 @@ pub const Font = struct {
         };
     }
 
-    pub fn init(map_buffer: []u32, data: []const u8) error{NotPsf, InvalidPsf}!Font {
+    pub fn init(map_buffer: []u32, data: []const u8) error{ NotPsf, InvalidPsf }!Font {
         const psf_v1: HeaderV1 = std.mem.bytesAsValue(HeaderV1, data).*;
         const psf_v2: HeaderV2 = std.mem.bytesAsValue(HeaderV2, data).*;
 
@@ -113,10 +113,10 @@ pub const Font = struct {
             const bytes_per_glyph: u32 = @divExact(std.mem.alignForward(u32, psf_v1.height, 8), 8);
 
             const map: []const u32 = if (psf_v1.mode.has_unicode or psf_v1.mode.has_unicode_also) map: {
-                const uni_info: []align(1) const u16 = @ptrCast(data[@sizeOf(HeaderV1) + (glyphs * bytes_per_glyph)..]);
+                const uni_info: []align(1) const u16 = @ptrCast(data[@sizeOf(HeaderV1) + (glyphs * bytes_per_glyph) ..]);
 
                 @memset(map_buffer, 0);
-                
+
                 var i: u32 = 0;
                 var glyph: u32 = 0;
 
@@ -139,17 +139,17 @@ pub const Font = struct {
 
             return .{
                 .map = map,
-                .glyphs = data[@sizeOf(HeaderV1)..][0..glyphs * bytes_per_glyph],
+                .glyphs = data[@sizeOf(HeaderV1)..][0 .. glyphs * bytes_per_glyph],
                 .glyphs_count = glyphs,
                 .bytes_per_glyph = bytes_per_glyph,
                 .glyph_width = 8,
                 .glyph_height = psf_v1.height,
             };
-        } else |_| {}        
+        } else |_| {}
 
         if (psf_v2.check()) |_| {
             const map: []const u32 = if (psf_v2.flags.has_unicode) map: {
-                const uni_info: []const u8 = @ptrCast(data[psf_v2.header_size + (psf_v2.glyphs * psf_v2.bytes_per_glyph)..]);
+                const uni_info: []const u8 = @ptrCast(data[psf_v2.header_size + (psf_v2.glyphs * psf_v2.bytes_per_glyph) ..]);
 
                 var i: u32 = 0;
                 var glyph: u32 = 0;
@@ -187,12 +187,12 @@ pub const Font = struct {
 
             return .{
                 .map = map,
-                .glyphs = data[psf_v2.header_size..][0..psf_v2.glyphs * psf_v2.bytes_per_glyph],
+                .glyphs = data[psf_v2.header_size..][0 .. psf_v2.glyphs * psf_v2.bytes_per_glyph],
                 .glyphs_count = psf_v2.glyphs,
                 .bytes_per_glyph = psf_v2.bytes_per_glyph,
                 .glyph_width = psf_v2.glyph_width,
                 .glyph_height = psf_v2.glyph_height,
-            }; 
+            };
         } else |_| {}
 
         return error.NotPsf;
@@ -205,11 +205,11 @@ pub const Font = struct {
     pub fn glyphOf(psf: Font, c: u16) []const u8 {
         const glyph = if (c < psf.map.len)
             psf.map[c]
-        else if(c < psf.glyphs_count)
+        else if (c < psf.glyphs_count)
             c
-        else 
+        else
             0;
-        return psf.glyphs[glyph * psf.bytes_per_glyph..][0..psf.bytes_per_glyph];
+        return psf.glyphs[glyph * psf.bytes_per_glyph ..][0..psf.bytes_per_glyph];
     }
 };
 
@@ -279,7 +279,7 @@ fn drain(w: *Writer, data: []const []const u8, splat: usize) Writer.Error!usize 
     try psf.writeAll(w.buffered());
 
     var written: usize = 0;
-    for (data[0..data.len - 1]) |buf| {
+    for (data[0 .. data.len - 1]) |buf| {
         try psf.writeAll(buf);
         written += buf.len;
     }
@@ -298,7 +298,7 @@ pub fn writeAll(psf_w: *PsfWriter, bytes: []const u8) Writer.Error!void {
 pub fn writeCharacter(psf_w: *PsfWriter, c: u16) Writer.Error!void {
     const psf = psf_w.psf;
 
-    switch(c) {
+    switch (c) {
         '\n' => {
             psf_w.cx = 0;
             psf_w.cy += @intCast(psf.glyph_height);
@@ -321,7 +321,7 @@ pub fn writeCharacter(psf_w: *PsfWriter, c: u16) Writer.Error!void {
                     continue :w .wrap;
                 },
                 .discard => psf_w.width - psf_w.cx,
-            } 
+            }
         else
             psf.glyph_width;
 
@@ -342,7 +342,7 @@ pub fn writeCharacter(psf_w: *PsfWriter, c: u16) Writer.Error!void {
                 break :h psf.glyph_height;
             },
         }
-    else 
+    else
         psf.glyph_height;
     defer psf_w.cx = @intCast(end_x);
 
@@ -362,7 +362,7 @@ pub fn writeCharacter(psf_w: *PsfWriter, c: u16) Writer.Error!void {
     var fb_position = (psf_w.stride * (psf_w.x + psf_w.cx)) + ((psf_w.stride - bpp) - ((psf_w.y + psf_w.cy) * bpp));
     const y_advance = psf_w.stride + height_bytes;
 
-    // NOTE: here we do width -> height instead of height -> width as 
+    // NOTE: here we do width -> height instead of height -> width as
     // we want to render the text rotated.
     for (0..psf.glyph_width) |gx| {
         const byte_offset = (gx >> 3);
@@ -389,7 +389,7 @@ pub fn scrollUp(psf_w: *PsfWriter, lines: usize) void {
     const height_bytes = psf_w.height * psf_w.bytes_per_pixel;
 
     for (0..psf_w.width) |y| {
-        const line = psf_w.fb[psf_w.y + (y * psf_w.stride)..][0..height_bytes];
+        const line = psf_w.fb[psf_w.y + (y * psf_w.stride) ..][0..height_bytes];
 
         @memmove(line[bytes_scrolled..], line[0..copied_line]);
 
@@ -406,8 +406,8 @@ pub fn clear(psf_w: *PsfWriter) void {
     const height_bytes = psf_w.height * psf_w.bytes_per_pixel;
 
     for (0..psf_w.width) |y| {
-        const line = psf_w.fb[psf_w.y + (y * psf_w.stride)..][0..height_bytes];
-        
+        const line = psf_w.fb[psf_w.y + (y * psf_w.stride) ..][0..height_bytes];
+
         var i: usize = 0;
         while (i < height_bytes) : (i += psf_w.bytes_per_pixel) {
             @memcpy(line[i..][0..psf_w.bytes_per_pixel], psf_w.clear_color[0..psf_w.bytes_per_pixel]);

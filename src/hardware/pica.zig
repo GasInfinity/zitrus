@@ -836,13 +836,15 @@ pub const Graphics = extern struct {
         /// 0x0D4
         fixed_0x00010002: u32,
 
-        comptime { std.debug.assert(@sizeOf(Interrupt) == 0xD8); }
+        comptime {
+            std.debug.assert(@sizeOf(Interrupt) == 0xD8);
+        }
     };
 
     pub const Rasterizer = extern struct {
         pub const Mode = enum(u2) { normal, interlace, wireframe, normal_2 };
         pub const ClippingPlane = extern struct {
-            /// Enable the clipping plane  
+            /// Enable the clipping plane
             /// 0x11C
             enable: LsbRegister(bool),
             /// Coefficients of the clipping plane.
@@ -851,22 +853,22 @@ pub const Graphics = extern struct {
         };
 
         pub const Status = extern struct {
-            /// 0x168  
+            /// 0x168
             vertices_received: u32,
-            /// 0x16C  
+            /// 0x16C
             triangles_received: u32,
-            /// 0x170  
+            /// 0x170
             triangles_displayed: u32,
         };
 
         pub const Scissor = extern struct {
-            /// 0x194  
+            /// 0x194
             mode: LsbRegister(ScissorMode),
-            /// The start of the scissor region, origin bottom-left.  
-            /// 0x198  
+            /// The start of the scissor region, origin bottom-left.
+            /// 0x198
             start: [2]u16,
-            /// The end of the scissor region (inclusive), origin bottom-left.  
-            /// 0x19C  
+            /// The end of the scissor region (inclusive), origin bottom-left.
+            /// 0x19C
             end: [2]u16,
         };
 
@@ -896,11 +898,11 @@ pub const Graphics = extern struct {
                 z,
             };
 
-            /// Scale to map depth from [0, -1] to [0, 1].  
-            /// 0x134  
+            /// Scale to map depth from [0, -1] to [0, 1].
+            /// 0x134
             scale: LsbRegister(F7_16),
-            /// Bias to map depth from [0, -1] to [0, 1].  
-            /// 0x138  
+            /// Bias to map depth from [0, -1] to [0, 1].
+            /// 0x138
             bias: LsbRegister(F7_16),
         };
 
@@ -919,79 +921,79 @@ pub const Graphics = extern struct {
 
         /// 0x100
         cull_config: LsbRegister(CullMode),
-        /// `Width / 2.0`, used for scaling vertex coordinates.  
+        /// `Width / 2.0`, used for scaling vertex coordinates.
         /// 0x104
         viewport_h_scale: LsbRegister(F7_16),
-        /// `2.0 / Width`, supposedly used for stepping colors and texture coordinates.  
+        /// `2.0 / Width`, supposedly used for stepping colors and texture coordinates.
         /// 0x108
         viewport_h_step: MsbRegister(F7_23),
-        /// `Height / 2.0`, used for scaling vertex coordinates.  
+        /// `Height / 2.0`, used for scaling vertex coordinates.
         /// 0x10C
         viewport_v_scale: LsbRegister(F7_16),
-        /// `2.0 / Height`, supposedly used for stepping colors and texture coordinates.  
+        /// `2.0 / Height`, supposedly used for stepping colors and texture coordinates.
         /// 0x110
         viewport_v_step: MsbRegister(F7_23),
         /// 0x114
         _unknown0: [2]u32,
-        /// Extra user-defined clipping plane.  
+        /// Extra user-defined clipping plane.
         /// 0x11C
         extra_clipping_plane: ClippingPlane,
         /// 0x130
         _unknown1: [1]u32,
-        /// Maps depth from NDC [0, -1] to framebuffer [0, 1].  
-        /// 0x134  
+        /// Maps depth from NDC [0, -1] to framebuffer [0, 1].
+        /// 0x134
         depth_map: DepthMap,
-        /// 0x13C  
+        /// 0x13C
         num_inputs: LsbRegister(u3),
-        /// 0x140  
+        /// 0x140
         inputs: [7]OutputMap,
-        /// 0x15C  
+        /// 0x15C
         _unknown2: u32,
-        /// 0x160  
+        /// 0x160
         shader_output_map_qualifiers: u32, // According to GBATEK this allows you to use the flat qualifier in output colors.
-        /// 0x164  
+        /// 0x164
         _unknown3: u32,
-        /// 0x168  
+        /// 0x168
         status: Status,
-        /// 0x174  
+        /// 0x174
         _unknown4: [3]u32,
-        /// 0x180  
+        /// 0x180
         config: UndocumentedConfig0,
         /// So early depth somehow has a separate internal buffer that must be cleared.
         /// From tests it looks like it has MUCH LESS precision and literally breaks with anything,
         /// 32x32 is needed. Overall, is it really needed?
         ///
         /// I don't know what engineers were smoking but it has too many false fails, discarding lots of fragments.
-        /// XXX: No more can be said, this is vaulted until new info comes out.  
-        /// 0x184  
+        /// XXX: No more can be said, this is vaulted until new info comes out.
+        /// 0x184
         early_depth_function: LsbRegister(EarlyDepthCompareOperation),
-        /// 0x188  
+        /// 0x188
         early_depth_test_enable: LsbRegister(bool),
-        /// 0x18C  
+        /// 0x18C
         early_depth_clear: LsbRegister(Trigger),
-        /// 0x190  
+        /// 0x190
         input_mode: InputMode,
-        /// 0x194  
+        /// 0x194
         scissor: Scissor,
-        /// Viewport origin, origin is bottom-left.  
-        /// 0x1A0  
+        /// Viewport origin, origin is bottom-left.
+        /// 0x1A0
         viewport_xy: [2]u16,
-        /// 0x1A4  
+        /// 0x1A4
         _unknown8: u32,
-        /// 0x1A8  
+        /// 0x1A8
         early_depth_data: LsbRegister(u24),
-        /// 0x1AC  
+        /// 0x1AC
         _unknown9: [2]u32,
-        /// 0x1B4  
+        /// 0x1B4
         depth_map_mode: LsbRegister(DepthMap.Mode),
-        /// Does not seem to have an effect but it's still documented like this  
-        /// 0x1B8  
+        /// Does not seem to have an effect but it's still documented like this
+        /// 0x1B8
         _unused_render_buffer_dimensions: u32, // XXX: Why would the rasterizer need output dimensions?
         /// The clock driving inputs to the rasterizer from the shader.
         ///
         /// If a shader outputs a value which the rasterizer doesn't clock,
-        /// the rasterizer reads a default value; e.g color will read (1, 1, 1, 1)  
-        /// 0x1BC  
+        /// the rasterizer reads a default value; e.g color will read (1, 1, 1, 1)
+        /// 0x1BC
         input_clock: Clock,
     };
 
@@ -1218,7 +1220,7 @@ pub const Graphics = extern struct {
             value: UQ0_11,
         };
 
-        /// 0x200  
+        /// 0x200
         @"0": Unit,
         _unknown0: [3]u32,
         @"1": Unit,
@@ -2068,29 +2070,29 @@ pub const Graphics = extern struct {
     _unused0: [40]u8,
     /// 0x100
     rasterizer: Rasterizer,
-    /// 0x1C0  
+    /// 0x1C0
     _unused1: [64]u8,
-    /// 0x200  
+    /// 0x200
     texture_units: TextureUnits,
     _unused2: [36]u8,
-    /// 0x2A0  
+    /// 0x2A0
     procedural_texture_unit: ProceduralTextureUnit,
     _unused3: [32]u8,
-    /// 0x300  
+    /// 0x300
     texture_combiners: TextureCombiners,
     _unused4: [8]u8,
-    /// 0x400  
+    /// 0x400
     output_merger: OutputMerger,
-    /// 0x500  
+    /// 0x500
     fragment_lighting: FragmentLighting,
     _unused5: [152]u8,
-    /// 0x800  
+    /// 0x800
     primitive_engine: PrimitiveEngine,
     _unused6: [128]u8,
-    /// 0xA00  
+    /// 0xA00
     geometry_shader: Shader,
     _unused7: [8]u8,
-    /// 0xAC0  
+    /// 0xAC0
     vertex_shader: Shader,
 
     comptime {
