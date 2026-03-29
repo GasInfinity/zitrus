@@ -10,6 +10,7 @@ thread_index: u32,
 interrupt_event: Event,
 shared_memory_block: MemoryBlock,
 shared_memory: *align(horizon.heap.page_size) GspGpu.Shared,
+gsp_owned: bool,
 
 pub fn init(gsp: GspGpu) !Graphics {
     try gsp.sendAcquireRight(0x0);
@@ -38,6 +39,7 @@ pub fn init(gsp: GspGpu) !Graphics {
         .interrupt_event = interrupt_event,
         .shared_memory_block = shared_memory_block,
         .shared_memory = shared_memory,
+        .gsp_owned = true,
     };
 }
 
@@ -45,11 +47,26 @@ pub fn deinit(gfx: *Graphics, gsp: GspGpu) void {
     gfx.shared_memory_block.unmap(@ptrCast(@alignCast(gfx.shared_memory)));
     gfx.shared_memory_block.close();
 
+    // XXX: azahar hits an assertion failed if we try to release gpu right and we do not own it.
     gsp.sendUnregisterInterruptRelayQueue() catch unreachable;
-    gsp.sendReleaseRight() catch unreachable;
+    if (gfx.gsp_owned) gsp.sendReleaseRight() catch unreachable;
 
     gfx.interrupt_event.close();
     gfx.* = undefined;
+}
+
+pub fn reacquire(gfx: *Graphics, gsp: GspGpu) !void {
+    try gsp.sendAcquireRight(0x0);
+    try gsp.sendRestoreVRAMSysArea();
+    gfx.gsp_owned = false;
+}
+
+pub fn release(gfx: *Graphics, gsp: GspGpu) !GspGpu.ScreenCapture {
+    try gsp.sendSaveVRAMSysArea();
+    const capture = try gsp.sendImportDisplayCaptureInfo();
+    try gsp.sendReleaseRight();
+    gfx.gsp_owned = true;
+    return capture;
 }
 
 pub fn waitInterrupts(gfx: *Graphics) !GspGpu.Interrupt.Set {

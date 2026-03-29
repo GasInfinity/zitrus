@@ -76,16 +76,12 @@ pub fn deinit(soft: *Software, gsp: GspGpu, physical_linear_allocator: std.mem.A
     soft.* = undefined;
 }
 
-pub fn reacquire(_: *Software, gsp: GspGpu) !void {
-    try gsp.sendAcquireRight(0x0);
-    try gsp.sendRestoreVRAMSysArea();
+pub fn reacquire(soft: *Software, gsp: GspGpu) !void {
+    return soft.gfx.reacquire(gsp);
 }
 
-pub fn release(_: *Software, gsp: GspGpu) !GspGpu.ScreenCapture {
-    try gsp.sendSaveVRAMSysArea();
-    const capture = try gsp.sendImportDisplayCaptureInfo();
-    try gsp.sendReleaseRight();
-    return capture;
+pub fn release(soft: *Software, gsp: GspGpu) !GspGpu.ScreenCapture {
+    return soft.gfx.release(gsp);
 }
 
 /// Flushes both framebuffers

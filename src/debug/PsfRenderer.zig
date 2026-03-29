@@ -307,10 +307,10 @@ pub fn writeCharacter(psf_w: *PsfWriter, c: u16) Writer.Error!void {
         else => {},
     }
 
-    const end_x = blk: {
+    const end_x, const w = blk: {
         const end = psf_w.cx + psf.glyph_width;
 
-        const w = if (end > psf_w.width)
+        const w = if (end >= psf_w.width)
             w: switch (psf_w.horizontal_overflow) {
                 .wrap => {
                     psf_w.cx = 0;
@@ -325,7 +325,7 @@ pub fn writeCharacter(psf_w: *PsfWriter, c: u16) Writer.Error!void {
         else
             psf.glyph_width;
 
-        break :blk psf_w.cx + w;
+        break :blk .{ psf_w.cx + w, w };
     };
 
     const end_y = psf_w.cy + psf.glyph_height;
@@ -364,12 +364,12 @@ pub fn writeCharacter(psf_w: *PsfWriter, c: u16) Writer.Error!void {
 
     // NOTE: here we do width -> height instead of height -> width as
     // we want to render the text rotated.
-    for (0..psf.glyph_width) |gx| {
+    for (0..w) |gx| {
         const byte_offset = (gx >> 3);
         const bit_offset = 7 - (gx & 7);
 
         for (0..h) |gy| {
-            defer fb_position -= bpp;
+            defer fb_position -|= bpp; // NOTE: saturating as we may be the last pixel (i.e top-left)
 
             const enabled = ((glyph[(gy * glyph_bytes_per_width) + byte_offset] >> @intCast(bit_offset)) & 1) != 0;
             if (!enabled) continue;

@@ -10,7 +10,6 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     const io = app.base.io;
     const soft = init.soft;
 
-    // XXX: Better but still not great, networking and fs should also be separate (in initialization, not usage)
     try horizon.Io.global.initStorage(app.srv, .soc, 4 * 1024 * 1024);
 
     var top_renderer_buf: [64]u8 = undefined;

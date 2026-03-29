@@ -193,6 +193,7 @@ fn findDevice(io: std.Io, timeout: Io.Timeout, retries: u32, verbose: bool) !?ne
     });
     defer udp.close(io);
 
+    // TODO: move to allow_broadcast when the next zig master is uploaded
     if (@hasDecl(std.posix.system, "setsockopt") and ((builtin.os.tag == .windows and builtin.link_libc) or builtin.os.tag != .windows)) {
         const truth: u32 = 1;
         _ = std.posix.system.setsockopt(udp.handle, std.posix.SOL.SOCKET, std.posix.SO.BROADCAST, @ptrCast(&truth), @sizeOf(u32));

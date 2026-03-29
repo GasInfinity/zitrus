@@ -10,7 +10,6 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     const io = app.base.io;
     const soft = init.soft;
 
-    // XXX: Better but still not great, networking and fs should also be separate (in initialization, not usage)
     try horizon.Io.global.initStorage(app.srv, .fs, 0);
     try horizon.Io.global.mountSelfRomFs("romfs");
 

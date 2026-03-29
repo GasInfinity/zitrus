@@ -145,6 +145,18 @@ pub const CaptureBuffer = extern struct {
         rgba5551,
         /// Packed, 2 bytes, `RRRRGGGGBBBBAAAA`.
         rgba4444,
+        _,
+
+        pub fn native(fmt: Format) ?zitrus.hardware.pica.ColorFormat {
+            return switch (fmt) {
+                .none, _ => null,
+                .abgr8888 => .abgr8888,
+                .bgr888 => .bgr888,
+                .rgb565 => .rgb565,
+                .rgba5551 => .rgba5551,
+                .rgba4444 => .rgba4444,
+            };
+        }
     };
 
     pub const Info = extern struct {

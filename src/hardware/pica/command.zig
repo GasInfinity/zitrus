@@ -45,7 +45,7 @@ pub const Queue = struct {
         queue.current_index = 0;
     }
 
-    pub fn add(queue: *Queue, comptime base: *volatile pica.Graphics, register: anytype, value: std.meta.Child(@TypeOf(register))) void {
+    pub inline fn add(queue: *Queue, comptime base: *volatile pica.Graphics, register: anytype, value: std.meta.Child(@TypeOf(register))) void {
         return queue.addMasked(base, register, value, 0xF);
     }
 
@@ -58,20 +58,10 @@ pub const Queue = struct {
         const id: Id = .fromRegister(base, register);
 
         switch (comptime std.math.order(@bitSizeOf(Child), @bitSizeOf(u32))) {
-            .eq => {
-                queue.buffer[queue.current_index] = switch (child_info) {
-                    .@"enum" => @intFromEnum(value),
-                    else => @bitCast(value),
-                };
-                queue.buffer[queue.current_index + 1] = @bitCast(Header{
-                    .id = id,
-                    .mask = mask,
-                    .extra = 0,
-                    .incremental_writing = false,
-                });
-
-                queue.current_index += 2;
-            },
+            .eq => queue.addMaskedBuffer(id, &.{switch (child_info) {
+                .@"enum" => @intFromEnum(value),
+                else => @bitCast(value),
+            }}, mask, false),
             .gt => {
                 const as_u32_array = switch (child_info) {
                     .array => |a| if (@bitSizeOf(a.child) != @bitSizeOf(u32))
@@ -85,17 +75,7 @@ pub const Queue = struct {
                     else => @compileError("unsupported type for incremental write"),
                 };
 
-                queue.buffer[queue.current_index] = as_u32_array[0];
-                queue.buffer[queue.current_index + 1] = @bitCast(Header{
-                    .id = id,
-                    .mask = mask,
-                    .extra = (as_u32_array.len - 1),
-                    .incremental_writing = true,
-                });
-                queue.current_index += 2;
-
-                @memcpy(queue.buffer[queue.current_index..][0..(as_u32_array.len - 1)], as_u32_array[1..as_u32_array.len]);
-                queue.current_index += std.mem.alignForward(usize, as_u32_array.len - 1, 2); // commands must be aligned to 8 bytes
+                queue.addMaskedBuffer(id, &as_u32_array, mask, true);
             },
             .lt => @compileError("commands only support writing full 32-bit values (which you can mask!)"),
         }
@@ -134,7 +114,7 @@ pub const Queue = struct {
         return @Tuple(&needed_field_types);
     }
 
-    pub fn addIncremental(queue: *Queue, comptime base: *volatile pica.Graphics, comptime registers: anytype, values: IncrementalWritesTuple(base, registers)) void {
+    pub inline fn addIncremental(queue: *Queue, comptime base: *volatile pica.Graphics, comptime registers: anytype, values: IncrementalWritesTuple(base, registers)) void {
         return queue.addIncrementalMasked(base, registers, values, 0b1111);
     }
 
@@ -142,37 +122,36 @@ pub const Queue = struct {
         if (registers.len == 0) return;
 
         comptime std.debug.assert(values.len <= 256);
-
         const first_id: Id = .fromRegister(base, registers[0]);
 
-        // NOTE: I do the ptrCast instead of a bitCast because enums cannot be bitcasted, its just a shortcut.
-        queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&values[0]))).*;
-        queue.buffer[queue.current_index + 1] = @bitCast(Header{
-            .id = first_id,
-            .mask = mask,
-            .extra = (values.len - 1),
-            .incremental_writing = true,
-        });
-        queue.current_index += 2;
+        var u32_values: [values.len]u32 = undefined;
+        inline for (&u32_values, 0..) |*v, i| v.* = switch (@typeInfo(@TypeOf(values[i]))) {
+            .@"enum" => @intFromEnum(values[i]),
+            else => @bitCast(values[i]),
+        };
 
-        @memcpy(queue.buffer[queue.current_index..][0..(values.len - 1)], @as([*]const u32, @ptrCast(@alignCast(&values)))[1..values.len]);
-        queue.current_index += std.mem.alignForward(usize, values.len - 1, 2); // commands must be aligned to 8 bytes
+        return queue.addMaskedBuffer(first_id, &u32_values, mask, true);
     }
 
-    pub fn addConsecutive(queue: *Queue, comptime base: *volatile pica.Graphics, register: anytype, values: []const std.meta.Child(@TypeOf(register))) void {
+    pub inline fn addConsecutive(queue: *Queue, comptime base: *volatile pica.Graphics, register: anytype, values: []const std.meta.Child(@TypeOf(register))) void {
         return queue.addConsecutiveMasked(base, register, values, 0b1111);
     }
 
     pub fn addConsecutiveMasked(queue: *Queue, comptime base: *volatile pica.Graphics, register: anytype, values: []const std.meta.Child(@TypeOf(register)), mask: u4) void {
         comptime std.debug.assert(@typeInfo(@TypeOf(register)) == .pointer);
 
-        if (values.len == 0) return;
-
         const Child = std.meta.Child(@TypeOf(register));
         const id: Id = .fromRegister(base, register);
 
         comptime std.debug.assert(@bitSizeOf(Child) == @bitSizeOf(u32));
 
+        return queue.addMaskedBuffer(id, @ptrCast(values), mask, false);
+    }
+
+    pub fn addMaskedBuffer(queue: *Queue, id: Id, values: []const u32, mask: u4, incremental: bool) void {
+        if (values.len == 0) return;
+
+        var current_id: Id = id;
         var current: usize = 0;
         var remaining: usize = values.len;
 
@@ -185,17 +164,18 @@ pub const Queue = struct {
 
             const remaining_slice = values[current..][0..len];
 
-            queue.buffer[queue.current_index] = @as(*const u32, @ptrCast(@alignCast(&remaining_slice[0]))).*;
+            queue.buffer[queue.current_index] = remaining_slice[0];
             queue.buffer[queue.current_index + 1] = @bitCast(Header{
                 .id = id,
                 .mask = mask,
                 .extra = @intCast(len - 1),
-                .incremental_writing = false,
+                .incremental_writing = incremental,
             });
             queue.current_index += 2;
 
-            @memcpy(queue.buffer[queue.current_index..][0..(len - 1)], @as([*]const u32, @ptrCast(@alignCast(remaining_slice)))[1..len]);
+            @memcpy(queue.buffer[queue.current_index..][0..(len - 1)], remaining_slice[1..len]);
             queue.current_index += std.mem.alignForward(usize, len - 1, 2); // commands must be aligned to 8 bytes
+            if (incremental) current_id = @enumFromInt(@intFromEnum(current_id) + len);
         }
     }
 

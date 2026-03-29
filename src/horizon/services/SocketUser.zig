@@ -96,6 +96,7 @@ pub const E = enum(u32) {
     TIME,
     TIMEDOUT,
 
+    AI_AGAIN = 302,
     AI_FAMILY = 303,
     AI_MEMORY,
     AI_NONAME,

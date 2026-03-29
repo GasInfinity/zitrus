@@ -9,14 +9,21 @@ pub fn deinit(si: *SelfInfo, io: Io) void {
     _ = io;
 }
 
-pub fn getSymbol(si: *SelfInfo, io: Io, address: usize) std.debug.SelfInfoError!std.debug.Symbol {
+pub fn getSymbol(si: *SelfInfo, io: Io, address: usize) Error!std.debug.Symbol {
     _ = si;
     _ = io;
     _ = address;
     return error.MissingDebugInfo;
 }
 
-pub fn getModuleName(si: *SelfInfo, io: Io, address: usize) std.debug.SelfInfoError![]const u8 {
+pub fn getModuleName(si: *SelfInfo, io: Io, address: usize) Error![]const u8 {
+    _ = si;
+    _ = io;
+    _ = address;
+    return error.MissingDebugInfo;
+}
+
+pub fn getModuleSlide(si: *SelfInfo, io: Io, address: usize) Error!usize {
     _ = si;
     _ = io;
     _ = address;
@@ -25,6 +32,7 @@ pub fn getModuleName(si: *SelfInfo, io: Io, address: usize) std.debug.SelfInfoEr
 
 pub const can_unwind = false;
 
+const Error = std.debug.SelfInfoError;
 const SelfInfo = @This();
 
 const std = @import("std");

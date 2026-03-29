@@ -47,6 +47,7 @@ notification_event: Event,
 parameters_event: Event,
 chainload: Applet.ChainloadTarget,
 flags: State,
+capture_copy_memory: [*]align(horizon.heap.page_size) u8,
 
 pub fn init(apt: Applet, service: Applet.Service, srv: ServiceManager) !Application {
     const attr: Applet.Attributes = .{ .pos = .app, .acquire_gpu = false, .acquire_dsp = false };
@@ -64,11 +65,15 @@ pub fn init(apt: Applet, service: Applet.Service, srv: ServiceManager) !Applicat
         resumeApplication(apt, service, srv);
     }
 
+    // NOTE: enough for any capture
+    const capture_conversion_memory = horizon.heap.allocShared(400 * 256 * 4 * 2 + 320 * 256 * 4 * 2);
+
     return .{
         .notification_event = notification,
         .parameters_event = parameters,
         .chainload = if (environment.program_meta.runtime_flags.apt_chainload) .soft_reset else .none,
         .flags = .default,
+        .capture_copy_memory = capture_conversion_memory,
     };
 }
 
@@ -299,7 +304,7 @@ pub fn launchSystemApplet(app: *Application, apt: Applet, service: Applet.Servic
 }
 
 // NOTE: This is just straight up taken from libctru. I didn't know why jumping to home was not working, now I know :p
-pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture, target_app_id: Applet.AppId, is_library_applet: bool) !void {
+pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture, target_app_id: Applet.AppId, copy_framebuffers: bool) !void {
     const apt_capture_info = Applet.CaptureBuffer.init(capture);
 
     while (!(try apt.sendIsRegistered(service, srv, target_app_id))) {
@@ -307,7 +312,7 @@ pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, s
         horizon.sleepThread(1000000);
     }
 
-    try apt.sendSendParameter(service, srv, environment.program_meta.app_id, target_app_id, if (is_library_applet) .request else .request_for_sys_applet, .none, std.mem.asBytes(&apt_capture_info));
+    try apt.sendSendParameter(service, srv, environment.program_meta.app_id, target_app_id, if (copy_framebuffers) .request else .request_for_sys_applet, .none, std.mem.asBytes(&apt_capture_info));
 
     try app.parameters_event.wait(.none);
     var parameters = try apt.sendReceiveParameter(service, srv, environment.program_meta.app_id, &.{});
@@ -315,9 +320,84 @@ pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, s
 
     std.debug.assert(parameters.cmd == .response);
 
-    if (is_library_applet) {
-        // TODO: We need to convert the framebuffers to a texture sized 256*Height (we must perform the swizzling ourselves). Could we take advantage of mango?
-        // XXX: Do nothing right now (Garbage data will be shown instead)
+    if (copy_framebuffers) {
+        const pica = zitrus.hardware.pica;
+        const capture_shm: horizon.MemoryBlock = @bitCast(parameters.handle);
+
+        const mem = app.capture_copy_memory;
+
+        try capture_shm.map(mem, .rw, .rw);
+        defer capture_shm.unmap(mem);
+
+        if (apt_capture_info.bottom.format.native()) |pfmt| pica.morton.convert2(
+            .tile,
+            8,
+            mem[apt_capture_info.bottom.left_offset..][0 .. pica.Screen.height(.bottom) * pica.Screen.width_po2 * pfmt.bytesPerPixel()],
+            @as([*]u8, @ptrCast(capture.bottom.left_vaddr))[0 .. pica.Screen.height(.bottom) * pica.Screen.width(.bottom) * pfmt.bytesPerPixel()],
+            .{
+                .input_x = 0,
+                .input_y = 0,
+                .input_stride = pica.Screen.width(.bottom) * pfmt.bytesPerPixel(),
+
+                .output_x = 0,
+                .output_y = 0,
+                .output_stride = pica.Screen.width_po2 * pfmt.bytesPerPixel(),
+
+                .width = pica.Screen.width(.bottom),
+                .height = pica.Screen.height(.bottom),
+
+                .pixel_size = pfmt.bytesPerPixel(),
+            },
+        );
+
+        if (apt_capture_info.top.format.native()) |pfmt| {
+            const bpp = pfmt.bytesPerPixel();
+            const po2_stride = pica.Screen.width_po2 * bpp;
+            const stride = pica.Screen.width(.top) * bpp;
+            const total_byte_size = pica.Screen.height(.top) * po2_stride;
+
+            pica.morton.convert2(
+                .tile,
+                8,
+                mem[apt_capture_info.top.left_offset..][0..total_byte_size],
+                @as([*]u8, @ptrCast(capture.top.left_vaddr))[0 .. pica.Screen.height(.top) * stride],
+                .{
+                    .input_x = 0,
+                    .input_y = 0,
+                    .input_stride = stride,
+
+                    .output_x = 0,
+                    .output_y = 0,
+                    .output_stride = po2_stride,
+
+                    .width = pica.Screen.width(.top),
+                    .height = pica.Screen.height(.top),
+
+                    .pixel_size = bpp,
+                },
+            );
+
+            if (apt_capture_info.enabled_3d) pica.morton.convert2(
+                .tile,
+                8,
+                mem[apt_capture_info.top.right_offset..][0..total_byte_size],
+                @as([*]u8, @ptrCast(capture.top.right_vaddr))[0 .. pica.Screen.height(.top) * stride],
+                .{
+                    .input_x = 0,
+                    .input_y = 0,
+                    .input_stride = stride,
+
+                    .output_x = 0,
+                    .output_y = 0,
+                    .output_stride = po2_stride,
+
+                    .width = pica.Screen.width(.top),
+                    .height = pica.Screen.height(.top),
+
+                    .pixel_size = bpp,
+                },
+            );
+        }
     }
 
     try apt.sendSendCaptureBufferInfo(service, srv, &apt_capture_info);

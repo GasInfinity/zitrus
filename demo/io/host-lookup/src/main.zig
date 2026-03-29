@@ -1,8 +1,27 @@
 pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
 
+pub const std_options: std.Options = .{
+    .logFn = log,
+};
 pub const init_options: horizon.Init.Application.Software.Options = .{
     .double_buffer = .initFill(false),
 };
+
+var screen_writer: ?*std.Io.Writer = null;
+
+pub fn log(
+    comptime level: std.log.Level,
+    comptime scope: @EnumLiteral(),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    if (screen_writer) |w| {
+        w.print(@tagName(level) ++ "(" ++ @tagName(scope) ++ "): " ++ format ++ "\n", args) catch {};
+        w.flush() catch {};
+    }
+
+    std.log.defaultLog(level, scope, format, args);
+}
 
 pub fn main(init: horizon.Init.Application.Software) !void {
     const app = init.app;
@@ -10,7 +29,6 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     const io = app.base.io;
     const soft = init.soft;
 
-    // XXX: Better but still not great, networking and fs should also be separate (in initialization, not usage)
     try horizon.Io.global.initStorage(app.srv, .soc, 4 * 1024 * 1024);
 
     var top_renderer_buf: [64]u8 = undefined;
@@ -26,6 +44,9 @@ pub fn main(init: horizon.Init.Application.Software) !void {
         3,
     );
     top_renderer.clear();
+
+    screen_writer = &top_renderer.writer;
+    defer screen_writer = null;
 
     var bottom_renderer_buf: [64]u8 = undefined;
     var bottom_renderer = try zdebug.PsfRenderer.init(
@@ -92,7 +113,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
                     const host_name = net.HostName.init(host_name_bytes) catch |err| switch (err) {
                         error.NameTooLong => unreachable, // we cap it above
                         error.InvalidHostName => {
-                            try top_w.print("Invalid host name '{s}'", .{host_name_bytes});
+                            try top_w.print("Invalid host name '{s}'\n", .{host_name_bytes});
                             try top_w.flush();
                             break :print_host;
                         },

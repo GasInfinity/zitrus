@@ -2,7 +2,7 @@
 
 pub const service = "gsp::Gpu";
 
-pub const Graphics = @import("GspGpu/Graphics.zig");
+pub const Graphics = @import("GraphicsServerGpu/Graphics.zig");
 
 pub const Shared = extern struct {
     interrupt_queue: [4]Interrupt.Queue,

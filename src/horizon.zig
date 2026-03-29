@@ -774,7 +774,10 @@ pub const MemoryBlock = packed struct(u32) {
         /// Tried to allocate a `linear` memory block as an application or invalid permissions specified.
         PermissionDenied,
     } || Object.Error;
-    pub const MapError = error{} || UnexpectedError;
+    pub const MapError = error{
+        /// Permissions for this or the other process do not align with the ones at creation time.
+        PermissionDenied,
+    } || UnexpectedError;
 
     obj: Object,
 
@@ -793,7 +796,8 @@ pub const MemoryBlock = packed struct(u32) {
     pub fn map(mem: MemoryBlock, address: [*]align(heap.page_size) u8, this: MemoryPermission, other: MemoryPermission) MapError!void {
         return switch (mapMemoryBlock(mem, address, this, other)) {
             .os_unaligned_address, .os_invalid_handle => unreachable,
-            .os_invalid_combination, .os_invalid_address, .os_invalid_address_state => |c| resultBug(c),
+            .os_invalid_combination => error.PermissionDenied,
+            .os_invalid_address, .os_invalid_address_state => |c| resultBug(c),
             else => |c| if (!c.isSuccess()) unexpectedResult(c),
         };
     }

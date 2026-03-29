@@ -1440,17 +1440,34 @@ pub fn netShutdown(storage: *Storage, io: std.Io, handle: Descriptor, how: Io.ne
     };
 }
 
+// NOTE: arbitrary but empirically I see very often 4 results or less.
+const net_lookup_stack_results = 4;
+
 pub fn netLookup(storage: *Storage, io: std.Io, gpa: Allocator, host_name: Io.net.HostName, resolved: *Io.Queue(Io.net.HostName.LookupResult), opts: Io.net.HostName.LookupOptions) Io.net.HostName.LookupError!void {
     defer resolved.close(io); // "Closes `resolved`, even on error."
 
     if (storage.net.soc.session == horizon.Session.Client.none) return error.NetworkDown;
 
-    // NOTE: it seems soc:u doesn't handle localhost
-    if (std.mem.eql(u8, "localhost", host_name.bytes)) {
+    // NOTE: it seems soc:u doesn't handle localhost but resolves "localhost.", lmao
+    const localhost = if (host_name.bytes[host_name.bytes.len - 1] == '.')
+        "localhost."
+    else
+        "localhost";
+
+    if (std.mem.endsWith(u8, host_name.bytes, localhost)) {
         resolved.putOne(io, .{ .address = .{ .ip4 = .loopback(opts.port) } }) catch |err| switch (err) {
             error.Closed => unreachable,
             error.Canceled => |e| return e,
         };
+
+        if (opts.canonical_name_buffer) |canon| {
+            canon[0.."localhost".len].* = "localhost".*;
+
+            resolved.putOne(io, .{ .canonical_name = .{ .bytes = canon[0.."localhost".len] } }) catch |err| switch (err) {
+                error.Closed => unreachable,
+                error.Canceled => |e| return e,
+            };
+        }
 
         return;
     }
@@ -1463,45 +1480,48 @@ pub fn netLookup(storage: *Storage, io: std.Io, gpa: Allocator, host_name: Io.ne
     const port_c = std.fmt.bufPrint(&port_buffer, "{d}\x00", .{opts.port}) catch unreachable;
     const name_c = std.fmt.bufPrint(&name_buffer, "{s}\x00", .{host_name.bytes}) catch unreachable;
 
-    const hints: SocketUser.AddressInfo = .{
-        .flags = .{
-            .numeric_service = true,
-        },
-        .family = .unspec,
-        .type = .any,
-        .protocol = .any,
-        .address_len = undefined,
-        .canonical_name = undefined,
-        .address = undefined,
-    };
-
-    // XXX: we cannot use empty to get all results first, azahar expects at least one or we have a segmentation fault!
-    // If that is fixed we can let this be empty and get all the entries in 2 calls.
-    var results = std.ArrayList(SocketUser.AddressInfo).initCapacity(gpa, 2) catch return error.SystemResources;
-    defer results.deinit(gpa);
-
-    _ = results.addManyAsSliceAssumeCapacity(2);
+    var total_results: usize = 0;
+    // NOTE: looks like it must be zeroed, cannot be undefined or we get an AddressFamilyUnsupported always.
+    var initial_results: [net_lookup_stack_results]SocketUser.AddressInfo = std.mem.zeroes([net_lookup_stack_results]SocketUser.AddressInfo);
+    var results_slice: []SocketUser.AddressInfo = &initial_results;
+    defer if (results_slice.ptr != &initial_results) gpa.free(results_slice);
 
     while (true) {
-        const maybe, const resolved_results_len = soc.sendGetAddrInfo(name_c, port_c, &hints, results.items) catch |err| switch (err) {
+        initial_results[0].flags = .{ .canonical_name = opts.canonical_name_buffer != null, .numeric_service = true };
+        const maybe, const maybe_resolved_results = soc.sendGetAddrInfo(name_c, port_c, &initial_results[0], results_slice) catch |err| switch (err) {
             else => return error.Unexpected,
         };
 
         switch (maybe.errno()) {
             .SUCCESS => {},
             .AGAIN => continue,
+            .AI_AGAIN => return error.NameServerFailure,
             .AI_FAMILY => return error.AddressFamilyUnsupported,
+            .AI_MEMORY => return error.SystemResources,
             .AI_NONAME => return error.UnknownHostName,
+            .AI_SOCKTYPE => return error.SocketModeUnsupported,
             else => |e| return unexpectedSocErrno(e),
         }
 
-        if (results.items.len == resolved_results_len) break;
+        if (results_slice.len >= maybe_resolved_results) {
+            total_results = maybe_resolved_results;
+            break;
+        }
 
-        results.resize(gpa, resolved_results_len) catch return error.SystemResources;
+        if (results_slice.ptr != &initial_results) {
+            if (gpa.remap(results_slice, maybe_resolved_results)) |new_results| {
+                results_slice = new_results;
+                continue;
+            }
+
+            gpa.free(results_slice);
+        }
+
+        results_slice = gpa.alloc(SocketUser.AddressInfo, maybe_resolved_results) catch return error.SystemResources;
     }
 
     var canonical_name = false;
-    for (results.items) |entry| {
+    for (results_slice[0..total_results]) |entry| {
         const address: Io.net.IpAddress = addressFromSoc(entry.address);
 
         resolved.putOne(io, .{ .address = address }) catch |err| switch (err) {
