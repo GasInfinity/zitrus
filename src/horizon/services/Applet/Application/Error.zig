@@ -220,7 +220,7 @@ pub fn agreeUpdate(flags: State.Flags) Error {
     return .{ .state = .agreeUpdate(flags) };
 }
 
-pub fn start(err: *Error, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture) !Result {
+pub fn start(err: *Error, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GraphicsServerGpu.ScreenCapture) !Result {
     try app.startLibraryApplet(apt, service, srv, capture, .application_error_display, .none, std.mem.asBytes(&err.state));
 
     return switch (try app.waitAppletResult(apt, service, srv, std.mem.asBytes(&err.state))) {
@@ -245,7 +245,7 @@ const Error = @This();
 const Applet = horizon.services.Applet;
 const Application = Applet.Application;
 
-const GspGpu = horizon.services.GspGpu;
+const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
 
 const std = @import("std");
 const zitrus = @import("zitrus");

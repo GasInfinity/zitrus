@@ -31,7 +31,7 @@ pub fn unlockMemory(_: []align(std.heap.page_size_min) const u8) process.UnlockM
 pub fn lockMemoryAll(_: process.LockMemoryAllOptions) process.LockMemoryError!void {}
 pub fn unlockMemoryAll() process.UnlockMemoryError!void {}
 
-pub fn protectMemory(memory: []align(std.heap.page_size_min) u8, protection: process.MemoryProtection) process.ProtectMemoryError!void {
+pub fn protectMemory(memory: []align(horizon.heap.page_size) u8, protection: process.MemoryProtection) process.ProtectMemoryError!void {
     // NOTE: We need to go through these hoops as controlProcessMemory doesn't support the `.current` alias
     const global = struct {
         var current_process: std.atomic.Value(horizon.Process) = .init(.none);
@@ -49,7 +49,10 @@ pub fn protectMemory(memory: []align(std.heap.page_size_min) u8, protection: pro
         }
     };
 
-    try (try global.get()).controlMemory(.protect, memory.ptr, null, memory.len, .{
+    // NOTE: avoid passing unaligned lengths to controlMemory as it doesn't like them.
+    const aligned_len = std.mem.alignForward(usize, memory.len, horizon.heap.page_size);
+
+    try (try global.get()).controlMemory(.protect, memory.ptr, null, aligned_len, .{
         .read = protection.read,
         .write = protection.write,
         .execute = protection.execute,

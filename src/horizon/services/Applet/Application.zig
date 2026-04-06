@@ -250,7 +250,7 @@ pub fn waitAppletResult(app: *Application, apt: Applet, service: Applet.Service,
 }
 
 // NOTE: we also need to wakeup the dsp if needed when implemented. but not here!
-pub fn jumpToHome(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture, params: Applet.JumpToHomeParameters) !ExecutionResult {
+pub fn jumpToHome(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GraphicsServerGpu.ScreenCapture, params: Applet.JumpToHomeParameters) !ExecutionResult {
     const last_allow_sleep = app.flags.allow_sleep;
 
     app.setSleepAllowed(apt, service, srv, false);
@@ -273,7 +273,7 @@ pub fn jumpToHome(app: *Application, apt: Applet, service: Applet.Service, srv: 
     };
 }
 
-pub fn startLibraryApplet(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture, app_id: Applet.AppId, param_handle: Object, param: []const u8) !void {
+pub fn startLibraryApplet(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GraphicsServerGpu.ScreenCapture, app_id: Applet.AppId, param_handle: Object, param: []const u8) !void {
     const last_allow_sleep = app.flags.allow_sleep;
 
     app.setSleepAllowed(apt, service, srv, false);
@@ -287,7 +287,7 @@ pub fn startLibraryApplet(app: *Application, apt: Applet, service: Applet.Servic
 }
 
 // NOTE: This will stay with the same interface as jump to home as I don't know of a system applet which returns data.
-pub fn launchSystemApplet(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture, app_id: Applet.AppId, param_handle: Object, param: []const u8) !ExecutionResult {
+pub fn launchSystemApplet(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GraphicsServerGpu.ScreenCapture, app_id: Applet.AppId, param_handle: Object, param: []const u8) !ExecutionResult {
     const last_allow_sleep = app.flags.allow_sleep;
 
     app.setSleepAllowed(apt, service, srv, false);
@@ -304,7 +304,7 @@ pub fn launchSystemApplet(app: *Application, apt: Applet, service: Applet.Servic
 }
 
 // NOTE: This is just straight up taken from libctru. I didn't know why jumping to home was not working, now I know :p
-pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture, target_app_id: Applet.AppId, copy_framebuffers: bool) !void {
+pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GraphicsServerGpu.ScreenCapture, target_app_id: Applet.AppId, copy_framebuffers: bool) !void {
     const apt_capture_info = Applet.CaptureBuffer.init(capture);
 
     while (!(try apt.sendIsRegistered(service, srv, target_app_id))) {
@@ -415,7 +415,7 @@ fn resumeApplication(apt: Applet, service: Applet.Service, srv: ServiceManager) 
 
 const Application = @This();
 const Applet = horizon.services.Applet;
-const GspGpu = horizon.services.GspGpu;
+const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
 const Filesystem = horizon.services.Filesystem;
 
 const std = @import("std");

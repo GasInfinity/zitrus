@@ -46,9 +46,9 @@ fn callMainAndExit() callconv(.c) noreturn {
     @setRuntimeSafety(false);
     @disableInstrumentation();
 
-    horizon.debug.maybeEnableSegfaultHandler();
-
     if (!builtin.single_threaded) horizon.tls.initStatic();
+
+    horizon.debug.maybeEnableSegfaultHandler();
 
     const opt_init_array_start = @extern([*]*const fn () callconv(.c) void, .{
         .name = "__init_array_start",
@@ -142,7 +142,7 @@ inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !U
         const apt: services.Applet = try .open(.app, srv);
         defer apt.close();
 
-        const gsp: services.GspGpu = try .open(srv);
+        const gsp: services.GraphicsServerGpu = try .open(srv);
         defer gsp.close();
 
         const hid: services.Hid = try .open(.user, srv);
@@ -172,12 +172,12 @@ inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !U
         return switch (First) {
             Init.Application => root.main(app_init),
             Init.Application.Software => blk: {
-                const config: services.GspGpu.Graphics.Software.Config = if (@hasDecl(root, "init_options"))
+                const config: services.GraphicsServerGpu.Graphics.Software.Config = if (@hasDecl(root, "init_options"))
                     @field(root, "init_options")
                 else
                     .{};
 
-                var soft: services.GspGpu.Graphics.Software = try .init(config, gsp, horizon.heap.linear_page_allocator);
+                var soft: services.GraphicsServerGpu.Graphics.Software = try .init(config, gsp, horizon.heap.linear_page_allocator);
                 defer soft.deinit(gsp, horizon.heap.linear_page_allocator, app.flags.must_close);
 
                 break :blk root.main(.{

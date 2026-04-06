@@ -586,7 +586,11 @@ fn emitDirtyTextureUnits(rnd: *RenderingState, queue: *command.Queue) void {
 
         std.debug.assert(!image.memory_info.isUnbound());
         const address = image.memory_info.boundPhysicalAddress();
+        const image_format = image.info.format.nativeTextureUnitFormat();
         const format = image_view.data.format().nativeTextureUnitFormat();
+
+        const total_layer_size = image_format.scale(image.info.layer_size);
+        const base_address = @intFromEnum(address) + (total_layer_size * image_view.data.base_array_layer);
 
         queue.addIncremental(p3d, .{
             &p3d.texture_units.@"0".border_color,
@@ -603,17 +607,38 @@ fn emitDirtyTextureUnits(rnd: *RenderingState, queue: *command.Queue) void {
                 .etc1 = if (format == .etc1) .etc1 else .none,
                 .address_mode_v = sampler.data.address_mode_v,
                 .address_mode_u = sampler.data.address_mode_u,
-                .is_shadow = false, // TODO: Shadow
+                .is_shadow = false, // TODO: shadow
                 .mip_filter = sampler.data.mip_filter,
-                .type = .@"2d", // TODO: Different types
+                .type = if (sampler.data.projected) // TODO: shadow 2d and shadow cube
+                    .projection
+                else if (image_view.data.is_cube)
+                    .cube_map 
+                else 
+                    .@"2d",
             },
             .{
                 .bias = sampler.data.lod_bias,
                 .max_level_of_detail = @min(image_view.data.levels_minus_one, sampler.data.max_lod),
                 .min_level_of_detail = @max(image_view.data.base_mip_level, sampler.data.min_lod),
             },
-            .fromPhysical(address),
+            .fromAddress(base_address),
         });
+
+        if (image_view.data.is_cube) {
+            queue.addIncremental(p3d, .{
+                &p3d.texture_units.@"0".address[1],
+                &p3d.texture_units.@"0".address[2],
+                &p3d.texture_units.@"0".address[3],
+                &p3d.texture_units.@"0".address[4],
+                &p3d.texture_units.@"0".address[5],
+            }, .{
+                .fromAddress(base_address + total_layer_size),
+                .fromAddress(base_address + total_layer_size * 2),
+                .fromAddress(base_address + total_layer_size * 3),
+                .fromAddress(base_address + total_layer_size * 4),
+                .fromAddress(base_address + total_layer_size * 5),
+            });
+        }
 
         queue.add(p3d, &p3d.texture_units.@"0".format, .init(format));
     }

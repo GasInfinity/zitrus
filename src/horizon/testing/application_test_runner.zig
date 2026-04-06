@@ -40,7 +40,7 @@ pub fn main(init: horizon.Init) !void {
     horizon.testing.apt = apt;
     defer horizon.testing.apt = undefined;
 
-    const gsp = horizon.services.GspGpu.open(srv) catch @panic("Error opening connection to gsp::GPU");
+    const gsp = horizon.services.GraphicsServerGpu.open(srv) catch @panic("Error opening connection to gsp::GPU");
     defer gsp.close();
 
     horizon.testing.gsp = gsp;

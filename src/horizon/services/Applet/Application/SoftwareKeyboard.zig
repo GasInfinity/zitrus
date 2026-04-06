@@ -476,7 +476,7 @@ pub fn writtenText(swkbd: *SoftwareKeyboard) [:0]const u16 {
     return std.mem.bytesAsSlice(u16, swkbd.text)[swkbd.state.text_offset..swkbd.state.text_length :0];
 }
 
-pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture, context: anytype) !Result {
+pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GraphicsServerGpu.ScreenCapture, context: anytype) !Result {
     try app.startLibraryApplet(apt, service, srv, capture, .application_software_keyboard, swkbd.text_block.obj, @ptrCast(&swkbd.state));
 
     return swkbd_loop: switch (try app.waitAppletResult(apt, service, srv, @ptrCast(&swkbd.state))) {
@@ -519,7 +519,7 @@ pub fn startContext(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, se
     };
 }
 
-pub fn start(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GspGpu.ScreenCapture) !Result {
+pub fn start(swkbd: *SoftwareKeyboard, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GraphicsServerGpu.ScreenCapture) !Result {
     return swkbd.startContext(app, apt, service, srv, capture, {});
 }
 
@@ -527,7 +527,7 @@ const SoftwareKeyboard = @This();
 const Applet = horizon.services.Applet;
 const Application = Applet.Application;
 
-const GspGpu = horizon.services.GspGpu;
+const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
 
 const std = @import("std");
 const zitrus = @import("zitrus");

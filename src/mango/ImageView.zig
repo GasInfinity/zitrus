@@ -19,16 +19,16 @@ pub const Data = packed struct(u64) {
     levels_minus_one: u3,
     _: u16 = 0,
 
-    pub fn init(info: mango.ImageViewCreateInfo) Data {
+    pub fn init(info: mango.ImageViewCreateInfo) !Data {
         const b_image: *backend.Image = .fromHandleMutable(info.image);
 
         if (!b_image.info.mutable_format) {
-            std.debug.assert(b_image.info.format == info.format);
+            try validation.assert(b_image.info.format == info.format, validation.image_view.src_not_mutable_format, .{});
         }
 
         switch (info.type) {
-            .@"2d" => std.debug.assert(b_image.info.layersByAmount(info.subresource_range.layer_count, info.subresource_range.base_array_layer) == 1),
-            .cube => std.debug.assert(b_image.info.layersByAmount(info.subresource_range.layer_count, info.subresource_range.base_array_layer) == 6),
+            .@"2d" => try validation.assert(b_image.info.layersByAmount(info.subresource_range.layer_count, info.subresource_range.base_array_layer) == 1, validation.image_view.invalid_2d, .{}),
+            .cube => try validation.assert(b_image.info.layersByAmount(info.subresource_range.layer_count, info.subresource_range.base_array_layer) == 6, validation.image_view.invalid_cube, .{}),
         }
 
         const mip_levels = b_image.info.levelsByAmount(info.subresource_range.level_count, info.subresource_range.base_mip_level);
@@ -95,6 +95,8 @@ pub fn fromHandle(handle: Handle) ImageView {
 
 const ImageView = @This();
 const backend = @import("backend.zig");
+
+const validation = backend.validation;
 
 const std = @import("std");
 const zitrus = @import("zitrus");

@@ -172,30 +172,31 @@ pub const CaptureBuffer = extern struct {
     bottom: Info,
 
     // TODO: Finish this
-    pub inline fn init(capture: GspGpu.ScreenCapture) CaptureBuffer {
-        const top_framebuffers: usize, const top_scale: usize = switch (capture.top.format.mode()) {
-            .@"2d" => .{ 1, 1 },
-            .@"3d" => .{ 2, 1 },
-            .full_resolution => .{ 1, 2 },
-        };
+    pub inline fn init(capture: GraphicsServerGpu.ScreenCapture) CaptureBuffer {
+        const top_framebuffers: usize, const top_scale: usize = if (capture.top.format.interlacing == .none and !capture.top.format.half_rate) 
+            .{ 1, 2 }
+        else if (capture.top.format.interlacing == .enable)
+            .{ 2, 1 }
+        else 
+            .{ 1, 1 };
 
-        const top_framebuffer_size = top_scale * pica.Screen.top.height() * pica.Screen.width_po2 * capture.top.format.color_format.bytesPerPixel();
+        const top_framebuffer_size = top_scale * pica.Screen.top.height() * pica.Screen.width_po2 * capture.top.format.pixel_format.bytesPerPixel();
         const top_size = top_framebuffers * top_framebuffer_size;
-        const bottom_size = pica.Screen.bottom.height() * pica.Screen.width_po2 * capture.bottom.format.color_format.bytesPerPixel();
+        const bottom_size = pica.Screen.bottom.height() * pica.Screen.width_po2 * capture.bottom.format.pixel_format.bytesPerPixel();
 
         return CaptureBuffer{
             // So, the GSP trips when this value is exactly what it should? XXX: Why do I need to multiply bottom_size by 2 for library applets?
             .size = (top_size + bottom_size * 2),
-            .enabled_3d = (capture.top.format.interlacing_mode == .enable),
+            .enabled_3d = (capture.top.format.interlacing == .enable),
             .top = .{
                 .left_offset = 0,
                 .right_offset = top_framebuffer_size * (top_framebuffers - 1),
-                .format = @enumFromInt(@intFromEnum(capture.top.format.color_format)),
+                .format = @enumFromInt(@intFromEnum(capture.top.format.pixel_format)),
             },
             .bottom = .{
                 .left_offset = top_size,
                 .right_offset = top_size,
-                .format = @enumFromInt(@intFromEnum(capture.bottom.format.color_format)),
+                .format = @enumFromInt(@intFromEnum(capture.bottom.format.pixel_format)),
             },
         };
     }
@@ -794,7 +795,7 @@ pub const command = struct {
 };
 
 const Applet = @This();
-const GspGpu = horizon.services.GspGpu;
+const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
 const Filesystem = horizon.services.Filesystem;
 
 const std = @import("std");

@@ -1,7 +1,7 @@
 pub const CreateInfo = struct {
     /// The GSP session the device will use to communicate with the
     /// process.
-    gsp: horizon.services.GspGpu,
+    gsp: horizon.services.GraphicsServerGpu,
 
     /// The address arbiter the device will use when it needs to wait
     /// and signal threads.
@@ -116,11 +116,11 @@ const CodeCache = struct {
 
 device: Device,
 arbiter: AddressArbiter,
-gsp: GspGpu,
+gsp: GraphicsServerGpu,
 gsp_owned: bool,
 gsp_thread_index: u8,
 gsp_shm_memory_block: MemoryBlock,
-gsp_shm: *GspGpu.Shared,
+gsp_shm: *GraphicsServerGpu.Shared,
 interrupt_event: Event,
 driver: horizon.Thread.Impl,
 
@@ -146,12 +146,10 @@ pub fn create(create_info: mango.HorizonBackedDeviceCreateInfo, gpa: std.mem.All
     const queue_result = try gsp.sendRegisterInterruptRelayQueue(0x1, interrupt_event);
 
     if (queue_result.first_initialization) {
-        try GspGpu.Graphics.initializeHardware(gsp);
+        try GraphicsServerGpu.Graphics.initializeHardware(gsp);
     }
 
-    // FIXME: As everywhere else we use this, this is NOT thread-safe and IS global, two big no-nos (it's easy to replace tho so defer the design!)
-
-    const shared_memory = horizon.heap.allocShared(@sizeOf(GspGpu.Shared));
+    const shared_memory = horizon.heap.allocShared(@sizeOf(GraphicsServerGpu.Shared));
     try queue_result.response.gsp_memory.map(shared_memory, .rw, .dont_care);
     errdefer queue_result.response.gsp_memory.unmap(shared_memory);
 
@@ -183,8 +181,8 @@ pub fn create(create_info: mango.HorizonBackedDeviceCreateInfo, gpa: std.mem.All
         .code_cache = .empty,
     };
 
-    h_device.gsp_shm.framebuffers[h_device.gsp_thread_index][0].header = std.mem.zeroes(GspGpu.FramebufferInfo.Header);
-    h_device.gsp_shm.framebuffers[h_device.gsp_thread_index][1].header = std.mem.zeroes(GspGpu.FramebufferInfo.Header);
+    h_device.gsp_shm.framebuffers[h_device.gsp_thread_index][0].header = std.mem.zeroes(GraphicsServerGpu.FramebufferInfo.Header);
+    h_device.gsp_shm.framebuffers[h_device.gsp_thread_index][1].header = std.mem.zeroes(GraphicsServerGpu.FramebufferInfo.Header);
 
     h_device.driver = try .spawnOptions(.{
         .allocator = gpa,
@@ -231,7 +229,7 @@ fn reacquire(dev: *Device) !void {
     try pe.reacquire(gsp);
 }
 
-fn release(dev: *Device) mango.ReleaseDeviceError!GspGpu.ScreenCapture {
+fn release(dev: *Device) mango.ReleaseDeviceError!GraphicsServerGpu.ScreenCapture {
     const h_dev: *Horizon = @alignCast(@fieldParentPtr("device", dev));
 
     std.debug.assert(h_dev.gsp_owned);
@@ -259,7 +257,7 @@ fn waitIdleQueue(dev: *Device, queue: Queue.Type) void {
 
     while (true) switch (queue_status.load(.monotonic)) {
         .idle => break,
-        .waiting, .working => _ = h_dev.arbiter.wait(Queue.Status, &queue_status.raw, .idle),
+        .waiting, .working, .work_completed => _ = h_dev.arbiter.wait(Queue.Status, &queue_status.raw, .idle),
     };
 }
 
@@ -485,6 +483,8 @@ fn signalSemaphore(dev: *Device, signal_info: mango.SemaphoreSignalInfo) mango.S
 
 // XXX: Currently if some error happens in the driver, the entire app crashes! Should we report an error condition?
 // Is really something we can do...?
+
+// TODO: audit queues and rewrite them (without public API changes)
 fn driverMain(h_dev: *Horizon) void {
     const dev = &h_dev.device;
     const gsp = h_dev.gsp;
@@ -503,101 +503,173 @@ fn driverMain(h_dev: *Horizon) void {
         .stride = 0,
         .format = .{
             .dma_size = .@"64",
-            .color_format = .abgr8888,
-            .interlacing_mode = .none,
-            .alternative_pixel_output = i == 0, // top screen
+            .pixel_format = .abgr8888,
+            .interlacing = .none,
+            .half_rate = i == 0, // top screen
         },
         .select = 0,
         .attribute = 0,
     });
 
+    var completion_signals: std.EnumArray(Queue.Type, Queue.SemaphoreOperation) = .initFill(.none);
+    var submission_time: std.EnumArray(Queue.Type, u96) = .initFill(0);
+    var submission_buffer: ?*backend.CommandBuffer = null;
+
     while (h_dev.running.load(.monotonic)) {
-        h_dev.interrupt_event.wait(.none) catch unreachable; // No error.Timeout can happen
+        // It's impossible to get less than 1 interrupt per second, we always get an interrupt,
+        // even if we don't have right!
+        h_dev.interrupt_event.wait(.fromNanoseconds(std.time.ns_per_s)) catch |err| switch (err) {
+            error.Timeout => driverLost(gsp, null),
+            else => unreachable,
+        };
 
         const interrupts = int_que.popBackAll();
 
-        // NOTE: The application may have wanted to wake us up!
+        // NOTE: The application may have wanted to wake us up! In that case we don't get any interrput
         if (!interrupts.eql(.initEmpty())) {
-            var interrupts_it = interrupts.iterator();
+            for (std.enums.values(GraphicsServerGpu.Interrupt)) |int| {
+                const kind: Queue.Type = switch (int) {
+                    .psc0, .psc1 => .fill,
+                    .ppf => .transfer,
+                    .p3d => .submit,
+                    .vblank_top, .vblank_bottom => .present,
+                    else => continue, 
+                };
 
-            while (interrupts_it.next()) |int| {
-                switch (int) {
-                    .dma => {}, // XXX: Should we use the CPU DMA engines?
-                    .psc0, .psc1 => _ = dev.fill_queue.complete() catch unreachable,
-                    .ppf => _ = dev.transfer_queue.complete() catch unreachable,
-                    .p3d => {
-                        const last_submission = dev.submit_queue.complete() catch unreachable;
+                if (interrupts.contains(int)) {
+                    defer dev.queue_statuses.getPtr(kind).store(.work_completed, .monotonic);
 
-                        last_submission.cmd_buffer.notifyCompleted();
-                    },
-                    .vblank_top => _ = presentation_engine.refresh(h_dev.arbiter, gsp, fbs, .top),
-                    .vblank_bottom => _ = presentation_engine.refresh(h_dev.arbiter, gsp, fbs, .bottom),
+                    const completion = completion_signals.getPtr(kind);
+                    defer completion.* = .none;
+
+                    if (completion.sema) |sema| {
+                        signalSemaphore(dev, .{
+                            .semaphore = sema.toHandle(),
+                            .value = completion.value,
+                        }) catch unreachable;
+                    }
+
+                    switch (int) {
+                        .p3d => {
+                            submission_buffer.?.notifyCompleted();
+                            submission_buffer = null;
+                        },
+                        .vblank_top => presentation_engine.refresh(h_dev.arbiter, gsp, fbs, .top),
+                        .vblank_bottom => presentation_engine.refresh(h_dev.arbiter, gsp, fbs, .bottom),
+                        .dma, .psc0, .psc1, .ppf => {},
+                    } 
+                    
+                    continue;
                 }
             }
         }
 
         var enqueued_commands: usize = 0;
-        inline for (comptime std.enums.values(Queue.Type)) |kind| {
-            const queue = switch (kind) {
-                .fill => &dev.fill_queue,
-                .transfer => &dev.transfer_queue,
-                .submit => &dev.submit_queue,
-                .present => &dev.presentation_queue,
-            };
-
+        queue: for (std.enums.values(Queue.Type)) |kind| {
             const queue_status = dev.queue_statuses.getPtr(kind);
-            switch (queue.workPopBack()) {
-                .empty => {
-                    const empty_status: Queue.Status = switch (kind) {
-                        .fill, .transfer, .submit => .idle,
 
-                        // NOTE: The present queue is considered idle when all outstanding present operations are handled, a.k.a: unless we presented all frames we're still working!
-                        .present => present_status: inline for (comptime std.enums.values(pica.Screen)) |screen| {
-                            if (presentation_engine.chain_presents.getPtr(screen).load(.monotonic) > 0) {
-                                break :present_status .working;
-                            }
-                        } else .idle,
+            hang: switch (queue_status.load(.monotonic)) {
+                .working => {
+                    if (kind == .present) break :hang;
+
+                    const last_submission_time = submission_time.get(kind);
+                    const elapsed_without_interrupt = horizon.time.getSystemNanoseconds() -% last_submission_time;
+
+                    if (elapsed_without_interrupt > lose_ns_sentinel) driverLost(gsp, kind);
+                    continue :queue;
+                },
+                .work_completed, .waiting, .idle => {},
+            }
+
+            switch (kind) {
+                inline else => |comptime_kind| {
+                    const queue = switch (comptime_kind) {
+                        .fill => &dev.fill_queue,
+                        .transfer => &dev.transfer_queue,
+                        .submit => &dev.submit_queue,
+                        .present => &dev.presentation_queue,
                     };
 
-                    const last_status = queue_status.swap(empty_status, .monotonic);
+                    work: switch (queue.workPopBack()) {
+                        .empty => {
+                            const empty_status: Queue.Status = switch (comptime_kind) {
+                                .fill, .transfer, .submit => .idle,
 
-                    // Is anyone waiting for us? Wake them!
-                    if (last_status != .idle and empty_status == .idle) {
-                        h_dev.arbiter.signal(Queue.Status, &queue_status.raw, null);
-                    }
-                },
-                .wait => _ = queue_status.store(.waiting, .monotonic),
-                .work => |itm| {
-                    _ = queue_status.store(.working, .monotonic);
+                                // NOTE: The present queue is considered idle when all outstanding present operations are handled, a.k.a: unless we presented all frames we're still working!
+                                .present => present_status: for (std.enums.values(pica.Screen)) |screen| {
+                                    if (presentation_engine.chain_presents.getPtr(screen).load(.monotonic) > 0) {
+                                        break :present_status .working;
+                                    }
+                                } else .idle,
+                            };
 
-                    switch (kind) {
-                        .fill => {
-                            gx.pushFrontAssumeCapacity(.initMemoryFill(.{ .init(itm.data, itm.value), null }, .none));
-                        },
-                        .transfer => {
-                            switch (itm.flags.kind) {
-                                .copy => gx.pushFrontAssumeCapacity(.initTextureCopy(itm.src, itm.dst, itm.flags.extra.copy, itm.input_gap_size, itm.output_gap_size, .none)),
-                                .linear_tiled, .tiled_linear, .tiled_tiled => gx.pushFrontAssumeCapacity(.initDisplayTransfer(itm.src, itm.dst, itm.flags.extra.transfer.src_fmt, itm.input_gap_size, itm.flags.extra.transfer.dst_fmt, itm.output_gap_size, .{
-                                    .mode = switch (itm.flags.kind) {
-                                        .copy => unreachable,
-                                        .linear_tiled => .linear_tiled,
-                                        .tiled_linear => .tiled_linear,
-                                        .tiled_tiled => .tiled_tiled,
-                                    },
-                                    .downscale = itm.flags.extra.transfer.downscale,
-                                    .use_32x32 = itm.flags.extra.transfer.use_32x32,
-                                }, .none)),
+                            const last_status = queue_status.swap(empty_status, .monotonic);
+
+                            // Is anyone waiting for us? Wake them!
+                            if (last_status != .idle and empty_status == .idle) {
+                                h_dev.arbiter.signal(Queue.Status, &queue_status.raw, null);
                             }
                         },
-                        .submit => {
-                            const b_cmd = itm.cmd_buffer;
+                        .wait => queue_status.store(.waiting, .monotonic),
+                        .work => |item| {
+                            queue_status.store(.working, .monotonic);
+                            defer {
+                                enqueued_commands += 1;
+                                completion_signals.getPtr(comptime_kind).* = item.signal;
+                                submission_time.set(comptime_kind, horizon.time.getSystemNanoseconds());
+                            }
 
-                            gx.pushFrontAssumeCapacity(.initProcessCommandList(b_cmd.queue.buffer[0..b_cmd.queue.current_index], .none, .flush, .none));
+                            const value = item.value;
+
+                            switch (comptime_kind) {
+                                .fill => {
+                                    gx.pushFrontAssumeCapacity(.initMemoryFill(.{ .init(value.data, value.value), null }, .none));
+                                },
+                                .transfer => {
+                                    switch (value.flags.kind) {
+                                        .copy => gx.pushFrontAssumeCapacity(.initTextureCopy(
+                                            value.src, 
+                                            value.dst, 
+                                            value.flags.extra.copy, 
+                                            value.input_gap_size,
+                                            value.output_gap_size,
+                                            .none,
+                                        )),
+                                        .linear_tiled, .tiled_linear, .tiled_tiled => gx.pushFrontAssumeCapacity(.initDisplayTransfer(
+                                            value.src, 
+                                            value.dst, 
+                                            value.flags.extra.transfer.src_fmt, 
+                                            value.input_gap_size,
+                                            value.flags.extra.transfer.dst_fmt,
+                                            value.output_gap_size,
+                                            .{
+                                                .mode = switch (value.flags.kind) {
+                                                    .copy => unreachable,
+                                                    .linear_tiled => .linear_tiled,
+                                                    .tiled_linear => .tiled_linear,
+                                                    .tiled_tiled => .tiled_tiled,
+                                                },
+                                                .downscale = value.flags.extra.transfer.downscale,
+                                                .use_32x32 = value.flags.extra.transfer.use_32x32,
+                                            }, .none,
+                                        )),
+                                    }
+                                },
+                                .submit => {
+                                    const b_cmd = value.cmd_buffer;
+                                    defer submission_buffer = b_cmd;
+
+                                    gx.pushFrontAssumeCapacity(.initProcessCommandList(b_cmd.queue.buffer[0..b_cmd.queue.end], .none, .flush, .none));
+                                },
+                                .present => {
+                                    // NOTE: Same as above, the present queue is "special".
+                                    // It never has to wait to present (the user is the one who waits when acquiring an image!)
+                                    presentation_engine.present(h_dev.arbiter, fbs, value);
+                                    continue :work queue.workPopBack();
+                                },
+                            }
                         },
-                        .present => presentation_engine.queueWork(h_dev.arbiter, fbs, itm),
                     }
-
-                    enqueued_commands += 1;
                 },
             }
         }
@@ -606,11 +678,28 @@ fn driverMain(h_dev: *Horizon) void {
     }
 }
 
+// TODO: make this not a panic (error.DeviceLost)
+// TODO: make this dump useful info (like the command buffer)
+fn driverLost(gsp: GraphicsServerGpu, kind: ?Queue.Type) noreturn {
+    gsp.sendResetGpuCore() catch {};
+    GraphicsServerGpu.Graphics.initializeHardware(gsp) catch {};
+
+    log.err(
+        \\!!!! PICA200 HANG !!!!
+        \\Affected Queue: {s}
+    , .{if (kind) |k| @tagName(k) else "irq (none)"});
+    @panic("GPU Lost (Timer ran out, see debug output for more info)");
+}
+
 const VRamBankAllocator = zalloc.bitmap.StaticBitmapAllocator(.fromByteUnits(4096), zitrus.memory.vram_bank_size);
 
 comptime {
     std.debug.assert(VRamBankAllocator.min_alignment_byte_units == 4096);
 }
+
+// anything taking more than 1s in any queue is sus
+// TODO: move this somewhere else
+const lose_ns_sentinel = 1 * std.time.ns_per_s;
 
 const Horizon = @This();
 
@@ -632,7 +721,7 @@ const horizon = zitrus.horizon;
 const AddressArbiter = horizon.AddressArbiter;
 const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;
-const GspGpu = horizon.services.GspGpu;
+const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
 
 const mango = zitrus.mango;
 const pica = zitrus.hardware.pica;

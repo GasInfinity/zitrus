@@ -188,16 +188,11 @@ fn findDevice(io: std.Io, timeout: Io.Timeout, retries: u32, verbose: bool) !?ne
     };
 
     const udp = try any.bind(io, .{
+        .allow_broadcast = true,
         .protocol = .udp,
         .mode = .dgram,
     });
     defer udp.close(io);
-
-    // TODO: move to allow_broadcast when the next zig master is uploaded
-    if (@hasDecl(std.posix.system, "setsockopt") and ((builtin.os.tag == .windows and builtin.link_libc) or builtin.os.tag != .windows)) {
-        const truth: u32 = 1;
-        _ = std.posix.system.setsockopt(udp.handle, std.posix.SOL.SOCKET, std.posix.SO.BROADCAST, @ptrCast(&truth), @sizeOf(u32));
-    }
 
     // XXX: Can this handshake be bigger?
     var receive_buf: [link_rep_magic.len]u8 = undefined;

@@ -206,7 +206,7 @@ pub const GxCommand = extern struct {
 
     pub const MemoryFill = extern struct {
         pub const Unit = struct {
-            pub const Value = union(pica.PixelSize) {
+            pub const Value = union(pica.DisplayController.Framebuffer.Pixel.Size) {
                 @"16": u16,
                 @"24": u24,
                 @"32": u32,
@@ -250,8 +250,25 @@ pub const GxCommand = extern struct {
             }
         };
 
+        pub const Control = packed struct(u16) {
+            pub const none: Control = .{ .busy = false, .width = .@"16" };
+
+            busy: bool,
+            finished: bool = false,
+            _unused0: u6 = 0,
+            width: pica.DisplayController.Framebuffer.Pixel.Size,
+            _unused1: u6 = 0,
+
+            pub fn init(size: pica.DisplayController.Framebuffer.Pixel.Size) Control {
+                return .{
+                    .busy = true,
+                    .width = size,
+                };
+            }
+        };
+
         buffers: [2]Buffer,
-        controls: [2]pica.MemoryFill.Control,
+        controls: [2]Control,
     };
 
     pub const DisplayTransfer = extern struct {
@@ -265,7 +282,7 @@ pub const GxCommand = extern struct {
             flip_v: bool = false,
             mode: Mode = .tiled_linear,
             use_32x32: bool = false,
-            downscale: pica.MemoryCopy.Flags.Downscale = .none,
+            downscale: pica.PictureFormatter.Flags.Downscale = .none,
             _: u2 = 0,
         };
 
@@ -273,7 +290,7 @@ pub const GxCommand = extern struct {
         destination: [*]align(8) u8,
         source_dimensions: [2]u16,
         destination_dimensions: [2]u16,
-        flags: pica.MemoryCopy.Flags,
+        flags: pica.PictureFormatter.Flags,
         _unused0: [2]u32 = @splat(0),
     };
 
@@ -283,7 +300,7 @@ pub const GxCommand = extern struct {
         size: u32,
         source_line_gap: [2]u16,
         destination_line_gap: [2]u16,
-        flags: pica.MemoryCopy.Flags,
+        flags: pica.PictureFormatter.Flags,
         _unused0: u32 = 0,
     };
 
@@ -424,11 +441,11 @@ pub const GxCommand = extern struct {
                 .output_width_less_than_input = src_dimensions[0] > dst_dimensions[0],
                 .linear_tiled = transfer_flags.mode == .linear_tiled,
                 .tiled_tiled = transfer_flags.mode == .tiled_tiled,
-                .input_format = src_color,
-                .output_format = dst_color,
+                .src_format = src_color,
+                .dst_format = dst_color,
                 .use_32x32_tiles = transfer_flags.use_32x32,
                 .downscale = transfer_flags.downscale,
-                .texture_copy_mode = false,
+                .copy = false,
             },
         } } };
     }
@@ -451,11 +468,11 @@ pub const GxCommand = extern struct {
                         .output_width_less_than_input = src_gaps[1] != 0 or dst_gaps[1] != 0, // Must be set when not doing contiguous copies.
                         .linear_tiled = false,
                         .tiled_tiled = false,
-                        .input_format = .abgr8888,
-                        .output_format = .abgr8888,
+                        .src_format = .abgr8888,
+                        .dst_format = .abgr8888,
                         .use_32x32_tiles = false,
                         .downscale = .none,
-                        .texture_copy_mode = true,
+                        .copy = true,
                     },
                 },
             },
@@ -508,29 +525,33 @@ pub const PerfLogInfo = extern struct {
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !GspGpu {
+pub fn open(srv: ServiceManager) !GraphicsServerGpu {
     return .{ .session = try srv.getService(service, .wait) };
 }
 
-pub fn close(gsp: GspGpu) void {
+pub fn close(gsp: GraphicsServerGpu) void {
     gsp.session.close();
 }
 
-pub fn writeRegister(gsp: GspGpu, address: anytype, value: @typeInfo(@TypeOf(address)).pointer.child) !void {
+pub fn writeRegisters(gsp: GraphicsServerGpu, comptime T: type, address: *volatile T, value: T) !void {
     return try gsp.writeRegistersBuffer(address, @ptrCast(&value));
 }
 
-pub fn writeRegistersBuffer(gsp: GspGpu, address: *volatile anyopaque, buffer: []align(1) const u32) !void {
+pub fn writeRegistersBuffer(gsp: GraphicsServerGpu, address: *volatile anyopaque, buffer: []align(1) const u32) !void {
     const offset = @intFromPtr(address) - 0x1EB00000;
     var buffer_offset: usize = 0;
     while (buffer_offset < buffer.len) : (buffer_offset += 32) {
         const size = @min(buffer.len - buffer_offset, 32);
 
-        try gsp.sendWriteHwRegs(offset, buffer[buffer_offset..][0..size]);
+        try gsp.sendWriteHwRegs(offset + (buffer_offset * @sizeOf(u32)), buffer[buffer_offset..][0..size]);
     }
 }
 
-pub fn writeHwRegsWithMask(gsp: GspGpu, address: *volatile anyopaque, buffer: []align(1) const u32, mask: []align(1) const u32) !void {
+pub fn writeRegistersMasked(gsp: GraphicsServerGpu, comptime T: type, address: *volatile T, value: T, mask: *const [@divExact(@sizeOf(T), @sizeOf(u32))]u32) !void {
+    return try gsp.writeRegistersMaskedBuffer(address, @ptrCast(&value), mask);
+}
+
+pub fn writeRegistersMaskedBuffer(gsp: GraphicsServerGpu, address: *volatile anyopaque, buffer: []align(1) const u32, mask: []align(1) const u32) !void {
     std.debug.assert(buffer.len == mask.len);
 
     const offset = @intFromPtr(address) - 0x1EB00000;
@@ -538,17 +559,23 @@ pub fn writeHwRegsWithMask(gsp: GspGpu, address: *volatile anyopaque, buffer: []
     while (buffer_offset < buffer.len) : (buffer_offset += 32) {
         const size = @min(buffer.len - buffer_offset, 32);
 
-        try gsp.sendWriteHwRegsWithMask(offset, buffer[buffer_offset..][0..size], mask[buffer_offset..][0..size]);
+        try gsp.sendWriteHwRegsWithMask(offset + (buffer_offset * @sizeOf(u32)), buffer[buffer_offset..][0..size], mask[buffer_offset..][0..size]);
     }
 }
 
-pub fn readHwRegs(gsp: GspGpu, address: *volatile anyopaque, buffer: []u8) !void {
+pub fn readRegisters(gsp: GraphicsServerGpu, comptime T: type, address: *volatile T) !T {
+    var value: T = undefined;
+    try gsp.readRegistersBuffer(address, @ptrCast(&value));
+    return value;
+}
+
+pub fn readRegistersBuffer(gsp: GraphicsServerGpu, address: *volatile anyopaque, buffer: []u32) !void {
     const offset = @intFromPtr(address) - 0x1EB00000;
     var buffer_offset: usize = 0;
-    while (buffer_offset < buffer.len) : (buffer_offset += 0x80) {
-        const size = @min(buffer.len - buffer_offset, 0x80);
+    while (buffer_offset < buffer.len) : (buffer_offset += 32) {
+        const size = @min(buffer.len - buffer_offset, 32);
 
-        try gsp.sendReadHwRegs(offset, buffer[buffer_offset..][0..size]);
+        try gsp.sendReadHwRegs(offset + (buffer_offset * @sizeOf(u32)), buffer[buffer_offset..][0..size]);
     }
 }
 
@@ -558,7 +585,7 @@ const InterruptRelayQueueResult = struct {
     shared_memory: MemoryBlock,
 };
 
-pub fn sendWriteHwRegs(gsp: GspGpu, offset: usize, buffer: []align(1) const u32) !void {
+pub fn sendWriteHwRegs(gsp: GraphicsServerGpu, offset: usize, buffer: []align(1) const u32) !void {
     std.debug.assert(buffer.len <= 32);
 
     const data = tls.get();
@@ -568,7 +595,7 @@ pub fn sendWriteHwRegs(gsp: GspGpu, offset: usize, buffer: []align(1) const u32)
     };
 }
 
-pub fn sendWriteHwRegsWithMask(gsp: GspGpu, offset: usize, buffer: []align(1) const u32, mask: []align(1) const u32) !void {
+pub fn sendWriteHwRegsWithMask(gsp: GraphicsServerGpu, offset: usize, buffer: []align(1) const u32, mask: []align(1) const u32) !void {
     std.debug.assert(buffer.len == mask.len);
     std.debug.assert(buffer.len <= 32);
 
@@ -579,7 +606,7 @@ pub fn sendWriteHwRegsWithMask(gsp: GspGpu, offset: usize, buffer: []align(1) co
     };
 }
 
-pub fn sendWriteHwRegRepeat(gsp: GspGpu, offset: usize, buffer: []align(1) const u32) !void {
+pub fn sendWriteHwRegRepeat(gsp: GraphicsServerGpu, offset: usize, buffer: []align(1) const u32) !void {
     std.debug.assert(buffer.len <= 32);
 
     const data = tls.get();
@@ -589,7 +616,7 @@ pub fn sendWriteHwRegRepeat(gsp: GspGpu, offset: usize, buffer: []align(1) const
     };
 }
 
-pub fn sendReadHwRegs(gsp: GspGpu, offset: usize, buffer: []u32) !void {
+pub fn sendReadHwRegs(gsp: GraphicsServerGpu, offset: usize, buffer: []u32) !void {
     std.debug.assert(buffer.len <= 32);
 
     const data = tls.get();
@@ -599,7 +626,7 @@ pub fn sendReadHwRegs(gsp: GspGpu, offset: usize, buffer: []u32) !void {
     };
 }
 
-pub fn sendSetBufferSwap(gsp: GspGpu, screen: Screen, info: FramebufferInfo) !void {
+pub fn sendSetBufferSwap(gsp: GraphicsServerGpu, screen: Screen, info: FramebufferInfo) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SetBufferSwap, .{ .screen = screen, .info = info }, .{})).cases()) {
         .success => {},
@@ -607,7 +634,7 @@ pub fn sendSetBufferSwap(gsp: GspGpu, screen: Screen, info: FramebufferInfo) !vo
     };
 }
 
-pub fn sendFlushDataCache(gsp: GspGpu, buffer: []u8) !void {
+pub fn sendFlushDataCache(gsp: GraphicsServerGpu, buffer: []u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.FlushDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})).cases()) {
         .success => {},
@@ -615,7 +642,7 @@ pub fn sendFlushDataCache(gsp: GspGpu, buffer: []u8) !void {
     };
 }
 
-pub fn sendInvalidateDataCache(gsp: GspGpu, buffer: []u8) !void {
+pub fn sendInvalidateDataCache(gsp: GraphicsServerGpu, buffer: []u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.InvalidateDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})).cases()) {
         .success => {},
@@ -623,7 +650,7 @@ pub fn sendInvalidateDataCache(gsp: GspGpu, buffer: []u8) !void {
     };
 }
 
-pub fn sendSetLcdForceBlack(gsp: GspGpu, fill: bool) !void {
+pub fn sendSetLcdForceBlack(gsp: GraphicsServerGpu, fill: bool) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SetLcdForceBlack, .{ .fill = fill }, .{})).cases()) {
         .success => {},
@@ -631,7 +658,7 @@ pub fn sendSetLcdForceBlack(gsp: GspGpu, fill: bool) !void {
     };
 }
 
-pub fn sendTriggerCmdReqQueue(gsp: GspGpu) !void {
+pub fn sendTriggerCmdReqQueue(gsp: GraphicsServerGpu) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.TriggerCmdReqQueue, .{}, .{})).cases()) {
         .success => {},
@@ -639,7 +666,7 @@ pub fn sendTriggerCmdReqQueue(gsp: GspGpu) !void {
     };
 }
 
-pub fn sendSetAxiConfigQosMode(gsp: GspGpu, qos: u32) !void {
+pub fn sendSetAxiConfigQosMode(gsp: GraphicsServerGpu, qos: u32) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SetAxiConfigQosMode, .{ .qos = qos }, .{})).cases()) {
         .success => {},
@@ -647,7 +674,7 @@ pub fn sendSetAxiConfigQosMode(gsp: GspGpu, qos: u32) !void {
     };
 }
 
-pub fn sendSetPerfLogMode(gsp: GspGpu, enabled: bool) !void {
+pub fn sendSetPerfLogMode(gsp: GraphicsServerGpu, enabled: bool) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SetPerfLogMode, .{ .enabled = enabled }, .{})).cases()) {
         .success => {},
@@ -655,7 +682,7 @@ pub fn sendSetPerfLogMode(gsp: GspGpu, enabled: bool) !void {
     };
 }
 
-pub fn sendGetPerfLog(gsp: GspGpu) !PerfLogInfo {
+pub fn sendGetPerfLog(gsp: GraphicsServerGpu) !PerfLogInfo {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.GetPerfLog, .{}, .{})).cases()) {
         .success => |s| s.value.info,
@@ -668,7 +695,7 @@ pub const RegisterInterruptRelayQueueResponse = struct {
     response: command.RegisterInterruptRelayQueue.Response,
 };
 
-pub fn sendRegisterInterruptRelayQueue(gsp: GspGpu, unknown_flags: u8, event: Event) !RegisterInterruptRelayQueueResponse {
+pub fn sendRegisterInterruptRelayQueue(gsp: GraphicsServerGpu, unknown_flags: u8, event: Event) !RegisterInterruptRelayQueueResponse {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.RegisterInterruptRelayQueue, .{ .flags = unknown_flags, .ev = event }, .{})).cases()) {
         .success => |s| .{
@@ -679,7 +706,7 @@ pub fn sendRegisterInterruptRelayQueue(gsp: GspGpu, unknown_flags: u8, event: Ev
     };
 }
 
-pub fn sendUnregisterInterruptRelayQueue(gsp: GspGpu) !void {
+pub fn sendUnregisterInterruptRelayQueue(gsp: GraphicsServerGpu) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.UnregisterInterruptRelayQueue, .{}, .{})).cases()) {
         .success => {},
@@ -687,7 +714,7 @@ pub fn sendUnregisterInterruptRelayQueue(gsp: GspGpu) !void {
     };
 }
 
-pub fn sendTryAcquireRight(gsp: GspGpu, init_hw: u8) !bool {
+pub fn sendTryAcquireRight(gsp: GraphicsServerGpu, init_hw: u8) !bool {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.TryAcquireRight, .{ .init_hw = init_hw, .process = .current }, .{})).cases()) {
         .success => true,
@@ -695,7 +722,7 @@ pub fn sendTryAcquireRight(gsp: GspGpu, init_hw: u8) !bool {
     };
 }
 
-pub fn sendAcquireRight(gsp: GspGpu, init_hw: u8) !void {
+pub fn sendAcquireRight(gsp: GraphicsServerGpu, init_hw: u8) !void {
     const data = tls.get();
 
     return switch ((try data.ipc.sendRequest(gsp.session, command.AcquireRight, .{ .init_hw = init_hw, .process = .current }, .{})).cases()) {
@@ -704,7 +731,7 @@ pub fn sendAcquireRight(gsp: GspGpu, init_hw: u8) !void {
     };
 }
 
-pub fn sendReleaseRight(gsp: GspGpu) !void {
+pub fn sendReleaseRight(gsp: GraphicsServerGpu) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.ReleaseRight, .{}, .{})).cases()) {
         .success => {},
@@ -712,7 +739,7 @@ pub fn sendReleaseRight(gsp: GspGpu) !void {
     };
 }
 
-pub fn sendImportDisplayCaptureInfo(gsp: GspGpu) !ScreenCapture {
+pub fn sendImportDisplayCaptureInfo(gsp: GraphicsServerGpu) !ScreenCapture {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.ImportDisplayCaptureInfo, .{}, .{})).cases()) {
         .success => |s| s.value.capture,
@@ -720,7 +747,7 @@ pub fn sendImportDisplayCaptureInfo(gsp: GspGpu) !ScreenCapture {
     };
 }
 
-pub fn sendSaveVRAMSysArea(gsp: GspGpu) !void {
+pub fn sendSaveVRAMSysArea(gsp: GraphicsServerGpu) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SaveVRamSysArea, .{}, .{})).cases()) {
         .success => {},
@@ -728,7 +755,7 @@ pub fn sendSaveVRAMSysArea(gsp: GspGpu) !void {
     };
 }
 
-pub fn sendRestoreVRAMSysArea(gsp: GspGpu) !void {
+pub fn sendRestoreVRAMSysArea(gsp: GraphicsServerGpu) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.RestoreVRamSysArea, .{}, .{})).cases()) {
         .success => {},
@@ -736,7 +763,7 @@ pub fn sendRestoreVRAMSysArea(gsp: GspGpu) !void {
     };
 }
 
-pub fn sendResetGpuCore(gsp: GspGpu) !void {
+pub fn sendResetGpuCore(gsp: GraphicsServerGpu) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.ResetGpuCore, .{}, .{})).cases()) {
         .success => {},
@@ -744,7 +771,7 @@ pub fn sendResetGpuCore(gsp: GspGpu) !void {
     };
 }
 
-pub fn sendSetLedForceOff(gsp: GspGpu, disable: bool) !void {
+pub fn sendSetLedForceOff(gsp: GraphicsServerGpu, disable: bool) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SetLedForceOff, .{ .disable = disable }, .{})).cases()) {
         .success => {},
@@ -752,7 +779,7 @@ pub fn sendSetLedForceOff(gsp: GspGpu, disable: bool) !void {
     };
 }
 
-pub fn sendSetInternalPriorities(gsp: GspGpu, session_thread: u6, command_queue: u6) !void {
+pub fn sendSetInternalPriorities(gsp: GraphicsServerGpu, session_thread: u6, command_queue: u6) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.SetInternalPriorities, .{ .session_thread = session_thread, .command_queue = command_queue }, .{})).cases()) {
         .success => {},
@@ -760,7 +787,7 @@ pub fn sendSetInternalPriorities(gsp: GspGpu, session_thread: u6, command_queue:
     };
 }
 
-pub fn sendStoreDataCache(gsp: GspGpu, buffer: []u8) !void {
+pub fn sendStoreDataCache(gsp: GraphicsServerGpu, buffer: []u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(gsp.session, command.StoreDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})).cases()) {
         .success => {},
@@ -861,7 +888,7 @@ pub const command = struct {
     };
 };
 
-const GspGpu = @This();
+const GraphicsServerGpu = @This();
 
 const builtin = @import("builtin");
 const std = @import("std");
@@ -874,10 +901,9 @@ const tls = horizon.tls;
 const ipc = horizon.ipc;
 
 const Screen = pica.Screen;
-const ColorFormat = pica.ColorFormat;
-const DmaSize = pica.DmaSize;
-const FramebufferFormat = pica.FramebufferFormat;
-const FramebufferMode = FramebufferFormat.Mode;
+const ColorFormat = pica.DisplayController.Framebuffer.Pixel;
+const DmaSize = pica.DisplayController.Framebuffer.Dma;
+const FramebufferFormat = pica.DisplayController.Framebuffer.Format;
 
 const ResultCode = horizon.result.Code;
 const Object = horizon.Object;

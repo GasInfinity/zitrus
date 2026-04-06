@@ -47,7 +47,7 @@ pub fn waitEventTimeout(sft: Software, timeout: horizon.Timeout) !?horizon.Init.
 }
 
 const Software = @This();
-const Soft = horizon.services.GspGpu.Graphics.Software;
+const Soft = horizon.services.GraphicsServerGpu.Graphics.Software;
 
 const std = @import("std");
 const zitrus = @import("zitrus");

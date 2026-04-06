@@ -84,12 +84,12 @@ pub fn Result(T: type) type {
         code: result.Code,
         value: T,
 
-        pub inline fn of(code: result.Code, value: T) SelfResult {
+        pub fn of(code: result.Code, value: T) SelfResult {
             return .{ .code = code, .value = value };
         }
 
         /// Returns the result as a tagged union to be used in a switch.
-        pub inline fn cases(res: SelfResult) Cases {
+        pub fn cases(res: SelfResult) Cases {
             return if (res.code.isSuccess()) .{ .success = res } else .{ .failure = res.code };
         }
 
@@ -457,11 +457,38 @@ pub const SystemInfo = union(Type) {
         total_used_memory,
         total_used_kernel_memory,
         loaded_kernel_processes,
+
+        emulator_information = 0x20000,
+    };
+
+    pub const EmulatorInformation = enum(u32) {
+        pub const Id = enum(i64) {
+            none,
+            citra = 1,
+            azahar = 2,
+        };
+
+        id,
     };
 
     used_memory: MemoryRegion,
     used_kernel_memory: void,
     loaded_kernel_processes: void,
+
+    emulator_information: EmulatorInformation,
+
+    pub fn get(info: SystemInfo) i64 {
+        const info_type, const param: u32 = switch (info) {
+            .used_kernel_memory, .loaded_kernel_processes => |_, tag| .{ tag, 0 },
+            .used_memory => |v, tag| .{ tag, @bitCast(v) },
+            .emulator_information => |v, tag| .{ tag, @intFromEnum(v) }
+        };
+
+        return switch (getSystemInfo(info_type, param).cases()) {
+            .success => |r| r.value,
+            .failure => |code| unexpectedResult(code) catch 0,
+        };
+    }
 };
 
 pub const BreakReason = enum(u32) {
@@ -680,8 +707,8 @@ pub const AddressArbiter = packed struct(u32) {
 
     pub fn arbitrate(arbiter: AddressArbiter, address: *i32, arbitration: Arbitration) ArbitrateError!void {
         const value: i32, const timeout: Timeout = switch (arbitration) {
-            inline .signal, .wait_if_less_than, .decrement_and_wait_if_less_than => |value| .{ value, .none },
-            inline .wait_if_less_than_timeout, .decrement_and_wait_if_less_than_timeout => |timeout_value| .{ timeout_value.value, timeout_value.timeout },
+            .signal, .wait_if_less_than, .decrement_and_wait_if_less_than => |value| .{ value, .none },
+            .wait_if_less_than_timeout, .decrement_and_wait_if_less_than_timeout => |timeout_value| .{ timeout_value.value, timeout_value.timeout },
         };
 
         // NOTE: The if-else is a workaround for azahar as it doesn't have the same behavior as the Horizon kernel!
@@ -1846,15 +1873,15 @@ pub fn getSystemTick() u64 {
 
 // svc getHandleInfo() not needed currently / not really useful 0x29
 
-pub fn getSystemInfo(info: SystemInfo.Type, param: u32) Result(i64) {
-    var lo: u32 = undefined;
-    var hi: u32 = undefined;
+pub fn getSystemInfo(info_type: SystemInfo.Type, param: u32) Result(i64) {
+    var lo: u32 = 0;
+    var hi: u32 = 0;
 
     const code = asm volatile ("svc 0x2A"
         : [code] "={r0}" (-> result.Code),
           [lo] "={r1}" (lo),
           [hi] "={r2}" (hi),
-        : [type] "{r1}" (info),
+        : [type] "{r1}" (info_type),
           [param] "{r2}" (param),
         : .{ .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 

@@ -5,6 +5,40 @@ pub const enabled = switch (builtin.mode) {
     .ReleaseSmall, .ReleaseFast => false,
 };
 
+pub const image = struct {
+    pub const must_be_correct =
+        \\[Image] incorrect image: {d}x{d} ({t})
+        \\| image dimensions must be multiples of 8, between 8 and 1024
+    ;
+
+    pub const sampled_must_be_correct =
+        \\[Image] incorrect sampled image: {d}x{d} ({t})
+        \\| sampled images must be optimally tiled and have powers of two dimensions
+    ;
+
+    pub const attachment_must_be_correct =
+        \\[Image] incorrect attachment image: {d}x{d} ({t})
+        \\| attachment images must be optimally tiled
+    ;
+};
+
+pub const image_view = struct {
+    pub const src_not_mutable_format =
+        \\[ImageView] non-matching format
+        \\| set the mutable_format flag in the source image to allow this
+    ;
+
+    pub const invalid_2d =
+        \\[ImageView] invalid 2d view
+        \\| 2d views must be backed strictly by 1 image layer
+    ;
+
+    pub const invalid_cube =
+        \\[ImageView] invalid cube view
+        \\| cube views must be backed strictly by 6 image layers
+    ;
+};
+
 pub const graphics_state = struct {
     /// what must be set
     pub const must_be_set =
@@ -115,10 +149,10 @@ pub const log = blk: {
     const base = std.log.scoped(.mango);
 
     break :blk if (builtin.is_test) struct {
-        const debug = base.debug;
-        const info = base.info;
-        const warn = base.warn;
-        const err = base.warn;
+        pub const debug = base.debug;
+        pub const info = base.info;
+        pub const warn = base.warn;
+        pub const err = base.warn;
     } else base;
 };
 

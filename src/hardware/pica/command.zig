@@ -23,26 +23,28 @@ pub const Id = enum(u16) {
 };
 
 pub const Queue = struct {
+    pub const empty: Queue = .{ .buffer = .empty, .end = 0 };
+
     buffer: []align(8) u32,
-    current_index: usize,
+    end: usize,
 
     pub fn initBuffer(buffer: []align(8) u32) Queue {
         return .{
             .buffer = buffer,
-            .current_index = 0,
+            .end = 0,
         };
     }
 
     pub fn slice(queue: Queue) []u32 {
-        return queue.buffer[0..queue.current_index];
+        return queue.buffer[0..queue.end];
     }
 
     pub fn unusedCapacitySlice(queue: Queue) []u32 {
-        return queue.buffer[queue.current_index..];
+        return queue.buffer[queue.end..];
     }
 
     pub fn reset(queue: *Queue) void {
-        queue.current_index = 0;
+        queue.end = 0;
     }
 
     pub inline fn add(queue: *Queue, comptime base: *volatile pica.Graphics, register: anytype, value: std.meta.Child(@TypeOf(register))) void {
@@ -164,17 +166,17 @@ pub const Queue = struct {
 
             const remaining_slice = values[current..][0..len];
 
-            queue.buffer[queue.current_index] = remaining_slice[0];
-            queue.buffer[queue.current_index + 1] = @bitCast(Header{
+            queue.buffer[queue.end] = remaining_slice[0];
+            queue.buffer[queue.end + 1] = @bitCast(Header{
                 .id = id,
                 .mask = mask,
                 .extra = @intCast(len - 1),
                 .incremental_writing = incremental,
             });
-            queue.current_index += 2;
+            queue.end += 2;
 
-            @memcpy(queue.buffer[queue.current_index..][0..(len - 1)], remaining_slice[1..len]);
-            queue.current_index += std.mem.alignForward(usize, len - 1, 2); // commands must be aligned to 8 bytes
+            @memcpy(queue.buffer[queue.end..][0..(len - 1)], remaining_slice[1..len]);
+            queue.end += std.mem.alignForward(usize, len - 1, 2); // commands must be aligned to 8 bytes
             if (incremental) current_id = @enumFromInt(@intFromEnum(current_id) + len);
         }
     }
@@ -184,7 +186,7 @@ pub const Queue = struct {
 
         queue.add(p3d, &p3d.irq.req[0..4].*, @bitCast(@as(u32, 0x12345678)));
 
-        if (!std.mem.isAligned(queue.current_index, 4)) {
+        if (!std.mem.isAligned(queue.end, 4)) {
             queue.add(p3d, &p3d.irq.req[0..4].*, @bitCast(@as(u32, 0x12345678)));
         }
     }

@@ -246,21 +246,24 @@ const AppState = struct {
 };
 
 pub fn main(init: horizon.Init.Application.Software) !void {
+    const io = init.app.base.io;
     const input = init.app.input;
     const soft = init.soft;
 
-    // We're double buffered!
-    for (0..2) |_| {
-        const bottom_fb = std.mem.bytesAsSlice(Bgr888, soft.current(.bottom, .left));
-        @memset(bottom_fb, ground_color);
+    var renderer_buf: [64]u8 = undefined;
+    var text_renderer = try zdebug.PsfRenderer.init(
+        &renderer_buf,
+        .spleen_5x8,
+        &.{},
+        240 * 3,
+        0,
+        0,
+        320,
+        240,
+        3,
+    );
 
-        const bottom = ScreenCtx.init(bottom_fb, Screen.bottom.width());
-        bottom.drawSprite(.transparent_bitmap, 2 * (Screen.bottom.width() / 3), (Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ .transparent = transparent_color }, .{});
-
-        soft.flush();
-        soft.swap(.none);
-        try soft.waitVBlank();
-    }
+    const w = &text_renderer.writer;
 
     var app_state: AppState = .{};
 
@@ -296,8 +299,26 @@ pub fn main(init: horizon.Init.Application.Software) !void {
         last_pressed = touch.pressed;
         const top = ScreenCtx.initBuffer(soft.current(.top, .left), Screen.top.width());
 
+        const u_start = std.Io.Clock.now(.awake, io);
         app_state.update(delta, pressed, touch_pressed, random);
+        const u_elapsed = u_start.durationTo(.now(io, .awake));
+
+        const d_start = std.Io.Clock.now(.awake, io);
         app_state.draw(top);
+        const d_elapsed = d_start.durationTo(.now(io, .awake));
+
+        const bottom_fb = std.mem.bytesAsSlice(Bgr888, soft.current(.bottom, .left));
+        @memset(bottom_fb, ground_color);
+
+        const bottom = ScreenCtx.init(bottom_fb, Screen.bottom.width());
+        bottom.drawSprite(.transparent_bitmap, 2 * (Screen.bottom.width() / 3), (Screen.bottom.height() / 2) - (flappy_bird_image_height / 2), titles_image_width, flappy_bird_image, .{ .transparent = transparent_color }, .{});
+        text_renderer.fb = @ptrCast(bottom_fb);
+        text_renderer.cx = 0;
+        text_renderer.cy = 0;
+        try w.writeByte('\n');
+        try w.print("Update {f}\n", .{u_elapsed});
+        try w.print("Draw {f}\n", .{d_elapsed});
+        try w.flush();
 
         soft.flush();
         soft.swap(.none);
@@ -325,3 +346,5 @@ const Hid = horizon.services.Hid;
 
 const zitrus = @import("zitrus");
 const std = @import("std");
+
+const zdebug = zitrus.debug;

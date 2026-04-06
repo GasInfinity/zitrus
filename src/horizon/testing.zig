@@ -12,9 +12,9 @@ pub var apt: horizon.services.Applet = if (!builtin.is_test)
 else
     undefined;
 
-/// Provides a session to the GspGpu service within tests.
+/// Provides a session to the GraphicsServerGpu service within tests.
 /// Initialized at startup. Read-only after that
-pub var gsp: horizon.services.GspGpu = if (!builtin.is_test)
+pub var gsp: horizon.services.GraphicsServerGpu = if (!builtin.is_test)
     @compileError("not testing")
 else
     undefined;

@@ -20,11 +20,11 @@ pub const Brightness = enum(u8) {
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !GspLcd {
+pub fn open(srv: ServiceManager) !GraphicsServerLcd {
     return .{ .session = try srv.getService(service, .wait) };
 }
 
-pub fn close(lcd: GspLcd) void {
+pub fn close(lcd: GraphicsServerLcd) void {
     lcd.session.close();
 }
 
@@ -75,7 +75,7 @@ pub const command = struct {
     };
 };
 
-const GspLcd = @This();
+const GraphicsServerLcd = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");

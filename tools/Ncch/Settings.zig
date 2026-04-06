@@ -120,11 +120,32 @@ pub const Storage = struct {
     attributes: Attributes = .{},
 };
 
+pub const Code = struct {
+    pub const Set = struct {
+        address: u32,
+        size: u32,
+
+        pub fn toCodeSet(set: Set) ncch.ExtendedHeader.SystemControlInfo.CodeSetInfo {
+            return .{
+                .address = set.address,
+                .pages = @divExact(std.mem.alignForward(u32, set.size, zitrus.horizon.heap.page_size), zitrus.horizon.heap.page_size),
+                .size = set.size,
+            };
+        }
+    };
+
+    text: Set,
+    rodata: Set,
+    data: Set,
+    bss: u32,
+};
+
 title: []const u8,
 product_code: []const u8,
 remaster_version: u16,
 title_id: TitleId,
 flags: Flags,
+code: ?Code = null,
 stack_size: u32,
 save_data_size: u64 = 0,
 access_control: AccessControl,

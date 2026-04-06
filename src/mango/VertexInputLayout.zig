@@ -163,20 +163,21 @@ pub fn compile(bindings: []const mango.VertexInputBindingDescription, attributes
             current_alignment = @max(current_alignment, format_type_size);
         }
 
-        const end_attribute_offset = std.mem.alignForward(usize, current_offset, current_alignment);
-        const end_padding = binding.high.bytes_per_vertex - end_attribute_offset;
-
         try validation.assert(
             std.mem.isAligned(binding.high.bytes_per_vertex, current_alignment),
             validation.vertex_input_layout.unaligned_stride,
             .{ binding_i, current_alignment, binding.high.bytes_per_vertex },
         );
 
+        const end_attribute_offset = std.mem.alignForward(usize, current_offset, current_alignment);
+
         try validation.assert(
             binding.high.bytes_per_vertex >= current_offset,
             validation.vertex_input_layout.small_stride,
             .{ binding_i, current_offset, binding.high.bytes_per_vertex },
         );
+
+        const end_padding = binding.high.bytes_per_vertex - end_attribute_offset;
 
         try validation.assert(
             std.mem.isAligned(end_padding, @sizeOf(f32)),

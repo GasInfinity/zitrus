@@ -1140,6 +1140,12 @@ pub const CopyBufferInfo = extern struct {
     signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
+pub const BufferCopy = extern struct {
+    src_offset: DeviceSize,
+    dst_offset: DeviceSize,
+    size: DeviceSize,
+};
+
 pub const FillPatternType = enum(u8) { u16, u24, u32 };
 
 pub const FillBufferInfo = extern struct {
@@ -1573,6 +1579,7 @@ pub const MapMemoryError = error{Unexpected};
 pub const FlushMemoryError = error{Unexpected};
 pub const InvalidateMemoryError = error{Unexpected};
 pub const BindMemoryError = error{Unexpected};
+// TODO: Add error.DeviceLost on GPU hang.
 pub const AcquireNextImageError = error{ Timeout, Unexpected };
 pub const SignalSemaphoreError = error{Unexpected};
 pub const WaitSemaphoreError = error{ Timeout, Unexpected };

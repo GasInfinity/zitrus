@@ -19,6 +19,8 @@ pub const arm9 = struct {
 pub const vram_size: usize = 0x00600000;
 pub const vram_bank_size: usize = @divExact(vram_size, 2);
 pub const vram_begin: usize = 0x18000000;
+pub const vram_a_begin: usize = 0x18000000;
+pub const vram_b_begin: usize = 0x18000000 + vram_bank_size;
 
 pub const io_begin: usize = 0x10000000;
 pub const csnd_begin: usize = io_begin + 0x103000;

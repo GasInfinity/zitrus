@@ -298,9 +298,74 @@ pub const Scope = enum {
 
 pub const Error = error{OutOfMemory} || validation.Error;
 
-// NOTE: `CommandPool` must be as self-contained as possible, it only depends on the pool to grow its native buffer, no more!
-pool: *backend.CommandPool,
+pub const Operation = struct {
+    /// `extra` stores the buffer index
+    pub const Graphics = struct {
+        /// 16-byte Aligned
+        start: u32,
 
+        /// 16-byte Aligned
+        end: u32,
+    };
+
+    /// `extra` stores `Size`
+    pub const Fill = struct {
+        pub const Size = pica.DisplayController.Framebuffer.Pixel.Size;
+
+        address: [*]align(16) u8,
+        value: u32,
+    };
+
+    pub const Copy = struct {
+        pub const Line = pica.PictureFormatter.Copy.Line;
+
+        src: [*]align(16) const u8,
+        dst: [*]align(16) u8,
+        src_line: Line,
+        dst_line: Line,
+        size: u32,
+    };
+
+    /// `extra` stores `Kind`
+    pub const Blit = struct {
+        pub const Dimensions = pica.PictureFormatter.Dimensions;
+        pub const Kind = enum(u2) { linear_tiled, tiled_linear, tiled_tiled };
+
+        src: [*]align(16) const u8,
+        dst: [*]align(16) u8,
+        src_dimensions: Dimensions,
+        dst_dimensions: Dimensions,
+    };
+
+    pub const Kind = enum(u2) {
+        graphics,
+        fill,
+        copy,
+        blit,
+    };
+
+    pub const Flags = packed struct(u16) {
+        kind: Kind,
+        /// Wait for the previous operation to complete before starting this one,
+        /// NOOP if first one.
+        sync: bool,
+        _: u13 = 0,
+    };
+
+    start: u32,
+    flags: Flags,
+    extra: u16,
+};
+
+pool: *CommandPool,
+
+// TODO: CommandBuffer Queries
+// We'd have to split the native queue and basically do (read)->split->read->split->read, etc...
+// we need a cpu->gpu->cpu roundtrip per query...
+// Yes! but why are you using them then if not for debugging lmao?
+
+// TODO: CommandBuffer Streams, so we don't have to memcpy.
+// Basically a segmented array and exploit that we can jump arbitrarily on the GPU.
 queue: command.Queue,
 gfx_state: GraphicsState = .empty,
 rnd_state: RenderingState = .empty,
@@ -308,12 +373,12 @@ current_error: ?Error = null,
 state: State = .initial,
 scope: Scope = .none,
 
-pub fn initBuffer(pool: *backend.CommandPool, buffer: []align(8) u32) CommandBuffer {
+pub fn initBuffer(pool: *CommandPool, buffer: []align(8) u32) CommandBuffer {
     return .{
         .pool = pool,
         .queue = .{
             .buffer = buffer,
-            .current_index = 0,
+            .end = 0,
         },
     };
 }
@@ -327,7 +392,6 @@ pub fn begin(cmd: *CommandBuffer) !void {
     std.debug.assert(cmd.state == .initial or cmd.state == .executable);
     cmd.reset(.none);
     if (cmd.queue.buffer.len == 0) cmd.queue.buffer = try cmd.pool.allocateNative(null);
-
     cmd.queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
     cmd.state = .recording;
 }
@@ -350,7 +414,7 @@ pub fn reset(cmd: *CommandBuffer, flags: mango.CommandBufferResetFlags) void {
         cmd.queue.buffer = &.{};
     }
 
-    cmd.queue.current_index = 0;
+    cmd.queue.end = 0;
     cmd.gfx_state = .empty;
     cmd.rnd_state = .empty;
     cmd.current_error = null;
@@ -794,7 +858,7 @@ fn growIfNeeded(cmd: *CommandBuffer, draw_count: usize) !void {
 
     if (unused_slice.len >= max_emission_cost) return;
 
-    cmd.queue.buffer = try cmd.pool.remapNative(cmd.queue.buffer, cmd.queue.current_index, slice.len + max_emission_cost);
+    cmd.queue.buffer = try cmd.pool.remapNative(cmd.queue.buffer, cmd.queue.end, slice.len + max_emission_cost);
 }
 
 pub fn notifyPending(cmd: *CommandBuffer) void {
@@ -820,6 +884,7 @@ const CommandBuffer = @This();
 const backend = @import("backend.zig");
 const validation = backend.validation;
 
+const CommandPool = backend.CommandPool;
 const GraphicsState = backend.GraphicsState;
 const RenderingState = backend.RenderingState;
 

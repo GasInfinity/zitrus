@@ -28,7 +28,7 @@ pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, com
         pub const alignment = address_alignment;
         pub const shift = address_shift;
 
-        pub inline fn fromAddress(address: usize) AlignedPhysAddr {
+        pub inline fn fromAddress(address: u32) AlignedPhysAddr {
             return .fromPhysical(@as(PhysicalAddress, @enumFromInt(address)));
         }
 

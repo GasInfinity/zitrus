@@ -8,9 +8,9 @@
 //! Use this for prototypes or simple apps as `mango` is preferred!
 
 pub const Config = struct {
-    top_mode: pica.FramebufferFormat.Mode = .@"2d",
+    top_mode: Framebuffer.Config.Mode = .@"2d",
     double_buffer: std.EnumArray(pica.Screen, bool) = .initFill(true),
-    color_format: std.EnumArray(pica.Screen, pica.ColorFormat) = .initFill(.bgr888),
+    pixel_format: std.EnumArray(pica.Screen, pica.DisplayController.Framebuffer.Pixel) = .initFill(.bgr888),
     /// The initial contents to copy into the framebuffer before turning
     /// LCD fill off. If null it'll be filled with black.
     ///
@@ -22,7 +22,7 @@ gfx: Graphics,
 top: Framebuffer,
 bottom: Framebuffer,
 
-pub fn init(config: Config, gsp: GspGpu, physical_linear_allocator: std.mem.Allocator) !Software {
+pub fn init(config: Config, gsp: GraphicsServerGpu, physical_linear_allocator: std.mem.Allocator) !Software {
     var gfx = try Graphics.init(gsp);
     errdefer gfx.deinit(gsp);
 
@@ -30,7 +30,7 @@ pub fn init(config: Config, gsp: GspGpu, physical_linear_allocator: std.mem.Allo
         .screen = .top,
         .mode = config.top_mode,
         .double_buffer = config.double_buffer.get(.top),
-        .color_format = config.color_format.get(.top),
+        .pixel_format = config.pixel_format.get(.top),
     }, physical_linear_allocator);
     errdefer top.deinit(physical_linear_allocator);
 
@@ -38,7 +38,7 @@ pub fn init(config: Config, gsp: GspGpu, physical_linear_allocator: std.mem.Allo
         .screen = .bottom,
         .mode = .@"2d",
         .double_buffer = config.double_buffer.get(.bottom),
-        .color_format = config.color_format.get(.bottom),
+        .pixel_format = config.pixel_format.get(.bottom),
     }, physical_linear_allocator);
     errdefer bottom.deinit(physical_linear_allocator);
 
@@ -64,7 +64,7 @@ pub fn init(config: Config, gsp: GspGpu, physical_linear_allocator: std.mem.Allo
     return soft;
 }
 
-pub fn deinit(soft: *Software, gsp: GspGpu, physical_linear_allocator: std.mem.Allocator, must_close: bool) void {
+pub fn deinit(soft: *Software, gsp: GraphicsServerGpu, physical_linear_allocator: std.mem.Allocator, must_close: bool) void {
     if (!must_close) {
         soft.waitVBlank() catch {};
         gsp.sendSetLcdForceBlack(true) catch {};
@@ -76,11 +76,11 @@ pub fn deinit(soft: *Software, gsp: GspGpu, physical_linear_allocator: std.mem.A
     soft.* = undefined;
 }
 
-pub fn reacquire(soft: *Software, gsp: GspGpu) !void {
+pub fn reacquire(soft: *Software, gsp: GraphicsServerGpu) !void {
     return soft.gfx.reacquire(gsp);
 }
 
-pub fn release(soft: *Software, gsp: GspGpu) !GspGpu.ScreenCapture {
+pub fn release(soft: *Software, gsp: GraphicsServerGpu) !GraphicsServerGpu.ScreenCapture {
     return soft.gfx.release(gsp);
 }
 
@@ -121,8 +121,8 @@ pub fn waitVBlank(soft: *Software) !void {
 }
 
 const Software = @This();
-const GspGpu = horizon.services.GspGpu;
-const Graphics = GspGpu.Graphics;
+const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
+const Graphics = GraphicsServerGpu.Graphics;
 const Framebuffer = Graphics.Framebuffer;
 
 const std = @import("std");

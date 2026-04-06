@@ -9,10 +9,10 @@ pub const Framebuffer = @import("Graphics/Framebuffer.zig");
 thread_index: u32,
 interrupt_event: Event,
 shared_memory_block: MemoryBlock,
-shared_memory: *align(horizon.heap.page_size) GspGpu.Shared,
+shared_memory: *align(horizon.heap.page_size) GraphicsServerGpu.Shared,
 gsp_owned: bool,
 
-pub fn init(gsp: GspGpu) !Graphics {
+pub fn init(gsp: GraphicsServerGpu) !Graphics {
     try gsp.sendAcquireRight(0x0);
 
     const interrupt_event = try Event.create(.oneshot);
@@ -30,7 +30,7 @@ pub fn init(gsp: GspGpu) !Graphics {
     const shared_memory_block = queue_result.response.gsp_memory;
     errdefer shared_memory_block.close();
 
-    const shared_memory = std.mem.bytesAsValue(GspGpu.Shared, horizon.heap.allocShared(@sizeOf(GspGpu.Shared)));
+    const shared_memory = std.mem.bytesAsValue(GraphicsServerGpu.Shared, horizon.heap.allocShared(@sizeOf(GraphicsServerGpu.Shared)));
 
     try queue_result.response.gsp_memory.map(@ptrCast(shared_memory), .rw, .dont_care);
 
@@ -43,7 +43,7 @@ pub fn init(gsp: GspGpu) !Graphics {
     };
 }
 
-pub fn deinit(gfx: *Graphics, gsp: GspGpu) void {
+pub fn deinit(gfx: *Graphics, gsp: GraphicsServerGpu) void {
     gfx.shared_memory_block.unmap(@ptrCast(@alignCast(gfx.shared_memory)));
     gfx.shared_memory_block.close();
 
@@ -55,13 +55,13 @@ pub fn deinit(gfx: *Graphics, gsp: GspGpu) void {
     gfx.* = undefined;
 }
 
-pub fn reacquire(gfx: *Graphics, gsp: GspGpu) !void {
+pub fn reacquire(gfx: *Graphics, gsp: GraphicsServerGpu) !void {
     try gsp.sendAcquireRight(0x0);
     try gsp.sendRestoreVRAMSysArea();
     gfx.gsp_owned = false;
 }
 
-pub fn release(gfx: *Graphics, gsp: GspGpu) !GspGpu.ScreenCapture {
+pub fn release(gfx: *Graphics, gsp: GraphicsServerGpu) !GraphicsServerGpu.ScreenCapture {
     try gsp.sendSaveVRAMSysArea();
     const capture = try gsp.sendImportDisplayCaptureInfo();
     try gsp.sendReleaseRight();
@@ -69,15 +69,15 @@ pub fn release(gfx: *Graphics, gsp: GspGpu) !GspGpu.ScreenCapture {
     return capture;
 }
 
-pub fn waitInterrupts(gfx: *Graphics) !GspGpu.Interrupt.Set {
+pub fn waitInterrupts(gfx: *Graphics) !GraphicsServerGpu.Interrupt.Set {
     return (try gfx.waitInterruptsTimeout(.none)).?;
 }
 
-pub fn pollInterrupts(gfx: *Graphics) !?GspGpu.Interrupt.Set {
+pub fn pollInterrupts(gfx: *Graphics) !?GraphicsServerGpu.Interrupt.Set {
     return try gfx.waitInterruptsTimeout(.fromNanoseconds(0));
 }
 
-pub fn waitInterruptsTimeout(gfx: *Graphics, timeout: horizon.Timeout) !?GspGpu.Interrupt.Set {
+pub fn waitInterruptsTimeout(gfx: *Graphics, timeout: horizon.Timeout) !?GraphicsServerGpu.Interrupt.Set {
     const int_ev = gfx.interrupt_event;
 
     int_ev.wait(timeout) catch |err| switch (err) {
@@ -92,145 +92,89 @@ pub fn discardInterrupts(gfx: *Graphics) void {
     gfx.shared_memory.interrupt_queue[gfx.thread_index].clear();
 }
 
-pub fn initializeHardware(gsp: GspGpu) !void {
-    const gpu_registers: *volatile pica.Registers = memory.gpu_registers;
+pub fn initializeHardware(gsp: GraphicsServerGpu) !void {
+    const DisplayController = pica.DisplayController;
+    const gpu: *volatile pica.Registers = memory.gpu_registers;
 
-    try gsp.writeRegistersBuffer(&gpu_registers.p3d.irq.ack[0], (&[_]u32{0x00}));
-    try gsp.writeRegistersBuffer(&gpu_registers.p3d.irq.cmp[0], (&[_]u32{0x12345678}));
-    try gsp.writeRegistersBuffer(&gpu_registers.p3d.irq.mask, (&[_]u32{ 0xFFFFFFF0, 0xFFFFFFFF }));
-    try gsp.writeRegistersBuffer(&gpu_registers.p3d.irq.autostop, @ptrCast(&zitrus.hardware.LsbRegister(bool).init(true)));
-    try gsp.writeRegistersBuffer(&gpu_registers.timing_control, (&[_]u32{ 0x22221200, 0xFF2 }));
+    try gsp.writeRegisters([4]u8, gpu.p3d.irq.ack[0..4], @splat(0));
+    try gsp.writeRegisters([4]u8, gpu.p3d.irq.cmp[0..4], .{0x78, 0x56, 0x34, 0x12});
+    try gsp.writeRegisters(pica.Graphics.Interrupt.Mask, &gpu.p3d.irq.mask, .{
+        .disabled_low = BitpackedArray(bool, 32).splat(true).copyWith(0, false).copyWith(1, false).copyWith(2, false).copyWith(3, false),
+        .disabled_high = .splat(true),
+    });
+    try gsp.writeRegisters(LsbRegister(bool), &gpu.p3d.irq.autostop, .init(true));
+    try gsp.writeRegisters([2]u32, &gpu.timing_control, .{ 0x22221200, 0xFF2 });
+    try gsp.writeRegisters(pica.PictureFormatter.Control, &gpu.ppf.control, .{
+        .start = false,
+        .finished = false,
+    });
+    try gsp.writeRegistersMasked(pica.MemoryFill.Control, &gpu.psc[0].control, .{
+        .busy = false,
+        .width = .@"16", 
+    }, &.{0xFF});
+    try gsp.writeRegistersMasked(pica.MemoryFill.Control, &gpu.psc[1].control, .{
+        .busy = false,
+        .width = .@"16", 
+    }, &.{0xFF});
 
-    // Initialize top screen
-    // Taken from: https://www.3dbrew.org/wiki/GPU/External_Registers#LCD_Source_Framebuffer_Setup / https://www.3dbrew.org/wiki/GPU/External_Registers#Framebuffers
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[0].horizontal, @ptrCast(&pica.Registers.Pdc.Timing{
-        .total = 0x1C2,
-        .start = 0xD1,
-        .border = 0x1C1,
-        .front_porch = 0x1C1,
-        .sync = 0x00,
-        .back_porch = 0xCF,
-        .border_end = 0xD1,
-        .interrupt = 0x1C501C1,
-    }));
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[0]._unknown0, &.{0x10000});
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[0].vertical, @ptrCast(&pica.Registers.Pdc.Timing{
-        .total = 0x19D,
-        .start = 0x2,
-        .border = 0x1C2,
-        .front_porch = 0x1C2,
-        .sync = 0x1C2,
-        .back_porch = 0x01,
-        .border_end = 0x02,
-        .interrupt = 0x1960192,
-    }));
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[0]._unknown1, &.{0x00});
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[0].disable_sync, &.{0x00});
-    try gsp.writeRegister(&gpu_registers.pdc[0].pixel_dimensions, .{ Screen.top.width(), Screen.top.height() });
-    try gsp.writeRegister(&gpu_registers.pdc[0].horizontal_border, .{ 209, 449 });
-    try gsp.writeRegister(&gpu_registers.pdc[0].vertical_border, .{ 2, 402 });
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[0].framebuffer_format, @ptrCast(&FramebufferFormat{
-        .color_format = .abgr8888,
-        .interlacing_mode = .none,
-        .alternative_pixel_output = false,
-        .dma_size = .@"128",
-        ._unknown1 = 1,
-        ._unknown2 = 1,
-        ._unknown3 = 8,
-    }));
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[0].control, @ptrCast(&pica.Registers.Pdc.Control{
-        .enable = true,
-        .disable_hblank_irq = true,
-        .disable_vblank_irq = false,
-        .disable_error_irq = true,
-        .enable_output = true,
-    }));
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[0]._unknown5, &.{0x00});
+    // See `DisplayController` for more info
+    //
+    // Values were initially taken from libctru but now are taken from GSP.
+    const presets: []const DisplayController.Preset = &.{ .@"240x400@60Hz", .@"240x320@60Hz" };
 
-    // Initialize bottom screen
-    // From here I couldn't find any info about the bottom screen registers so these values are just yoinked from libctru.
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[1].horizontal, @ptrCast(&pica.Registers.Pdc.Timing{
-        .total = 0x1C2,
-        .start = 0xD1,
-        .border = 0x1C1,
-        .front_porch = 0x1C1,
-        .sync = 0xCD,
-        .back_porch = 0xCF,
-        .border_end = 0xD1,
-        .interrupt = 0x1C501C1,
-    }));
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[1]._unknown0, &.{0x10000});
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[1].vertical, @ptrCast(&pica.Registers.Pdc.Timing{
-        .total = 0x19D,
-        .start = 0x52,
-        .border = 0x192,
-        .front_porch = 0x192,
-        .sync = 0x4F,
-        .back_porch = 0x50,
-        .border_end = 0x52,
-        .interrupt = 0x1980194,
-    }));
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[1]._unknown1, &.{0x00});
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[1].disable_sync, &.{0x11});
-    try gsp.writeRegister(&gpu_registers.pdc[1].pixel_dimensions, .{ Screen.bottom.width(), Screen.bottom.height() });
-    try gsp.writeRegister(&gpu_registers.pdc[1].horizontal_border, .{ 209, 449 });
-    try gsp.writeRegister(&gpu_registers.pdc[1].vertical_border, .{ 82, 402 });
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[1].framebuffer_format, @ptrCast(&FramebufferFormat{
-        .color_format = .abgr8888,
-        .interlacing_mode = .none,
-        .alternative_pixel_output = false,
-        .dma_size = .@"128",
-        ._unknown1 = 1,
-        ._unknown2 = 1,
-        ._unknown3 = 8,
-    }));
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[1].control, @ptrCast(&pica.Registers.Pdc.Control{
-        .enable = true,
-        .disable_hblank_irq = true,
-        .disable_vblank_irq = false,
-        .disable_error_irq = true,
-        .enable_output = true,
-    }));
-    try gsp.writeRegistersBuffer(&gpu_registers.pdc[1]._unknown5, &.{0x00});
+    for (std.enums.values(Screen), &gpu.pdc, presets) |screen, *pdc, preset| {
+        // This shouldn't matter
+        try gsp.writeRegisters(DisplayController.Color, &pdc.border_color, .{ .r = 0, .g = 0, .b = 0 });
 
-    // Initialize framebuffers
-    try gsp.writeRegister(&gpu_registers.pdc[0].framebuffer_a_first, 0x18300000);
-    try gsp.writeRegister(&gpu_registers.pdc[0].framebuffer_a_second, 0x18300000);
-    try gsp.writeRegister(&gpu_registers.pdc[0].framebuffer_b_first, 0x18300000);
-    try gsp.writeRegister(&gpu_registers.pdc[0].framebuffer_b_second, 0x18300000);
-    try gsp.writeRegister(&gpu_registers.pdc[0].swap, @bitCast(@as(u32, 1)));
-    try gsp.writeRegister(&gpu_registers.pdc[1].framebuffer_a_first, 0x18300000);
-    try gsp.writeRegister(&gpu_registers.pdc[1].framebuffer_a_second, 0x18300000);
-    try gsp.writeRegister(&gpu_registers.pdc[1].swap, @bitCast(@as(u32, 1)));
+        try gsp.writeRegisters(DisplayController.SynchronizationPolarity, &pdc.synchronization_polarity, .{
+            .horizontal_active_high = screen == .bottom,
+            .vertical_active_high = screen == .bottom,
+        });
 
-    // libctru does this also so we'll follow along
-    try gsp.writeRegister(&gpu_registers.clock, 0x70100);
-    try gsp.writeHwRegsWithMask(&gpu_registers.ppf.control, &.{0x00}, &.{0xFF00});
-    try gsp.writeHwRegsWithMask(&gpu_registers.psc[0].control, &.{0x00}, &.{0xFF});
-    try gsp.writeHwRegsWithMask(&gpu_registers.psc[1].control, &.{0x00}, &.{0xFF});
+        try gsp.writeRegisters(DisplayController.Timing, &pdc.horizontal_timing, preset.horizontal_timing);
+        try gsp.writeRegisters(DisplayController.Timing.Display, &pdc.horizontal_display_timing, preset.horizontal_display_timing);
+        try gsp.writeRegisters(DisplayController.Timing, &pdc.vertical_timing, preset.vertical_timing);
+        try gsp.writeRegisters(DisplayController.Timing.Display, &pdc.vertical_display_timing, preset.vertical_display_timing);
+        try gsp.writeRegisters(DisplayController.DisplaySize, &pdc.display_size, preset.display_size);
+
+        // NOTE: GBATEK has different value for vertical (402?)
+        try gsp.writeRegisters(DisplayController.LatchingPoint, &pdc.latching_point, .{ .horizontal = 0, .vertical = 0 });
+
+        try gsp.writeRegisters(DisplayController.Framebuffer.Format, &pdc.framebuffer.format, .{
+            .pixel_format = .abgr8888,
+            .interlacing = .none,
+            .half_rate = screen == .top,
+            .dma_size = .@"128",
+            .unknown0 = 8,
+        });
+
+        try gsp.writeRegisters([2]hardware.AlignedPhysicalAddress(.@"16", .@"1"), &pdc.framebuffer.left_address, @splat(.fromAddress(zitrus.memory.vram_b_begin)));
+        try gsp.writeRegisters([2]hardware.AlignedPhysicalAddress(.@"16", .@"1"), &pdc.framebuffer.right_address, @splat(.fromAddress(zitrus.memory.vram_b_begin)));
+        try gsp.writeRegisters(DisplayController.Framebuffer.Select, &pdc.framebuffer.select, std.mem.zeroes(DisplayController.Framebuffer.Select));
+        try gsp.writeRegisters(DisplayController.Framebuffer.Control, &pdc.framebuffer.control, .{
+            .enable = true,
+            .disable_horizontal_sync_irq = true,
+            .disable_vertical_sync_irq = false,
+            .disable_error_irq = true,
+            .maybe_output_enable = true,
+        });
+    }
 }
 
 const Graphics = @This();
-const GspGpu = horizon.services.GspGpu;
+const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const pica = zitrus.hardware.pica;
+const hardware = zitrus.hardware;
+const pica = hardware.pica;
+const BitpackedArray = hardware.BitpackedArray;
+const LsbRegister = hardware.LsbRegister;
 
 const horizon = zitrus.horizon;
 const memory = horizon.memory;
-const tls = horizon.tls;
-const ipc = horizon.ipc;
 
 const Screen = pica.Screen;
-const ColorFormat = pica.ColorFormat;
-const DmaSize = pica.DmaSize;
-const FramebufferFormat = pica.FramebufferFormat;
-const FramebufferMode = FramebufferFormat.Mode;
 
-const ResultCode = horizon.result.Code;
-const Object = horizon.Object;
 const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;
-const ClientSession = horizon.Session.Client;
-const ServiceManager = zitrus.horizon.ServiceManager;

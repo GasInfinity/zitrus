@@ -34,6 +34,7 @@ pub fn main(init: std.process.Init) !u8 {
     const args = try init.minimal.args.toSlice(arena);
 
     var diagnostic: plz.Diagnostic = undefined;
+    @setEvalBranchQuota(2000);
     const arguments = plz.parseSlice(Main, "zitrus", &diagnostic, args[1..]) catch {
         const stderr = try io.lockStderr(&.{}, null);
         defer io.unlockStderr();

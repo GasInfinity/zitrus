@@ -24,7 +24,9 @@ comptime {
     _ = horizon;
 
     _ = compress;
+    _ = memory;
     _ = fmt;
+    _ = time;
     _ = horizon;
     _ = hardware;
     _ = math;
@@ -38,6 +40,7 @@ pub const c = @import("c.zig");
 pub const fmt = @import("fmt.zig");
 pub const compress = @import("compress.zig");
 pub const memory = @import("memory.zig");
+pub const time = @import("time.zig");
 pub const horizon = @import("horizon.zig");
 pub const hardware = @import("hardware.zig");
 pub const math = @import("math.zig");

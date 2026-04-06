@@ -22,6 +22,7 @@ pub const Info = packed struct(u64) {
     mutable_format: bool,
     cube_compatible: bool,
     // NOTE: Is not scaled by bpp. The maximum value that this value could be is `1398080`
+    /// Unscaled size of layers, scale it by the format bpp to get the total layer size.
     layer_size: u22,
     levels_minus_one: u3 = 0,
     layers_minus_one: u3 = 0,
@@ -79,18 +80,30 @@ pub const Info = packed struct(u64) {
     }
 };
 
-pub fn init(create_info: mango.ImageCreateInfo) Image {
-    std.debug.assert(create_info.extent.width >= 8 and create_info.extent.width <= 1024 and std.mem.isAligned(create_info.extent.width, 8) and create_info.extent.height >= 8 and create_info.extent.height <= 1024 and std.mem.isAligned(create_info.extent.height, 8));
+pub fn init(create_info: mango.ImageCreateInfo) !Image {
+    try validation.assert(create_info.extent.width >= 8 and create_info.extent.width <= 1024 and std.mem.isAligned(create_info.extent.width, 8) and create_info.extent.height >= 8 and create_info.extent.height <= 1024 and std.mem.isAligned(create_info.extent.height, 8), validation.image.must_be_correct, .{
+        create_info.extent.width,
+        create_info.extent.height,
+        create_info.tiling,
+    });
 
     if (create_info.usage.sampled) {
-        std.debug.assert(std.math.isPowerOfTwo(create_info.extent.width) and std.math.isPowerOfTwo(create_info.extent.height) and create_info.tiling == .optimal);
+        try validation.assert(std.math.isPowerOfTwo(create_info.extent.width) and std.math.isPowerOfTwo(create_info.extent.height) and create_info.tiling == .optimal, validation.image.sampled_must_be_correct, .{
+            create_info.extent.width,
+            create_info.extent.height,
+            create_info.tiling,
+        });
     } else {
         // NOTE: We could allow this but it doesn't make sense.
         std.debug.assert(create_info.mip_levels == .@"1");
     }
 
     if (create_info.usage.color_attachment or create_info.usage.depth_stencil_attachment or create_info.usage.shadow_attachment) {
-        std.debug.assert(create_info.tiling == .optimal);
+        try validation.assert(create_info.tiling == .optimal, validation.image.attachment_must_be_correct, .{
+            create_info.extent.width,
+            create_info.extent.height,
+            create_info.tiling,
+        });
     }
 
     return .{
@@ -117,6 +130,8 @@ pub fn fromHandle(handle: Handle) Image {
 const Image = @This();
 const backend = @import("backend.zig");
 const DeviceMemory = backend.DeviceMemory;
+
+const validation = backend.validation;
 
 const std = @import("std");
 const zitrus = @import("zitrus");

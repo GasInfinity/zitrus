@@ -39,14 +39,14 @@ pub fn initSwapchain(pe: *PresentationEngine, create_info: mango.SwapchainCreate
         },
         .presentation = .{
             .new = switch (create_info.present_mode) {
-                .fifo => .{ .fifo = .initEmpty },
+                .fifo => .{ .fifo = .init_empty },
                 .mailbox => .{ .single = null },
             },
             .displayed = null,
         },
         .images = undefined,
         .image_count = create_info.image_count,
-        .available = .initEmpty,
+        .available = .init_empty,
         .available_wake = .init(create_info.image_count),
     };
 
@@ -76,7 +76,7 @@ pub fn initSwapchain(pe: *PresentationEngine, create_info: mango.SwapchainCreate
     return backend.Swapchain.toHandle(screen);
 }
 
-pub fn deinitSwapchain(pe: *PresentationEngine, gsp: GspGpu, gsp_owned: bool, swapchain: mango.Swapchain, allocator: std.mem.Allocator) void {
+pub fn deinitSwapchain(pe: *PresentationEngine, gsp: GraphicsServerGpu, gsp_owned: bool, swapchain: mango.Swapchain, allocator: std.mem.Allocator) void {
     _ = allocator;
 
     if (gsp_owned) gsp.sendSetLcdForceBlack(true) catch unreachable;
@@ -89,7 +89,7 @@ pub fn deinitSwapchain(pe: *PresentationEngine, gsp: GspGpu, gsp_owned: bool, sw
     pe.chain_created.getPtr(screen).store(false, .release);
 }
 
-pub fn reacquire(pe: *PresentationEngine, gsp: GspGpu) mango.ReacquireDeviceError!void {
+pub fn reacquire(pe: *PresentationEngine, gsp: GraphicsServerGpu) mango.ReacquireDeviceError!void {
     for (std.enums.values(pica.Screen)) |screen| {
         if (!pe.chain_created.get(screen).load(.acquire)) return;
         if (!pe.chains.get(screen).misc.contents_available) return;
@@ -120,7 +120,7 @@ pub fn acquireNextImage(pe: *PresentationEngine, arbiter: horizon.AddressArbiter
     return chain.acquireNextIndex(timeout, arbiter);
 }
 
-pub fn queueWork(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp_framebuffers: *[2]GspGpu.FramebufferInfo, item: Queue.PresentationItem) void {
+pub fn present(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp_framebuffers: *[2]GraphicsServerGpu.FramebufferInfo, item: Queue.PresentationItem) void {
     const screen = item.misc.screen;
 
     std.debug.assert(pe.chain_created.getPtr(screen).load(.monotonic));
@@ -145,7 +145,7 @@ pub fn queueWork(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp_f
     }
 }
 
-pub fn refresh(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp: GspGpu, gsp_framebuffers: *[2]GspGpu.FramebufferInfo, screen: pica.Screen) void {
+pub fn refresh(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp: GraphicsServerGpu, gsp_framebuffers: *[2]GraphicsServerGpu.FramebufferInfo, screen: pica.Screen) void {
     const presents = pe.chain_presents.getPtr(screen);
 
     if (presents.load(.monotonic) == 0) {
@@ -182,7 +182,7 @@ pub fn refresh(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp: Gs
     }
 }
 
-fn updateNextPresent(gsp_framebuffer: *GspGpu.FramebufferInfo, screen: pica.Screen, chain: *Swapchain, slot: Swapchain.PresentSlot) void {
+fn updateNextPresent(gsp_framebuffer: *GraphicsServerGpu.FramebufferInfo, screen: pica.Screen, chain: *Swapchain, slot: Swapchain.PresentSlot) void {
     const b_image: *backend.Image = &chain.images[slot.index];
     std.debug.assert(!b_image.memory_info.isUnbound());
 
@@ -205,12 +205,12 @@ fn updateNextPresent(gsp_framebuffer: *GspGpu.FramebufferInfo, screen: pica.Scre
         .right_vaddr = right,
         .stride = stride,
         .format = .{
-            .color_format = chain.misc.fmt,
+            .pixel_format = chain.misc.fmt,
             .dma_size = .@"64",
-            .interlacing_mode = if (presented_stereo) .enable else .none,
+            .interlacing = if (presented_stereo) .enable else .none,
 
             // HACK: Hardcoded
-            .alternative_pixel_output = screen == .top and !presented_stereo and chain.misc.height() != 800,
+            .half_rate = screen == .top and !presented_stereo and chain.misc.height() != 800,
         },
         .select = chain.misc.id,
         .attribute = 0,
@@ -388,7 +388,7 @@ const std = @import("std");
 const zitrus = @import("zitrus");
 
 const horizon = zitrus.horizon;
-const GspGpu = horizon.services.GspGpu;
+const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
 
 const mango = zitrus.mango;
 const pica = zitrus.hardware.pica;

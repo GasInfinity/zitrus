@@ -87,8 +87,8 @@ pub const Handle = enum(u32) {
             src_virt_offset += dst_mip_size;
         }) {
             // NOTE: Queue operations start and execute sequentially within a queue.
-            const wait_op: ?SemaOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else null;
-            const signal_op: ?SemaOperation = if (i == (dst_blitting_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else null;
+            const wait_op: SemaphoreOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else .none;
+            const signal_op: SemaphoreOperation = if (i == (dst_blitting_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else .none;
 
             try transfer.wakePushFront(.{
                 .flags = .{
@@ -167,7 +167,7 @@ pub const Handle = enum(u32) {
 
         // Only allow downscale of the X or XY axes. Otherwise sizes must match (for simplicity, the hardware allows bigger inputs than outputs, does that have an use-case?).
         // TODO: Yes dummy, if you have a bigger input you're basically blitting subimages!
-        const downscale: pica.MemoryCopy.Flags.Downscale = if (dst_mip_width < src_mip_width and dst_mip_height < src_mip_height) blk: {
+        const downscale: pica.PictureFormatter.Flags.Downscale = if (dst_mip_width < src_mip_width and dst_mip_height < src_mip_height) blk: {
             std.debug.assert(dst_mip_width == (src_mip_width >> 1) and dst_mip_height == (src_mip_height >> 1));
             break :blk .@"2x2";
         } else if (dst_mip_width < src_mip_width) blk: {
@@ -218,8 +218,8 @@ pub const Handle = enum(u32) {
             dst_image_layer_virt_offset += dst_image_full_layer_size;
         }) {
             // NOTE: Queue operations start and execute sequentially within a queue.
-            const wait_op: ?SemaOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else null;
-            const signal_op: ?SemaOperation = if (i == (dst_blitting_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else null;
+            const wait_op: SemaphoreOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else .none;
+            const signal_op: SemaphoreOperation = if (i == (dst_blitting_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else .none;
 
             try transfer.wakePushFront(.{
                 .flags = .{
@@ -266,7 +266,7 @@ pub const Handle = enum(u32) {
         const color = info.color;
         const b_image: *backend.Image = .fromHandleMutable(info.image);
 
-        const clear_scale: usize, const clear_value: GspGpu.GxCommand.MemoryFill.Unit.Value = switch (b_image.info.format) {
+        const clear_scale: usize, const clear_value: GraphicsServerGpu.GxCommand.MemoryFill.Unit.Value = switch (b_image.info.format) {
             .a8b8g8r8_unorm => .{
                 @sizeOf(u32),
                 .fill32(@bitCast(pica.ColorFormat.Abgr8888{
@@ -346,8 +346,8 @@ pub const Handle = enum(u32) {
             i += 1;
         }) {
             // NOTE: Queue operations start and execute sequentially within a queue.
-            const wait_op: ?SemaOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else null;
-            const signal_op: ?SemaOperation = if (i == (cleared_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else null;
+            const wait_op: SemaphoreOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else .none;
+            const signal_op: SemaphoreOperation = if (i == (cleared_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else .none;
 
             try fill.wakePushFront(.{
                 .data = @alignCast(current_virt_offset[0..full_cleared_size]),
@@ -367,7 +367,7 @@ pub const Handle = enum(u32) {
         const b_image: *backend.Image = .fromHandleMutable(info.image);
         const bound_virtual = b_image.memory_info.boundVirtualAddress();
 
-        const clear_slice, const clear_value: GspGpu.GxCommand.MemoryFill.Unit.Value = switch (b_image.info.format) {
+        const clear_slice, const clear_value: GraphicsServerGpu.GxCommand.MemoryFill.Unit.Value = switch (b_image.info.format) {
             .d16_unorm => .{ bound_virtual[0..(b_image.info.size() * @sizeOf(u16))], .fill16(@intFromFloat(@trunc(depth * std.math.maxInt(u16)))) },
             .d24_unorm => .{ bound_virtual[0..(b_image.info.size() * 3)], .fill24(@intFromFloat(@trunc(depth * std.math.maxInt(u24)))) },
             .d24_unorm_s8_uint => .{ bound_virtual[0..(b_image.info.size() * @sizeOf(u32))], .fill32(@as(u32, @intFromFloat(@trunc(depth * std.math.maxInt(u24)))) | (@as(u32, stencil) << 24)) },
@@ -400,7 +400,7 @@ pub const Handle = enum(u32) {
                 .ignore_stereo = info.flags.ignore_stereoscopic,
             },
             .index = info.image_index,
-        }, .initSemaphoreOperation(info.wait_semaphore), null);
+        }, .initSemaphoreOperation(info.wait_semaphore), .none);
     }
 };
 
@@ -411,21 +411,23 @@ pub const Type = enum {
     present,
 };
 
-pub const SemaOperation = struct {
-    sema: *backend.Semaphore,
+pub const SemaphoreOperation = struct {
+    pub const none: SemaphoreOperation = .{ .sema = null, .value = 0 };
+
+    sema: ?*backend.Semaphore,
     value: u64,
 
-    pub fn initSemaphoreOperation(maybe_op: ?*const mango.SemaphoreQueueOperation) ?SemaOperation {
+    pub fn initSemaphoreOperation(maybe_op: ?*const mango.SemaphoreQueueOperation) SemaphoreOperation {
         return if (maybe_op) |op| .{
             .sema = .fromHandleMutable(op.semaphore),
             .value = op.value,
-        } else null;
+        } else .none;
     }
 };
 
 pub const FillItem = struct {
     data: []align(8) u8,
-    value: GspGpu.GxCommand.MemoryFill.Unit.Value,
+    value: GraphicsServerGpu.GxCommand.MemoryFill.Unit.Value,
 };
 
 pub const TransferItem = struct {
@@ -443,7 +445,7 @@ pub const TransferItem = struct {
             transfer: packed struct(u30) {
                 src_fmt: pica.ColorFormat,
                 dst_fmt: pica.ColorFormat,
-                downscale: pica.MemoryCopy.Flags.Downscale,
+                downscale: pica.PictureFormatter.Flags.Downscale,
                 use_32x32: bool = false,
                 _: u21 = 0,
             },
@@ -471,8 +473,14 @@ pub const PresentationItem = struct {
 };
 
 pub const Status = enum(i32) {
-    working = -1,
+    /// The queue has submitted work and is waiting for the GPU
+    working = -2,
+    /// The GPU notified us, it'll either continue working,
+    /// waiting or stay idle.
+    work_completed = -1,
+    /// The queue is waiting for another queue to signal its semaphore
     waiting = 0,
+    /// The queue doesn't have any outstanding operation
     idle = 1,
 };
 
@@ -487,33 +495,27 @@ pub fn State(comptime kind: Type, comptime T: type, comptime capacity: u16) type
 
         pub const Slot = struct {
             item: T,
-            wait: ?SemaOperation,
-            signal: ?SemaOperation,
-        };
-
-        pub const CompletionSlot = struct {
-            signal: ?SemaOperation,
-            item: T,
+            wait: SemaphoreOperation,
+            signal: SemaphoreOperation,
         };
 
         type: Type = kind,
         device: *backend.Device,
         queue: backend.SingleProducerSingleConsumerBoundedQueue(Slot, capacity),
-        completion: CompletionSlot,
 
         pub fn init(device: *backend.Device) QueueState {
             return .{
                 .device = device,
-                .queue = .initEmpty,
-                .completion = .{ .signal = null, .item = undefined },
+                .queue = .init_empty,
             };
         }
 
         /// Pushes new work and wakes the driver if needed.
         ///
         /// Not thread-safe, must be called from only one thread.
-        pub fn wakePushFront(state: *QueueState, item: T, wait: ?SemaOperation, signal: ?SemaOperation) !void {
+        pub fn wakePushFront(state: *QueueState, item: T, wait: SemaphoreOperation, signal: SemaphoreOperation) !void {
             defer state.device.wakeIdleQueue(kind);
+
             return state.queue.pushFront(.{
                 .item = item,
                 .wait = wait,
@@ -521,23 +523,30 @@ pub fn State(comptime kind: Type, comptime T: type, comptime capacity: u16) type
             });
         }
 
-        pub const PopResult = union(enum) { empty, wait, work: T };
+        pub const PopResult = union(enum) {
+            pub const Value = struct {
+                value: T,
+                signal: SemaphoreOperation,
+            };
+
+            empty,
+            wait,
+            work: Value,
+        };
 
         /// Tries to pop new work to do.
         pub fn workPopBack(state: *QueueState) PopResult {
             if (state.queue.peekBack()) |slot| {
-                if (slot.wait) |wait| {
+                if (slot.wait.sema) |sema| {
                     // NOTE: counterValue() is atomic
-                    if (wait.sema.counterValue() < wait.value) {
+                    if (sema.counterValue() < slot.wait.value) {
                         return .wait;
                     }
                 }
 
-                _ = state.queue.popBack();
+                _ = state.queue.popBack() orelse unreachable;
 
-                state.completion = .{ .item = slot.item, .signal = slot.signal };
-
-                return .{ .work = slot.item };
+                return .{ .work = .{ .value = slot.item, .signal = slot.signal } };
             } else return .empty;
         }
 
@@ -577,7 +586,7 @@ const zitrus = @import("zitrus");
 const zalloc = @import("zalloc");
 
 const horizon = zitrus.horizon;
-const GspGpu = horizon.services.GspGpu;
+const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
 
 const mango = zitrus.mango;
 const pica = zitrus.hardware.pica;

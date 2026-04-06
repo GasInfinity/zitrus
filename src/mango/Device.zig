@@ -20,7 +20,7 @@ pub const Handle = enum(u32) {
         return try b_device.reacquire();
     }
 
-    pub fn release(device: Handle) !GspGpu.ScreenCapture {
+    pub fn release(device: Handle) !GraphicsServerGpu.ScreenCapture {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return try b_device.release();
     }
@@ -220,7 +220,7 @@ pub const Handle = enum(u32) {
 pub const VTable = struct {
     destroy: *const fn (dev: *Device) void,
 
-    release: *const fn (dev: *Device) ReleaseDeviceError!GspGpu.ScreenCapture,
+    release: *const fn (dev: *Device) ReleaseDeviceError!GraphicsServerGpu.ScreenCapture,
     reacquire: *const fn (dev: *Device) ReacquireDeviceError!void,
 
     waitIdleQueue: *const fn (dev: *Device, queue: Queue.Type) void,
@@ -279,7 +279,7 @@ pub fn reacquire(device: *Device) !void {
     return try device.vtable.reacquire(device);
 }
 
-pub fn release(device: *Device) !GspGpu.ScreenCapture {
+pub fn release(device: *Device) !GraphicsServerGpu.ScreenCapture {
     return try device.vtable.release(device);
 }
 
@@ -401,7 +401,7 @@ pub fn createImage(device: *Device, create_info: mango.ImageCreateInfo, maybe_gp
     const image = try gpa.create(backend.Image);
     errdefer gpa.destroy(image);
 
-    image.* = .init(create_info);
+    image.* = try .init(create_info);
     return image.toHandle();
 }
 
@@ -428,7 +428,7 @@ pub fn createImageView(device: *Device, create_info: mango.ImageViewCreateInfo, 
     _ = maybe_gpa;
 
     const b_image_view: backend.ImageView = .{
-        .data = .init(create_info),
+        .data = try .init(create_info),
     };
 
     return b_image_view.toHandle();
@@ -583,7 +583,7 @@ pub fn waitIdle(device: *Device) void {
 
         while (true) switch (queue_status.load(.monotonic)) {
             .idle => break,
-            .waiting, .working => device.vtable.waitIdleQueue(device, kind),
+            .waiting, .working, .work_completed => device.vtable.waitIdleQueue(device, kind),
         };
     }
 }
@@ -615,7 +615,7 @@ const zitrus = @import("zitrus");
 const zalloc = @import("zalloc");
 
 const horizon = zitrus.horizon;
-const GspGpu = horizon.services.GspGpu;
+const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
 
 const mango = zitrus.mango;
 const pica = zitrus.hardware.pica;

@@ -371,7 +371,7 @@ pub const Scene = struct {
             const cos_time = @cos(scene.time / 2);
 
             cmd.setLightEnvironmentFactors(.{
-                .ambient = @splat(26),
+                .ambient = @splat(64),
             });
 
             const light_position: [4]f32 = .{ sin_time * 4, 2, cos_time * 4, 1 };
@@ -385,8 +385,8 @@ pub const Scene = struct {
             }});
             cmd.setLightFactors(0, &.{.{
                 .ambient = @splat(0),
-                .diffuse = @splat(255),
-                .specular = .{ @splat(128), @splat(0) },
+                .diffuse = @splat(128),
+                .specular = .{ @splat(255), @splat(0) },
 
                 .sides = .one,
                 .geometric = .none,
@@ -777,11 +777,10 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
     }
 }
 
+const std = @import("std");
 const zitrus = @import("zitrus");
 
 const horizon = zitrus.horizon;
 const Hid = horizon.services.Hid;
 
 const mango = zitrus.mango;
-
-const std = @import("std");

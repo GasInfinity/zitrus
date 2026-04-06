@@ -14,8 +14,8 @@ pub const Handle = enum(u32) {
 };
 
 // NOTE: With native buffers we're talking about `u32`s, not `u8`s!
-const native_min_size = 4 * 1024;
-const native_max_size = 128 * 1024;
+pub const native_min_size = 16 * 1024;
+pub const native_max_size = 256 * 1024;
 
 const native_min_class = std.math.log2(native_min_size);
 const native_max_class = std.math.log2(native_max_size);

@@ -878,7 +878,8 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) !void {
 
     if (state.dirty.light_environment_control) {
         queue.add(p3d, &p3d.fragment_lighting.control.environment, state.light_environment.control.environment);
-        queue.addMasked(p3d, &p3d.fragment_lighting.control.lights, state.light_environment.control.lights, 0b0010);
+        // NOTE: this only changes disabled LUTs
+        queue.addMasked(p3d, &p3d.fragment_lighting.control.lights, state.light_environment.control.lights, 0b0100);
     }
 
     if (state.dirty.light_environment_input) {

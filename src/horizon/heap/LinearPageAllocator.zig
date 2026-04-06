@@ -5,7 +5,7 @@ pub const vtable: Allocator.VTable = .{
     .free = free,
 };
 
-// TODO: Aligned allocations with a bigger alignment than a page
+// TODO: Aligned allocations with a bigger alignment than a page... Is it possible?
 pub fn alloc(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
     _ = ctx;
     _ = ret_addr;

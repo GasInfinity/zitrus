@@ -91,7 +91,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
 
 const horizon = zitrus.horizon;
 const environment = zitrus.horizon.environment;
-const GspGpu = horizon.services.GspGpu;
+const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
 
 const Config = horizon.services.Config;
 

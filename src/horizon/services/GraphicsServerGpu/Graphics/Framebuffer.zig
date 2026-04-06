@@ -3,11 +3,13 @@
 //! Usage of `mango` is preferred!
 
 pub const Config = struct {
+    pub const Mode = enum { @"2d", @"3d", full };
+
     screen: pica.Screen,
     double_buffer: bool = true,
-    mode: FramebufferMode = .@"2d",
-    color_format: pica.ColorFormat = .bgr888,
-    dma_size: DmaSize = .@"64",
+    mode: Mode = .@"2d",
+    pixel_format: DisplayController.Framebuffer.Pixel = .bgr888,
+    dma_size: DisplayController.Framebuffer.Dma = .@"64",
 };
 
 pub const Side = enum(u1) { left, right };
@@ -22,7 +24,7 @@ pub fn init(config: Config, physical_linear_allocator: std.mem.Allocator) !Frame
     std.debug.assert((config.screen == .bottom and config.mode == .@"2d") or (config.screen == .top)); // Bottom screen can only be in 2D mode
 
     // a.k.a: bpp * w * h * (2 if double buffering) * (2 if running at 240x800, by full_res or 3d)
-    const framebuffer_bytes = (config.color_format.bytesPerPixel() * config.screen.width() * config.screen.height()) << @intFromBool(config.mode != .@"2d");
+    const framebuffer_bytes = (config.pixel_format.bytesPerPixel() * config.screen.width() * config.screen.height()) << @intFromBool(config.mode != .@"2d");
     const allocation_bytes = framebuffer_bytes << @intFromBool(config.double_buffer);
 
     const allocation = try physical_linear_allocator.alloc(u8, allocation_bytes);
@@ -60,16 +62,16 @@ pub fn present(fb: *Framebuffer, gfx: *Graphics, ignore_stereo: IgnoreStereo) vo
         .active = @enumFromInt(fb.current_framebuffer),
         .left_vaddr = fb.current(.left).ptr,
         .right_vaddr = (if (fb.config.mode == .@"3d" and (ignore_stereo == .none)) fb.current(.right) else fb.current(.left)).ptr,
-        .stride = (fb.config.color_format.bytesPerPixel() * fb.config.screen.width()) << @intFromBool(fb.config.mode == .full_resolution),
+        .stride = (fb.config.pixel_format.bytesPerPixel() * fb.config.screen.width()) << @intFromBool(fb.config.mode == .full),
         .format = .{
-            .color_format = fb.config.color_format,
+            .pixel_format = fb.config.pixel_format,
             .dma_size = fb.config.dma_size,
 
-            .interlacing_mode = switch (fb.config.mode) {
-                .@"2d", .full_resolution => .none,
+            .interlacing = switch (fb.config.mode) {
+                .@"2d", .full => .none,
                 .@"3d" => .enable,
             },
-            .alternative_pixel_output = fb.config.screen == .top and fb.config.mode == .@"2d",
+            .half_rate = fb.config.screen == .top and fb.config.mode == .@"2d",
         },
         .select = fb.current_framebuffer,
         .attribute = 0,
@@ -85,8 +87,7 @@ const pica = zitrus.hardware.pica;
 const horizon = zitrus.horizon;
 
 const Allocator = std.mem.Allocator;
-const GspGpu = horizon.services.GspGpu;
-const Graphics = horizon.services.GspGpu.Graphics;
+const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
+const Graphics = horizon.services.GraphicsServerGpu.Graphics;
 
-const DmaSize = pica.DmaSize;
-const FramebufferMode = pica.FramebufferFormat.Mode;
+const DisplayController = pica.DisplayController;

@@ -1,3 +1,6 @@
+//! Self-contained mango sample showing minimal usage of mango,
+//! further samples will be abstracted for brevity.
+
 // NOTE: as you can see, the shader address must be aligned to 32-bits
 const position_vtx_storage align(@sizeOf(u32)) = @embedFile("position.psh").*;
 const position_vtx = &position_vtx_storage;

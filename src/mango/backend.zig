@@ -20,6 +20,7 @@ pub const Horizon = @import("backend/Horizon.zig");
 
 pub const log = std.log.scoped(.mango);
 pub const validation = @import("validation.zig");
+pub const debug = @import("debug.zig");
 
 pub const Device = @import("Device.zig");
 pub const Queue = @import("Queue.zig");
@@ -64,7 +65,7 @@ pub fn SingleProducerSingleConsumerBoundedQueue(comptime T: type, comptime capac
             len: u16,
         };
 
-        pub const initEmpty: SpScQueue = .{
+        pub const init_empty: SpScQueue = .{
             .header = .init(.{
                 .index = 0,
                 .len = 0,
@@ -143,7 +144,7 @@ const testing = std.testing;
 const TestingSpScBoundedQueue = SingleProducerSingleConsumerBoundedQueue(u8, 4);
 
 test "SingleProducerSingleConsumerBoundedQueue pushFront -> popBack correct state" {
-    var bq: TestingSpScBoundedQueue = .initEmpty;
+    var bq: TestingSpScBoundedQueue = .init_empty;
 
     bq.pushFrontAssumeCapacity(7);
     try testing.expect(0 == bq.header.raw.index);
@@ -157,7 +158,7 @@ test "SingleProducerSingleConsumerBoundedQueue pushFront -> popBack correct stat
 }
 
 test "SingleProducerSingleConsumerBoundedQueue is a FIFO" {
-    var bq: TestingSpScBoundedQueue = .initEmpty;
+    var bq: TestingSpScBoundedQueue = .init_empty;
 
     bq.pushFrontAssumeCapacity(7);
     bq.pushFrontAssumeCapacity(8);

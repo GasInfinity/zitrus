@@ -330,62 +330,11 @@ pub const Screen = enum(u1) {
     }
 };
 
-pub const PixelSize = enum(u2) {
-    @"16",
-    @"24",
-    @"32",
-    _,
-};
+/// Deprecated: DisplayController.Framebuffer.Pixel.Size
+pub const PixelSize = DisplayController.Framebuffer.Pixel.Size;
 
-pub const ColorFormat = enum(u3) {
-    pub const Abgr8888 = extern struct { a: u8, b: u8, g: u8, r: u8 };
-    pub const Bgr888 = extern struct { b: u8, g: u8, r: u8 };
-    pub const Rgb565 = packed struct(u16) { b: u5, g: u6, r: u5 };
-    pub const Rgba5551 = packed struct(u16) { a: u1, b: u5, g: u5, r: u5 };
-    pub const Rgba4444 = packed struct(u16) { a: u4, b: u4, g: u4, r: u4 };
-
-    /// 4 bytes, `A B G R`.
-    abgr8888,
-    /// 3 bytes, `B G R`.
-    bgr888,
-    /// Packed, 2 bytes, `RRRRRGGGGGGBBBBB`.
-    rgb565,
-    /// Packed, 2 bytes, `RRRRRGGGGGBBBBBA`.
-    rgba5551,
-    /// Packed, 2 bytes, `RRRRGGGGBBBBAAAA`.
-    rgba4444,
-
-    pub inline fn Pixel(comptime format: ColorFormat) type {
-        return switch (format) {
-            .abgr8888 => Abgr8888,
-            .bgr888 => Bgr888,
-            .rgb565 => Rgb565,
-            .rgba5551 => Rgba5551,
-            .rgba4444 => Rgba4444,
-        };
-    }
-
-    pub inline fn pixelSize(format: ColorFormat) PixelSize {
-        return switch (format.bytesPerPixel()) {
-            2 => .@"16",
-            3 => .@"24",
-            4 => .@"32",
-            else => unreachable,
-        };
-    }
-
-    pub inline fn bytesPerPixel(format: ColorFormat) usize {
-        return switch (format) {
-            inline else => |f| @sizeOf(f.Pixel()),
-        };
-    }
-
-    pub inline fn components(format: ColorFormat) usize {
-        return switch (format) {
-            inline else => |f| @typeInfo(f.Pixel()).@"struct".fields.len,
-        };
-    }
-};
+/// Deprecated: DisplayController.Framebuffer.Pixel
+pub const ColorFormat = DisplayController.Framebuffer.Pixel;
 
 /// Depth values are stored as normalized integers.
 pub const DepthStencilFormat = enum(u2) {
@@ -405,43 +354,11 @@ pub const DepthStencilFormat = enum(u2) {
     }
 };
 
-pub const FramebufferInterlacingMode = enum(u2) {
-    none,
-    scanline_doubling,
-    enable,
-    enable_inverted,
-};
+/// Deprecated: use DisplayController.Framebuffer.Interlacing
+pub const FramebufferInterlacingMode = DisplayController.Framebuffer.Interlacing;
 
-pub const DmaSize = enum(u2) {
-    @"32",
-    @"64",
-    @"128",
-    vram,
-};
-
-pub const FramebufferFormat = packed struct(u32) {
-    pub const Mode = enum(u2) {
-        @"2d",
-        @"3d",
-        full_resolution,
-    };
-
-    color_format: ColorFormat,
-    _unknown0: u1 = 0,
-    interlacing_mode: FramebufferInterlacingMode,
-    alternative_pixel_output: bool,
-    _unknown1: u1 = 0,
-    dma_size: DmaSize,
-    _unknown2: u6 = 0,
-    _unknown3: u16 = 0,
-
-    pub inline fn mode(format: FramebufferFormat) Mode {
-        return switch (format.interlacing_mode) {
-            .enable => .@"3d",
-            else => if (format.alternative_pixel_output) .@"2d" else .full_resolution,
-        };
-    }
-};
+/// Deprecated: use DisplayController.Framebuffer.Dma
+pub const DmaSize = DisplayController.Framebuffer.Dma;
 
 pub const TextureUnit = enum(u2) {
     pub const main: TextureUnit = .@"0";
@@ -746,7 +663,7 @@ pub const TextureUnitTexture3Coordinates = enum(u2) {
 };
 
 pub const MemoryFill = extern struct {
-    pub const Control = packed struct(u16) {
+    pub const Control = packed struct(u32) {
         pub const none: Control = .{ .busy = false, .width = .@"16" };
 
         busy: bool,
@@ -754,6 +671,8 @@ pub const MemoryFill = extern struct {
         _unused0: u6 = 0,
         width: PixelSize,
         _unused1: u6 = 0,
+        _unknown0: u5 = 0,
+        _unused2: u11 = 0,
 
         pub fn init(width: PixelSize) Control {
             return .{ .busy = true, .width = width };
@@ -764,23 +683,32 @@ pub const MemoryFill = extern struct {
     end: AlignedPhysicalAddress(.@"16", .@"8"),
     value: u32,
     control: Control,
-    _padding0: u16 = 0,
 };
 
-pub const MemoryCopy = extern struct {
+pub const PictureFormatter = extern struct {
+    pub const Dimensions = packed struct(u32) { width: u16, height: u16 };
+
+    pub const Copy = extern struct {
+        pub const Line = packed struct(u32) { width: u16, gap: u16 };
+
+        size: u32,
+        src: Line,
+        dst: Line,
+    };
+
     pub const Flags = packed struct(u32) {
         pub const Downscale = enum(u2) { none, @"2x1", @"2x2" };
 
         flip_v: bool,
         linear_tiled: bool,
         output_width_less_than_input: bool,
-        texture_copy_mode: bool,
+        copy: bool,
         _unwritable0: u1 = 0,
         tiled_tiled: bool,
         _unwritable1: u2 = 0,
-        input_format: ColorFormat,
+        src_format: ColorFormat,
         _unwritable2: u1 = 0,
-        output_format: ColorFormat,
+        dst_format: ColorFormat,
         _unwritable3: u1 = 0,
         use_32x32_tiles: bool,
         _unwritable4: u7 = 0,
@@ -788,22 +716,22 @@ pub const MemoryCopy = extern struct {
         _unwritable5: u6 = 0,
     };
 
-    input: AlignedPhysicalAddress(.@"16", .@"8"),
-    output: AlignedPhysicalAddress(.@"16", .@"8"),
-    output_dimensions: [2]u16,
-    input_dimensions: [2]u16,
-    flags: Flags,
-    write_0_before_display_transfer: u32,
-    control: packed struct(u32) {
+    pub const Control = packed struct(u32) {
         start: bool,
         _unused0: u7 = 0,
         finished: bool,
         _unused1: u23 = 0,
-    },
+    };
+
+    src: AlignedPhysicalAddress(.@"16", .@"8"),
+    dst: AlignedPhysicalAddress(.@"16", .@"8"),
+    dst_dimensions: Dimensions,
+    src_dimensions: Dimensions,
+    flags: Flags,
+    write_0_before_display_transfer: u32,
+    control: Control,
     _unknown0: u32 = 0,
-    texture_size: u32,
-    texture_input_width_gap: [2]u16,
-    texture_output_width_gap: [2]u16,
+    copy: Copy,
 };
 
 pub const Graphics = extern struct {
@@ -2109,20 +2037,457 @@ pub const Graphics = extern struct {
     }
 };
 
+/// There are 3 main points where LCDs are configured:
+/// * I2C (TODO: I2C in general)
+/// * LCD registers (`zitrus.hardware.lcd`)
+/// * These
+///
+/// The GPU `DisplayController` is what drives the LCD, pushing pixels and is in charge
+/// of the timing of each display (along with the IRQs).
+///
+/// With these, looks like it's possible to:
+/// * Change the Hz of the display itself
+/// * Change the size of the displayed area, display it anywhere and set a 
+/// configurable border color in the non-displayed area.
+///
+/// It also looks like the pixel clock is the main clock divided by 24, i.e `268111856 / 24`
+///
+/// All of this has been synthetized from 3dbrew and GBATEK, both sources have wildly different
+/// register naming but as everywhere else, the naming is different and reflects what I've seen 
+/// and think.
+///
+/// WARNING: Modifying these registers CAN damage hardware in some LCDs: o3DS (burn-in) and IPS (new ones).
+/// Thanks to @sono3 in the godmode9 discord who told me this.
+/// Use the decls in `Preset` as those values are taken from what OFW use.
+pub const DisplayController = extern struct {
+    pub const Color = packed struct(u32) {
+        r: u8,
+        g: u8,
+        b: u8,
+        _unused0: u8 = 0,
+    };
+
+    pub const Framebuffer = extern struct {
+        pub const Control = packed struct(u32) {
+            enable: bool,
+            _unused0: u7 = 0,
+            disable_horizontal_sync_irq: bool,
+            disable_vertical_sync_irq: bool,
+            disable_error_irq: bool,
+            _unused1: u5 = 0,
+            maybe_output_enable: bool = true,
+            _unused2: u15 = 0,
+        };
+
+        pub const Select = packed struct(u32) {
+            select: u1,
+            _unused0: u3 = 0,
+            current: u1 = 0,
+            _unused1: u3 = 0,
+            reset_fifo: bool = false,
+            _unused2: u7 = 0,
+            horizontal_ack: bool = false,
+            vertical_ack: bool = false,
+            error_ack: bool = false,
+            _unused3: u13 = 0,
+        };
+
+        pub const Status = packed struct(u32) {
+            horizontal_irq: bool,
+            vertical_irq: bool,
+            _unused0: u2 = 0,
+            bit: bool,
+            _unused1: u3 = 0,
+            horizontal_sync: bool,
+            horizontal_blank: bool,
+            horizontal_drawing: bool,
+            _unused2: u1 = 0,
+            vertical_sync: bool,
+            vertical_blank: bool,
+            vertical_drawing: bool,
+            _unknown0: bool,
+            _unused3: u16 = 0,
+        };
+
+        pub const Pixel = enum(u3) {
+            pub const Size = enum(u2) {
+                @"16",
+                @"24",
+                @"32",
+                _,
+            };
+
+            pub const Abgr8888 = extern struct { a: u8, b: u8, g: u8, r: u8 };
+            pub const Bgr888 = extern struct { b: u8, g: u8, r: u8 };
+            pub const Rgb565 = packed struct(u16) { b: u5, g: u6, r: u5 };
+            pub const Rgba5551 = packed struct(u16) { a: u1, b: u5, g: u5, r: u5 };
+            pub const Rgba4444 = packed struct(u16) { a: u4, b: u4, g: u4, r: u4 };
+
+            /// 4 bytes, `A B G R`.
+            abgr8888,
+            /// 3 bytes, `B G R`.
+            bgr888,
+            /// Packed, 2 bytes, `RRRRRGGGGGGBBBBB`.
+            rgb565,
+            /// Packed, 2 bytes, `RRRRRGGGGGBBBBBA`.
+            rgba5551,
+            /// Packed, 2 bytes, `RRRRGGGGBBBBAAAA`.
+            rgba4444,
+
+            pub inline fn Data(comptime format: Pixel) type {
+                return switch (format) {
+                    .abgr8888 => Abgr8888,
+                    .bgr888 => Bgr888,
+                    .rgb565 => Rgb565,
+                    .rgba5551 => Rgba5551,
+                    .rgba4444 => Rgba4444,
+                };
+            }
+
+            pub fn pixelSize(format: Pixel) Size {
+                return switch (format.bytesPerPixel()) {
+                    2 => .@"16",
+                    3 => .@"24",
+                    4 => .@"32",
+                    else => unreachable,
+                };
+            }
+
+            pub fn bytesPerPixel(format: Pixel) usize {
+                return switch (format) {
+                    inline else => |f| @sizeOf(f.Data()),
+                };
+            }
+
+            pub fn components(format: Pixel) usize {
+                return switch (format) {
+                    inline else => |f| @typeInfo(f.Data()).@"struct".fields.len,
+                };
+            }
+        };
+
+        pub const Interlacing = enum(u2) {
+            none,
+            scanline_doubling,
+            enable,
+            enable_inverted,
+        };
+
+        pub const Dma = enum(u2) {
+            @"32",
+            @"64",
+            @"128",
+            vram,
+        };
+
+        pub const Format = packed struct(u32) {
+            pixel_format: Pixel,
+            _unused0: u1 = 0,
+            interlacing: Interlacing,
+            /// Should only be used on the top screen.
+            ///
+            /// Makes the display controller reuse the same fetched pixel twice.
+            ///
+            /// Halves the pixel rate (?)
+            ///
+            /// NOTE: this is just synthetized from testing and above docs, still needs more testing
+            half_rate: bool,
+            _unused1: bool = false,
+            dma_size: Dma,
+            _unused2: u6 = 0,
+            unknown0: u16 = 8,
+        };
+
+        left_address: [2]AlignedPhysicalAddress(.@"16", .@"1"),
+        format: Format,
+        control: Control,
+        select: Select,
+        status: Status, 
+        color_lookup_index: LsbRegister(u8),
+        color_lookup_data: Color,
+        _unused0: [2]u32,
+        stride: u32,
+        right_address: [2]AlignedPhysicalAddress(.@"16", .@"1"),
+    };
+
+    pub const SynchronizationPolarity = packed struct(u32) {
+        horizontal_active_high: bool,
+        _unused0: u3 = 0,
+        vertical_active_high: bool,
+        _unused1: u27 = 0,
+    };
+
+    /// Total = Back Porch Start -> Back Porch Mid (Left/Upper Border Start) -> Display Start/Back Porch End
+    /// -> Front Porch Start (Right/Lower Border End) -> Front Porch Mid (Supposedly Bugged) -> Front Porch End -> IRQ
+    ///
+    /// The LCDs are sensitive, look at the comment in `DisplayController`.
+    pub const Timing = extern struct {
+        pub const Display = packed struct(u32) {
+            back_porch_mid: u12,
+            _unused0: u4 = 0,
+            front_porch_start: u12,
+            _unused1: u4 = 0,
+        };
+
+        pub const Range = packed struct(u32) {
+            start: u12,
+            _unused0: u4 = 0,
+            end: u12,
+            _unused1: u4 = 0,
+        };
+
+        /// 0x00
+        total: LsbRegister(u12),
+        /// 0x04
+        back_porch_end: LsbRegister(u12),
+        /// 0x08
+        front_porch_mid: LsbRegister(u12),
+        /// 0x0C
+        front_porch_end: LsbRegister(u12),
+        /// 0x10
+        sync_start: LsbRegister(u12),
+        /// 0x14
+        sync_end: LsbRegister(u12),
+        /// 0x18
+        back_porch_start: LsbRegister(u12),
+        /// 0x1C
+        interrupt: Range,
+        /// 0x20
+        unknown: u32,
+
+        comptime { std.debug.assert(@sizeOf(Timing) == 0x24); }
+    };
+
+    pub const DisplaySize = packed struct(u32) {
+        width: u12,
+        _unused0: u4 = 0,
+        height: u12,
+        _unused1: u4 = 0,
+    };
+
+    pub const LatchingPoint = packed struct(u32) {
+        horizontal: u12,
+        _unused0: u4 = 0,
+        vertical: u12,
+        _unused1: u4 = 0,
+    };
+
+    pub const Preset = struct {
+        /// Top with half rate
+        pub const @"240x400@60Hz": Preset = .{
+            .display_size = .{ .width = 240, .height = 400 },
+            .horizontal_timing = .{
+                .total = .init(450),
+                .back_porch_end = .init(209),
+                .front_porch_mid = .init(449),
+                .front_porch_end = .init(449),
+                .sync_start = .init(0),
+                .sync_end = .init(207),
+                .back_porch_start = .init(209),
+                .interrupt = .{
+                    .start = 449,
+                    .end = 453,
+                },
+                .unknown = 0x10000, 
+            },
+            .horizontal_display_timing = .{
+                .back_porch_mid = 209,
+                .front_porch_start = 449,
+            },
+            .vertical_timing = .{
+                .total = .init(413),
+                .back_porch_end = .init(2),
+                .front_porch_mid = .init(402),
+                .front_porch_end = .init(402),
+                .sync_start = .init(402),
+                .sync_end = .init(1),
+                .back_porch_start = .init(2),
+                .interrupt = .{
+                    .start = 402,
+                    .end = 406,
+                },
+                .unknown = 0, 
+            },
+            .vertical_display_timing = .{
+                .back_porch_mid = 2,
+                .front_porch_start = 402,
+            },
+        };
+
+        /// Top with interlace enabled
+        pub const @"2x240x400@60Hz": Preset = .{
+            .display_size = .{ .width = 240, .height = 400 },
+            .horizontal_timing = .{
+                .total = .init(450),
+                .back_porch_end = .init(209),
+                .front_porch_mid = .init(449),
+                .front_porch_end = .init(449),
+                .sync_start = .init(0),
+                .sync_end = .init(207),
+                .back_porch_start = .init(209),
+                .interrupt = .{
+                    .start = 449,
+                    .end = 453,
+                },
+                .unknown = 0x10000, 
+            },
+            .horizontal_display_timing = .{
+                .back_porch_mid = 209,
+                .front_porch_start = 449,
+            },
+            .vertical_timing = .{
+                .total = .init(827),
+                .back_porch_end = .init(2),
+                .front_porch_mid = .init(802),
+                .front_porch_end = .init(802),
+                .sync_start = .init(802),
+                .sync_end = .init(1),
+                .back_porch_start = .init(2),
+                .interrupt = .{
+                    .start = 802,
+                    .end = 806,
+                },
+                .unknown = 0,
+            },
+            .vertical_display_timing = .{
+                .back_porch_mid = 2,
+                .front_porch_start = 802, 
+            },
+        };
+
+        /// Top
+        pub const @"240x800@60Hz": Preset = .{
+            .display_size = .{ .width = 240, .height = 800 },
+            .horizontal_timing = .{
+                .total = .init(450),
+                .back_porch_end = .init(209),
+                .front_porch_mid = .init(449),
+                .front_porch_end = .init(449),
+                .sync_start = .init(0),
+                .sync_end = .init(207),
+                .back_porch_start = .init(209),
+                .interrupt = .{
+                    .start = 449,
+                    .end = 453,
+                },
+                .unknown = 0x10000, 
+            },
+            .horizontal_display_timing = .{
+                .back_porch_mid = 209,
+                .front_porch_start = 449,
+            },
+            .vertical_timing = .{
+                .total = .init(827),
+                .back_porch_end = .init(2),
+                .front_porch_mid = .init(802),
+                .front_porch_end = .init(802),
+                .sync_start = .init(802),
+                .sync_end = .init(1),
+                .back_porch_start = .init(2),
+                .interrupt = .{
+                    .start = 802,
+                    .end = 806,
+                },
+                .unknown = 0,
+            },
+            .vertical_display_timing = .{
+                .back_porch_mid = 2,
+                .front_porch_start = 802, 
+            },
+        };
+
+        /// Bottom
+        pub const @"240x320@60Hz": Preset = .{
+            .display_size = .{ .width = 240, .height = 320 },
+            .horizontal_timing = .{
+                .total = .init(450),
+                .back_porch_end = .init(209),
+                .front_porch_mid = .init(449),
+                .front_porch_end = .init(449),
+                .sync_start = .init(205),
+                .sync_end = .init(207),
+                .back_porch_start = .init(209),
+                .interrupt = .{
+                    .start = 449,
+                    .end = 453,
+                },
+                .unknown = 0x10000, 
+            },
+            .horizontal_display_timing = .{
+                .back_porch_mid = 209,
+                .front_porch_start = 449,
+            },
+            .vertical_timing = .{
+                .total = .init(413),
+                .back_porch_end = .init(82),
+                .front_porch_mid = .init(402),
+                .front_porch_end = .init(402),
+                .sync_start = .init(79),
+                .sync_end = .init(80),
+                .back_porch_start = .init(82),
+                .interrupt = .{
+                    .start = 403,
+                    .end = 407,
+                },
+                .unknown = 0x00,
+            },
+            .vertical_display_timing = .{
+                .back_porch_mid = 82,
+                .front_porch_start = 402,
+            },
+        };
+
+        display_size: DisplaySize,
+        horizontal_timing: Timing,
+        horizontal_display_timing: Timing.Display,
+        vertical_timing: Timing,
+        vertical_display_timing: Timing.Display,
+    };
+
+    /// 0x00
+    horizontal_timing: Timing,
+    /// 0x24
+    vertical_timing: Timing,
+    /// 0x48
+    synchronization_polarity: SynchronizationPolarity,
+    /// 0x4C
+    border_color: Color,
+    /// 0x50
+    horizontal_position: LsbRegister(u12),
+    /// 0x54
+    vertical_position: LsbRegister(u12),
+    /// 0x58
+    _unused0: u32,
+    /// 0x5C
+    display_size: DisplaySize,
+    /// 0x60
+    horizontal_display_timing: Timing.Display,
+    /// 0x64
+    vertical_display_timing: Timing.Display,
+    /// 0x68
+    framebuffer: Framebuffer,
+    /// 0x9C
+    latching_point: LatchingPoint,
+    /// 0xA0
+    _unused2: [24]u32,
+
+    comptime { std.debug.assert(@sizeOf(DisplayController) == 0x100); }
+};
+
 // TODO: Properly finish this
 pub const Registers = extern struct {
     pub const VRamPower = packed struct(u32) {
-        _unknown0: u8,
+        _unknown0: u8 = std.math.maxInt(u8),
         power_off_a_low: bool,
         power_off_a_high: bool,
         power_off_b_low: bool,
         power_off_b_high: bool,
-        _unknown1: u20,
+        _unknown1: u20 = std.math.maxInt(u20),
     };
 
     pub const InterruptFlags = packed struct(u32) {
-        _unknown0: bool,
-        _unknown1: bool,
+        _unknown0: u1 = 0,
+        _unknown1: u1 = 0,
         _unused0: u24 = 0,
         psc0: bool,
         psc1: bool,
@@ -2132,15 +2497,30 @@ pub const Registers = extern struct {
         p3d: bool,
     };
 
-    pub const BusyFlags = packed struct(u32) {
-        _unused0: u10,
+    pub const Busy = packed struct(u32) {
+        // NOTE: THESE CHANGE ON P3D. TESTTESTTEST
+        // WHEN THE GPU HANGS SOME BITS STAY ON (AND THEY'RE ALMOST ALWAYS THE SAME ONES!!!!!)
+        _unknown0: bool,
         _unknown1: bool,
-        _unused1: u6,
+        _unknown2: bool,
+        _unknown3: bool,
+        _unknown4: bool,
+        _unknown5: bool,
+        _unknown6: bool,
+        _unknown7: bool,
+        _unknown8: bool,
+        _unknown9: bool,
+        _unknown10: bool,
+        _unknown11: bool,
+        _unknown12: bool,
+        _unknown13: bool,
+        _unknown14: bool,
+        _unknown15: bool,
         _unknown_vram_power_0: bool,
         _unknown_vram_power_1: bool,
         memory_fill_busy: bool,
         memory_copy_busy: bool,
-        _unused2: u11,
+        _unused2: u12,
     };
 
     pub const TrafficStatus = extern struct {
@@ -2156,96 +2536,13 @@ pub const Registers = extern struct {
         polygon_depth_buffer_writes: u32,
         polygon_color_buffer_reads: u32,
         polygon_color_buffer_writes: u32,
-        lcd_upper_screen_reads: u32,
-        lcd_lower_screen_reads: u32,
+        lcd_top_reads: u32,
+        lcd_bottom_reads: u32,
         memory_copy_src_reads: u32,
         memory_copy_dst_writes: u32,
         memory_fill_dst_writes: [2]u32,
         cpu_reads_from_vram_a_b: u32,
         cpu_writes_to_vram_a_b: u32,
-    };
-
-    // XXX: Proper field names and structures
-    pub const Pdc = extern struct {
-        pub const Timing = extern struct {
-            total: u32,
-            start: u32,
-            border: u32,
-            front_porch: u32,
-            sync: u32,
-            back_porch: u32,
-            border_end: u32,
-            interrupt: u32,
-        };
-
-        pub const Control = packed struct(u32) {
-            enable: bool,
-            _unused0: u7 = 0,
-            disable_hblank_irq: bool,
-            disable_vblank_irq: bool,
-            disable_error_irq: bool,
-            _unused1: u5 = 0,
-            enable_output: bool,
-            _unused2: u15 = 0,
-        };
-
-        horizontal: Timing,
-        _unknown0: u32 = 0,
-
-        vertical: Timing,
-        _unknown1: u32 = 0,
-
-        disable_sync: packed struct(u32) {
-            horizontal: bool,
-            _unwritable0: u7 = 0,
-            vertical: bool,
-            _unwritable1: u23 = 0,
-        },
-        border_color: packed struct(u32) {
-            _unused: u8 = 0,
-            r: u8,
-            g: u8,
-            b: u8,
-        },
-        hcount: u32,
-        vcount: u32,
-        _unknown2: u32 = 0,
-        pixel_dimensions: [2]u16,
-        horizontal_border: [2]u16,
-        vertical_border: [2]u16,
-        framebuffer_a_first: u32,
-        framebuffer_a_second: u32,
-        framebuffer_format: FramebufferFormat,
-        control: Control,
-        swap: packed struct(u32) {
-            next: u1,
-            _unused0: u3 = 0,
-            displaying: bool,
-            _unused1: u3 = 0,
-            reset_fifo: bool,
-            _unused2: u7 = 0,
-            hblank_ack: bool,
-            vblank_ack: bool,
-            error_ack: bool,
-            _unused3: u13 = 0,
-        },
-        _unknown3: u32 = 0,
-        color_lookup_table: packed struct(u32) {
-            index: u8,
-            _unused: u24 = 0,
-        },
-        color_lookup_table_data: packed struct(u32) {
-            _unused: u8 = 0,
-            r: u8,
-            g: u8,
-            b: u8,
-        },
-        _unknown4: [2]u32 = @splat(0),
-        framebuffer_stride: u32,
-        framebuffer_b_first: u32,
-        framebuffer_b_second: u32,
-        _unknown5: u32 = 0,
-        _unknown6: [24]u32 = @splat(0),
     };
 
     hardware_id: u32,
@@ -2258,14 +2555,23 @@ pub const Registers = extern struct {
     _something: u32,
     _make_something: u32,
     _backlight_or_so_0: u32,
+    /// 0x044
     _unknown1: u32,
+    /// 0x048
     _unknown2: u32,
+    /// 0x04C
     _unused1: u32,
+    /// 0x050
     timing_control: [2]u32,
-    stat_busy_flags: BusyFlags,
+    /// 0x058
+    busy: Busy,
+    /// 0x05C
     _unknown3: u32,
+    /// 0x060
     _unknown4: u32,
+    /// 0x064
     _unknown5: u32,
+    /// 0x068
     _unknown6: u32,
     _unused2: u32,
     traffic: TrafficStatus,
@@ -2276,9 +2582,9 @@ pub const Registers = extern struct {
     _unknown7: u32,
     _unused3: [0x2C]u8,
     _unused4: [0x300]u8,
-    pdc: [2]Pdc,
+    pdc: [2]DisplayController,
     _unused5: [0x600]u8 = @splat(0),
-    ppf: MemoryCopy,
+    ppf: PictureFormatter,
     _unknown8: [0xF5]u32 = @splat(0),
     p3d: Graphics,
 
@@ -2294,14 +2600,11 @@ pub const Registers = extern struct {
 };
 
 comptime {
-    if (@sizeOf(Registers.Pdc) != 0x100)
-        @compileError(std.fmt.comptimePrint("(@sizeOf(Pdc) == 0x{X}) and 0x{X} != 0x100!", .{ @sizeOf(Registers.Pdc), @sizeOf(Registers.Pdc) }));
-
     if (@sizeOf(MemoryFill) != 0x10)
         @compileError(std.fmt.comptimePrint("(@sizeOf(MemoryFill) == 0x{X}) and 0x{X} != 0x10!", .{ @sizeOf(MemoryFill), @sizeOf(MemoryFill) }));
 
-    if (@sizeOf(MemoryCopy) != 0x2C)
-        @compileError(std.fmt.comptimePrint("(@sizeOf(MemoryCopy) == 0x{X}) and 0x{X} != 0x2C!", .{ @sizeOf(MemoryCopy), @sizeOf(MemoryCopy) }));
+    if (@sizeOf(PictureFormatter) != 0x2C)
+        @compileError(std.fmt.comptimePrint("(@sizeOf(MemoryCopy) == 0x{X}) and 0x{X} != 0x2C!", .{ @sizeOf(PictureFormatter), @sizeOf(PictureFormatter) }));
 
     _ = morton;
     _ = shader;

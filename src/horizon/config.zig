@@ -31,7 +31,9 @@ pub const MemoryType = enum(u8) {
 };
 
 pub const Kernel = extern struct {
-    version: packed struct(u32) { unknown: u8, revision: u8, minor: u8, major: u8 },
+    pub const Version = packed struct(u32) { unknown: u8, revision: u8, minor: u8, major: u8 };
+
+    version: Version,
     update_flag: u32,
     ns_tid: u64,
     syscore_version: u32,
@@ -48,7 +50,7 @@ pub const Kernel = extern struct {
     system_total_memory: u32,
     base_total_memory: u32,
     _unused3: [5]u32,
-    firm_version: packed struct(u32) { unknown: u8, revision: u8, minor: u8, major: u8 },
+    firm_version: Version,
     firm_syscore_version: u32,
     firm_ctr_sdk_version: u32,
 };
