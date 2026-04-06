@@ -1,0 +1,12 @@
+.{
+    .name = .common,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.16.0",
+    .paths = .{""},
+    .fingerprint = 0xe5ec705145a44dae,
+    .dependencies = .{
+        .zitrus = .{
+            .path = "../../../"
+        },
+    },
+}

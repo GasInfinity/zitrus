@@ -1,0 +1,9 @@
+.{
+    .titles = .{
+        .english = .{
+            .title = "Texture Loading",
+            .description = "is an image all you need?",
+            .publisher = "zitrus",
+        },
+    },
+}

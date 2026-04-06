@@ -6,6 +6,7 @@
 //!     - Y: [-W, W]
 //!     - Z: [0, -W]
 //! - Framebuffer origin can be changed so `-1` in NDC could mean bottom-left (GL) or top-left (D3D, Metal, VK)
+//! - Texture Origin is Bottom-Left, they are sampled from bottom (0, 0) to top (1, 1).
 //!
 //! WARNING: zitrus has opinionated register naming that suit better their usage!
 //!

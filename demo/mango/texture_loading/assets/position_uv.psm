@@ -1,0 +1,15 @@
+.alias iPos v0
+.alias iTexCoord0 v1
+
+.alias oPos o0
+.alias oTexCoord0 o1
+
+.entry main vertex
+
+.out main o0 position
+.out main o1.xy texture_coordinates_0.xy
+
+main:
+    mov oPos, iPos
+    mov oTexCoord0, iTexCoord0
+    end

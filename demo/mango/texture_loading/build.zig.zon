@@ -1,0 +1,20 @@
+.{
+    .name = .texture_loading,
+    .version = "0.0.0",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0xb90121512ddee10e,
+    .dependencies = .{
+        .zitrus = .{ .path = "../../../" },
+        .common = .{ .path = "../common" },
+        .zigimg = .{
+            .url = "git+https://github.com/GasInfinity-Forks/zigimg.git#7b98e82621fe302a9edc147df1191f4d1b7ff7a5",
+            .hash = "zigimg-0.1.0-8_eo2qWHFwA-S24SH7x7NplPii0EbIQiUfDrimgA6rzN",
+        },
+    },
+    .paths = .{
+        "assets",
+        "src",
+        "build.zig",
+        "build.zig.zon",
+    },
+}
