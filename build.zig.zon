@@ -13,8 +13,8 @@
             .hash = "zsflt-0.0.1-_pCibQ4wAABnfZskVOk2Y14F056VNJtuqVpAEzUNBGfl",
         },
         .zigimg = .{
-            .url = "git+https://github.com/GasInfinity-Forks/zigimg.git?ref=0.16.x#e4f63ba341e470b2f39fa59c84cf0e0b496526ef",
-            .hash = "zigimg-0.1.0-8_eo2qSYFwA7fGbaAxMmZj4NtIBqnjVV1ydlBlwq3vqK",
+            .url = "git+https://github.com/GasInfinity-Forks/zigimg.git?ref=0.16.x#c474a50ce9ec79ae726ee3f86fe08d530ff91e78",
+            .hash = "zigimg-0.1.0-8_eo2gCZFwA239CedNPHzAkZMxkUxQpLBq3UrataPX1x",
         },
         .plz = .{
             .url = "git+https://codeberg.org/GasInfinity/plz.git#e0c1435f649fa877910129b22445e3c3a3d85861",
@@ -22,8 +22,8 @@
         },
         // Yes, we need our own fork of zig `lib/` until upstream merges it (if they merge it).
         .@"zig-lib" = .{
-            .url = "git+https://codeberg.org/GasInfinity/zig.git?ref=the-os-independence-day-lib-only#03017cb94c44ced2db497e5cac6c1ce19de08925",
-            .hash = "N-V-__8AAN7wzQtkaZFubsJDUrDQ8qQ3KSIx24qfutBDdG11",
+            .url = "git+https://codeberg.org/GasInfinity/zig.git?ref=the-os-independence-day-lib-only-0.16.x#bded71fd1c56c571af69c9afa0a96f429582fddd",
+            .hash = "N-V-__8AAJI80AvDfc4M-_UzskCL4ZYqfMrr2U0V6_6BNK_D",
         },
     },
     .paths = .{

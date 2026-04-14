@@ -62,7 +62,7 @@ pub fn defaultPanic(msg: []const u8, first_trace_addr: ?usize) noreturn {
 
                 if (@errorReturnTrace()) |t| if (t.index > 0) {
                     fixed.writeAll("error return context:\n") catch break :trace;
-                    std.debug.writeStackTrace(t, fixed_terminal) catch break :trace;
+                    std.debug.writeErrorReturnTrace(t, fixed_terminal) catch break :trace;
                     fixed.writeAll("\nstack trace:\n") catch break :trace;
                 };
 

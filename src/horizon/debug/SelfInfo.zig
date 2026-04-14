@@ -9,10 +9,14 @@ pub fn deinit(si: *SelfInfo, io: Io) void {
     _ = io;
 }
 
-pub fn getSymbol(si: *SelfInfo, io: Io, address: usize) Error!std.debug.Symbol {
+pub fn getSymbols(si: *SelfInfo, io: Io, symbol_allocator: Allocator, text_arena: Allocator, address: usize, include_inline_callers: bool, symbols: *std.ArrayList(Symbol)) Error!void {
     _ = si;
     _ = io;
+    _ = symbol_allocator;
+    _ = text_arena;
     _ = address;
+    _ = include_inline_callers;
+    _ = symbols;
     return error.MissingDebugInfo;
 }
 
@@ -33,6 +37,8 @@ pub fn getModuleSlide(si: *SelfInfo, io: Io, address: usize) Error!usize {
 pub const can_unwind = false;
 
 const Error = std.debug.SelfInfoError;
+const Symbol = std.debug.Symbol;
+const Allocator = std.mem.Allocator;
 const SelfInfo = @This();
 
 const std = @import("std");

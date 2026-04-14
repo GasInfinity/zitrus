@@ -110,7 +110,7 @@ pub fn main(init: horizon.Init) !void {
                 debug_writer.print("FAIL ({t})\n", .{err}) catch {};
 
                 if (@errorReturnTrace()) |trace| {
-                    std.debug.writeStackTrace(trace, .{ .writer = &debug_writer, .mode = .no_color }) catch {};
+                    std.debug.writeErrorReturnTrace(trace, .{ .writer = &debug_writer, .mode = .no_color }) catch {};
                 }
             },
         }

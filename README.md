@@ -69,8 +69,9 @@ pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_o
 ```
 
 ## Examples / Demos
-Currently there are multiple examples in the `demo/` directory. To build them, you must have `zig 0.15.1` in your path and run `zig build`.
+Currently there are multiple examples in the `demo/` directory. To build them, you must have `zig 0.16.0` in your path and run `zig build`.
 - [mango](demo/mango/) contains samples of how to use the mango graphics api.
+- [io](demo/io) contains samples of how `std.Io` may be used.
 
 - [panic](demo/panic/) is a simple example that panics when opened to test panics and traces.
 - [info](demo/info) is a simple app that currently shows the console region and model (will be updated to show more info over time).
@@ -81,8 +82,6 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 --- 
 
 You can (and are encouraged) to look at the `tools` directory as it is a good example of how to use the API's `zitrus` provides outside (and inside!) of a 3DS environment. Almost all tools are self-contained and span 50-300 LOC.
-
-*[There's also a WIP wiki](https://codeberg.org/GasInfinity/zitrus/wiki) (Looks like codeberg errors for some pages?)*
 
 ## Coverage
 

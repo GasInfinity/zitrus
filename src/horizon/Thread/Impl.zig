@@ -87,7 +87,7 @@ pub fn spawnOptions(config: std.Thread.SpawnConfig, comptime f: anytype, args: a
 
                     @call(.auto, f, inst.fn_args) catch |err| {
                         std.debug.print("thread {d} error: {s}\n", .{ getCurrentId(), @errorName(err) });
-                        if (@errorReturnTrace()) |trace| std.debug.dumpStackTrace(trace);
+                        if (@errorReturnTrace()) |trace| std.debug.dumpErrorReturnTrace(trace);
                     };
                 },
                 else => @compileError(bad_fn_ret),

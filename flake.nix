@@ -25,8 +25,9 @@
       devShells = forEachSupportedSystem ({ pkgs, zpkgs, zlspkgs }: {
         default = pkgs.mkShell {
           packages = with pkgs; [
-            zpkgs.zig_0_16_0_dev_3061
-            zlspkgs.zls 
+            # TODO: zig 0.16 is coming!
+            zpkgs.zig_0_16_0_dev_3153
+            # zlspkgs.zls
             lldb
           ];
         };
