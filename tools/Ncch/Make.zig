@@ -147,7 +147,7 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         const exefs_header = ncch.exefs.header(exefs_files.items);
         const exefs_full_size: u64 = @as(u64, @sizeOf(ncch.exefs.Header)) + exefs_header.files[exefs_files.items.len - 1].offset + exefs_header.files[exefs_files.items.len - 1].size;
 
-        var allocating: std.Io.Writer.Allocating = try .initCapacity(gpa, exefs_full_size);
+        var allocating: std.Io.Writer.Allocating = try .initCapacity(gpa, @intCast(exefs_full_size));
         defer allocating.deinit();
 
         try ncch.exefs.write(&allocating.writer, exefs_files.items);
