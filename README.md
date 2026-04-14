@@ -85,7 +85,7 @@ You can (and are encouraged) to look at the `tools` directory as it is a good ex
 
 ## Coverage
 
-Moved to [Coverage.md](docs/Coverage.md)
+Moved to [Coverage](https://zitrus.gasinfinity.dev/docs/zitrus/coverage/)
 
 ## Contributing
 
