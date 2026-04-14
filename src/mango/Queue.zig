@@ -482,6 +482,12 @@ pub const Status = enum(i32) {
     waiting = 0,
     /// The queue doesn't have any outstanding operation
     idle = 1,
+    /// The queue was lost, this is all or nothing. If a queue is lost, ALL queues are lost.
+    ///
+    /// Can happen when the driver loses the GPU (i.e it hangs)
+    /// The only thing you can do after this happens is destroying and recreating the device as `mango` will
+    /// try to reset the GPU to a known state; if that fails you're cooked.
+    lost = 2,
 };
 
 pub const Fill = State(.fill, FillItem, backend.max_buffered_queue_items);

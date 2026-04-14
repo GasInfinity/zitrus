@@ -761,6 +761,11 @@ pub const Graphics = extern struct {
         /// 0x0C8
         stat: Stat,
         /// 0x0D0
+        // XXX: Does this really work? Specifiying an invalid size
+        // (a.k.a bigger than it is will hang the GPU), even adding multiple
+        // req/finalize commands WILL hang the GPU (or GSP?)! This either means:
+        // - This doesn't work
+        // - Somehow something else has to be set?
         autostop: LsbRegister(bool),
         /// 0x0D4
         fixed_0x00010002: u32,
@@ -1868,7 +1873,7 @@ pub const Graphics = extern struct {
 
         pub const CommandBuffer = extern struct {
             /// Shifted to the left by 3.
-            size: [2]LsbRegister(u20),
+            size: [2]LsbRegister(u22),
             address: [2]AlignedPhysicalAddress(.@"16", .@"8"),
             jump: [2]LsbRegister(Trigger),
         };
@@ -2048,13 +2053,13 @@ pub const Graphics = extern struct {
 ///
 /// With these, looks like it's possible to:
 /// * Change the Hz of the display itself
-/// * Change the size of the displayed area, display it anywhere and set a 
+/// * Change the size of the displayed area, display it anywhere and set a
 /// configurable border color in the non-displayed area.
 ///
 /// It also looks like the pixel clock is the main clock divided by 24, i.e `268111856 / 24`
 ///
 /// All of this has been synthetized from 3dbrew and GBATEK, both sources have wildly different
-/// register naming but as everywhere else, the naming is different and reflects what I've seen 
+/// register naming but as everywhere else, the naming is different and reflects what I've seen
 /// and think.
 ///
 /// WARNING: Modifying these registers CAN damage hardware in some LCDs: o3DS (burn-in) and IPS (new ones).
@@ -2203,7 +2208,7 @@ pub const DisplayController = extern struct {
         format: Format,
         control: Control,
         select: Select,
-        status: Status, 
+        status: Status,
         color_lookup_index: LsbRegister(u8),
         color_lookup_data: Color,
         _unused0: [2]u32,
@@ -2256,7 +2261,9 @@ pub const DisplayController = extern struct {
         /// 0x20
         unknown: u32,
 
-        comptime { std.debug.assert(@sizeOf(Timing) == 0x24); }
+        comptime {
+            std.debug.assert(@sizeOf(Timing) == 0x24);
+        }
     };
 
     pub const DisplaySize = packed struct(u32) {
@@ -2275,7 +2282,7 @@ pub const DisplayController = extern struct {
 
     pub const Preset = struct {
         /// Top with half rate
-        pub const @"240x400@60Hz": Preset = .{
+        pub const @"top_240x400@60Hz": Preset = .{
             .display_size = .{ .width = 240, .height = 400 },
             .horizontal_timing = .{
                 .total = .init(450),
@@ -2289,7 +2296,7 @@ pub const DisplayController = extern struct {
                     .start = 449,
                     .end = 453,
                 },
-                .unknown = 0x10000, 
+                .unknown = 0x10000,
             },
             .horizontal_display_timing = .{
                 .back_porch_mid = 209,
@@ -2307,7 +2314,7 @@ pub const DisplayController = extern struct {
                     .start = 402,
                     .end = 406,
                 },
-                .unknown = 0, 
+                .unknown = 0,
             },
             .vertical_display_timing = .{
                 .back_porch_mid = 2,
@@ -2316,7 +2323,7 @@ pub const DisplayController = extern struct {
         };
 
         /// Top with interlace enabled
-        pub const @"2x240x400@60Hz": Preset = .{
+        pub const @"top_2x240x400@60Hz": Preset = .{
             .display_size = .{ .width = 240, .height = 400 },
             .horizontal_timing = .{
                 .total = .init(450),
@@ -2330,7 +2337,7 @@ pub const DisplayController = extern struct {
                     .start = 449,
                     .end = 453,
                 },
-                .unknown = 0x10000, 
+                .unknown = 0x10000,
             },
             .horizontal_display_timing = .{
                 .back_porch_mid = 209,
@@ -2352,12 +2359,12 @@ pub const DisplayController = extern struct {
             },
             .vertical_display_timing = .{
                 .back_porch_mid = 2,
-                .front_porch_start = 802, 
+                .front_porch_start = 802,
             },
         };
 
         /// Top
-        pub const @"240x800@60Hz": Preset = .{
+        pub const @"top_240x800@60Hz": Preset = .{
             .display_size = .{ .width = 240, .height = 800 },
             .horizontal_timing = .{
                 .total = .init(450),
@@ -2371,7 +2378,7 @@ pub const DisplayController = extern struct {
                     .start = 449,
                     .end = 453,
                 },
-                .unknown = 0x10000, 
+                .unknown = 0x10000,
             },
             .horizontal_display_timing = .{
                 .back_porch_mid = 209,
@@ -2393,12 +2400,12 @@ pub const DisplayController = extern struct {
             },
             .vertical_display_timing = .{
                 .back_porch_mid = 2,
-                .front_porch_start = 802, 
+                .front_porch_start = 802,
             },
         };
 
         /// Bottom
-        pub const @"240x320@60Hz": Preset = .{
+        pub const @"bottom_240x320@60Hz": Preset = .{
             .display_size = .{ .width = 240, .height = 320 },
             .horizontal_timing = .{
                 .total = .init(450),
@@ -2412,7 +2419,7 @@ pub const DisplayController = extern struct {
                     .start = 449,
                     .end = 453,
                 },
-                .unknown = 0x10000, 
+                .unknown = 0x10000,
             },
             .horizontal_display_timing = .{
                 .back_porch_mid = 209,
@@ -2443,6 +2450,89 @@ pub const DisplayController = extern struct {
         horizontal_display_timing: Timing.Display,
         vertical_timing: Timing,
         vertical_display_timing: Timing.Display,
+
+        /// Tries to compute timing parameters for the specified LCD configuration, returning `null` if no
+        /// configuration exists.
+        ///
+        /// WARNING: THIS HAS ONLY BEEN TESTED ON A o2DS!
+        pub fn init(screen: Screen, half_rate: bool, x: u12, y: u12, width: u12, height: u12, refresh: f32) ?Preset {
+            std.debug.assert(x + width <= screen.width() and y + height <= screen.height());
+
+            // WARNING: changing this has (unsafe) implications, read above
+            const h_total = 450;
+
+            const multiplier = if (half_rate) 1 else 2;
+            const remaining: f32 = @floatFromInt((zitrus.time.arm11_ticks_per_s / 24) * multiplier / (h_total + 1));
+            const unbounded_v_total: u32 = @ceil(remaining / refresh) - 1;
+
+            // We won't modify h_total so we're cooked.
+            if (unbounded_v_total > std.math.maxInt(u12) or unbounded_v_total < screen.height() + 12) return null;
+
+            const v_total: u12 = @intCast(unbounded_v_total);
+            const v_unused_total = v_total - screen.height() - 12;
+
+            // - First Border is Mid->End
+            // - Second Border is Start->Mid
+            const v_sync_end = v_unused_total + 2;
+            const v_back_porch_start = v_sync_end + 2;
+            const v_back_porch_mid = v_back_porch_start;
+            const v_back_porch_end = v_back_porch_mid + y;
+
+            const v_front_porch_start = v_back_porch_end + height;
+            const v_front_porch_mid = v_back_porch_end + (screen.height() - y);
+            const v_front_porch_end = v_front_porch_mid;
+            const v_sync_start = switch (screen) {
+                // Yes... totally makes sense!
+                .top => v_front_porch_end,
+                // When Sync Start -> End takes more than 1 tick,
+                // the screen directly desyncs/fades lmao (o2DS)
+                .bottom => v_sync_end - 1,
+            };
+
+            const v_irq_start = v_front_porch_end + 1;
+            const v_irq_end = v_irq_start + 4;
+
+            return .{
+                .display_size = .{ .width = @intCast(width), .height = @intCast(height) },
+                // NOTE: as HTotal is hardcoded, we don't have to calculate things (unlike with V)
+                .horizontal_timing = .{
+                    .total = .init(450),
+                    .back_porch_end = .init(209 + x),
+                    .front_porch_mid = .init(449),
+                    .front_porch_end = .init(449),
+                    .sync_start = .init(205),
+                    .sync_end = .init(207),
+                    .back_porch_start = .init(209),
+                    .interrupt = .{
+                        .start = 449,
+                        .end = 453,
+                    },
+                    .unknown = 0x10000,
+                },
+                .horizontal_display_timing = .{
+                    .back_porch_mid = 209,
+                    .front_porch_start = 209 + x + width,
+                },
+                .vertical_timing = .{
+                    .total = .init(v_total),
+                    .back_porch_end = .init(v_back_porch_end),
+                    .front_porch_mid = .init(v_front_porch_mid),
+                    .front_porch_end = .init(v_front_porch_end),
+                    .sync_start = .init(v_sync_start),
+                    .sync_end = .init(v_sync_end),
+                    .back_porch_start = .init(v_back_porch_start),
+                    .interrupt = .{
+                        .start = v_irq_start,
+                        .end = v_irq_end,
+                    },
+                    .unknown = 0x00,
+                },
+                .vertical_display_timing = .{
+                    .back_porch_mid = v_back_porch_mid,
+                    .front_porch_start = v_front_porch_start,
+                },
+            };
+        }
     };
 
     /// 0x00
@@ -2472,7 +2562,9 @@ pub const DisplayController = extern struct {
     /// 0xA0
     _unused2: [24]u32,
 
-    comptime { std.debug.assert(@sizeOf(DisplayController) == 0x100); }
+    comptime {
+        std.debug.assert(@sizeOf(DisplayController) == 0x100);
+    }
 };
 
 // TODO: Properly finish this

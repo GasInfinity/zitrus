@@ -173,11 +173,11 @@ pub const CaptureBuffer = extern struct {
 
     // TODO: Finish this
     pub inline fn init(capture: GraphicsServerGpu.ScreenCapture) CaptureBuffer {
-        const top_framebuffers: usize, const top_scale: usize = if (capture.top.format.interlacing == .none and !capture.top.format.half_rate) 
+        const top_framebuffers: usize, const top_scale: usize = if (capture.top.format.interlacing == .none and !capture.top.format.half_rate)
             .{ 1, 2 }
         else if (capture.top.format.interlacing == .enable)
             .{ 2, 1 }
-        else 
+        else
             .{ 1, 1 };
 
         const top_framebuffer_size = top_scale * pica.Screen.top.height() * pica.Screen.width_po2 * capture.top.format.pixel_format.bytesPerPixel();

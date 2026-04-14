@@ -149,6 +149,9 @@ pub const State = struct {
     pub fn deinit(state: *State, dev: mango.Device) void {
         defer state.* = undefined;
 
+        // NOTE: we have to wait for the command buffers (GPU may be still processing one) AND swapchains (we may have some presents left)
+        dev.waitIdle();
+
         dev.freeCommandBuffers(state.pool, &state.cmd);
         dev.destroyCommandPool(state.pool, null);
         dev.destroySemaphore(state.sema, null);
@@ -156,7 +159,6 @@ pub const State = struct {
         for (&state.color_buffers) |buf| dev.destroyImage(buf, null);
         dev.freeMemory(state.color_buffer_memory, null);
 
-        dev.waitIdle();
         dev.destroySwapchain(state.top, null);
         dev.destroySwapchain(state.bottom, null);
         dev.freeMemory(state.swapchain_memory, null);

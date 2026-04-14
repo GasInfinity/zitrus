@@ -1,4 +1,4 @@
-//! Type-safe PICA200 `pica.Graphics` command `Queue`
+//! Type-safe PICA200 `pica.Graphics` command wrappers and types.
 
 pub const Header = packed struct(u32) {
     id: Id,
@@ -25,22 +25,22 @@ pub const Id = enum(u16) {
 pub const Queue = struct {
     pub const empty: Queue = .{ .buffer = .empty, .end = 0 };
 
-    buffer: []align(8) u32,
-    end: usize,
+    buffer: []align(16) u32,
+    end: u32,
 
-    pub fn initBuffer(buffer: []align(8) u32) Queue {
+    pub fn initBuffer(buffer: []align(16) u32) Queue {
         return .{
             .buffer = buffer,
             .end = 0,
         };
     }
 
-    pub fn slice(queue: Queue) []u32 {
+    pub fn slice(queue: Queue) []align(16) u32 {
         return queue.buffer[0..queue.end];
     }
 
-    pub fn unusedCapacitySlice(queue: Queue) []u32 {
-        return queue.buffer[queue.end..];
+    pub fn unusedCapacitySlice(queue: Queue) []align(8) u32 {
+        return @alignCast(queue.buffer[queue.end..]);
     }
 
     pub fn reset(queue: *Queue) void {
@@ -181,6 +181,21 @@ pub const Queue = struct {
         }
     }
 
+    pub fn chain(queue: *Queue, address: zitrus.hardware.AlignedPhysicalAddress(.@"16", .@"8")) *zitrus.hardware.LsbRegister(u22) {
+        const p3d = &zitrus.memory.arm11.pica.p3d;
+
+        const size = &queue.buffer[queue.end];
+        queue.add(p3d, &p3d.primitive_engine.command_buffer.size[0], .init(0));
+        queue.add(p3d, &p3d.primitive_engine.command_buffer.address[0], address);
+        queue.add(p3d, &p3d.primitive_engine.command_buffer.jump[0], .init(.trigger));
+
+        if (!std.mem.isAligned(queue.end, 4)) {
+            queue.add(p3d, &p3d.primitive_engine.command_buffer.jump[0], .init(.trigger));
+        }
+
+        return @ptrCast(size);
+    }
+
     pub fn finalize(queue: *Queue) void {
         const p3d = &zitrus.memory.arm11.pica.p3d;
 
@@ -189,6 +204,174 @@ pub const Queue = struct {
         if (!std.mem.isAligned(queue.end, 4)) {
             queue.add(p3d, &p3d.irq.req[0..4].*, @bitCast(@as(u32, 0x12345678)));
         }
+    }
+};
+
+/// Represents a growable command stream (multiple chained command queues)
+pub const stream = struct {
+    pub const StreamResetMode = enum { free_all, retain_largest };
+    pub const Segment = struct {
+        queue: Queue,
+        node: std.SinglyLinkedList.Node,
+
+        comptime {
+            std.debug.assert(@sizeOf(Segment) == 16);
+        }
+
+        pub fn data(segment: *Segment) []align(16) u32 {
+            return @as([*]align(16) u32, @ptrCast(@alignCast(segment)))[0 .. @divExact(@sizeOf(Segment), @sizeOf(u32)) + segment.queue.buffer.len];
+        }
+    };
+
+    /// Context must have a field called `use_jumps` which toggles whether the stream
+    /// is a single command queue or multiple chained ones (when growing it)
+    ///
+    /// If `use_jumps` is not comptime-known or is `true`, it must also implement
+    /// `fn virtualToPhysical(ctx, virtual: *align(4096) const anyopaque) zitrus.hardware.PhysicalAddress`.
+    pub fn Custom(comptime Context: type) type {
+        return struct {
+            pub const empty: Stream = .{ .list = .{}, .last_chain_size = null, .initial_chunk = &.{}, .start = 0 };
+
+            list: std.SinglyLinkedList,
+            last_chain_size: ?*zitrus.hardware.LsbRegister(u22),
+            initial_chunk: []align(16) const u32,
+            /// This is intended to be modified directly, must be aligned to 4 words (16 bytes)
+            ///
+            /// Changes when finalizing or chaining queues (e.g when growing)
+            start: u32,
+
+            pub fn deinit(strm: *Stream, gpa: std.mem.Allocator) void {
+                strm.reset(gpa, .free_all);
+                strm.* = undefined;
+            }
+
+            pub fn first(strm: *Stream) ?*Queue {
+                const head = strm.list.first orelse return null;
+                const segment: *Segment = @fieldParentPtr("node", head);
+                return &segment.queue;
+            }
+
+            /// Grows the stream exponentially, i.e 4096->8192->16384; starting from `min_len`
+            pub fn grow(
+                strm: *Stream,
+                gpa: std.mem.Allocator,
+                /// Length of the first queue *in `u32`*s
+                min_len: u32,
+                ctx: Context,
+            ) !void {
+                std.debug.assert(min_len >= @sizeOf(Segment)); // You're crazy, please bump the len A LOT.
+                std.debug.assert(std.mem.isAligned(strm.start, 4));
+
+                const segment = if (strm.list.first) |node| blk: {
+                    const first_segment: *Segment = @alignCast(@fieldParentPtr("node", node));
+                    const first_que: *Queue = &first_segment.queue;
+                    const first_data = first_segment.data();
+                    const next_len = first_data.len << 1;
+
+                    if (!ctx.use_jumps) {
+                        std.debug.assert(first_segment.node.next == null);
+
+                        const new_len = first_data.len + next_len;
+                        const new = if (gpa.remap(first_data, new_len)) |remapped| remapped else remapped: {
+                            const new = try gpa.alignedAlloc(u32, .@"16", new_len);
+                            defer gpa.free(first_data);
+
+                            const copying = first_data[0 .. @divExact(@sizeOf(Segment), @sizeOf(u32)) + first_segment.queue.end];
+                            @memcpy(new[0..copying.len], copying);
+                            break :remapped new;
+                        };
+
+                        const new_segment: *Segment = @ptrCast(new);
+                        // NOTE: we copied all commands above
+                        new_segment.queue.buffer = new[@divExact(@sizeOf(Segment), @sizeOf(u32))..];
+                        strm.list.first = &new_segment.node;
+                        return;
+                    }
+
+                    const new_segment = try allocSegment(gpa, next_len);
+                    const had_last_chain = strm.last_chain_size != null;
+
+                    if (strm.last_chain_size) |last_size| {
+                        const len = (first_que.end - strm.start);
+                        last_size.* = .init(@intCast((len * @sizeOf(u32)) >> 3));
+                    }
+
+                    strm.last_chain_size = first_que.chain(.fromPhysical(ctx.virtualToPhysical(new_segment.queue.buffer.ptr)));
+
+                    if (!had_last_chain) {
+                        strm.initial_chunk = @alignCast(first_que.buffer[strm.start..first_que.end]);
+                    }
+
+                    strm.start = 0;
+                    break :blk new_segment;
+                } else try allocSegment(gpa, min_len);
+
+                strm.list.prepend(&segment.node);
+            }
+
+            /// Finalizes and returns the initial chunk of the stream.
+            pub fn finalize(strm: *Stream) []align(16) const u32 {
+                std.debug.assert(std.mem.isAligned(strm.start, 4));
+
+                const que = strm.first().?;
+                que.finalize();
+
+                const initial_chunk: []align(16) const u32 = if (strm.last_chain_size) |last_size| blk: {
+                    last_size.* = .init(@intCast(((que.end - strm.start) * @sizeOf(u32)) >> 3));
+                    break :blk strm.initial_chunk;
+                } else @alignCast(que.buffer[strm.start..que.end]);
+
+                strm.last_chain_size = null;
+                strm.start = que.end;
+                return initial_chunk;
+            }
+
+            pub fn reset(strm: *Stream, gpa: std.mem.Allocator, mode: StreamResetMode) void {
+                const first_node = strm.list.first orelse return;
+                strm.last_chain_size = null;
+                strm.initial_chunk = &.{};
+                strm.start = 0;
+
+                var freeing = switch (mode) {
+                    .free_all => blk: {
+                        strm.list.first = null;
+                        break :blk first_node;
+                    },
+                    .retain_largest => blk: {
+                        first_node.next = null;
+
+                        const first_segment: *Segment = @fieldParentPtr("node", first_node);
+                        first_segment.queue.end = 0;
+                        break :blk first_node.next;
+                    },
+                };
+
+                while (freeing) |node| {
+                    freeing = node.next;
+
+                    const segment: *Segment = @alignCast(@fieldParentPtr("node", node));
+                    const segment_data = segment.data();
+                    gpa.free(segment_data);
+                }
+            }
+
+            fn allocSegment(gpa: std.mem.Allocator, len: u32) !*Segment {
+                const data = try gpa.alignedAlloc(u32, .@"16", len);
+                const segment: *Segment = @ptrCast(data);
+
+                segment.* = .{
+                    .queue = .{
+                        .buffer = data[@divExact(@sizeOf(Segment), @sizeOf(u32))..],
+                        .end = 0,
+                    },
+                    .node = .{},
+                };
+
+                return segment;
+            }
+
+            const Stream = @This();
+        };
     }
 };
 

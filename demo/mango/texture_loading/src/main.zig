@@ -24,10 +24,17 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
     const gpa = init.app.base.gpa;
     const device: mango.Device = init.device;
 
-    try horizon.Io.global.initStorage(init.app.srv, .fs, 0);
-
     var state: State = try .init(device);
     defer state.deinit(device);
+
+    const model_buffer = try device.createBuffer(.{
+        .size = .size(@sizeOf(Vertex) * 4 + 6),
+        .usage = .{
+            .vertex_buffer = true,
+            .index_buffer = true,
+        },
+    }, gpa);
+    defer device.destroyBuffer(model_buffer, null);
 
     const buffer_memory = try device.allocateMemory(.{
         .memory_type = .fcram_cached,
@@ -36,7 +43,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
     defer device.freeMemory(buffer_memory, null);
 
     {
-        const mapped= try device.mapMemory(buffer_memory, .size(0), .whole);
+        const mapped = try device.mapMemory(buffer_memory, .size(0), .whole);
         defer device.unmapMemory(buffer_memory);
 
         const vtx_data: *[4]Vertex = @alignCast(std.mem.bytesAsValue([4]Vertex, mapped));
@@ -53,24 +60,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
             },
         });
     }
-
-    const index_buffer = try device.createBuffer(.{
-        .size = .size(0x6),
-        .usage = .{
-            .index_buffer = true,
-        },
-    }, null);
-    defer device.destroyBuffer(index_buffer, null);
-    try device.bindBufferMemory(index_buffer, buffer_memory, .size(@sizeOf([4]Vertex)));
-
-    const vtx_buffer = try device.createBuffer(.{
-        .size = .size(@sizeOf(Vertex) * 4),
-        .usage = .{
-            .vertex_buffer = true,
-        },
-    }, gpa);
-    defer device.destroyBuffer(vtx_buffer, null);
-    try device.bindBufferMemory(vtx_buffer, buffer_memory, .size(0));
+    try device.bindBufferMemory(model_buffer, buffer_memory, .size(0));
 
     const simple_shader = try device.createShader(.init(.psh, position_vtx, "main"), null);
     defer device.destroyShader(simple_shader, null);
@@ -245,8 +235,8 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         });
         cmd.setScissor(.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 400 } }));
 
-        cmd.bindIndexBuffer(index_buffer, 0, .u8);
-        cmd.bindVertexBuffersSlice(0, &.{vtx_buffer}, &.{0});
+        cmd.bindIndexBuffer(model_buffer, @sizeOf([4]Vertex), .u8);
+        cmd.bindVertexBuffersSlice(0, &.{model_buffer}, &.{0});
         cmd.bindCombinedImageSamplers(0, &.{
             .{
                 .image = texture_view,

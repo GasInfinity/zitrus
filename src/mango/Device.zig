@@ -243,6 +243,8 @@ pub const VTable = struct {
 
     waitSemaphores: *const fn (dev: *Device, wait_info: mango.SemaphoreWaitInfo, timeout: u64) WaitSemaphoreError!void,
     signalSemaphore: *const fn (dev: *Device, signal_info: mango.SemaphoreSignalInfo) SignalSemaphoreError!void,
+
+    virtualToPhysical: *const fn (dev: *Device, virtual: *const anyopaque) zitrus.hardware.PhysicalAddress,
 };
 
 const ObjectCreationError = mango.ObjectCreationError;
@@ -265,7 +267,7 @@ linear_gpa: std.mem.Allocator,
 fill_queue: backend.Queue.Fill,
 transfer_queue: backend.Queue.Transfer,
 submit_queue: backend.Queue.Submit,
-presentation_queue: backend.Queue.Presentation = undefined,
+presentation_queue: backend.Queue.Presentation,
 
 /// Whether we're waiting for operations to complete or not.
 /// Waiting for a semaphore is NOT considered idle as we'll eventually wake.
@@ -334,7 +336,7 @@ pub fn destroySemaphore(device: *Device, semaphore: mango.Semaphore, maybe_gpa: 
 pub fn createCommandPool(device: *Device, create_info: mango.CommandPoolCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.CommandPool {
     const gpa = maybe_gpa orelse device.gpa;
     const b_command_pool: *backend.CommandPool = try gpa.create(backend.CommandPool);
-    b_command_pool.* = try .init(create_info, device.linear_gpa, gpa);
+    b_command_pool.* = try .init(device, create_info, device.linear_gpa, gpa);
     return b_command_pool.toHandle();
 }
 
@@ -583,6 +585,8 @@ pub fn waitIdle(device: *Device) void {
 
         while (true) switch (queue_status.load(.monotonic)) {
             .idle => break,
+            // TODO: Make this return an error
+            .lost => break,
             .waiting, .working, .work_completed => device.vtable.waitIdleQueue(device, kind),
         };
     }

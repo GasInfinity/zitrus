@@ -97,7 +97,7 @@ pub fn initializeHardware(gsp: GraphicsServerGpu) !void {
     const gpu: *volatile pica.Registers = memory.gpu_registers;
 
     try gsp.writeRegisters([4]u8, gpu.p3d.irq.ack[0..4], @splat(0));
-    try gsp.writeRegisters([4]u8, gpu.p3d.irq.cmp[0..4], .{0x78, 0x56, 0x34, 0x12});
+    try gsp.writeRegisters([4]u8, gpu.p3d.irq.cmp[0..4], .{ 0x78, 0x56, 0x34, 0x12 });
     try gsp.writeRegisters(pica.Graphics.Interrupt.Mask, &gpu.p3d.irq.mask, .{
         .disabled_low = BitpackedArray(bool, 32).splat(true).copyWith(0, false).copyWith(1, false).copyWith(2, false).copyWith(3, false),
         .disabled_high = .splat(true),
@@ -110,17 +110,20 @@ pub fn initializeHardware(gsp: GraphicsServerGpu) !void {
     });
     try gsp.writeRegistersMasked(pica.MemoryFill.Control, &gpu.psc[0].control, .{
         .busy = false,
-        .width = .@"16", 
+        .width = .@"16",
     }, &.{0xFF});
     try gsp.writeRegistersMasked(pica.MemoryFill.Control, &gpu.psc[1].control, .{
         .busy = false,
-        .width = .@"16", 
+        .width = .@"16",
     }, &.{0xFF});
 
     // See `DisplayController` for more info
     //
     // Values were initially taken from libctru but now are taken from GSP.
-    const presets: []const DisplayController.Preset = &.{ .@"240x400@60Hz", .@"240x320@60Hz" };
+    const presets: []const DisplayController.Preset = &.{
+        .@"top_240x400@60Hz",
+        .@"bottom_240x320@60Hz",
+    };
 
     for (std.enums.values(Screen), &gpu.pdc, presets) |screen, *pdc, preset| {
         // This shouldn't matter

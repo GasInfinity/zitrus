@@ -17,6 +17,7 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
 // TODO: We have to get Dwarf info in some way or another...
 
 pub const SelfInfo = @import("debug/SelfInfo.zig");
+pub const breaking_panic = @import("debug/breaking_panic.zig");
 
 pub fn getDebugInfoAllocator() std.mem.Allocator {
     return horizon.Io.global.gpa;

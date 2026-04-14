@@ -612,8 +612,8 @@ fn emitDirtyTextureUnits(rnd: *RenderingState, queue: *command.Queue) void {
                 .type = if (sampler.data.projected) // TODO: shadow 2d and shadow cube
                     .projection
                 else if (image_view.data.is_cube)
-                    .cube_map 
-                else 
+                    .cube_map
+                else
                     .@"2d",
             },
             .{
@@ -697,10 +697,6 @@ fn emitDirtyTextureUnits(rnd: *RenderingState, queue: *command.Queue) void {
 
 fn emitDirtyUniforms(rnd: *RenderingState, queue: *command.Queue) void {
     const dirty = rnd.dirty;
-
-    queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
-    defer queue.add(p3d, &p3d.primitive_engine.mode, .init(.drawing));
-
     const shader_registers: []const *volatile Graphics.Shader = &.{ &p3d.vertex_shader, &p3d.geometry_shader };
     const shader_stages: []const mango.ShaderStage = &.{ mango.ShaderStage.vertex, mango.ShaderStage.geometry };
 

@@ -297,9 +297,7 @@ pub const Scope = enum {
 };
 
 pub const Error = error{OutOfMemory} || validation.Error;
-
 pub const Operation = struct {
-    /// `extra` stores the buffer index
     pub const Graphics = struct {
         /// 16-byte Aligned
         start: u32,
@@ -308,7 +306,6 @@ pub const Operation = struct {
         end: u32,
     };
 
-    /// `extra` stores `Size`
     pub const Fill = struct {
         pub const Size = pica.DisplayController.Framebuffer.Pixel.Size;
 
@@ -326,7 +323,6 @@ pub const Operation = struct {
         size: u32,
     };
 
-    /// `extra` stores `Kind`
     pub const Blit = struct {
         pub const Dimensions = pica.PictureFormatter.Dimensions;
         pub const Kind = enum(u2) { linear_tiled, tiled_linear, tiled_tiled };
@@ -344,17 +340,12 @@ pub const Operation = struct {
         blit,
     };
 
-    pub const Flags = packed struct(u16) {
+    pub const Flags = packed struct(u32) {
+        _: u30 = 0,
         kind: Kind,
-        /// Wait for the previous operation to complete before starting this one,
-        /// NOOP if first one.
-        sync: bool,
-        _: u13 = 0,
     };
 
-    start: u32,
     flags: Flags,
-    extra: u16,
 };
 
 pool: *CommandPool,
@@ -364,36 +355,34 @@ pool: *CommandPool,
 // we need a cpu->gpu->cpu roundtrip per query...
 // Yes! but why are you using them then if not for debugging lmao?
 
-// TODO: CommandBuffer Streams, so we don't have to memcpy.
-// Basically a segmented array and exploit that we can jump arbitrarily on the GPU.
-queue: command.Queue,
+stream: Stream = .empty,
+head: []align(16) const u32 = &.{},
+
 gfx_state: GraphicsState = .empty,
 rnd_state: RenderingState = .empty,
 current_error: ?Error = null,
 state: State = .initial,
 scope: Scope = .none,
 
-pub fn initBuffer(pool: *CommandPool, buffer: []align(8) u32) CommandBuffer {
+pub fn init(pool: *CommandPool) CommandBuffer {
     return .{
         .pool = pool,
-        .queue = .{
-            .buffer = buffer,
-            .end = 0,
-        },
     };
 }
 
-pub fn deinit(cmd: *CommandBuffer) []align(8) u32 {
+pub fn deinit(cmd: *CommandBuffer) void {
     defer cmd.* = undefined;
-    return cmd.queue.buffer;
+    cmd.stream.deinit(cmd.pool.native_gpa);
 }
 
 pub fn begin(cmd: *CommandBuffer) !void {
     std.debug.assert(cmd.state == .initial or cmd.state == .executable);
     cmd.reset(.none);
-    if (cmd.queue.buffer.len == 0) cmd.queue.buffer = try cmd.pool.allocateNative(null);
-    cmd.queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
+    try cmd.ensureUnusedCapacity(backend.max_native_drawcall_cost);
     cmd.state = .recording;
+
+    const queue = cmd.stream.first().?;
+    queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
 }
 
 pub fn end(cmd: *CommandBuffer) !void {
@@ -404,17 +393,12 @@ pub fn end(cmd: *CommandBuffer) !void {
         return err;
     }
 
-    cmd.queue.finalize();
+    cmd.head = cmd.stream.finalize();
     cmd.state = .executable;
 }
 
 pub fn reset(cmd: *CommandBuffer, flags: mango.CommandBufferResetFlags) void {
-    if (flags.release_resources) {
-        cmd.pool.recycleNative(cmd.queue.buffer);
-        cmd.queue.buffer = &.{};
-    }
-
-    cmd.queue.end = 0;
+    cmd.stream.reset(cmd.pool.native_gpa, if (flags.release_resources) .free_all else .retain_largest);
     cmd.gfx_state = .empty;
     cmd.rnd_state = .empty;
     cmd.current_error = null;
@@ -494,7 +478,7 @@ pub fn endRendering(cmd: *CommandBuffer) void {
     std.debug.assert(cmd.scope == .render_pass);
     defer cmd.scope = .none;
 
-    const queue = &cmd.queue;
+    const queue = cmd.stream.first().?;
 
     if (cmd.rnd_state.endRendering()) {
         queue.add(p3d, &p3d.output_merger.flush, .init(.trigger));
@@ -592,7 +576,7 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
         return;
     }
 
-    const queue = &cmd.queue;
+    const queue = cmd.stream.first().?;
     const dynamic_graphics_state = cmd.gfx_state;
     const dynamic_rendering_state = cmd.rnd_state;
 
@@ -830,12 +814,16 @@ fn beforeDraw(cmd: *CommandBuffer, draw_count: usize) bool {
         return false;
     }
 
-    cmd.growIfNeeded(draw_count) catch |err| {
+    const max_graphics_emission_cost = cmd.gfx_state.maxEmitDirtyQueueLength();
+    const max_rendering_emission_cost = cmd.rnd_state.maxEmitDirtyQueueLength();
+    const max_emission_cost = 20 + max_graphics_emission_cost + max_rendering_emission_cost + (draw_count * backend.max_native_drawcall_cost);
+
+    cmd.ensureUnusedCapacity(max_emission_cost) catch |err| {
         cmd.current_error = err;
         return false;
     };
 
-    const queue = &cmd.queue;
+    const queue = cmd.stream.first().?;
 
     cmd.gfx_state.emitDirty(queue) catch |err| switch (err) {
         error.ValidationFailed => |e| {
@@ -848,17 +836,17 @@ fn beforeDraw(cmd: *CommandBuffer, draw_count: usize) bool {
     return true;
 }
 
-fn growIfNeeded(cmd: *CommandBuffer, draw_count: usize) !void {
-    const slice = cmd.queue.slice();
-    const unused_slice = cmd.queue.unusedCapacitySlice();
+fn ensureUnusedCapacity(cmd: *CommandBuffer, capacity: usize) !void {
+    const remaining = if (cmd.stream.first()) |que| (que.unusedCapacitySlice().len - cmd.stream.start) else 0;
 
-    const max_graphics_emission_cost = cmd.gfx_state.maxEmitDirtyQueueLength();
-    const max_rendering_emission_cost = cmd.rnd_state.maxEmitDirtyQueueLength();
-    const max_emission_cost = max_graphics_emission_cost + max_rendering_emission_cost + (draw_count * backend.max_native_drawcall_cost);
+    if (remaining < capacity) {
+        @branchHint(.unlikely);
 
-    if (unused_slice.len >= max_emission_cost) return;
-
-    cmd.queue.buffer = try cmd.pool.remapNative(cmd.queue.buffer, cmd.queue.end, slice.len + max_emission_cost);
+        // TODO: unregress linear memory pooling
+        try cmd.stream.grow(cmd.pool.native_gpa, min_stream_segment_size, .{
+            .pool = cmd.pool,
+        });
+    }
 }
 
 pub fn notifyPending(cmd: *CommandBuffer) void {
@@ -880,9 +868,23 @@ pub fn fromHandleMutable(handle: Handle) *CommandBuffer {
     return @as(*CommandBuffer, @ptrFromInt(@intFromEnum(handle)));
 }
 
+const StreamContext = struct {
+    comptime use_jumps: bool = true,
+    pool: *CommandPool,
+
+    pub fn virtualToPhysical(ctx: StreamContext, virtual: *const anyopaque) zitrus.hardware.PhysicalAddress {
+        return ctx.pool.device.vtable.virtualToPhysical(ctx.pool.device, virtual);
+    }
+};
+
+const min_stream_segment_size = CommandPool.native_min_size;
+const Stream = command.stream.Custom(StreamContext);
+
 const CommandBuffer = @This();
 const backend = @import("backend.zig");
 const validation = backend.validation;
+
+const log = validation.log;
 
 const CommandPool = backend.CommandPool;
 const GraphicsState = backend.GraphicsState;

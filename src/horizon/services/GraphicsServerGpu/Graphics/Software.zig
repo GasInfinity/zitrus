@@ -77,7 +77,8 @@ pub fn deinit(soft: *Software, gsp: GraphicsServerGpu, physical_linear_allocator
 }
 
 pub fn reacquire(soft: *Software, gsp: GraphicsServerGpu) !void {
-    return soft.gfx.reacquire(gsp);
+    try soft.gfx.reacquire(gsp);
+    try gsp.sendSetLcdForceBlack(false);
 }
 
 pub fn release(soft: *Software, gsp: GraphicsServerGpu) !GraphicsServerGpu.ScreenCapture {

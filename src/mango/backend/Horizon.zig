@@ -40,6 +40,8 @@ const vtable: Device.VTable = .{
 
     .waitSemaphores = waitSemaphores,
     .signalSemaphore = signalSemaphore,
+
+    .virtualToPhysical = virtualToPhysical,
 };
 
 const CodeCache = struct {
@@ -255,8 +257,8 @@ fn waitIdleQueue(dev: *Device, queue: Queue.Type) void {
 
     const queue_status = dev.queue_statuses.getPtr(queue);
 
-    while (true) switch (queue_status.load(.monotonic)) {
-        .idle => break,
+    while (true) switch (queue_status.load(.acquire)) {
+        .idle, .lost => break,
         .waiting, .working, .work_completed => _ = h_dev.arbiter.wait(Queue.Status, &queue_status.raw, .idle),
     };
 }
@@ -481,6 +483,10 @@ fn signalSemaphore(dev: *Device, signal_info: mango.SemaphoreSignalInfo) mango.S
     }
 }
 
+fn virtualToPhysical(_: *Device, virtual: *const anyopaque) zitrus.hardware.PhysicalAddress {
+    return horizon.memory.toPhysical(@intFromPtr(virtual));
+}
+
 // XXX: Currently if some error happens in the driver, the entire app crashes! Should we report an error condition?
 // Is really something we can do...?
 
@@ -519,7 +525,7 @@ fn driverMain(h_dev: *Horizon) void {
         // It's impossible to get less than 1 interrupt per second, we always get an interrupt,
         // even if we don't have right!
         h_dev.interrupt_event.wait(.fromNanoseconds(std.time.ns_per_s)) catch |err| switch (err) {
-            error.Timeout => driverLost(gsp, null),
+            error.Timeout => h_dev.driverLost(gsp, null),
             else => unreachable,
         };
 
@@ -533,7 +539,7 @@ fn driverMain(h_dev: *Horizon) void {
                     .ppf => .transfer,
                     .p3d => .submit,
                     .vblank_top, .vblank_bottom => .present,
-                    else => continue, 
+                    else => continue,
                 };
 
                 if (interrupts.contains(int)) {
@@ -557,8 +563,8 @@ fn driverMain(h_dev: *Horizon) void {
                         .vblank_top => presentation_engine.refresh(h_dev.arbiter, gsp, fbs, .top),
                         .vblank_bottom => presentation_engine.refresh(h_dev.arbiter, gsp, fbs, .bottom),
                         .dma, .psc0, .psc1, .ppf => {},
-                    } 
-                    
+                    }
+
                     continue;
                 }
             }
@@ -575,10 +581,10 @@ fn driverMain(h_dev: *Horizon) void {
                     const last_submission_time = submission_time.get(kind);
                     const elapsed_without_interrupt = horizon.time.getSystemNanoseconds() -% last_submission_time;
 
-                    if (elapsed_without_interrupt > lose_ns_sentinel) driverLost(gsp, kind);
+                    if (elapsed_without_interrupt > lose_ns_sentinel) h_dev.driverLost(gsp, kind);
                     continue :queue;
                 },
-                .work_completed, .waiting, .idle => {},
+                .work_completed, .waiting, .idle, .lost => {},
             }
 
             switch (kind) {
@@ -628,17 +634,17 @@ fn driverMain(h_dev: *Horizon) void {
                                 .transfer => {
                                     switch (value.flags.kind) {
                                         .copy => gx.pushFrontAssumeCapacity(.initTextureCopy(
-                                            value.src, 
-                                            value.dst, 
-                                            value.flags.extra.copy, 
+                                            value.src,
+                                            value.dst,
+                                            value.flags.extra.copy,
                                             value.input_gap_size,
                                             value.output_gap_size,
                                             .none,
                                         )),
                                         .linear_tiled, .tiled_linear, .tiled_tiled => gx.pushFrontAssumeCapacity(.initDisplayTransfer(
-                                            value.src, 
-                                            value.dst, 
-                                            value.flags.extra.transfer.src_fmt, 
+                                            value.src,
+                                            value.dst,
+                                            value.flags.extra.transfer.src_fmt,
                                             value.input_gap_size,
                                             value.flags.extra.transfer.dst_fmt,
                                             value.output_gap_size,
@@ -651,7 +657,8 @@ fn driverMain(h_dev: *Horizon) void {
                                                 },
                                                 .downscale = value.flags.extra.transfer.downscale,
                                                 .use_32x32 = value.flags.extra.transfer.use_32x32,
-                                            }, .none,
+                                            },
+                                            .none,
                                         )),
                                     }
                                 },
@@ -659,7 +666,19 @@ fn driverMain(h_dev: *Horizon) void {
                                     const b_cmd = value.cmd_buffer;
                                     defer submission_buffer = b_cmd;
 
-                                    gx.pushFrontAssumeCapacity(.initProcessCommandList(b_cmd.queue.buffer[0..b_cmd.queue.end], .none, .flush, .none));
+                                    {
+                                        var next = b_cmd.stream.list.first;
+
+                                        while (next) |node| {
+                                            next = node.next;
+
+                                            const segment: *pica.command.stream.Segment = @alignCast(@fieldParentPtr("node", node));
+                                            _ = horizon.flushProcessDataCache(.current, @ptrCast(segment.queue.buffer[0..segment.queue.end]));
+                                        }
+                                    }
+
+                                    const buffer = b_cmd.head;
+                                    gx.pushFrontAssumeCapacity(.initProcessCommandList(buffer, .none, .none, .none));
                                 },
                                 .present => {
                                     // NOTE: Same as above, the present queue is "special".
@@ -680,9 +699,16 @@ fn driverMain(h_dev: *Horizon) void {
 
 // TODO: make this not a panic (error.DeviceLost)
 // TODO: make this dump useful info (like the command buffer)
-fn driverLost(gsp: GraphicsServerGpu, kind: ?Queue.Type) noreturn {
+fn driverLost(h_dev: *Horizon, gsp: GraphicsServerGpu, kind: ?Queue.Type) noreturn {
     gsp.sendResetGpuCore() catch {};
     GraphicsServerGpu.Graphics.initializeHardware(gsp) catch {};
+
+    h_dev.running.store(false, .monotonic);
+
+    for (std.enums.values(Queue.Type)) |v| {
+        // TODO: wake them when we return an error
+        _ = h_dev.device.queue_statuses.getPtr(v).swap(.lost, .release);
+    }
 
     log.err(
         \\!!!! PICA200 HANG !!!!

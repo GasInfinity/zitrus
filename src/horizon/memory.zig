@@ -34,7 +34,7 @@ pub fn toPhysical(ptr: usize) zitrus.hardware.PhysicalAddress {
         old_linear_heap_begin...old_linear_heap_end => (ptr - old_linear_heap_begin) + memory.fcram_begin,
         linear_heap_begin...linear_heap_end => (ptr - linear_heap_begin) + memory.fcram_begin,
         vram_begin...vram_end => (ptr - vram_begin) + memory.vram_begin,
-        else => unreachable,
+        else => 0,
     });
 }
 

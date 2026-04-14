@@ -197,7 +197,7 @@ pub const GxCommand = extern struct {
             _: u31 = 0,
         };
 
-        address: [*]align(8) const u32,
+        address: [*]align(16) const u32,
         byte_size: usize,
         update_gas_results: UpdateGasResults,
         _unused0: [3]u32 = @splat(0),
@@ -412,7 +412,7 @@ pub const GxCommand = extern struct {
         };
     }
 
-    pub fn initProcessCommandList(command_buffer: []align(8) const u32, update_gas: ProcessCommandList.UpdateGasResults, flush: Flush, flags: Header.Flags) GxCommand {
+    pub fn initProcessCommandList(command_buffer: []align(16) const u32, update_gas: ProcessCommandList.UpdateGasResults, flush: Flush, flags: Header.Flags) GxCommand {
         return .{
             .header = .{
                 .id = .process_command_list,

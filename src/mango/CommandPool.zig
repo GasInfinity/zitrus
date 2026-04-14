@@ -32,6 +32,7 @@ pub const Node = struct {
     cmd_buffer: CommandBuffer,
 };
 
+device: *backend.Device,
 gpa: std.mem.Allocator,
 native_gpa: std.mem.Allocator,
 
@@ -40,8 +41,9 @@ free_command_buffers: std.DoublyLinkedList,
 
 free_native_buffers: [native_size_classes]usize,
 
-pub fn init(create_info: mango.CommandPoolCreateInfo, native_gpa: std.mem.Allocator, gpa: std.mem.Allocator) !CommandPool {
+pub fn init(device: *backend.Device, create_info: mango.CommandPoolCreateInfo, native_gpa: std.mem.Allocator, gpa: std.mem.Allocator) !CommandPool {
     var pool: CommandPool = .{
+        .device = device,
         .gpa = gpa,
         .native_gpa = native_gpa,
         .allocated_command_buffers = .{},
@@ -70,7 +72,7 @@ pub fn deinit(pool: *CommandPool, gpa: std.mem.Allocator) void {
 
             const pool_node: *Node = @alignCast(@fieldParentPtr("node", current));
 
-            pool.native_gpa.free(pool_node.cmd_buffer.deinit());
+            pool_node.cmd_buffer.deinit();
             pool.gpa.destroy(pool_node);
         }
 
@@ -138,7 +140,7 @@ pub fn trim(pool: *CommandPool) void {
 }
 
 /// Asserts that size_hint is not 0.
-pub fn allocateNative(pool: *CommandPool, size_hint: ?usize) ![]align(8) u32 {
+pub fn allocateNative(pool: *CommandPool, size_hint: ?usize) ![]align(16) u32 {
     const needed_class_size: usize = @intCast(@max(native_min_size, std.math.ceilPowerOfTwoPromote(usize, size_hint orelse native_min_size)));
 
     var needed_class = nativeClassIndex(needed_class_size);
@@ -147,17 +149,17 @@ pub fn allocateNative(pool: *CommandPool, size_hint: ?usize) ![]align(8) u32 {
         const ptr = pool.free_native_buffers[needed_class];
 
         if (ptr != 0) {
-            const buffer: [*]align(8) u32 = @ptrFromInt(ptr);
+            const buffer: [*]align(16) u32 = @ptrFromInt(ptr);
 
             pool.free_native_buffers[needed_class] = buffer[0];
             return buffer[0..(@as(usize, 1) << @intCast(needed_class + native_min_class))];
         }
     }
 
-    return try pool.native_gpa.alignedAlloc(u32, .@"8", needed_class_size);
+    return try pool.native_gpa.alignedAlloc(u32, .@"16", needed_class_size);
 }
 
-pub fn remapNative(pool: *CommandPool, buffer: []align(8) u32, used: usize, new_len: usize) ![]align(8) u32 {
+pub fn remapNative(pool: *CommandPool, buffer: []align(16) u32, used: usize, new_len: usize) ![]align(16) u32 {
     if (buffer.len == 0) return try pool.allocateNative(null);
 
     const next_class_len: usize = @intCast(std.math.ceilPowerOfTwoPromote(usize, new_len));
@@ -173,7 +175,7 @@ pub fn remapNative(pool: *CommandPool, buffer: []align(8) u32, used: usize, new_
     return new_buffer;
 }
 
-pub fn recycleNative(pool: *CommandPool, buffer: []align(8) u32) void {
+pub fn recycleNative(pool: *CommandPool, buffer: []align(16) u32) void {
     if (buffer.len == 0) return;
 
     const buffer_class = nativeClassIndex(buffer.len);
@@ -203,7 +205,7 @@ fn create(pool: *CommandPool) !*CommandBuffer {
     const pool_node: *Node = @alignCast(@fieldParentPtr("node", allocated_node));
     errdefer pool.free_command_buffers.append(allocated_node); // Ensure we won't leak memory!
 
-    pool_node.cmd_buffer = .initBuffer(pool, try pool.allocateNative(null));
+    pool_node.cmd_buffer = .init(pool);
     errdefer @compileError("If we return an error, this pool will have wrong state!");
 
     pool.allocated_command_buffers.append(allocated_node);
@@ -213,7 +215,7 @@ fn create(pool: *CommandPool) !*CommandBuffer {
 fn recycle(pool: *CommandPool, cmd_buffer: *CommandBuffer) void {
     const pool_node: *Node = @alignCast(@fieldParentPtr("cmd_buffer", cmd_buffer));
 
-    pool.recycleNative(cmd_buffer.deinit());
+    cmd_buffer.deinit();
     pool.allocated_command_buffers.remove(&pool_node.node);
     pool.free_command_buffers.append(&pool_node.node);
 }

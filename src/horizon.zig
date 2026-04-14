@@ -481,7 +481,7 @@ pub const SystemInfo = union(Type) {
         const info_type, const param: u32 = switch (info) {
             .used_kernel_memory, .loaded_kernel_processes => |_, tag| .{ tag, 0 },
             .used_memory => |v, tag| .{ tag, @bitCast(v) },
-            .emulator_information => |v, tag| .{ tag, @intFromEnum(v) }
+            .emulator_information => |v, tag| .{ tag, @intFromEnum(v) },
         };
 
         return switch (getSystemInfo(info_type, param).cases()) {
@@ -2032,20 +2032,22 @@ pub fn getResourceLimitCurrentValues(values: []i64, resource_limit: ResourceLimi
 
 // svc getThreadContext() stubbed 0x3B
 
-pub fn breakExecution(reason: BreakReason) void {
+pub fn breakExecution(reason: BreakReason) noreturn {
     asm volatile ("svc 0x3C"
         :
         : [reason] "{r0}" (reason),
         : .{ .r0 = true, .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
+    unreachable;
 }
 
-pub fn breakDebug(reason: BreakReason, cro_info: []const u8) void {
+pub fn breakDebug(reason: BreakReason, cro_info: []const u8) noreturn {
     asm volatile ("svc 0x3C"
         :
         : [reason] "{r0}" (reason),
           [cro_info] "{r1}" (cro_info.ptr),
           [cro_info_size] "{r2}" (cro_info.len),
         : .{ .r0 = true, .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
+    unreachable;
 }
 
 pub fn outputDebugString(str: []const u8) void {
