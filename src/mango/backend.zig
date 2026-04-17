@@ -30,6 +30,7 @@ pub const Buffer = @import("Buffer.zig");
 pub const Image = @import("Image.zig");
 pub const ImageView = @import("ImageView.zig");
 pub const Shader = @import("Shader.zig");
+pub const QueryPool = @import("QueryPool.zig");
 pub const CommandPool = @import("CommandPool.zig");
 pub const CommandBuffer = @import("CommandBuffer.zig");
 pub const Sampler = @import("Sampler.zig");

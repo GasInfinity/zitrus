@@ -340,6 +340,10 @@ pub fn setLightFactors(rnd: *RenderingState, first_light: u32, light_factors: []
     rnd.dirty.light_factors = true;
 }
 
+pub fn anyDirty(state: *RenderingState) bool {
+    return @as(u32, @bitCast(state.dirty)) != 0;
+}
+
 /// Returns the maximum amount of words the next dirty emission will take.
 ///
 /// Its a safe upper bound, not the exact amount needed.

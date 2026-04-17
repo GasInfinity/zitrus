@@ -532,12 +532,16 @@ pub fn bindShaders(state: *GraphicsState, stages: []const mango.ShaderStage, sha
     }
 }
 
+pub fn anyDirty(state: *GraphicsState) bool {
+    return @as(u64, @bitCast(state.dirty)) != 0;
+}
+
 /// Returns the maximum amount of words the next dirty emission will take.
 ///
 /// Its a safe upper bound, not the exact amount needed.
 pub fn maxEmitDirtyQueueLength(state: *GraphicsState) usize {
     // NOTE: This must be FAST as its always checked every drawcall!
-    var max: usize = (@as(usize, state.dirty.combiners.raw) * 9) + (@as(usize, state.dirty.light_luts.raw) * 300) + (@as(usize, @intFromBool(state.dirty.vertex_shader)) * 16) + (@as(usize, @intFromBool(state.dirty.geometry_shader)) * 16);
+    var max: usize = (@as(usize, state.dirty.combiners.raw) * 9) + (@as(usize, state.dirty.light_luts.raw) * 300) + (@as(usize, @intFromBool(state.dirty.vertex_shader)) * 32) + (@as(usize, @intFromBool(state.dirty.geometry_shader)) * 32);
 
     if (state.dirty.vertex_shader_code) max += if (state.vertex_shader) |vtx|
         10 + vtx.code.instructions.len + vtx.code.descriptors.len
@@ -548,18 +552,66 @@ pub fn maxEmitDirtyQueueLength(state: *GraphicsState) usize {
         10 + gs.code.instructions.len + gs.code.descriptors.len
     else
         0;
-    return max;
+    return max + 72;
 }
 
-pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) !void {
-    if (validation.enabled) try state.validate();
+pub fn validate(state: *GraphicsState) !void {
+    if (!validation.enabled) return;
 
-    // NOTE: a vertex shader must always be bound when drawing
-    const vtx = state.vertex_shader.?;
-    std.debug.assert(vtx.info.type == .vertex);
+    const check = state.check;
 
+    const conditions: []const bool = &.{
+        state.vertex_shader != null,
+        check.set.cull_mode,
+        check.set.front_face,
+        check.set.primitive_topology,
+        check.set.viewport,
+        check.set.scissor,
+        check.set.texture_combiners,
+        check.set.blend_equation,
+        check.set.color_write_mask,
+        check.set.depth_test_enable,
+        check.set.logic_op_enable,
+        check.set.vertex_input,
+        check.set.alpha_test_enable,
+        check.set.stencil_test_enable,
+        check.set.lighting_enable,
+    };
+
+    const kinds: []const []const u8 = &.{
+        "vertex shader",
+        "cull mode",
+        "front face",
+        "primitive topology",
+        "viewport",
+        "scissor",
+        "texture combiners",
+        "blend equation",
+        "color write mask",
+        "depth test enable",
+        "logic op enable",
+        "vertex input layout",
+        "alpha test enable",
+        "stencil test enable",
+        "lighting enable",
+    };
+
+    var success = true;
+
+    for (conditions, kinds) |condition, kind| {
+        success &= validation.check(condition, validation.graphics_state.must_be_set, .{kind});
+    }
+
+    if (!success) return error.ValidationFailed;
+}
+
+pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     // NOTE: Here we don't set uniforms, that belongs to `RenderingState`
     if (state.dirty.vertex_shader or state.dirty.geometry_shader) {
+        // NOTE: a vertex shader must always be bound when drawing
+        const vtx = state.vertex_shader.?;
+        std.debug.assert(vtx.info.type == .vertex);
+
         if (state.dirty.vertex_shader_code) {
             // NOTE: when code is dirty a shader is always present
             const common = (state.dirty.geometry_shader_code and vtx.code.uid == state.geometry_shader.?.code.uid) or state.geometry_shader == null;
@@ -916,54 +968,6 @@ fn emitCode(_: *GraphicsState, queue: *command.Queue, shader: *volatile pica.Gra
 
     queue.add(p3d, &shader.operand_descriptors_index, .init(0));
     queue.addConsecutive(p3d, &shader.operand_descriptors_data[0], code.descriptors);
-}
-
-fn validate(state: *GraphicsState) !void {
-    const check = state.check;
-
-    const conditions: []const bool = &.{
-        state.vertex_shader != null,
-        check.set.cull_mode,
-        check.set.front_face,
-        check.set.primitive_topology,
-        check.set.viewport,
-        check.set.scissor,
-        check.set.texture_combiners,
-        check.set.blend_equation,
-        check.set.color_write_mask,
-        check.set.depth_test_enable,
-        check.set.logic_op_enable,
-        check.set.vertex_input,
-        check.set.alpha_test_enable,
-        check.set.stencil_test_enable,
-        check.set.lighting_enable,
-    };
-
-    const kinds: []const []const u8 = &.{
-        "vertex shader",
-        "cull mode",
-        "front face",
-        "primitive topology",
-        "viewport",
-        "scissor",
-        "texture combiners",
-        "blend equation",
-        "color write mask",
-        "depth test enable",
-        "logic op enable",
-        "vertex input layout",
-        "alpha test enable",
-        "stencil test enable",
-        "lighting enable",
-    };
-
-    var success = true;
-
-    for (conditions, kinds) |condition, kind| {
-        success &= validation.check(condition, validation.graphics_state.must_be_set, .{kind});
-    }
-
-    if (!success) return error.ValidationFailed;
 }
 
 const GraphicsState = @This();

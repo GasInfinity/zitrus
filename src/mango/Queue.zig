@@ -16,7 +16,7 @@ pub const Handle = enum(u32) {
     /// Valid Usage:
     /// - Offsets must be aligned to 8 bytes.
     pub fn copyBuffer(queue: Handle, info: mango.CopyBufferInfo) !void {
-        const transfer: *Transfer = .fromHandleMutable(queue);
+        const transfer: *Queue = .fromHandleMutable(queue, .transfer);
         const b_src_buffer: backend.Buffer = .fromHandle(info.src_buffer);
         const b_dst_buffer: backend.Buffer = .fromHandle(info.dst_buffer);
 
@@ -30,7 +30,7 @@ pub const Handle = enum(u32) {
         const src = src_virt[@intFromEnum(info.src_offset)..][0..src_size];
         const dst = dst_virt[@intFromEnum(info.dst_offset)..][0..dst_size];
 
-        return transfer.wakePushFront(.{
+        return transfer.pushFrontBounded(TransferItem, .{
             .flags = .{
                 .kind = .copy,
                 .extra = .{
@@ -47,7 +47,7 @@ pub const Handle = enum(u32) {
 
     // TODO: Provide a software fallback for directly using host memory (akin to VK_EXT_host_image_copy)
     pub fn copyBufferToImage(queue: Handle, info: mango.CopyBufferToImageInfo) !void {
-        const transfer: *Transfer = .fromHandleMutable(queue);
+        const transfer: *Queue = .fromHandleMutable(queue, .transfer);
         const b_src_buffer: *backend.Buffer = .fromHandleMutable(info.src_buffer);
         const b_dst_image: *backend.Image = .fromHandleMutable(info.dst_image);
 
@@ -90,7 +90,7 @@ pub const Handle = enum(u32) {
             const wait_op: SemaphoreOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else .none;
             const signal_op: SemaphoreOperation = if (i == (dst_blitting_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else .none;
 
-            try transfer.wakePushFront(.{
+            try transfer.pushFrontBounded(TransferItem, .{
                 .flags = .{
                     .kind = .linear_tiled,
                     .extra = .{
@@ -110,13 +110,13 @@ pub const Handle = enum(u32) {
     }
 
     pub fn copyImageToBuffer(queue: Handle) void {
-        const transfer: *Transfer = .fromHandleMutable(queue);
+        const transfer: *Queue = .fromHandleMutable(queue, .transfer);
         _ = transfer;
         @panic("TODO");
     }
 
     pub fn copyImageToImage(queue: Handle) void {
-        const transfer: *Transfer = .fromHandleMutable(queue);
+        const transfer: *Queue = .fromHandleMutable(queue, .transfer);
         _ = transfer;
         @panic("TODO");
     }
@@ -133,7 +133,7 @@ pub const Handle = enum(u32) {
     /// - The width of the destination is half the width of the source.
     /// - The width and height of the destination is half the width of the source.
     pub fn blitImage(queue: Handle, info: mango.BlitImageInfo) !void {
-        const transfer: *Transfer = .fromHandleMutable(queue);
+        const transfer: *Queue = .fromHandleMutable(queue, .transfer);
 
         const b_src_image: *backend.Image = .fromHandleMutable(info.src_image);
         const b_dst_image: *backend.Image = .fromHandleMutable(info.dst_image);
@@ -221,7 +221,7 @@ pub const Handle = enum(u32) {
             const wait_op: SemaphoreOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else .none;
             const signal_op: SemaphoreOperation = if (i == (dst_blitting_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else .none;
 
-            try transfer.wakePushFront(.{
+            try transfer.pushFrontBounded(TransferItem, .{
                 .flags = .{
                     .kind = kind,
                     .extra = .{
@@ -242,7 +242,7 @@ pub const Handle = enum(u32) {
     }
 
     pub fn fillBuffer(queue: Handle, info: mango.FillBufferInfo) !void {
-        const fill: *Fill = .fromHandleMutable(queue);
+        const fill: *Queue = .fromHandleMutable(queue, .fill);
         const buffer: *backend.Buffer = .fromHandleMutable(info.buffer);
 
         const virt = buffer.memory_info.boundVirtualAddress();
@@ -250,7 +250,7 @@ pub const Handle = enum(u32) {
 
         const dst = virt[@intFromEnum(info.offset)..][0..size];
 
-        try fill.wakePushFront(.{
+        try fill.pushFrontBounded(FillItem, .{
             .data = @alignCast(dst),
             .value = switch (info.pattern_type) {
                 .u16 => .fill16(@truncate(info.pattern)),
@@ -262,7 +262,7 @@ pub const Handle = enum(u32) {
 
     /// Clear one color attachment image.
     pub fn clearColorImage(queue: Handle, info: mango.ClearColorInfo) !void {
-        const fill: *Fill = .fromHandleMutable(queue);
+        const fill: *Queue = .fromHandleMutable(queue, .fill);
         const color = info.color;
         const b_image: *backend.Image = .fromHandleMutable(info.image);
 
@@ -323,7 +323,7 @@ pub const Handle = enum(u32) {
 
         // We can fully clear all the layers! This common case must be optimized!
         if (info.subresource_range.base_mip_level == .@"0" and cleared_levels == b_image.info.levels()) {
-            return fill.wakePushFront(.{
+            return fill.pushFrontBounded(FillItem, .{
                 .data = @alignCast(virt_start[(full_layer_size * @intFromEnum(info.subresource_range.base_array_layer))..][0..(full_layer_size * cleared_layers)]),
                 .value = clear_value,
             }, .initSemaphoreOperation(info.wait_semaphore), .initSemaphoreOperation(info.signal_semaphore));
@@ -349,7 +349,7 @@ pub const Handle = enum(u32) {
             const wait_op: SemaphoreOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else .none;
             const signal_op: SemaphoreOperation = if (i == (cleared_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else .none;
 
-            try fill.wakePushFront(.{
+            try fill.pushFrontBounded(FillItem, .{
                 .data = @alignCast(current_virt_offset[0..full_cleared_size]),
                 .value = clear_value,
             }, wait_op, signal_op);
@@ -360,7 +360,7 @@ pub const Handle = enum(u32) {
         std.debug.assert(0.0 <= info.depth and info.depth <= 1.0);
 
         // TODO: Subresource range
-        const fill: *Fill = .fromHandleMutable(queue);
+        const fill: *Queue = .fromHandleMutable(queue, .fill);
         const depth = info.depth;
         const stencil = info.stencil;
 
@@ -374,27 +374,27 @@ pub const Handle = enum(u32) {
             else => unreachable,
         };
 
-        return fill.wakePushFront(.{
+        return fill.pushFrontBounded(FillItem, .{
             .data = @alignCast(clear_slice),
             .value = clear_value,
         }, .initSemaphoreOperation(info.wait_semaphore), .initSemaphoreOperation(info.signal_semaphore));
     }
 
     pub fn submit(queue: Handle, submit_info: mango.SubmitInfo) !void {
-        const submt: *Submit = .fromHandleMutable(queue);
+        const submt: *Queue = .fromHandleMutable(queue, .submit);
         const b_cmd: *backend.CommandBuffer = .fromHandleMutable(submit_info.command_buffer);
         b_cmd.notifyPending();
 
-        return submt.wakePushFront(.{
+        return submt.pushFrontBounded(SubmitItem, .{
             .cmd_buffer = b_cmd,
         }, .initSemaphoreOperation(submit_info.wait_semaphore), .initSemaphoreOperation(submit_info.signal_semaphore));
     }
 
     pub fn present(queue: Handle, info: mango.PresentInfo) !void {
-        const prsent: *Presentation = .fromHandleMutable(queue);
+        const prsent: *Queue = .fromHandleMutable(queue, .present);
         const screen = backend.Swapchain.fromHandle(info.swapchain);
 
-        return prsent.wakePushFront(.{
+        return prsent.pushFrontBounded(PresentationItem, .{
             .misc = .{
                 .screen = screen,
                 .ignore_stereo = info.flags.ignore_stereoscopic,
@@ -490,100 +490,120 @@ pub const Status = enum(i32) {
     lost = 2,
 };
 
-pub const Fill = State(.fill, FillItem, backend.max_buffered_queue_items);
-pub const Transfer = State(.transfer, TransferItem, backend.max_buffered_queue_items);
-pub const Submit = State(.submit, SubmitItem, backend.max_buffered_queue_items);
-pub const Presentation = backend.Queue.State(.present, PresentationItem, backend.max_present_queue_items);
+pub const Result = enum { empty, wait, ready };
 
-pub fn State(comptime kind: Type, comptime T: type, comptime capacity: u16) type {
-    return struct {
-        const QueueState = @This();
+type: Type,
+device: *backend.Device,
 
-        pub const Slot = struct {
-            item: T,
-            wait: SemaphoreOperation,
-            signal: SemaphoreOperation,
-        };
+head: std.atomic.Value(u32) align(std.atomic.cache_line),
+tail: std.atomic.Value(u32) align(std.atomic.cache_line),
 
-        type: Type = kind,
-        device: *backend.Device,
-        queue: backend.SingleProducerSingleConsumerBoundedQueue(Slot, capacity),
+// NOTE: we have to align the head & tail so we have plenty of storage...
+capacity: u32,
+size: u32,
+alignment: std.mem.Alignment,
 
-        pub fn init(device: *backend.Device) QueueState {
-            return .{
-                .device = device,
-                .queue = .init_empty,
-            };
-        }
+buffer: []u8,
+waits: []SemaphoreOperation,
+signals: []SemaphoreOperation,
 
-        /// Pushes new work and wakes the driver if needed.
-        ///
-        /// Not thread-safe, must be called from only one thread.
-        pub fn wakePushFront(state: *QueueState, item: T, wait: SemaphoreOperation, signal: SemaphoreOperation) !void {
-            defer state.device.wakeIdleQueue(kind);
+pub fn init(gpa: std.mem.Allocator, typ: Type, device: *backend.Device, capacity: u32, size: u32, alignment: std.mem.Alignment) !Queue {
+    const min_alignment: std.mem.Alignment = .max(alignment, .of(SemaphoreOperation));
+    const buffer_len = capacity * size;
+    const semas_start = std.mem.alignForward(usize, buffer_len, @alignOf(SemaphoreOperation));
+    const all = gpa.rawAlloc(
+        semas_start + (2 * capacity) * @sizeOf(SemaphoreOperation),
+        min_alignment,
+        @returnAddress(),
+    ) orelse return error.OutOfMemory;
+    errdefer gpa.rawFree(all, min_alignment, @returnAddress());
 
-            return state.queue.pushFront(.{
-                .item = item,
-                .wait = wait,
-                .signal = signal,
-            });
-        }
+    return .{
+        .type = typ,
+        .device = device,
 
-        pub const PopResult = union(enum) {
-            pub const Value = struct {
-                value: T,
-                signal: SemaphoreOperation,
-            };
+        .head = .init(0),
+        .tail = .init(0),
+        .capacity = capacity,
+        .size = size, 
+        .alignment = alignment,
 
-            empty,
-            wait,
-            work: Value,
-        };
-
-        /// Tries to pop new work to do.
-        pub fn workPopBack(state: *QueueState) PopResult {
-            if (state.queue.peekBack()) |slot| {
-                if (slot.wait.sema) |sema| {
-                    // NOTE: counterValue() is atomic
-                    if (sema.counterValue() < slot.wait.value) {
-                        return .wait;
-                    }
-                }
-
-                _ = state.queue.popBack() orelse unreachable;
-
-                return .{ .work = .{ .value = slot.item, .signal = slot.signal } };
-            } else return .empty;
-        }
-
-        /// Completes the previous operation by signaling its semaphore (if it had).
-        ///
-        /// returns the item of the completed operation.
-        pub fn complete(state: *QueueState) !T {
-            defer state.completion = undefined;
-
-            if (state.completion.signal) |sig_completion| {
-                try state.device.signalSemaphore(.{
-                    .semaphore = sig_completion.sema.toHandle(),
-                    .value = sig_completion.value,
-                });
-            }
-
-            return state.completion.item;
-        }
-
-        pub fn toHandle(state: *QueueState) Handle {
-            return @enumFromInt(@intFromPtr(&state.type));
-        }
-
-        pub fn fromHandleMutable(handle: Handle) *QueueState {
-            const handle_kind: *Type = @ptrFromInt(@intFromEnum(handle));
-            std.debug.assert(handle_kind.* == kind);
-
-            return @alignCast(@fieldParentPtr("type", handle_kind));
-        }
+        .buffer = all[0..buffer_len],
+        .waits = @alignCast(@ptrCast(all[semas_start..][0..capacity * @sizeOf(SemaphoreOperation)])),
+        .signals = @alignCast(@ptrCast(all[semas_start + (capacity * @sizeOf(SemaphoreOperation))..][0..capacity * @sizeOf(SemaphoreOperation)])),
     };
 }
+
+pub fn deinit(queue: *Queue, gpa: std.mem.Allocator) void {
+    const min_alignment: std.mem.Alignment = .max(queue.alignment, .of(SemaphoreOperation));
+    const buffer_len = queue.capacity * queue.size;
+    const semas_start = std.mem.alignForward(usize, buffer_len, @alignOf(SemaphoreOperation));
+    const all = queue.buffer.ptr[0..semas_start + (2 * queue.capacity * @sizeOf(SemaphoreOperation))];
+
+    gpa.rawFree(all, min_alignment, @returnAddress());
+}
+
+pub fn pushFrontBounded(queue: *Queue, comptime T: type, value: T, wait: SemaphoreOperation, signal: SemaphoreOperation) !void {
+    return queue.pushFrontBufferBounded(@ptrCast(&value), wait, signal);
+}
+
+/// Asserts `item.len` is equal to the queue item size
+pub fn pushFrontBufferBounded(queue: *Queue, item: []const u8, wait: SemaphoreOperation, signal: SemaphoreOperation) !void {
+    std.debug.assert(queue.size == item.len);
+    defer queue.device.wakeIdleQueue(queue.type);
+
+    const tail = queue.tail.load(.monotonic);
+    const new_tail = (tail + 1) % queue.capacity;
+    if (new_tail == queue.head.load(.monotonic)) return error.OutOfMemory;
+    @memcpy(queue.buffer[(tail * queue.size)..][0..queue.size], item);
+    queue.waits[tail] = wait;
+    queue.signals[tail] = signal;
+    queue.tail.store(new_tail, .release);
+}
+
+pub fn peekBack(queue: *Queue) Result {
+    const head = queue.head.load(.monotonic);
+    if (head == queue.tail.load(.acquire)) return .empty;
+
+    const wait = queue.waits[head];
+
+    if (wait.sema) |sema| if (sema.counterValue() < wait.value) {
+        return .wait;
+    };
+
+    return .ready;
+}
+
+/// Assumes a previous call to `peekBack` returned `ready`
+///
+/// Returns the corresponding semaphore operation to signal
+pub fn popBackBufferAssumeReady(queue: *Queue, item: []u8) SemaphoreOperation {
+    std.debug.assert(queue.size == item.len);
+
+    const head = queue.head.load(.monotonic); // NOTE: no need for acquire or checking here, we already did in peekBack (and you must peek before popping)!
+    @memcpy(item, queue.buffer[(head * queue.size)..][0..queue.size]); 
+    const signal = queue.signals[head];
+    queue.head.store((head + 1) % queue.capacity, .monotonic);
+    return signal;
+}
+
+pub fn popBackAssumeReady(queue: *Queue, comptime T: type) struct { T, SemaphoreOperation } {
+    var value: T = undefined;
+    const signal = queue.popBackBufferAssumeReady(@ptrCast(&value));
+    return .{ value, signal };
+}
+
+pub fn toHandle(queue: *Queue) Handle {
+    return @enumFromInt(@intFromPtr(queue));
+}
+
+pub fn fromHandleMutable(handle: Handle, typ: Type) *Queue {
+    const queue: *Queue = @ptrFromInt(@intFromEnum(handle));
+    std.debug.assert(queue.type == typ);
+    return queue;
+}
+
+const Queue = @This();
 
 const backend = @import("backend.zig");
 

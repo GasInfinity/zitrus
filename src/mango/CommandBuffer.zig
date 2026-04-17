@@ -276,6 +276,11 @@ pub const Handle = enum(u32) {
         b_cmd.bindLightEnvironmentTable(slot, table);
     }
 
+    pub fn writeTimestamp(cmd: Handle, pool: mango.QueryPool, query: u32) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.writeTimestamp(pool, query);
+    }
+
     pub fn reset(cmd: Handle, flags: mango.CommandBufferResetFlags) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         return b_cmd.reset(flags);
@@ -297,25 +302,48 @@ pub const Scope = enum {
 };
 
 pub const Error = error{OutOfMemory} || validation.Error;
-pub const Operation = struct {
-    pub const Graphics = struct {
-        /// 16-byte Aligned
-        start: u32,
 
-        /// 16-byte Aligned
-        end: u32,
+pub const operation = struct {
+    pub const Kind = enum(u3) {
+        graphics,
+        timestamp,
     };
 
-    pub const Fill = struct {
+    // NOTE: as both address and size must be aligned to 16 bytes we can reuse some unused bits!
+    // This means this must always be aligned or UB will happen
+    pub const Node = packed struct(u32) {
+        /// Kind of THIS node, not the next one.
+        kind: Kind,
+        _: u1 = 0,
+        next: u28,
+
+        pub fn empty(kind: Kind) Node {
+            return .{ .kind = kind, .next = 0 };       
+        }
+
+        pub fn nextPtr(node: Node) ?*Node {
+            return @ptrFromInt(@as(u32, node.next) << 4);
+        }
+    };
+
+    pub const Graphics = extern struct {
+        node: Node,
+        head: [*]align (16) const u32,
+        len: u32,
+    };
+
+    pub const Fill = extern struct {
         pub const Size = pica.DisplayController.Framebuffer.Pixel.Size;
 
+        node: Node,
         address: [*]align(16) u8,
         value: u32,
     };
 
-    pub const Copy = struct {
+    pub const Copy = extern struct {
         pub const Line = pica.PictureFormatter.Copy.Line;
 
+        node: Node,
         src: [*]align(16) const u8,
         dst: [*]align(16) u8,
         src_line: Line,
@@ -323,44 +351,50 @@ pub const Operation = struct {
         size: u32,
     };
 
-    pub const Blit = struct {
+    pub const Blit = extern struct {
         pub const Dimensions = pica.PictureFormatter.Dimensions;
         pub const Kind = enum(u2) { linear_tiled, tiled_linear, tiled_tiled };
 
+        node: Node,
         src: [*]align(16) const u8,
         dst: [*]align(16) u8,
         src_dimensions: Dimensions,
         dst_dimensions: Dimensions,
     };
 
-    pub const Kind = enum(u2) {
-        graphics,
-        fill,
-        copy,
-        blit,
+    pub const Timestamp = extern struct {
+        node: Node,
+        pool: *backend.QueryPool,
+        query: u32,
     };
 
-    pub const Flags = packed struct(u32) {
-        _: u30 = 0,
-        kind: Kind,
+    pub const BeginQuery = struct {
+        node: Node,
     };
 
-    flags: Flags,
+    pub const EndQuery = struct {
+        node: Node,
+    };
+};
+
+const Flags = packed struct(u8) {
+    pub const none: Flags = .{};
+
+    subsequent_emissions: bool = false,
+    _: u7 = 0,
 };
 
 pool: *CommandPool,
-
-// TODO: CommandBuffer Queries
-// We'd have to split the native queue and basically do (read)->split->read->split->read, etc...
-// we need a cpu->gpu->cpu roundtrip per query...
-// Yes! but why are you using them then if not for debugging lmao?
-
 stream: Stream = .empty,
-head: []align(16) const u32 = &.{},
+
+// NOTE: no need to free these as they are embedded in the stream :p
+head: ?*operation.Node = null,
+last: ?*operation.Node = null,
 
 gfx_state: GraphicsState = .empty,
 rnd_state: RenderingState = .empty,
 current_error: ?Error = null,
+flags: Flags = .none,
 state: State = .initial,
 scope: Scope = .none,
 
@@ -378,11 +412,7 @@ pub fn deinit(cmd: *CommandBuffer) void {
 pub fn begin(cmd: *CommandBuffer) !void {
     std.debug.assert(cmd.state == .initial or cmd.state == .executable);
     cmd.reset(.none);
-    try cmd.ensureUnusedCapacity(backend.max_native_drawcall_cost);
     cmd.state = .recording;
-
-    const queue = cmd.stream.first().?;
-    queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
 }
 
 pub fn end(cmd: *CommandBuffer) !void {
@@ -393,12 +423,19 @@ pub fn end(cmd: *CommandBuffer) !void {
         return err;
     }
 
-    cmd.head = cmd.stream.finalize();
+    cmd.finalizeCurrent() catch |err| {
+        cmd.state = .invalid;
+        cmd.current_error = err;
+        return err;
+    };
+
     cmd.state = .executable;
 }
 
 pub fn reset(cmd: *CommandBuffer, flags: mango.CommandBufferResetFlags) void {
     cmd.stream.reset(cmd.pool.native_gpa, if (flags.release_resources) .free_all else .retain_largest);
+    cmd.head = null;
+    cmd.last = null;
     cmd.gfx_state = .empty;
     cmd.rnd_state = .empty;
     cmd.current_error = null;
@@ -809,31 +846,127 @@ pub fn bindLightEnvironmentTable(cmd: *CommandBuffer, slot: mango.LightEnvironme
     cmd.gfx_state.bindLightEnvironmentTable(slot, table);
 }
 
+pub fn writeTimestamp(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32) void {
+    std.debug.assert(cmd.state == .recording);
+
+    if (cmd.current_error) |_| return;
+
+    cmd.emitDirty(0) catch |err| {
+        cmd.current_error = err;
+        return;
+    };
+
+    cmd.finalizeCurrent() catch |err| {
+        cmd.current_error = err;
+        return;
+    };
+
+    const timestamp = cmd.allocOperation(operation.Timestamp) catch |err| {
+        cmd.current_error = err;
+        return;
+    };
+
+    timestamp.* = .{
+        .pool = .fromHandleMutable(pool),
+        .query = query,
+        .node = .empty(.timestamp),
+    };
+
+    cmd.pushOperation(&timestamp.node);
+}
+
 fn beforeDraw(cmd: *CommandBuffer, draw_count: usize) bool {
-    if (cmd.current_error) |_| {
-        return false;
-    }
+    if (cmd.current_error) |_| return false;
 
-    const max_graphics_emission_cost = cmd.gfx_state.maxEmitDirtyQueueLength();
-    const max_rendering_emission_cost = cmd.rnd_state.maxEmitDirtyQueueLength();
-    const max_emission_cost = 20 + max_graphics_emission_cost + max_rendering_emission_cost + (draw_count * backend.max_native_drawcall_cost);
-
-    cmd.ensureUnusedCapacity(max_emission_cost) catch |err| {
+    cmd.gfx_state.validate() catch |err| {
         cmd.current_error = err;
         return false;
     };
 
-    const queue = cmd.stream.first().?;
-
-    cmd.gfx_state.emitDirty(queue) catch |err| switch (err) {
-        error.ValidationFailed => |e| {
-            cmd.current_error = e;
-            return false;
-        },
+    cmd.emitDirty(20 + draw_count * backend.max_native_drawcall_cost) catch |err| {
+        cmd.current_error = err;
+        return false;
     };
 
-    cmd.rnd_state.emitDirty(queue);
     return true;
+}
+
+fn emitDirty(cmd: *CommandBuffer, extra_cost: u32) !void {
+    const gfx_dirty = cmd.gfx_state.anyDirty();
+    const rnd_dirty = cmd.rnd_state.anyDirty();
+
+    if (!gfx_dirty and !rnd_dirty) return;
+
+    const max_graphics_emission_cost = if (gfx_dirty) cmd.gfx_state.maxEmitDirtyQueueLength() else 0;
+    const max_rendering_emission_cost = if (rnd_dirty) cmd.rnd_state.maxEmitDirtyQueueLength() else 0;
+    const max_emission_cost = max_graphics_emission_cost + max_rendering_emission_cost + extra_cost;
+
+    try cmd.ensureUnusedCapacity(max_emission_cost);
+
+    const queue = cmd.stream.first().?;
+
+    if (!cmd.flags.subsequent_emissions) {
+        queue.add(p3d, &p3d.primitive_engine.mode, .init(.config));
+        cmd.flags.subsequent_emissions = true;
+    }
+
+    const gfx_start = queue.end;
+    cmd.gfx_state.emitDirty(queue);
+    const gfx_end = queue.end;
+    std.debug.assert((gfx_end - gfx_start) <= max_graphics_emission_cost);
+
+    const rnd_start = gfx_end;
+    cmd.rnd_state.emitDirty(queue);
+    const rnd_end = queue.end;
+    std.debug.assert((rnd_end - rnd_start) <= max_rendering_emission_cost);
+}
+
+/// Finalizes and pushes a graphics operation (if needed)
+fn finalizeCurrent(
+    cmd: *CommandBuffer,
+) !void {
+    if (cmd.stream.finalize()) |head| {
+        // NOTE: we're not "leaking" head, if this fails 
+        // the command buffer must be left in an `invalid` state 
+        // anyways.
+
+        const gfx_op = try cmd.allocOperation(operation.Graphics);
+
+        gfx_op.* = .{
+            .node = .empty(.graphics),
+            .head = head.ptr,
+            .len = head.len,
+        };
+
+        cmd.pushOperation(&gfx_op.node);
+    }
+}
+
+fn allocOperation(cmd: *CommandBuffer, comptime Operation: type) !*Operation {
+    const needed_size = std.mem.alignForward(usize, @sizeOf(operation.Graphics), 16);
+    
+    try cmd.ensureUnusedCapacity(needed_size);
+
+    const que = cmd.stream.first().?;
+    const ptr: *Operation = @ptrCast(que.buffer.ptr[que.end..]);
+
+    que.end += needed_size;
+    cmd.stream.start = que.end;
+    return ptr;
+}
+
+fn pushOperation(cmd: *CommandBuffer, node: *operation.Node) void {
+    std.debug.assert(std.mem.isAligned(@intFromPtr(node), 16));
+    const maybe_last = cmd.last;
+
+    cmd.last = node;
+    if (maybe_last) |last| {
+        std.debug.assert(cmd.head != null);
+
+        last.next = @intCast(@intFromPtr(node) >> 4);
+    } else {
+        cmd.head = node;
+    }
 }
 
 fn ensureUnusedCapacity(cmd: *CommandBuffer, capacity: usize) !void {

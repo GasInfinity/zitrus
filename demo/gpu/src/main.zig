@@ -91,6 +91,8 @@ pub const Scene = struct {
     command_pool: mango.CommandPool,
     cmd: mango.CommandBuffer,
 
+    query_pool: mango.QueryPool,
+
     zero_test_image: SingleImage,
     simple_sampler: mango.Sampler,
     time: f32 = 0.0,
@@ -165,6 +167,13 @@ pub const Scene = struct {
         }, &cmd);
         errdefer device.freeCommandBuffers(pool, &cmd);
 
+        const query_pool = try device.createQueryPool(.{
+            .count = 2,
+            .type = .timestamp,
+            .statistics = .{},
+        }, null);
+        errdefer device.destroyQueryPool(query_pool, null);
+
         const zero_test_image: SingleImage = try .initLinear(device, gpa, 64, 64, .b8g8r8_unorm, test_bgr, sema, 0);
         errdefer zero_test_image.deinit(device, gpa);
 
@@ -196,6 +205,8 @@ pub const Scene = struct {
             .command_pool = pool,
             .cmd = cmd[0],
 
+            .query_pool = query_pool,
+
             .zero_test_image = zero_test_image,
             .simple_sampler = simple_sampler,
         };
@@ -204,6 +215,7 @@ pub const Scene = struct {
     pub fn deinit(scene: *Scene, device: mango.Device, gpa: std.mem.Allocator) void {
         device.destroySampler(scene.simple_sampler, gpa);
         scene.zero_test_image.deinit(device, gpa);
+        device.destroyQueryPool(scene.query_pool, null);
         device.freeCommandBuffers(scene.command_pool, @ptrCast(&scene.cmd));
         device.destroyCommandPool(scene.command_pool, gpa);
         scene.cube_mesh.deinit(device, gpa);
@@ -264,11 +276,13 @@ pub const Scene = struct {
         }
     }
 
-    pub fn render(scene: *Scene) !void {
+    pub fn render(scene: *Scene, device: mango.Device) !void {
         const cmd = scene.cmd;
 
-        try cmd.begin();
+        // NOTE: we wait for the cmd so the queries are always available (except on the first frame)
+        device.resetQueryPool(scene.query_pool, 0, 2);
 
+        try cmd.begin();
         cmd.setLogicOpEnable(false);
         cmd.setAlphaTestEnable(false);
         cmd.setStencilTestEnable(false);
@@ -357,6 +371,10 @@ pub const Scene = struct {
 
         scene.cube_mesh.bind(cmd);
 
+
+        // FIXME: beginRendering and endRendering have assumptions that we're breaking by splitting the work with timestamps,
+        // fix them (obviously)
+        cmd.writeTimestamp(scene.query_pool, 0);
         {
             cmd.beginRendering(.{
                 .color_attachment = scene.top_renderbuffer.color.view,
@@ -400,10 +418,11 @@ pub const Scene = struct {
             cmd.bindFloatUniforms(.vertex, 4, &camera_view);
             scene.cube_mesh.draw(cmd);
 
-            cmd.setCullMode(.none);
+            cmd.setCullMode(.back);
             cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.mul(camera_view, zmath.mat.translate(4, 0, 1)));
             scene.cube_mesh.draw(cmd);
         }
+        cmd.writeTimestamp(scene.query_pool, 1);
 
         try cmd.end();
     }
@@ -772,8 +791,22 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         const top_image_idx = try top_swap.acquireNext(device);
 
         try scene.update(pad);
-        try scene.render();
+        try scene.render(device);
         try scene.submitPresent(device, top_swap, top_image_idx, bottom_swap, bottom_image_idx);
+
+        log_time: {
+            var gpu_timestamps: [2]u64 = undefined;
+
+            device.getQueryPoolResults(scene.query_pool, 0, 2, @ptrCast(&gpu_timestamps), @sizeOf(u64), .none) catch |err| switch (err) {
+                error.NotReady => break :log_time, // OK
+                else => |e| return e,
+            };
+            
+            // TODO: software render this instead of debug output,
+            // it's *really* slow to do so.
+            const took = gpu_timestamps[1] - gpu_timestamps[0];
+            std.log.info("GPU took before rendering {} ns", .{took});
+        }
     }
 }
 

@@ -70,6 +70,26 @@ pub const Handle = enum(u32) {
         return b_device.destroySemaphore(semaphore, maybe_gpa);
     }
 
+    pub fn createQueryPool(device: Handle, create_info: mango.QueryPoolCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.QueryPool {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return b_device.createQueryPool(create_info, maybe_gpa);
+    }
+
+    pub fn destroyQueryPool(device: Handle, query_pool: mango.QueryPool, maybe_gpa: ?std.mem.Allocator) void {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return b_device.destroyQueryPool(query_pool, maybe_gpa);
+    }
+
+    pub fn resetQueryPool(device: Handle, query_pool: mango.QueryPool, first: u32, count: u32) void {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return b_device.resetQueryPool(query_pool, first, count); 
+    }
+
+    pub fn getQueryPoolResults(device: Handle, query_pool: mango.QueryPool, first: u32, count: u32, data: []u8, stride: u32, flags: mango.QueryResultFlags) mango.GetQueryResultsError!void {
+        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        return b_device.getQueryPoolResults(query_pool, first, count, data, stride, flags);
+    }
+
     pub fn createCommandPool(device: Handle, create_info: mango.CommandPoolCreateInfo, maybe_gpa: ?std.mem.Allocator) !mango.CommandPool {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return b_device.createCommandPool(create_info, maybe_gpa);
@@ -264,10 +284,7 @@ vtable: VTable,
 gpa: std.mem.Allocator,
 linear_gpa: std.mem.Allocator,
 
-fill_queue: backend.Queue.Fill,
-transfer_queue: backend.Queue.Transfer,
-submit_queue: backend.Queue.Submit,
-presentation_queue: backend.Queue.Presentation,
+queues: std.EnumArray(Queue.Type, backend.Queue),
 
 /// Whether we're waiting for operations to complete or not.
 /// Waiting for a semaphore is NOT considered idle as we'll eventually wake.
@@ -287,10 +304,10 @@ pub fn release(device: *Device) !GraphicsServerGpu.ScreenCapture {
 
 pub fn getQueue(device: *Device, family: mango.QueueFamily) mango.Queue {
     return switch (family) {
-        .transfer => device.transfer_queue.toHandle(),
-        .fill => device.fill_queue.toHandle(),
-        .submit => device.submit_queue.toHandle(),
-        .present => device.presentation_queue.toHandle(),
+        .transfer => device.queues.getPtr(.transfer).toHandle(),
+        .fill => device.queues.getPtr(.fill).toHandle(),
+        .submit => device.queues.getPtr(.submit).toHandle(),
+        .present => device.queues.getPtr(.present).toHandle(),
     };
 }
 
@@ -323,6 +340,7 @@ pub fn invalidateMappedMemoryRanges(device: *Device, ranges: []const mango.Mappe
 pub fn createSemaphore(device: *Device, create_info: mango.SemaphoreCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.Semaphore {
     const gpa = maybe_gpa orelse device.gpa;
     const b_semaphore: *backend.Semaphore = try gpa.create(backend.Semaphore);
+    errdefer gpa.destroy(b_semaphore);
     b_semaphore.* = .init(create_info);
     return b_semaphore.toHandle();
 }
@@ -333,9 +351,40 @@ pub fn destroySemaphore(device: *Device, semaphore: mango.Semaphore, maybe_gpa: 
     gpa.destroy(b_semaphore);
 }
 
+pub fn createQueryPool(device: *Device, create_info: mango.QueryPoolCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.QueryPool {
+    const gpa = maybe_gpa orelse device.gpa;
+    const b_query_pool: *backend.QueryPool = try gpa.create(backend.QueryPool);
+    errdefer gpa.destroy(b_query_pool);
+
+    b_query_pool.* = try .init(gpa, create_info);
+    return b_query_pool.toHandle();
+}
+
+pub fn destroyQueryPool(device: *Device, query_pool: mango.QueryPool, maybe_gpa: ?std.mem.Allocator) void {
+    const gpa = maybe_gpa orelse device.gpa;
+    const b_query_pool: *backend.QueryPool = .fromHandleMutable(query_pool);
+    b_query_pool.deinit(gpa);
+    gpa.destroy(b_query_pool);
+}
+
+pub fn resetQueryPool(device: *Device, query_pool: mango.QueryPool, first: u32, count: u32) void {
+    _ = device;
+
+    const b_query_pool: *backend.QueryPool = .fromHandleMutable(query_pool);
+    b_query_pool.reset(first, count);
+}
+
+pub fn getQueryPoolResults(device: *Device, query_pool: mango.QueryPool, first: u32, count: u32, data: []u8, stride: u32, flags: mango.QueryResultFlags) mango.GetQueryResultsError!void {
+    _ = device;
+
+    const b_query_pool: *backend.QueryPool = .fromHandleMutable(query_pool);
+    return b_query_pool.getResults(first, count, data, stride, flags);
+}
+
 pub fn createCommandPool(device: *Device, create_info: mango.CommandPoolCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.CommandPool {
     const gpa = maybe_gpa orelse device.gpa;
     const b_command_pool: *backend.CommandPool = try gpa.create(backend.CommandPool);
+    errdefer gpa.destroy(b_command_pool);
     b_command_pool.* = try .init(device, create_info, device.linear_gpa, gpa);
     return b_command_pool.toHandle();
 }
@@ -514,6 +563,8 @@ pub fn destroyShader(device: *Device, shader: mango.Shader, maybe_gpa: ?std.mem.
 pub fn createVertexInputLayout(device: *Device, create_info: mango.VertexInputLayoutCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.VertexInputLayout {
     const gpa = maybe_gpa orelse device.gpa;
     const layout: *backend.VertexInputLayout = try gpa.create(backend.VertexInputLayout);
+    errdefer gpa.destroy(layout);
+
     layout.* = try .compile(
         create_info.bindings[0..create_info.bindings_len],
         create_info.attributes[0..create_info.attributes_len],
@@ -531,8 +582,9 @@ pub fn destroyVertexInputLayout(device: *Device, layout: mango.VertexInputLayout
 pub fn createLightLookupTable(device: *Device, create_info: mango.LightLookupTableCreateInfo, maybe_gpa: ?std.mem.Allocator) ObjectCreationError!mango.LightLookupTable {
     const gpa = maybe_gpa orelse device.gpa;
     const lut: *backend.LightLookupTable = try gpa.create(backend.LightLookupTable);
-    lut.* = .init(create_info);
+    errdefer gpa.destroy(lut);
 
+    lut.* = .init(create_info);
     return lut.toHandle();
 }
 

@@ -309,11 +309,14 @@ pub const stream = struct {
                 strm.list.prepend(&segment.node);
             }
 
-            /// Finalizes and returns the initial chunk of the stream.
-            pub fn finalize(strm: *Stream) []align(16) const u32 {
+            /// Finalizes and returns the initial chunk of the stream or null if none.
+            pub fn finalize(strm: *Stream) ?[]align(16) const u32 {
                 std.debug.assert(std.mem.isAligned(strm.start, 4));
 
-                const que = strm.first().?;
+                const que = strm.first() orelse return null;
+
+                // Nothing to finalize
+                if (strm.start == que.end and strm.last_chain_size == null) return null;
                 que.finalize();
 
                 const initial_chunk: []align(16) const u32 = if (strm.last_chain_size) |last_size| blk: {

@@ -786,7 +786,7 @@ pub const Graphics = extern struct {
             coefficients: [4]LsbRegister(F7_16),
         };
 
-        pub const Status = extern struct {
+        pub const Statistics = extern struct {
             /// 0x168
             vertices_received: u32,
             /// 0x16C
@@ -888,7 +888,7 @@ pub const Graphics = extern struct {
         /// 0x164
         _unknown3: u32,
         /// 0x168
-        status: Status,
+        statistics: Statistics,
         /// 0x174
         _unknown4: [3]u32,
         /// 0x180
@@ -2616,26 +2616,26 @@ pub const Registers = extern struct {
         _unused2: u12,
     };
 
-    pub const TrafficStatus = extern struct {
-        total_non_vram_reads: u32,
-        total_non_vram_writes: u32,
-        total_vram_a_reads: u32,
-        total_vram_a_writes: u32,
-        total_vram_b_reads: u32,
-        total_vram_b_writes: u32,
-        polygon_array_reads: u32,
-        polygon_texture_reads: u32,
-        polygon_depth_buffer_reads: u32,
-        polygon_depth_buffer_writes: u32,
-        polygon_color_buffer_reads: u32,
-        polygon_color_buffer_writes: u32,
-        lcd_top_reads: u32,
-        lcd_bottom_reads: u32,
-        memory_copy_src_reads: u32,
-        memory_copy_dst_writes: u32,
-        memory_fill_dst_writes: [2]u32,
-        cpu_reads_from_vram_a_b: u32,
-        cpu_writes_to_vram_a_b: u32,
+    pub const TrafficStatistics = extern struct {
+        non_vram_reads: u32,
+        non_vram_writes: u32,
+        vram_a_reads: u32,
+        vram_a_writes: u32,
+        vram_b_reads: u32,
+        vram_b_writes: u32,
+        input_assembly_reads: u32,
+        sampled_texture_reads: u32,
+        depth_buffer_reads: u32,
+        depth_buffer_writes: u32,
+        color_buffer_reads: u32,
+        color_buffer_writes: u32,
+        top_lcd_reads: u32,
+        bottom_lcd_reads: u32,
+        memory_copy_reads: u32,
+        memory_copy_writes: u32,
+        memory_fill_writes: [2]u32,
+        cpu_vram_reads: u32,
+        cpu_vram_writes: u32,
     };
 
     hardware_id: u32,
@@ -2667,7 +2667,7 @@ pub const Registers = extern struct {
     /// 0x068
     _unknown6: u32,
     _unused2: u32,
-    traffic: TrafficStatus,
+    traffic_statistics: TrafficStatistics,
     _backlight_or_so_1: u32,
     vram_a_base_address: [*]u8,
     vram_b_base_address: [*]u8,
@@ -2684,7 +2684,7 @@ pub const Registers = extern struct {
     comptime {
         if (builtin.cpu.arch.isArm()) {
             if (@offsetOf(Registers, "timing_control") != 0x50) @compileError(std.fmt.comptimePrint("found 0x{X}", .{@offsetOf(Registers, "timing_control")}));
-            if (@offsetOf(Registers, "traffic") != 0x70) @compileError(std.fmt.comptimePrint("found 0x{X}", .{@offsetOf(Registers, "traffic")}));
+            if (@offsetOf(Registers, "traffic_statistics") != 0x70) @compileError(std.fmt.comptimePrint("found 0x{X}", .{@offsetOf(Registers, "traffic_statistics")}));
             if (@offsetOf(Registers, "pdc") != 0x400) @compileError(std.fmt.comptimePrint("found 0x{X}", .{@offsetOf(Registers, "pdc")}));
             if (@offsetOf(Registers, "ppf") != 0xC00) @compileError(std.fmt.comptimePrint("found 0x{X}", .{@offsetOf(Registers, "ppf")}));
             if (@offsetOf(Registers, "p3d") != 0x1000) @compileError(std.fmt.comptimePrint("found 0x{X}", .{@offsetOf(Registers, "p3d")}));

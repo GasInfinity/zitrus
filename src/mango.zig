@@ -777,6 +777,61 @@ pub const SemaphoreCreateInfo = extern struct {
     initial_value: u64 = 0,
 };
 
+pub const QueryType = enum(u32) {
+    /// A single `u64` value, signifying a nanosecond-precision timestamp
+    timestamp,
+    /// GPU counters, see `QueryStatistics` 
+    statistics,
+    /// GPU performance counters
+    performance_counter,
+};
+
+pub const QueryResultFlags = packed struct(u32) {
+    pub const none: QueryResultFlags = .{};
+    _: u32 = 0,
+};
+
+pub const QueryStatistics = packed struct(u32) {
+    input_assembly_vertices: bool = false,
+    input_assembly_primitives: bool = false,
+    rasterizer_primitives: bool = false,
+
+    non_vram_reads: bool = false,
+    non_vram_writes: bool = false,
+
+    vram_a_reads: bool = false,
+    vram_a_writes: bool = false,
+    vram_b_reads: bool = false,
+    vram_b_writes: bool = false,
+
+    input_assembly_reads: bool = false,
+    sampled_texture_reads: bool = false,
+
+    depth_buffer_reads: bool = false,
+    depth_buffer_writes: bool = false,
+
+    color_buffer_reads: bool = false,
+    color_buffer_writes: bool = false,
+
+    top_lcd_reads: bool = false,
+    bottom_lcd_reads: bool = false,
+
+    memory_copy_reads: bool = false,
+    memory_copy_writes: bool = false,
+    memory_fill_0_writes: bool = false,
+    memory_fill_1_writes: bool = false,
+
+    cpu_vram_reads: bool = false,
+    cpu_vram_writes: bool = false,
+    _: u9 = 0,
+};
+
+pub const QueryPoolCreateInfo = extern struct {
+    count: u32,
+    type: QueryType,
+    statistics: QueryStatistics,
+};
+
 pub const CommandPoolCreateInfo = extern struct {
     /// Create a command pool without preheating it.
     pub const no_preheat: CommandPoolCreateInfo = .{};
@@ -1548,12 +1603,12 @@ pub const Light = extern struct {
     enable_shadow: bool = false,
 };
 
-pub const HorizonBackedDeviceCreateInfo = backend.Horizon.CreateInfo;
+pub const HorizonDeviceCreateInfo = backend.Horizon.CreateInfo;
 
 /// Zig entrypoint for creating a device backed by the Horizon GSP.
 ///
 /// Device owns GSP process state after this point.
-pub fn createHorizonBackedDevice(create_info: HorizonBackedDeviceCreateInfo, gpa: std.mem.Allocator) !Device {
+pub fn createHorizonBackedDevice(create_info: HorizonDeviceCreateInfo, gpa: std.mem.Allocator) !Device {
     return (try backend.Horizon.create(create_info, gpa)).device.toHandle();
 }
 
@@ -1565,6 +1620,7 @@ pub const Buffer = backend.Buffer.Handle;
 pub const Image = backend.Image.Handle;
 pub const ImageView = backend.ImageView.Handle;
 pub const Shader = backend.Shader.Handle;
+pub const QueryPool = backend.QueryPool.Handle;
 pub const CommandPool = backend.CommandPool.Handle;
 pub const CommandBuffer = backend.CommandBuffer.Handle;
 pub const VertexInputLayout = backend.VertexInputLayout.Handle;
@@ -1579,6 +1635,7 @@ pub const MapMemoryError = error{Unexpected};
 pub const FlushMemoryError = error{Unexpected};
 pub const InvalidateMemoryError = error{Unexpected};
 pub const BindMemoryError = error{Unexpected};
+pub const GetQueryResultsError = error{NotReady, Unexpected};
 // TODO: Add error.DeviceLost on GPU hang.
 pub const AcquireNextImageError = error{ Timeout, Unexpected };
 pub const SignalSemaphoreError = error{Unexpected};
