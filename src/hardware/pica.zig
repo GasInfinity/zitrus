@@ -428,6 +428,7 @@ pub const OutputMap = packed struct(u32) {
         texture_coordinates_2_v,
 
         unused = 0x1F,
+        _,
 
         pub fn isNormalQuaternion(semantic: Semantic) bool {
             return switch (semantic) {
@@ -480,6 +481,10 @@ pub const OutputMap = packed struct(u32) {
     _unusd2: u3 = 0,
     w: Semantic,
     _unusd3: u3 = 0,
+
+    pub fn format(map: OutputMap, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        try w.print("({}, {}, {}, {})", .{map.x, map.y, map.z, map.w});
+    }
 };
 
 pub const BlendOperation = enum(u3) {
@@ -943,6 +948,16 @@ pub const Graphics = extern struct {
             _unused3: u2 = 0,
             clear_texture_cache: bool,
             _unused4: u15 = 0,
+
+            pub fn format(cfg: Config, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                try w.print("Enable: {f}, Enable procedural: {} | T2 source: {}, T3 source: {} | Clear cache: {}", .{
+                    cfg.texture_enabled,
+                    cfg.texture_3_enabled,
+                    cfg.texture_2_coordinates,
+                    cfg.texture_3_coordinates,
+                    cfg.clear_texture_cache,
+                });
+            }
         };
 
         pub const Parameters = packed struct(u32) {
@@ -964,6 +979,17 @@ pub const Graphics = extern struct {
             _unused0: u3 = 0,
             type: TextureUnitType,
             _unused1: u1 = 0,
+
+            pub fn format(params: Parameters, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                try w.print("Type: {} | Min: {}, Mag: {}, Mip: {} | U: {}, V: {}", .{
+                    params.type,
+                    params.min_filter,
+                    params.mag_filter,
+                    params.mip_filter,
+                    params.address_mode_u,
+                    params.address_mode_v,
+                });
+            }
         };
 
         pub const LevelOfDetail = packed struct(u32) {
@@ -1112,6 +1138,16 @@ pub const Graphics = extern struct {
             pub fn setAlphaBufferSource(update_buffer: *Config, index: BufferIndex, buffer_src: BufferSource) void {
                 std.mem.writePackedIntNative(u1, std.mem.asBytes(update_buffer), @as(usize, @bitOffsetOf(Config, "combiner_alpha_buffer_src")) + @intFromEnum(index), @intFromEnum(buffer_src));
             }
+
+            pub fn format(cfg: Config, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                try w.print("Fog Mode: {}, Shading Density: {}, Flip Z: {} | Color Buffer Src: {}, Alpha Buffer Src: {}", .{
+                    cfg.fog_mode,
+                    cfg.shading_density_source,
+                    cfg.z_flip,
+                    cfg.combiner_color_buffer_src,
+                    cfg.combiner_alpha_buffer_src,
+                });
+            }
         };
 
         pub const Unit = extern struct {
@@ -1129,17 +1165,31 @@ pub const Graphics = extern struct {
             };
 
             pub const Operations = packed struct(u32) {
-                color_op: Operation,
+                color: Operation,
                 _unused0: u12 = 0,
-                alpha_op: Operation,
+                alpha: Operation,
                 _unused1: u12 = 0,
+
+                pub fn format(operations: Operations, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                    try w.print("Color: {}, Alpha: {}", .{
+                        operations.color,
+                        operations.alpha,
+                    });
+                }
             };
 
             pub const Scales = packed struct(u32) {
-                color_scale: Multiplier,
+                color: Multiplier,
                 _unused0: u14 = 0,
-                alpha_scale: Multiplier,
+                alpha: Multiplier,
                 _unused1: u14 = 0,
+
+                pub fn format(scales: Scales, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                    try w.print("Color: {}, Alpha: {}", .{
+                        scales.color,
+                        scales.alpha,
+                    });
+                }
             };
 
             sources: Sources,
@@ -1178,6 +1228,7 @@ pub const Graphics = extern struct {
     };
 
     pub const OutputMerger = extern struct {
+        pub const Pixel = DisplayController.Framebuffer.Pixel;
         pub const Blend = enum(u1) { logic, blend };
         pub const Mode = enum(u2) { default, gas, shadow = 3 };
         pub const Interlace = enum(u1) { disable, even };
@@ -1215,6 +1266,14 @@ pub const Graphics = extern struct {
             _unused1: u1 = 0,
             reference: u8,
             _unused3: u16 = 0,
+
+            pub fn format(cfg: AlphaTest, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                try w.print("Enable: {}, Operation: {}, Reference: {}", .{
+                    cfg.enable,
+                    cfg.op,
+                    cfg.reference,
+                });
+            }
         };
 
         pub const StencilTest = extern struct {
@@ -1226,19 +1285,37 @@ pub const Graphics = extern struct {
                 compare_mask: u8,
                 reference: u8,
                 write_mask: u8,
+
+                pub fn format(cfg: StencilTest.Config, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                    try w.print("Enable: {}, Operation: {}, Reference: {}, Compare Mask: 0x{X:0>2}, Write Mask: 0x{X:0>2}", .{
+                        cfg.enable,
+                        cfg.op,
+                        cfg.reference,
+                        cfg.compare_mask,
+                        cfg.write_mask,
+                    });
+                }
             };
 
             pub const Operation = packed struct(u32) {
-                fail_op: StencilOperation,
+                fail: StencilOperation,
                 _unused0: u1 = 0,
-                depth_fail_op: StencilOperation,
+                depth_fail: StencilOperation,
                 _unused1: u1 = 0,
-                pass_op: StencilOperation,
+                pass: StencilOperation,
                 _unused2: u21 = 0,
+
+                pub fn format(op: StencilTest.Operation, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                    try w.print("Fail: {}, Depth Fail: {}, Pass: {}", .{
+                        op.fail,
+                        op.depth_fail,
+                        op.pass,
+                    });
+                }
             };
 
             config: StencilTest.Config,
-            operation: Operation,
+            operation: StencilTest.Operation,
         };
 
         pub const DepthTestColorConfig = packed struct(u32) {
@@ -1246,12 +1323,24 @@ pub const Graphics = extern struct {
             _unused0: u3 = 0,
             depth_op: CompareOperation,
             _unused1: u1 = 0,
-            r_write_enable: bool,
-            g_write_enable: bool,
-            b_write_enable: bool,
-            a_write_enable: bool,
-            depth_write_enable: bool,
+            enable_r_write: bool,
+            enable_g_write: bool,
+            enable_b_write: bool,
+            enable_a_write: bool,
+            enable_depth_write: bool,
             _unused2: u19 = 0,
+
+            pub fn format(cfg: DepthTestColorConfig, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                try w.print("Depth [Test: {}, Operation: {}, Write: {}] | Color {c}{c}{c}{c}", .{
+                    cfg.enable_depth_test,
+                    cfg.depth_op,
+                    cfg.enable_depth_write,
+                    @as(u8, if (cfg.enable_r_write) 'r' else '_'),
+                    @as(u8, if (cfg.enable_g_write) 'g' else '_'),
+                    @as(u8, if (cfg.enable_b_write) 'b' else '_'),
+                    @as(u8, if (cfg.enable_a_write) 'a' else '_'),
+                });
+            }
         };
 
         pub const ColorAccess = enum(u4) { disable, all = 0xF };
@@ -1268,19 +1357,27 @@ pub const Graphics = extern struct {
             pub fn init(width: u11, height: u10, flip_vertically: bool) RenderBufferDimensions {
                 return .{ .width = width, .height_end = height - 1, .flip_vertically = flip_vertically };
             }
+
+            pub fn format(dim: RenderBufferDimensions, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                try w.print("{}x{} (flip: {})", .{dim.width, @as(u32, dim.height_end) + 1, dim.flip_vertically});
+            }
         };
 
         pub const ColorBufferFormat = packed struct(u32) {
-            pixel_size: PixelSize,
+            pixel_size: Pixel.Size,
             _unused0: u14 = 0,
-            format: ColorFormat,
+            pixel_format: Pixel,
             _unused1: u13 = 0,
 
-            pub fn init(format: ColorFormat) ColorBufferFormat {
+            pub fn init(pixel_format: Pixel) ColorBufferFormat {
                 return .{
-                    .pixel_size = format.pixelSize(),
-                    .format = format,
+                    .pixel_size = pixel_format.pixelSize(),
+                    .pixel_format = pixel_format,
                 };
+            }
+
+            pub fn format(fmt: ColorBufferFormat, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                try w.print("{} ({} bits)", .{fmt.pixel_format, fmt.pixel_size});
             }
         };
 
@@ -1293,6 +1390,10 @@ pub const Graphics = extern struct {
         depth_color_config: DepthTestColorConfig,
         _unknown0: [8]u32,
         invalidate: LsbRegister(Trigger),
+        /// Flushing without issuing a drawcall before-hand in the same submitted command queue 
+        /// will hang the GPU
+        ///
+        /// Don't ask me why
         flush: LsbRegister(Trigger),
         color_read: LsbRegister(ColorAccess),
         color_write: LsbRegister(ColorAccess),
@@ -1386,6 +1487,14 @@ pub const Graphics = extern struct {
             pub fn splat(v: u8) Color {
                 return .init(v, v, v);
             }
+
+            pub fn format(color: Color, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                try w.print("({}, {}, {})", .{
+                    color.r,
+                    color.g,
+                    color.b,
+                });
+            }
         };
 
         pub const FresnelSelector = enum(u2) { none, primary, secondary, both };
@@ -1409,6 +1518,13 @@ pub const Graphics = extern struct {
                 pub fn init(table: LookupTable, index: u8) Index {
                     return .{ .table = table, .index = index };
                 }
+
+                pub fn format(idx: Index, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                    try w.print("{}[{d}]", .{
+                        idx.table,
+                        idx.index,
+                    });
+                }
             };
 
             pub const Absolute = packed struct(u32) {
@@ -1427,6 +1543,18 @@ pub const Graphics = extern struct {
                 _unused6: u3 = 0,
                 disable_rr: bool = false,
                 _unused7: u6 = 0,
+
+                pub fn format(absolute: Absolute, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                    try w.print("D0: {}, D1: {}, SP: {}, FR: {}, RR: {}, RG: {}, RB: {}", .{
+                        !absolute.disable_d0,
+                        !absolute.disable_d1,
+                        !absolute.disable_sp,
+                        !absolute.disable_fr,
+                        !absolute.disable_rr,
+                        !absolute.disable_rg,
+                        !absolute.disable_rb,
+                    });
+                }
             };
 
             pub const Input = enum(u3) { @"N * H", @"V * H", @"N * V", @"L * N", @"-L * P", @"cos(phi)" };
@@ -1445,6 +1573,18 @@ pub const Graphics = extern struct {
                 _unused5: u1 = 0,
                 rr: Input = .@"N * H",
                 _unused6: u5 = 0,
+
+                pub fn format(select: Select, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                    try w.print("D0: {}, D1: {}, SP: {}, FR: {}, RR: {}, RG: {}, RB: {}", .{
+                        select.d0,
+                        select.d1,
+                        select.sp,
+                        select.fr,
+                        select.rr,
+                        select.rg,
+                        select.rb,
+                    });
+                }
             };
 
             pub const Multiplier = enum(u3) { @"1x", @"2x", @"4x", @"8x", @"0.25x" = 6, @"0.5x" };
@@ -1463,6 +1603,18 @@ pub const Graphics = extern struct {
                 _unused5: u1 = 0,
                 rr: Multiplier = .@"1x",
                 _unused6: u5 = 0,
+
+                pub fn format(scale: Scale, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                    try w.print("D0: {}, D1: {}, SP: {}, FR: {}, RR: {}, RG: {}, RB: {}", .{
+                        scale.d0,
+                        scale.d1,
+                        scale.sp,
+                        scale.fr,
+                        scale.rr,
+                        scale.rg,
+                        scale.rb,
+                    });
+                }
             };
 
             pub const Data = packed struct(u32) {
@@ -1500,6 +1652,10 @@ pub const Graphics = extern struct {
                     lut[255] = .{ .entry = .ofSaturating(last), .next_absolute_difference = .ofSaturating(context.value(absolute_unit) - last) };
                     return lut;
                 }
+
+                pub fn format(data: Data, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                    try w.print("Entry: {}, Diff: {}", .{data.entry, data.next_absolute_difference});
+                }
             };
 
             // zig fmt: off
@@ -1535,6 +1691,23 @@ pub const Graphics = extern struct {
                 bump_mode: BumpMode,
                 disable_bump_recalculation: bool,
                 _unknown1: u1 = 0x1,
+
+                pub fn format(env: Environment, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                    try w.print("Enabled Tables: {}, Fresnel: {}, Shadow: {} | Shadow to primary: {}, Shadow to secondary: {}, Shadow to alpha: {}, Invert Shadow: {} | Bump Unit: {}, Shadow Unit: {} | Clamp Highlights: {}, Bump Mode: {}, Bump Recalculation: {}", .{
+                        env.enabled_lookup_tables,
+                        env.fresnel,
+                        env.enable_shadow_factor,
+                        env.apply_shadow_attenuation_to_primary_color,
+                        env.apply_shadow_attenuation_to_secondary_color,
+                        env.apply_shadow_attenuation_to_alpha,
+                        env.invert_shadow_attenuation,
+                        env.bump_map_unit,
+                        env.shadow_map_unit,
+                        env.clamp_highlights,
+                        env.bump_mode,
+                        !env.disable_bump_recalculation,
+                    });
+                }
             };
 
             pub const Lights = packed struct(u32) {
@@ -1549,6 +1722,20 @@ pub const Graphics = extern struct {
                 disable_rr: bool,
                 _unknown1: u1 = 0x1,
                 distance_attenuation_disabled: BitpackedArray(bool, 8),
+
+                pub fn format(lights: Lights, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                    try w.print("D0: {}, D1: {}, FR: {}, RR: {}, RG: {}, RB: {} | Shadow Disabled: {f}, Spotlight Disabled: {f}, Distance Attenuation Disabled: {f}", .{
+                        !lights.disable_d0,
+                        !lights.disable_d1,
+                        !lights.disable_fr,
+                        !lights.disable_rr,
+                        !lights.disable_rg,
+                        !lights.disable_rb,
+                        lights.shadows_disabled,
+                        lights.spotlight_disabled,
+                        lights.distance_attenuation_disabled,
+                    });
+                }
             };
 
             environment: Environment,
@@ -1639,6 +1826,13 @@ pub const Graphics = extern struct {
             _unused1: u6 = 0,
             _unknown0: u1 = 0,
             _unused2: u15 = 0,
+
+            pub fn format(cfg: PrimitiveConfig, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                try w.print("Topology: {} | Vertex Outputs: {}", .{
+                    cfg.topology,
+                    cfg.total_vertex_outputs,
+                });
+            }
         };
 
         pub const PipelineConfig = packed struct(u32) {
@@ -1835,10 +2029,17 @@ pub const Graphics = extern struct {
             pub const IndexBuffer = packed struct(u32) {
                 offset: u28,
                 _unused0: u3 = 0,
-                format: IndexFormat,
+                fmt: IndexFormat,
 
-                pub fn init(base_offset: u28, format: IndexFormat) IndexBuffer {
-                    return .{ .offset = base_offset, .format = format };
+                pub fn init(base_offset: u28, fmt: IndexFormat) IndexBuffer {
+                    return .{ .offset = base_offset, .fmt = fmt };
+                }
+
+                pub fn format(idx: IndexBuffer, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                    try w.print("0x{X} ({t})", .{
+                        idx.offset,
+                        idx.fmt,
+                    });
                 }
             };
 
@@ -1939,6 +2140,13 @@ pub const Graphics = extern struct {
             enabled_for_vertex_0: bool = false,
             _unused2: u1 = 0,
             enabled_for_vertex_1: bool = false,
+
+            pub fn format(input: Input, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                try w.print("Inputs: {d} | Uniform: {}", .{
+                    input.inputs,
+                    input.uniform,
+                });
+            }
         };
 
         pub const FloatUniformConfig = packed struct(u32) {
@@ -1947,6 +2155,13 @@ pub const Graphics = extern struct {
             index: FloatConstantRegister,
             _unused0: u24 = 0,
             mode: Mode,
+
+            pub fn format(cfg: FloatUniformConfig, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                try w.print("{d} ({t})", .{
+                    cfg.index,
+                    cfg.mode,
+                });
+            }
         };
 
         pub const AttributePermutation = extern struct {

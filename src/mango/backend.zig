@@ -14,7 +14,10 @@ pub const max_swapchain_images = 3;
 pub const max_present_queue_items = max_swapchain_images * max_swapchain_image_layers;
 
 /// It is asserted that draw call emissions won't take more than this amount of words.
-pub const max_native_drawcall_cost = 20;
+pub const max_drawcall_emission_cost = 32;
+
+/// We want to reserve some space so we can finalize/chain/flush
+pub const static_emission_cost = 32;
 
 pub const Horizon = @import("backend/Horizon.zig");
 

@@ -1,11 +1,16 @@
 //! Type-safe PICA200 `pica.Graphics` command wrappers and types.
+//!
+//! Address and Size of command queues/buffers/lists must be aligned to 16 bytes
+//! Commands are aligned to 8 bytes
 
 pub const Header = packed struct(u32) {
+    pub const Mode = enum(u1) { consecutive, incremental };
+
     id: Id,
     mask: u4,
     extra: u8,
     _unused0: u3 = 0,
-    incremental_writing: bool,
+    mode: Mode,
 };
 
 pub const Id = enum(u16) {
@@ -19,6 +24,162 @@ pub const Id = enum(u16) {
         std.debug.assert((offset % @alignOf(u32)) == 0); // invalid internal register, it must be aligned to 4 bytes
 
         return @enumFromInt(@divExact(offset, @alignOf(u32)));
+    }
+};
+
+/// WARNING: using this will bloat your binary!
+pub const Dump = struct {
+    pub const Iterator = struct {
+        words: []const u32,
+        current: u32,
+
+        pub fn init(words: []const u32) Iterator {
+            return .{ .words = words, .current = 0 };
+        }
+
+        pub fn next(it: *Iterator) ?Dump {
+            if (it.current + 1 >= it.words.len) return null;
+            const hdr: Header = @bitCast(it.words[it.current + 1]);
+            const full_len = 2 + @as(u32, hdr.extra);
+            defer it.current += std.mem.alignForward(u32, full_len, 2);
+
+            return .{ .words = it.words[it.current..][0..@min(full_len, it.words.len - it.current)] };
+        }
+    };
+
+    pub const Single = struct {
+        // XXX: This is quite bad, a rewrite would be good
+        pub const Info = struct {
+            /// Fully qualified name
+            name: []const u8,
+            type: type,
+
+            pub fn findName(id: Id) []const u8 {
+                return switch (@intFromEnum(id)) {
+                    (@sizeOf(pica.Graphics) / @sizeOf(u32))...0xFFFF => "<not found>",
+                    inline else => |word_offset| find(word_offset * @sizeOf(u32)).name,
+                };
+            }
+
+            pub fn find(comptime offset: u32) Info {
+                @setEvalBranchQuota(200000);
+
+                var current = Search.find(pica.Graphics, offset);
+                var current_offset = offset - @offsetOf(pica.Graphics, current.name);
+                var fully_qualified_name = current.name;
+                while (@sizeOf(current.type) > @sizeOf(u32)) switch (@typeInfo(current.type)) {
+                    .@"struct" => |st| switch (st.layout) {
+                        .auto => unreachable,
+                        .@"packed" => unreachable, // Hitting this means you have an invalid packed struct in there.
+                        .@"extern" => {
+                            const next = Search.find(current.type, current_offset);
+
+                            current_offset -= @offsetOf(current.type, next.name);
+                            current = next;
+                            
+                            fully_qualified_name = fully_qualified_name ++ "." ++ next.name;
+                        },
+                    },
+                    .array => |array| switch(std.math.order(@sizeOf(array.child), @sizeOf(u32))) {
+                        .lt => current.type = [@divExact(@sizeOf(u32), @sizeOf(array.child))]array.child,
+                        .eq, .gt => {
+                            fully_qualified_name = fully_qualified_name ++ std.fmt.comptimePrint("[{d}]", .{current_offset / @sizeOf(array.child)});
+                            current_offset %= @sizeOf(array.child);
+                            current.type = array.child;
+                        },
+                    },
+                    else => @compileError("TODO"),
+                };
+
+                return .{ .name = fully_qualified_name, .type = current.type };
+            }
+
+            const Search = struct {
+                parent: type,
+                offset: u32,
+
+                pub fn find(comptime T: type, comptime offset: u32) Info {
+                    const fields = @typeInfo(T).@"struct".fields;
+                    const ctx: Search = .{ .parent = T, .offset = offset };
+                    const index = std.sort.binarySearch(std.builtin.Type.StructField, fields, ctx, Search.compare) orelse unreachable;
+                    return .{ .name = fields[index].name, .type = fields[index].type };
+                }
+
+                pub fn compare(ctx: Search, field: std.builtin.Type.StructField) std.math.Order {
+                    const field_offset = @offsetOf(ctx.parent, field.name);
+                    if (ctx.offset < field_offset) return .lt;
+                    if (ctx.offset >= field_offset + @sizeOf(field.type)) return .gt;
+                    return .eq;
+                }
+            };
+        };
+
+        mode: Header.Mode,
+        id: Id,
+        raw: u32,
+
+        pub fn format(single: Single, w: *std.Io.Writer) std.Io.Writer.Error!void {
+            switch (@intFromEnum(single.id)) {
+                (@sizeOf(pica.Graphics) / @sizeOf(u32))...0xFFFF => try w.print("{X:0>8}", .{single.raw}),
+                inline else => |word_offset| {
+                    const info: Info = .find(word_offset * @sizeOf(u32)); 
+
+                    switch (single.mode) {
+                        .incremental => {
+                            try w.print("{s} ({X:0>3}) -> ", .{info.name, single.id});
+                            try printValue(info.type, single.raw, w);
+                        },
+                        .consecutive => try printValue(info.type, single.raw, w),
+                    }
+                },
+            }
+        }
+
+        pub fn printValue(comptime T: type, raw: u32, w: *std.Io.Writer) std.Io.Writer.Error!void {
+            const typed: T = switch (@typeInfo(T)) {
+                .@"enum" => @enumFromInt(raw),
+                else => @bitCast(raw),
+            };
+
+            try w.print(if (std.meta.hasFn(T, "format")) "{f}" else if (T == u32) "{X:0>8}" else "{any}", .{typed});
+        }
+    };
+
+    words: []const u32,
+
+    pub fn format(dump: Dump, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        const hdr: Header = @bitCast(dump.words[1]);
+
+        switch (hdr.mode) {
+            .incremental => try w.print("{t} ({b:0>4})", .{hdr.mode, hdr.mask}),
+            .consecutive => try w.print("{t}: {s} ({X:0>3}, {b:0>4})", .{hdr.mode, Single.Info.findName(hdr.id), hdr.id, hdr.mask}),
+        }
+
+        if (hdr.extra > 0) try w.writeByte('\n');
+
+        var single: Single = .{
+            .mode = hdr.mode,
+            .id = hdr.id,
+            .raw = dump.words[0],
+        };
+
+
+        var i: u32 = 0;
+        while (true) {
+            try w.print("... {f}", .{single});
+
+            if (i >= hdr.extra) break;
+            try w.writeByte('\n');
+            single = .{
+                .mode = hdr.mode,
+                .raw = dump.words[2 + i],
+                .id = switch (hdr.mode) {
+                    .consecutive => single.id,
+                    .incremental => @enumFromInt(@intFromEnum(single.id) + 1),
+                },
+            };
+            i += 1;
+        }
     }
 };
 
@@ -63,7 +224,7 @@ pub const Queue = struct {
             .eq => queue.addMaskedBuffer(id, &.{switch (child_info) {
                 .@"enum" => @intFromEnum(value),
                 else => @bitCast(value),
-            }}, mask, false),
+            }}, mask, .consecutive),
             .gt => {
                 const as_u32_array = switch (child_info) {
                     .array => |a| if (@bitSizeOf(a.child) != @bitSizeOf(u32))
@@ -77,7 +238,7 @@ pub const Queue = struct {
                     else => @compileError("unsupported type for incremental write"),
                 };
 
-                queue.addMaskedBuffer(id, &as_u32_array, mask, true);
+                queue.addMaskedBuffer(id, &as_u32_array, mask, .incremental);
             },
             .lt => @compileError("commands only support writing full 32-bit values (which you can mask!)"),
         }
@@ -132,7 +293,7 @@ pub const Queue = struct {
             else => @bitCast(values[i]),
         };
 
-        return queue.addMaskedBuffer(first_id, &u32_values, mask, true);
+        return queue.addMaskedBuffer(first_id, &u32_values, mask, .incremental);
     }
 
     pub inline fn addConsecutive(queue: *Queue, comptime base: *volatile pica.Graphics, register: anytype, values: []const std.meta.Child(@TypeOf(register))) void {
@@ -147,10 +308,10 @@ pub const Queue = struct {
 
         comptime std.debug.assert(@bitSizeOf(Child) == @bitSizeOf(u32));
 
-        return queue.addMaskedBuffer(id, @ptrCast(values), mask, false);
+        return queue.addMaskedBuffer(id, @ptrCast(values), mask, .consecutive);
     }
 
-    pub fn addMaskedBuffer(queue: *Queue, id: Id, values: []const u32, mask: u4, incremental: bool) void {
+    pub fn addMaskedBuffer(queue: *Queue, id: Id, values: []const u32, mask: u4, mode: Header.Mode) void {
         if (values.len == 0) return;
 
         var current_id: Id = id;
@@ -171,13 +332,13 @@ pub const Queue = struct {
                 .id = id,
                 .mask = mask,
                 .extra = @intCast(len - 1),
-                .incremental_writing = incremental,
+                .mode = mode,
             });
             queue.end += 2;
 
             @memcpy(queue.buffer[queue.end..][0..(len - 1)], remaining_slice[1..len]);
             queue.end += std.mem.alignForward(usize, len - 1, 2); // commands must be aligned to 8 bytes
-            if (incremental) current_id = @enumFromInt(@intFromEnum(current_id) + len);
+            if (mode == .incremental) current_id = @enumFromInt(@intFromEnum(current_id) + len);
         }
     }
 

@@ -84,7 +84,7 @@ pub fn run(args: Raw, io: std.Io, arena: std.mem.Allocator) !u8 {
             else => return err,
         });
 
-        try out.print("L_{X:0>3}: {f}\n", .{ i, instruction.fmtDisassemble(descriptors) });
+        try out.print("L_{X:0>3}: {f}\n", .{ i, instruction.fmtContext(descriptors) });
 
         if (i >= std.math.maxInt(u12)) {
             log.err("instruction stream is too big! (> 4096 instructions)", .{});

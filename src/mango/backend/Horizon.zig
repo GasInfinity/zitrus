@@ -844,27 +844,48 @@ const Driver = struct {
             var busy_it = drv.submission_buffer_busy.iterator();
             while (busy_it.next()) |queue_type| log.err(" -> which had the {t} queue busy", .{queue_type});
 
-            // NOTE: having a submission buffer means we're in a node ALWAYS
-            log.err("Current operation is {t} ({*}) within", .{drv.submission_buffer_node.?.kind, drv.submission_buffer_node.?});
+            {
+                var current = cmd_buf.head;
+                var i: usize = 1;
+                while (current) |node| : (i += 1) {
+                    log.err(" {d}. {t} -> {*}", .{i, node.kind, node});
 
-            var current = cmd_buf.head;
-            var i: usize = 1;
-            while (current) |node| : (i += 1) {
-                log.err(" {d}. {t} -> {*}", .{i, node.kind, node});
+                    switch (node.kind) {
+                        .graphics => {
+                            const gfx: *CommandBuffer.operation.Graphics = @alignCast(@fieldParentPtr("node", node));
+                            log.err("    with head {*} and length (in words) {d}", .{gfx.head, gfx.len});
+                        },
+                        .timestamp => {
+                            const timestamp: *CommandBuffer.operation.Timestamp = @alignCast(@fieldParentPtr("node", node));
+                            log.err("    for query {d} and pool {*}", .{timestamp.query, timestamp.pool});
+                        },
+                    }
 
-                switch (node.kind) {
-                    .graphics => {
-                        const gfx: *CommandBuffer.operation.Graphics = @alignCast(@fieldParentPtr("node", node));
-                        log.err("    with head {*} and length (in words) {d}", .{gfx.head, gfx.len});
-                    },
-                    .timestamp => {
-                        const timestamp: *CommandBuffer.operation.Timestamp = @alignCast(@fieldParentPtr("node", node));
-                        log.err("    for query {d} and pool {*}", .{timestamp.query, timestamp.pool});
-                    },
+                    if (node == drv.submission_buffer_node) log.err("    -----> GPU was lost here", .{});
+                    current = node.nextPtr();
                 }
-
-                current = node.nextPtr();
             }
+
+            // TODO: make this configurable as a lot of other things.
+            // This bloats the binary A LOT (we're literally bringing entire type info of all the registers)
+            if (false) {
+                log.err("Dumping graphic streams...", .{});
+
+                var current = cmd_buf.head;
+                var i: usize  = 1;
+                while (current) |node| : (i += 1) {
+                    defer current = node.nextPtr();
+
+                    if (node.kind != .graphics) continue;
+
+                    const gfx: *CommandBuffer.operation.Graphics = @alignCast(@fieldParentPtr("node", node));
+
+                    log.err(" {d}. Dump start", .{i});
+                    var it: pica.command.Dump.Iterator = .init(gfx.head[0..gfx.len]);
+                    while (it.next()) |dumped| log.err("{f}", .{dumped});
+                    log.err(" {d}. Dump end", .{i});
+                }
+            } else log.err("Could not dump graphic streams: disabled", .{});
         } else {
             log.err("No active submission buffer", .{});
         }

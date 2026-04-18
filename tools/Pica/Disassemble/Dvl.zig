@@ -286,7 +286,7 @@ pub fn run(args: Dvl, io: std.Io, arena: std.mem.Allocator) !u8 {
             try out.print("{s}:\n", .{name});
         }
 
-        try out.print("L_{X:0>3}: {f}\n", .{ i, inst.fmtDisassemble(descriptors) });
+        try out.print("L_{X:0>3}: {f}\n", .{ i, inst.fmtContext(descriptors) });
     }
 
     try out.flush();

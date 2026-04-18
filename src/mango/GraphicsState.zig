@@ -822,11 +822,11 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
         queue.add(p3d, &p3d.output_merger.depth_color_config, .{
             .enable_depth_test = state.misc.depth_test_enable,
             .depth_op = state.misc.depth_test_op,
-            .r_write_enable = state.misc.color_r_enable,
-            .g_write_enable = state.misc.color_g_enable,
-            .b_write_enable = state.misc.color_b_enable,
-            .a_write_enable = state.misc.color_a_enable,
-            .depth_write_enable = state.misc.depth_test_enable and state.misc.depth_write_enable,
+            .enable_r_write = state.misc.color_r_enable,
+            .enable_g_write = state.misc.color_g_enable,
+            .enable_b_write = state.misc.color_b_enable,
+            .enable_a_write = state.misc.color_a_enable,
+            .enable_depth_write = state.misc.depth_test_enable and state.misc.depth_write_enable,
         });
     }
 
@@ -863,9 +863,9 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
     if (state.dirty.stencil_operation) {
         // NOTE: emission takes 2 words
         queue.add(p3d, &p3d.output_merger.stencil_test.operation, .{
-            .fail_op = state.stencil.state.fail_op,
-            .depth_fail_op = state.stencil.state.depth_fail_op,
-            .pass_op = state.stencil.state.pass_op,
+            .fail = state.stencil.state.fail_op,
+            .depth_fail = state.stencil.state.depth_fail_op,
+            .pass = state.stencil.state.pass_op,
         });
     }
 

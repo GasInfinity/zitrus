@@ -1173,13 +1173,13 @@ pub const TextureCombinerUnit = extern struct {
                 .alpha_factor = .init(.{ combiner.alpha_factor[0].native(), combiner.alpha_factor[1].native(), combiner.alpha_factor[2].native() }),
             },
             .operations = .{
-                .color_op = combiner.color_op.native(),
-                .alpha_op = combiner.alpha_op.native(),
+                .color = combiner.color_op.native(),
+                .alpha = combiner.alpha_op.native(),
             },
             .color = combiner.constant,
             .scales = .{
-                .color_scale = combiner.color_scale.nativeTextureCombinerMultiplier(),
-                .alpha_scale = combiner.alpha_scale.nativeTextureCombinerMultiplier(),
+                .color = combiner.color_scale.nativeTextureCombinerMultiplier(),
+                .alpha = combiner.alpha_scale.nativeTextureCombinerMultiplier(),
             },
         };
     }

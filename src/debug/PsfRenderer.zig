@@ -244,7 +244,7 @@ vertical_overflow: VerticalBehavior,
 
 writer: Writer,
 
-pub fn init(buffer: []u8, psf: Font, fb: []u8, stride: usize, x: u16, y: u16, width: u16, height: u16, bpp: u8) error{InvalidPsf}!PsfWriter {
+pub fn init(buffer: []u8, psf: Font, fb: []u8, stride: usize, x: u16, y: u16, width: u16, height: u16, bpp: u8) PsfWriter {
     std.debug.assert(x < width and y < height);
 
     return .{

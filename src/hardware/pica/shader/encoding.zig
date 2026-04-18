@@ -556,6 +556,18 @@ pub const OperandDescriptor = packed struct(u32) {
     src3_selector: Component.Selector = .xyzw,
     _unused0: u1 = 0,
 
+    pub fn format(desc: OperandDescriptor, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        try w.print("{f} = {f}{f} | {f}{f} | {f}{f}", .{
+            desc.dst_mask,
+            desc.src1_neg,
+            desc.src1_selector,
+            desc.src2_neg,
+            desc.src2_selector,
+            desc.src3_neg,
+            desc.src3_selector,
+        });
+    } 
+
     pub fn equalsMasked(desc: OperandDescriptor, mask: Mask, other: OperandDescriptor) bool {
         // zig fmt: off
         return (!mask.dst  or (desc.dst_mask == other.dst_mask))
@@ -672,14 +684,14 @@ pub const Instruction = packed union(u32) {
             };
         }
 
-        pub fn toComparison(opcode: Opcode) ?Comparison {
+        pub fn toComparison(opcode: Opcode) ?Opcode.Comparison {
             return switch (@intFromEnum(opcode)) {
                 @intFromEnum(Opcode.cmp0)...@intFromEnum(Opcode.cmp1) => @enumFromInt(@intFromEnum(Opcode.cmp0) >> 1),
                 else => null,
             };
         }
 
-        pub fn toMad(opcode: Opcode) ?Mad {
+        pub fn toMad(opcode: Opcode) ?Opcode.Mad {
             return switch (@intFromEnum(opcode)) {
                 0x30...0x37 => @enumFromInt(@intFromEnum(Opcode.madi0) >> 3),
                 0x38...0x3F => @enumFromInt(@intFromEnum(Opcode.mad0) >> 3),
@@ -688,80 +700,89 @@ pub const Instruction = packed union(u32) {
         }
     };
 
-    pub const format = struct {
-        pub const Unparametized = packed struct(u32) { _unused0: u26 = 0, opcode: Opcode };
+    pub const Unparametized = packed struct(u32) { _unused0: u26 = 0, opcode: Opcode };
 
-        pub fn Register(comptime inverted: bool) type {
-            return packed struct(u32) {
-                operand_descriptor_id: u7,
-                src2: (if (inverted) SourceRegister else SourceRegister.Limited) = .v0,
-                src1: (if (inverted) SourceRegister.Limited else SourceRegister),
-                address_component: AddressComponent = .none,
-                dst: DestinationRegister,
-                opcode: Opcode,
-            };
-        }
-
-        pub const Comparison = packed struct(u32) {
+    pub fn Register(comptime inverted: bool) type {
+        return packed struct(u32) {
             operand_descriptor_id: u7,
-            src2: SourceRegister.Limited,
-            src1: SourceRegister,
+            src2: (if (inverted) SourceRegister else SourceRegister.Limited) = .v0,
+            src1: (if (inverted) SourceRegister.Limited else SourceRegister),
             address_component: AddressComponent = .none,
-            x_operation: ComparisonOperation,
-            y_operation: ComparisonOperation,
-            opcode: Opcode.Comparison,
-        };
-
-        pub const ControlFlow = packed struct(u32) {
-            num: u8,
-            _unused0: u2 = 0,
-            dst: u12,
-            condition: Condition,
-            ref_y: bool,
-            ref_x: bool,
+            dst: DestinationRegister,
             opcode: Opcode,
         };
+    }
 
-        pub const ConstantControlFlow = packed struct(u32) {
-            num: u8,
-            _unused0: u2 = 0,
-            dst: u12,
-            src: IntegralRegister,
-            opcode: Opcode,
-        };
-
-        pub const SetEmit = packed struct(u32) {
-            _unused0: u22 = 0,
-            winding: Winding,
-            primitive_emit: Primitive,
-            vertex_id: u2,
-            opcode: Opcode,
-        };
-
-        pub fn Mad(comptime inverted: bool) type {
-            return packed struct(u32) {
-                operand_descriptor_id: u5,
-                src3: (if (inverted) SourceRegister else SourceRegister.Limited),
-                src2: (if (inverted) SourceRegister.Limited else SourceRegister),
-                src1: SourceRegister.Limited,
-                address_component: AddressComponent,
-                dst: DestinationRegister,
-                opcode: Opcode.Mad,
-            };
-        }
+    pub const Comparison = packed struct(u32) {
+        operand_descriptor_id: u7,
+        src2: SourceRegister.Limited,
+        src1: SourceRegister,
+        address_component: AddressComponent = .none,
+        x_operation: ComparisonOperation,
+        y_operation: ComparisonOperation,
+        opcode: Opcode.Comparison,
     };
 
-    unparametized: format.Unparametized,
-    register: format.Register(false),
-    register_inverted: format.Register(true),
-    comparison: format.Comparison,
-    control_flow: format.ControlFlow,
-    constant_control_flow: format.ConstantControlFlow,
-    set_emit: format.SetEmit,
-    mad: format.Mad(false),
-    mad_inverted: format.Mad(true),
+    pub const ControlFlow = packed struct(u32) {
+        num: u8,
+        _unused0: u2 = 0,
+        dst: u12,
+        condition: Condition,
+        ref_y: bool,
+        ref_x: bool,
+        opcode: Opcode,
+    };
 
-    pub fn fmtDisassemble(inst: Instruction, descriptors: []const OperandDescriptor) Format {
+    pub const ConstantControlFlow = packed struct(u32) {
+        num: u8,
+        _unused0: u2 = 0,
+        dst: u12,
+        src: IntegralRegister,
+        opcode: Opcode,
+    };
+
+    pub const SetEmit = packed struct(u32) {
+        _unused0: u22 = 0,
+        winding: Winding,
+        primitive_emit: Primitive,
+        vertex_id: u2,
+        opcode: Opcode,
+    };
+
+    pub fn Mad(comptime inverted: bool) type {
+        return packed struct(u32) {
+            operand_descriptor_id: u5,
+            src3: (if (inverted) SourceRegister else SourceRegister.Limited),
+            src2: (if (inverted) SourceRegister.Limited else SourceRegister),
+            src1: SourceRegister.Limited,
+            address_component: AddressComponent,
+            dst: DestinationRegister,
+            opcode: Opcode.Mad,
+        };
+    }
+
+    unparametized: Unparametized,
+    register: Register(false),
+    register_inverted: Register(true),
+    comparison: Comparison,
+    control_flow: ControlFlow,
+    constant_control_flow: ConstantControlFlow,
+    set_emit: SetEmit,
+    mad: Mad(false),
+    mad_inverted: Mad(true),
+
+    /// Disassembles this instruction without any `OperandDescriptor` context
+    ///
+    /// Use `fmtContext` if you have those
+    pub fn format(inst: Instruction, w: *std.Io.Writer) std.Io.Writer.Error!void {
+        try w.print("{f}", .{inst.fmtContext(&.{})});
+    }
+
+    /// Returns a formatter able to fully disassemble instructions.
+    ///
+    /// Tries to use `descriptors`, if a descriptor is not found the index will be printed 
+    /// in a comment instead with '?' as the `OperandDescriptor` placeholder.
+    pub fn fmtContext(inst: Instruction, descriptors: []const OperandDescriptor) Format {
         return .{ .inst = inst, .descriptors = descriptors };
     }
 
@@ -796,7 +817,7 @@ pub const Instruction = packed union(u32) {
                         const desc = descriptors[binary.operand_descriptor_id];
 
                         try writer.print("{t} {t}.{f}, {f}{t}{f}.{f}, {f}{t}.{f}", .{ binary.opcode, binary.dst, desc.dst_mask, desc.src1_neg, binary.src1, binary.address_component, desc.src1_selector, desc.src2_neg, binary.src2, desc.src2_selector });
-                    } else try writer.print("{t} {t}.????, ?{t}{f}.????, ?{t}.????", .{ binary.opcode, binary.dst, binary.src1, binary.address_component, binary.src2 });
+                    } else try writer.print("{t} {t}.????, ?{t}{f}.????, ?{t}.???? ; opdesc {d}", .{ binary.opcode, binary.dst, binary.src1, binary.address_component, binary.src2, binary.operand_descriptor_id });
                 },
                 @intFromEnum(Opcode.dphi),
                 @intFromEnum(Opcode.dsti),
@@ -810,7 +831,7 @@ pub const Instruction = packed union(u32) {
 
                         // NOTE: @tagName because we want to remove the `i` suffix.
                         try writer.print("{s} {t}.{f}, {f}{t}.{f}, {f}{t}{f}.{f}", .{ @tagName(binary.opcode)[0..3], binary.dst, desc.dst_mask, desc.src1_neg, binary.src1, desc.src1_selector, desc.src2_neg, binary.src2, binary.address_component, desc.src2_selector });
-                    } else try writer.print("{s} {t}.????, ?{t}.????, ?{t}{f}.????", .{ @tagName(binary.opcode)[0..3], binary.dst, binary.src1, binary.src2, binary.address_component });
+                    } else try writer.print("{s} {t}.????, ?{t}.????, ?{t}{f}.???? ; opdesc {d}", .{ @tagName(binary.opcode)[0..3], binary.dst, binary.src1, binary.src2, binary.address_component, binary.operand_descriptor_id });
                 },
                 @intFromEnum(Opcode.ex2),
                 @intFromEnum(Opcode.lg2),
@@ -827,7 +848,7 @@ pub const Instruction = packed union(u32) {
                         const desc = descriptors[unary.operand_descriptor_id];
 
                         try writer.print("{t} {t}.{f}, {f}{t}{f}.{f}", .{ unary.opcode, unary.dst, desc.dst_mask, desc.src1_neg, unary.src1, unary.address_component, desc.src1_selector });
-                    } else try writer.print("{t} {t}.????, ?{t}{f}.????", .{ unary.opcode, unary.dst, unary.src1, unary.address_component });
+                    } else try writer.print("{t} {t}.????, ?{t}{f}.???? ; opdesc {d}", .{ unary.opcode, unary.dst, unary.src1, unary.address_component, unary.operand_descriptor_id });
                 },
                 @intFromEnum(Opcode.breakc),
                 => try writer.print("breakc {t}, {}, {}", .{ inst.control_flow.condition, inst.control_flow.ref_x, inst.control_flow.ref_y }),
@@ -856,7 +877,7 @@ pub const Instruction = packed union(u32) {
                         const desc = descriptors[cmp.operand_descriptor_id];
 
                         try writer.print("cmp {f}{t}{f}.{f}, {t}, {t}, {f}{t}.{f}", .{ desc.src1_neg, cmp.src1, cmp.address_component, desc.src1_selector, cmp.x_operation, cmp.y_operation, desc.src2_neg, cmp.src2, desc.src2_selector });
-                    } else try writer.print("cmp ?{t}{f}.????, {t}, {t}, ?{t}.????", .{ cmp.src1, cmp.address_component, cmp.x_operation, cmp.y_operation, cmp.src2 });
+                    } else try writer.print("cmp ?{t}{f}.????, {t}, {t}, ?{t}.???? ; opdesc {d}", .{ cmp.src1, cmp.address_component, cmp.x_operation, cmp.y_operation, cmp.src2, cmp.operand_descriptor_id });
                 },
                 @intFromEnum(Opcode.mad0)...@intFromEnum(Opcode.mad7) => {
                     const mad = inst.mad;
@@ -865,7 +886,7 @@ pub const Instruction = packed union(u32) {
                         const desc = descriptors[mad.operand_descriptor_id];
 
                         try writer.print("mad {t}.{f}, {f}{t}.{f}, {f}{t}{f}.{f}, {f}{t}.{f}", .{ mad.dst, desc.dst_mask, desc.src1_neg, mad.src1, desc.src1_selector, desc.src2_neg, mad.src2, mad.address_component, desc.src2_selector, desc.src3_neg, mad.src3, desc.src3_selector });
-                    } else try writer.print("mad {t}.????, ?{t}.????, ?{t}{f}.????, ?{t}.????", .{ mad.dst, mad.src1, mad.src2, mad.address_component, mad.src3 });
+                    } else try writer.print("mad {t}.????, ?{t}.????, ?{t}{f}.????, ?{t}.???? ; opdesc {d}", .{ mad.dst, mad.src1, mad.src2, mad.address_component, mad.src3, mad.operand_descriptor_id });
                 },
                 @intFromEnum(Opcode.madi0)...@intFromEnum(Opcode.madi7) => {
                     const mad = inst.mad_inverted;
@@ -874,7 +895,7 @@ pub const Instruction = packed union(u32) {
                         const desc = descriptors[mad.operand_descriptor_id];
 
                         try writer.print("mad {t}.{f}, {f}{t}.{f}, {f}{t}.{f}, {f}{t}{f}.{f}", .{ mad.dst, desc.dst_mask, desc.src1_neg, mad.src1, desc.src1_selector, desc.src2_neg, mad.src2, desc.src2_selector, desc.src3_neg, mad.src3, mad.address_component, desc.src3_selector });
-                    } else try writer.print("mad {t}.????, ?{t}.????, ?{t}.????, ?{t}{f}.????", .{ mad.dst, mad.src1, mad.src2, mad.src3, mad.address_component });
+                    } else try writer.print("mad {t}.????, ?{t}.????, ?{t}.????, ?{t}{f}.???? ; opdesc {d}", .{ mad.dst, mad.src1, mad.src2, mad.src3, mad.address_component, mad.operand_descriptor_id });
                 },
                 else => try writer.print("??? (0x{X:0>8})", .{@as(u32, @bitCast(fmt.inst))}),
             };

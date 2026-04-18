@@ -27,7 +27,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     defer psf.deinit(gpa);
 
     var renderer_buf: [64]u8 = undefined;
-    var top_renderer = try zdebug.PsfRenderer.init(
+    var top_renderer = zdebug.PsfRenderer.init(
         &renderer_buf,
         psf,
         soft.current(.top, .left),

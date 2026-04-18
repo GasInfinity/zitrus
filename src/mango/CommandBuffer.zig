@@ -381,7 +381,8 @@ const Flags = packed struct(u8) {
     pub const none: Flags = .{};
 
     subsequent_emissions: bool = false,
-    _: u7 = 0,
+    drawcall_in_pass: bool = false,
+    _: u6 = 0,
 };
 
 pool: *CommandPool,
@@ -439,6 +440,7 @@ pub fn reset(cmd: *CommandBuffer, flags: mango.CommandBufferResetFlags) void {
     cmd.gfx_state = .empty;
     cmd.rnd_state = .empty;
     cmd.current_error = null;
+    cmd.flags = .none;
     cmd.scope = .none;
     cmd.state = .initial;
 }
@@ -517,9 +519,12 @@ pub fn endRendering(cmd: *CommandBuffer) void {
 
     const queue = cmd.stream.first().?;
 
-    if (cmd.rnd_state.endRendering()) {
+    if (cmd.flags.drawcall_in_pass) {
         queue.add(p3d, &p3d.output_merger.flush, .init(.trigger));
+        cmd.flags.drawcall_in_pass = false;
     }
+
+    return cmd.rnd_state.endRendering();
 }
 
 // TODO: beginShadowRendering, endShadowRendering for the shadow pass w/color op
@@ -599,6 +604,8 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
         last_vertex_info = current_vertex_info;
         current_vertex_info_ptr = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(current_vertex_info_ptr)) + stride));
     }
+
+    cmd.flags.drawcall_in_pass = true;
 }
 
 pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]const mango.MultiDrawIndexedInfo, stride: u32) void {
@@ -687,6 +694,8 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
         last_index_info = current_index_info;
         current_index_info_ptr = @ptrCast(@alignCast(@as([*]const u8, @ptrCast(current_index_info_ptr)) + stride));
     }
+
+    cmd.flags.drawcall_in_pass = true;
 }
 
 // TODO: How should we approach immediate rendering, are 16 vertex attributes really needed?
@@ -851,7 +860,7 @@ pub fn writeTimestamp(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32) vo
 
     if (cmd.current_error) |_| return;
 
-    cmd.emitDirty(0) catch |err| {
+    cmd.emitDirty(backend.static_emission_cost) catch |err| {
         cmd.current_error = err;
         return;
     };
@@ -883,7 +892,7 @@ fn beforeDraw(cmd: *CommandBuffer, draw_count: usize) bool {
         return false;
     };
 
-    cmd.emitDirty(20 + draw_count * backend.max_native_drawcall_cost) catch |err| {
+    cmd.emitDirty(backend.static_emission_cost + draw_count * backend.max_drawcall_emission_cost) catch |err| {
         cmd.current_error = err;
         return false;
     };
@@ -925,6 +934,11 @@ fn emitDirty(cmd: *CommandBuffer, extra_cost: u32) !void {
 fn finalizeCurrent(
     cmd: *CommandBuffer,
 ) !void {
+    if (cmd.stream.first()) |queue| if (cmd.flags.drawcall_in_pass) {
+        queue.add(p3d, &p3d.output_merger.flush, .init(.trigger));
+        cmd.flags.drawcall_in_pass = false;
+    };
+
     if (cmd.stream.finalize()) |head| {
         // NOTE: we're not "leaking" head, if this fails 
         // the command buffer must be left in an `invalid` state 

@@ -251,7 +251,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     const soft = init.soft;
 
     var renderer_buf: [64]u8 = undefined;
-    var text_renderer = try zdebug.PsfRenderer.init(
+    var text_renderer = zdebug.PsfRenderer.init(
         &renderer_buf,
         .spleen_5x8,
         &.{},

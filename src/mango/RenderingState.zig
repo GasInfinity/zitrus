@@ -5,11 +5,13 @@ pub const UniformLocation = enum {
 };
 
 pub const Dirty = packed struct(u32) {
+    // NOTE: by default dirty so we disable the `texture_enable` bits if none.
+    pub const init: Dirty = .{ .texture_units = std.math.maxInt(u3) };
+
     begin_rendering: bool = false,
     vertex_buffers: bool = false,
     uniforms: u6 = 0,
-    // NOTE: default dirty so we disable the `texture_enable` bits if none.
-    texture_units: u3 = std.math.maxInt(u3),
+    texture_units: u3 = 0,
     light_enable: bool = false,
     light_environment_factors: bool = false,
     light_parameters: bool = false,
@@ -142,7 +144,7 @@ pub const empty: RenderingState = .{
     .texture_unit_enabled = @splat(false),
     .texture_units = undefined,
     .lighting_state = .empty,
-    .dirty = .{},
+    .dirty = .init,
 };
 
 misc: Misc,
@@ -164,12 +166,8 @@ pub fn beginRendering(rnd: *RenderingState, rendering_info: mango.RenderingInfo)
     rnd.dirty.begin_rendering = true;
 }
 
-/// returns if any draw call has been issued between `beginRendering` and this call.
-pub fn endRendering(rnd: *RenderingState) bool {
-    defer rnd.dirty.begin_rendering = false;
-
-    // If this is not dirty then at least one draw call has been issued.
-    return !rnd.dirty.begin_rendering;
+pub fn endRendering(rnd: *RenderingState) void {
+    rnd.dirty.begin_rendering = false;
 }
 
 pub fn bindShaders(rnd: *RenderingState, stages: []const mango.ShaderStage, shaders: []const mango.Shader) void {

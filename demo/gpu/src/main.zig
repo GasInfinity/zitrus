@@ -85,7 +85,6 @@ pub const Scene = struct {
     vtx_shader: mango.Shader,
 
     top_renderbuffer: Renderbuffer,
-    bottom_renderbuffer: Renderbuffer,
     cube_mesh: Mesh,
 
     command_pool: mango.CommandPool,
@@ -151,9 +150,6 @@ pub const Scene = struct {
         const top_renderbuffer: Renderbuffer = try .init(device, gpa, 480, 800, .a8b8g8r8_unorm, .d24_unorm);
         errdefer top_renderbuffer.deinit(device, gpa);
 
-        const bottom_renderbuffer: Renderbuffer = try .init(device, gpa, 240, 320, .a8b8g8r8_unorm, .undefined);
-        errdefer bottom_renderbuffer.deinit(device, gpa);
-
         const cube_mesh: Mesh = try .init(device, gpa, .u8, &cube_indices, std.mem.sliceAsBytes(&cube_vertices));
         errdefer cube_mesh.deinit(device, gpa);
 
@@ -199,7 +195,6 @@ pub const Scene = struct {
             .vtx_shader = vertex_shader,
 
             .top_renderbuffer = top_renderbuffer,
-            .bottom_renderbuffer = bottom_renderbuffer,
             .cube_mesh = cube_mesh,
 
             .command_pool = pool,
@@ -219,7 +214,6 @@ pub const Scene = struct {
         device.freeCommandBuffers(scene.command_pool, @ptrCast(&scene.cmd));
         device.destroyCommandPool(scene.command_pool, gpa);
         scene.cube_mesh.deinit(device, gpa);
-        scene.bottom_renderbuffer.deinit(device, gpa);
         scene.top_renderbuffer.deinit(device, gpa);
         device.destroyShader(scene.vtx_shader, gpa);
         device.destroyVertexInputLayout(scene.input_layout, gpa);
@@ -283,6 +277,7 @@ pub const Scene = struct {
         device.resetQueryPool(scene.query_pool, 0, 2);
 
         try cmd.begin();
+        cmd.writeTimestamp(scene.query_pool, 0);
         cmd.setLogicOpEnable(false);
         cmd.setAlphaTestEnable(false);
         cmd.setStencilTestEnable(false);
@@ -371,10 +366,6 @@ pub const Scene = struct {
 
         scene.cube_mesh.bind(cmd);
 
-
-        // FIXME: beginRendering and endRendering have assumptions that we're breaking by splitting the work with timestamps,
-        // fix them (obviously)
-        cmd.writeTimestamp(scene.query_pool, 0);
         {
             cmd.beginRendering(.{
                 .color_attachment = scene.top_renderbuffer.color.view,
@@ -422,8 +413,8 @@ pub const Scene = struct {
             cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.mul(camera_view, zmath.mat.translate(4, 0, 1)));
             scene.cube_mesh.draw(cmd);
         }
-        cmd.writeTimestamp(scene.query_pool, 1);
 
+        cmd.writeTimestamp(scene.query_pool, 1);
         try cmd.end();
     }
 
@@ -433,14 +424,7 @@ pub const Scene = struct {
         const submit_queue = device.getQueue(.submit);
         const present_queue = device.getQueue(.present);
 
-        try fill_queue.clearColorImage(.{
-            .wait_semaphore = &.init(scene.semaphore, scene.current_timeline),
-            .image = scene.bottom_renderbuffer.color.image,
-            .color = @splat(0x11),
-            .subresource_range = .full,
-            .signal_semaphore = &.init(scene.semaphore, scene.current_timeline + 1),
-        });
-        scene.current_timeline += 1;
+        try bottom_swap.present(present_queue, bottom_idx, null);
 
         try fill_queue.clearColorImage(.{
             .wait_semaphore = &.init(scene.semaphore, scene.current_timeline),
@@ -467,18 +451,6 @@ pub const Scene = struct {
             .signal_semaphore = &.init(scene.semaphore, scene.current_timeline + 1),
         });
         scene.current_timeline += 1;
-
-        try transfer_queue.blitImage(.{
-            .wait_semaphore = &.init(scene.semaphore, scene.current_timeline),
-            .src_image = scene.bottom_renderbuffer.color.image,
-            .dst_image = bottom_swap.images[bottom_idx],
-            .src_subresource = .full,
-            .dst_subresource = .full,
-            .signal_semaphore = &.init(scene.semaphore, scene.current_timeline + 1),
-        });
-        scene.current_timeline += 1;
-
-        try bottom_swap.present(present_queue, bottom_idx, &.init(scene.semaphore, scene.current_timeline));
 
         try transfer_queue.blitImage(.{
             .wait_semaphore = &.init(scene.semaphore, scene.current_timeline),
@@ -770,6 +742,9 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
     const bottom_swap: DoubleBufferedSwapchain = try .initBgr888(device, .bottom_240x320, gpa);
     defer bottom_swap.deinit(device, gpa);
 
+    const bottom_mapped = try device.mapMemory(bottom_swap.swapchain_memory, .size(0), .whole);
+    defer device.unmapMemory(bottom_swap.swapchain_memory);
+
     defer device.waitIdle();
 
     var scene: Scene = try .init(device, gpa);
@@ -790,23 +765,47 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         const bottom_image_idx = try bottom_swap.acquireNext(device);
         const top_image_idx = try top_swap.acquireNext(device);
 
-        try scene.update(pad);
-        try scene.render(device);
-        try scene.submitPresent(device, top_swap, top_image_idx, bottom_swap, bottom_image_idx);
-
-        log_time: {
-            var gpu_timestamps: [2]u64 = undefined;
-
+        // TODO: we do this at the start because we don't double-buffer command buffers and query pools,
+        // unlike in the "common" framework of mango demos.
+        // Skill issue
+        const last_gpu_timestamps, const last_gpu_timestamps_available = blk: {
+            var gpu_timestamps: [2]u64 = undefined;   
+            
             device.getQueryPoolResults(scene.query_pool, 0, 2, @ptrCast(&gpu_timestamps), @sizeOf(u64), .none) catch |err| switch (err) {
-                error.NotReady => break :log_time, // OK
+                error.NotReady => break :blk .{undefined, false}, // OK
                 else => |e| return e,
             };
-            
-            // TODO: software render this instead of debug output,
-            // it's *really* slow to do so.
-            const took = gpu_timestamps[1] - gpu_timestamps[0];
-            std.log.info("GPU took before rendering {} ns", .{took});
+
+            break :blk .{gpu_timestamps, true};
+        };
+
+        try scene.update(pad);
+        try scene.render(device);
+
+        // TODO: obviously we're near making our own renderer at this point, we have to render the text with the gpu instead; lazy ass lmao.
+        {
+            const current_bottom = bottom_mapped[(@as(usize, bottom_image_idx) * 240 * 320 * 3)..][0.. 240 * 320 * 3];
+            @memset(current_bottom, 0x00);
+
+            var bottom_renderer: zitrus.debug.PsfRenderer = .init(&.{}, .bizcat, current_bottom, 240 * 3, 0, 0, 320, 240, 3);
+
+            const took: std.Io.Duration = if (last_gpu_timestamps_available)
+                .fromNanoseconds(@as(i96, last_gpu_timestamps[1]) - last_gpu_timestamps[0])
+            else 
+                .zero;
+
+            try bottom_renderer.writer.print("GPU Took: {f}", .{took});
+
+            try device.flushMappedMemoryRanges(&.{
+                .{
+                    .memory = bottom_swap.swapchain_memory,
+                    .offset = .size(0),
+                    .size = .whole,
+                }
+            });
         }
+
+        try scene.submitPresent(device, top_swap, top_image_idx, bottom_swap, bottom_image_idx);
     }
 }
 

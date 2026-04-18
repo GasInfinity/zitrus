@@ -13,7 +13,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     try horizon.Io.global.initStorage(app.srv, .soc, 4 * 1024 * 1024);
 
     var top_renderer_buf: [64]u8 = undefined;
-    var top_renderer = try zdebug.PsfRenderer.init(
+    var top_renderer = zdebug.PsfRenderer.init(
         &top_renderer_buf,
         .spleen_6x12,
         soft.current(.top, .left),
@@ -27,7 +27,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     top_renderer.clear();
 
     var bottom_renderer_buf: [64]u8 = undefined;
-    var bottom_renderer = try zdebug.PsfRenderer.init(
+    var bottom_renderer = zdebug.PsfRenderer.init(
         &bottom_renderer_buf,
         .spleen_6x12,
         soft.current(.bottom, .left),

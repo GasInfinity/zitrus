@@ -68,6 +68,10 @@ pub fn LsbRegister(comptime T: type) type {
         pub inline fn init(value: T) Lsb {
             return .{ .value = value };
         }
+
+        pub fn format(lsb: Lsb, w: *std.Io.Writer) std.Io.Writer.Error!void {
+            try w.print(if (std.meta.hasFn(T, "format")) "{f}" else "{any}", .{lsb.value});
+        }
     };
 }
 
@@ -83,6 +87,10 @@ pub fn MsbRegister(comptime T: type) type {
 
         pub inline fn init(value: T) Msb {
             return .{ .value = value };
+        }
+
+        pub fn format(msb: Msb, w: *std.Io.Writer) std.Io.Writer.Error!void {
+            try w.print(if (std.meta.hasFn(T, "format")) "{f}" else "{any}", .{msb.value});
         }
     };
 }
@@ -144,6 +152,15 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
                 .@"enum" => @intFromEnum(value),
                 else => @bitCast(value),
             }, .native);
+        }
+
+        pub fn format(bt: Self, w: *std.Io.Writer) std.Io.Writer.Error!void {
+            try w.writeAll("{ ");
+            for (0..n) |i| {
+                try w.print(if (std.meta.hasFn(T, "format")) "{f}" else "{any}", .{bt.get(i)});
+                if (i != n - 1) try w.writeAll(", ");
+            }
+            try w.writeAll(" }");
         }
 
         const Self = @This();
