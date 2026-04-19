@@ -483,7 +483,7 @@ pub const OutputMap = packed struct(u32) {
     _unusd3: u3 = 0,
 
     pub fn format(map: OutputMap, w: *std.Io.Writer) std.Io.Writer.Error!void {
-        try w.print("({}, {}, {}, {})", .{map.x, map.y, map.z, map.w});
+        try w.print("({}, {}, {}, {})", .{ map.x, map.y, map.z, map.w });
     }
 };
 
@@ -1359,7 +1359,7 @@ pub const Graphics = extern struct {
             }
 
             pub fn format(dim: RenderBufferDimensions, w: *std.Io.Writer) std.Io.Writer.Error!void {
-                try w.print("{}x{} (flip: {})", .{dim.width, @as(u32, dim.height_end) + 1, dim.flip_vertically});
+                try w.print("{}x{} (flip: {})", .{ dim.width, @as(u32, dim.height_end) + 1, dim.flip_vertically });
             }
         };
 
@@ -1377,7 +1377,7 @@ pub const Graphics = extern struct {
             }
 
             pub fn format(fmt: ColorBufferFormat, w: *std.Io.Writer) std.Io.Writer.Error!void {
-                try w.print("{} ({} bits)", .{fmt.pixel_format, fmt.pixel_size});
+                try w.print("{} ({} bits)", .{ fmt.pixel_format, fmt.pixel_size });
             }
         };
 
@@ -1390,7 +1390,7 @@ pub const Graphics = extern struct {
         depth_color_config: DepthTestColorConfig,
         _unknown0: [8]u32,
         invalidate: LsbRegister(Trigger),
-        /// Flushing without issuing a drawcall before-hand in the same submitted command queue 
+        /// Flushing without issuing a drawcall before-hand in the same submitted command queue
         /// will hang the GPU
         ///
         /// Don't ask me why
@@ -1654,7 +1654,7 @@ pub const Graphics = extern struct {
                 }
 
                 pub fn format(data: Data, w: *std.Io.Writer) std.Io.Writer.Error!void {
-                    try w.print("Entry: {}, Diff: {}", .{data.entry, data.next_absolute_difference});
+                    try w.print("Entry: {}, Diff: {}", .{ data.entry, data.next_absolute_difference });
                 }
             };
 

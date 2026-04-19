@@ -90,7 +90,8 @@ pub const Scene = struct {
     command_pool: mango.CommandPool,
     cmd: mango.CommandBuffer,
 
-    query_pool: mango.QueryPool,
+    timestamp_query_pool: mango.QueryPool,
+    statistics_query_pool: mango.QueryPool,
 
     zero_test_image: SingleImage,
     simple_sampler: mango.Sampler,
@@ -163,12 +164,43 @@ pub const Scene = struct {
         }, &cmd);
         errdefer device.freeCommandBuffers(pool, &cmd);
 
-        const query_pool = try device.createQueryPool(.{
+        const timestamp_query_pool = try device.createQueryPool(.{
             .count = 2,
             .type = .timestamp,
             .statistics = .{},
         }, null);
-        errdefer device.destroyQueryPool(query_pool, null);
+        errdefer device.destroyQueryPool(timestamp_query_pool, null);
+
+        const statistics_query_pool = try device.createQueryPool(.{
+            .count = 1,
+            .type = .statistics,
+            .statistics = .{
+                .input_assembly_vertices = true,
+                .input_assembly_primitives = true,
+                .rasterizer_primitives = true,
+                .non_vram_reads = true,
+                .non_vram_writes = true,
+                .vram_a_reads = true,
+                .vram_a_writes = true,
+                .vram_b_reads = true,
+                .vram_b_writes = true,
+                .input_assembly_reads = true,
+                .sampled_texture_reads = true,
+                .depth_buffer_reads = true,
+                .depth_buffer_writes = true,
+                .color_buffer_reads = true,
+                .color_buffer_writes = true,
+                .top_lcd_reads = true,
+                .bottom_lcd_reads = true,
+                .memory_copy_reads = true,
+                .memory_copy_writes = true,
+                .memory_fill_0_writes = true,
+                .memory_fill_1_writes = true,
+                .cpu_vram_reads = true,
+                .cpu_vram_writes = true,
+            },
+        }, null);
+        errdefer device.destroyQueryPool(statistics_query_pool, null);
 
         const zero_test_image: SingleImage = try .initLinear(device, gpa, 64, 64, .b8g8r8_unorm, test_bgr, sema, 0);
         errdefer zero_test_image.deinit(device, gpa);
@@ -200,7 +232,8 @@ pub const Scene = struct {
             .command_pool = pool,
             .cmd = cmd[0],
 
-            .query_pool = query_pool,
+            .timestamp_query_pool = timestamp_query_pool,
+            .statistics_query_pool = statistics_query_pool,
 
             .zero_test_image = zero_test_image,
             .simple_sampler = simple_sampler,
@@ -210,7 +243,8 @@ pub const Scene = struct {
     pub fn deinit(scene: *Scene, device: mango.Device, gpa: std.mem.Allocator) void {
         device.destroySampler(scene.simple_sampler, gpa);
         scene.zero_test_image.deinit(device, gpa);
-        device.destroyQueryPool(scene.query_pool, null);
+        device.destroyQueryPool(scene.statistics_query_pool, null);
+        device.destroyQueryPool(scene.timestamp_query_pool, null);
         device.freeCommandBuffers(scene.command_pool, @ptrCast(&scene.cmd));
         device.destroyCommandPool(scene.command_pool, gpa);
         scene.cube_mesh.deinit(device, gpa);
@@ -274,10 +308,12 @@ pub const Scene = struct {
         const cmd = scene.cmd;
 
         // NOTE: we wait for the cmd so the queries are always available (except on the first frame)
-        device.resetQueryPool(scene.query_pool, 0, 2);
+        device.resetQueryPool(scene.timestamp_query_pool, 0, 2);
+        device.resetQueryPool(scene.statistics_query_pool, 0, 1);
 
         try cmd.begin();
-        cmd.writeTimestamp(scene.query_pool, 0);
+        cmd.beginQuery(scene.statistics_query_pool, 0);
+        cmd.writeTimestamp(scene.timestamp_query_pool, 0);
         cmd.setLogicOpEnable(false);
         cmd.setAlphaTestEnable(false);
         cmd.setStencilTestEnable(false);
@@ -409,12 +445,13 @@ pub const Scene = struct {
             cmd.bindFloatUniforms(.vertex, 4, &camera_view);
             scene.cube_mesh.draw(cmd);
 
-            cmd.setCullMode(.back);
+            cmd.setCullMode(.none);
             cmd.bindFloatUniforms(.vertex, 4, &zmath.mat.mul(camera_view, zmath.mat.translate(4, 0, 1)));
             scene.cube_mesh.draw(cmd);
         }
 
-        cmd.writeTimestamp(scene.query_pool, 1);
+        cmd.writeTimestamp(scene.timestamp_query_pool, 1);
+        cmd.endQuery(scene.statistics_query_pool, 0);
         try cmd.end();
     }
 
@@ -771,12 +808,23 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         const last_gpu_timestamps, const last_gpu_timestamps_available = blk: {
             var gpu_timestamps: [2]u64 = undefined;   
             
-            device.getQueryPoolResults(scene.query_pool, 0, 2, @ptrCast(&gpu_timestamps), @sizeOf(u64), .none) catch |err| switch (err) {
+            device.getQueryPoolResults(scene.timestamp_query_pool, 0, 2, @ptrCast(&gpu_timestamps), @sizeOf(u64), .none) catch |err| switch (err) {
                 error.NotReady => break :blk .{undefined, false}, // OK
                 else => |e| return e,
             };
 
             break :blk .{gpu_timestamps, true};
+        };
+
+        const stats, const stats_available = blk: {
+            var stats: [23]u32 = undefined;
+            
+            device.getQueryPoolResults(scene.statistics_query_pool, 0, 1, @ptrCast(&stats), @sizeOf(u32), .none) catch |err| switch (err) {
+                error.NotReady => break :blk .{undefined, false}, // OK
+                else => |e| return e,
+            };
+
+            break :blk .{stats, true};
         };
 
         try scene.update(pad);
@@ -787,14 +835,20 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
             const current_bottom = bottom_mapped[(@as(usize, bottom_image_idx) * 240 * 320 * 3)..][0.. 240 * 320 * 3];
             @memset(current_bottom, 0x00);
 
-            var bottom_renderer: zitrus.debug.PsfRenderer = .init(&.{}, .bizcat, current_bottom, 240 * 3, 0, 0, 320, 240, 3);
+            var bottom_renderer: zitrus.debug.PsfRenderer = .init(&.{}, .spleen_5x8, current_bottom, 240 * 3, 0, 0, 320, 240, 3);
 
             const took: std.Io.Duration = if (last_gpu_timestamps_available)
                 .fromNanoseconds(@as(i96, last_gpu_timestamps[1]) - last_gpu_timestamps[0])
             else 
                 .zero;
 
-            try bottom_renderer.writer.print("GPU Took: {f}", .{took});
+            try bottom_renderer.writer.print("GPU Took: {f}\n", .{took});
+
+            if (stats_available) {
+                inline for (0..23) |i| {
+                    try bottom_renderer.writer.print("{s}: {}\n", .{@typeInfo(mango.QueryStatistics).@"struct".fields[i].name, stats[i]});
+                }
+            }
 
             try device.flushMappedMemoryRanges(&.{
                 .{

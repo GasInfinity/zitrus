@@ -566,7 +566,7 @@ pub const OperandDescriptor = packed struct(u32) {
             desc.src3_neg,
             desc.src3_selector,
         });
-    } 
+    }
 
     pub fn equalsMasked(desc: OperandDescriptor, mask: Mask, other: OperandDescriptor) bool {
         // zig fmt: off
@@ -780,7 +780,7 @@ pub const Instruction = packed union(u32) {
 
     /// Returns a formatter able to fully disassemble instructions.
     ///
-    /// Tries to use `descriptors`, if a descriptor is not found the index will be printed 
+    /// Tries to use `descriptors`, if a descriptor is not found the index will be printed
     /// in a comment instead with '?' as the `OperandDescriptor` placeholder.
     pub fn fmtContext(inst: Instruction, descriptors: []const OperandDescriptor) Format {
         return .{ .inst = inst, .descriptors = descriptors };

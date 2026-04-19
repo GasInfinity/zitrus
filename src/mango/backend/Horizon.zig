@@ -174,10 +174,10 @@ pub fn create(create_info: CreateInfo, gpa: std.mem.Allocator) !*Horizon {
             .linear_gpa = horizon.heap.linear_page_allocator,
             .vtable = vtable,
             .queues = .init(.{
-                .fill = fill_queue,  
-                .transfer = transfer_queue,  
-                .submit = submit_queue,  
-                .present = present_queue,  
+                .fill = fill_queue,
+                .transfer = transfer_queue,
+                .submit = submit_queue,
+                .present = present_queue,
             }),
             .queue_statuses = .initDefault(.init(.idle), .{}),
         },
@@ -515,15 +515,15 @@ const Driver = struct {
         .enqueued_commands = 0,
     };
 
-    submission_signals: std.EnumArray(Queue.Type, Queue.SemaphoreOperation), 
+    submission_signals: std.EnumArray(Queue.Type, Queue.SemaphoreOperation),
     submission_time: std.EnumArray(Queue.Type, u96),
-    
+
     submission_buffer: ?*CommandBuffer,
     submission_buffer_node: ?*CommandBuffer.operation.Node,
     // Whether the queue is busy due to the submission buffer.
     submission_buffer_busy: std.EnumSet(Queue.Type),
     enqueued_commands: u8,
-    
+
     // XXX: Currently if some error happens in the driver, the entire app crashes! Should we report an error condition?
     // Is there really something we can do if that happens...?
     // NOTE: SCHEDULING
@@ -626,7 +626,7 @@ const Driver = struct {
             .graphics => |kind| {
                 const queue_type: Queue.Type = switch (kind) {
                     .graphics => .submit,
-                    .timestamp => unreachable,
+                    .timestamp, .begin_query, .end_query => unreachable,
                 };
 
                 switch (dev.queue_statuses.getPtr(queue_type).load(.monotonic)) {
@@ -637,7 +637,7 @@ const Driver = struct {
                         gx.pushFrontAssumeCapacity(.initProcessCommandList(gfx.head[0..gfx.len], .none, .none, .none));
                         drv.submission_buffer_busy.setPresent(queue_type, true);
                         drv.submission_time.set(queue_type, horizon.time.getSystemNanoseconds());
-                        dev.queue_statuses.getPtr(queue_type).store(.working, .monotonic); 
+                        dev.queue_statuses.getPtr(queue_type).store(.working, .monotonic);
                         drv.enqueued_commands += 1;
                     },
                     .working, .lost => {},
@@ -646,11 +646,40 @@ const Driver = struct {
                 break :drain_nodes;
             },
             .timestamp => {
-                const tmp: *CommandBuffer.operation.Timestamp = @alignCast(@fieldParentPtr("node", node));
+                const tmp: *CommandBuffer.operation.Query = @alignCast(@fieldParentPtr("node", node));
                 tmp.pool.writeTimestamp(tmp.query, @truncate(horizon.time.getSystemNanoseconds()));
                 drv.submission_buffer_node = node.nextPtr();
-                continue :drain_nodes;
-            }
+            },
+            .begin_query, .end_query => |k| {
+                const query: *CommandBuffer.operation.Query = @alignCast(@fieldParentPtr("node", node));
+                const pool = query.pool;
+                const storage: []u32 = @ptrCast(@alignCast(pool.getQueryStorage(query.query)));
+
+                if (k == .begin_query) pool.beginQuery(query.query);
+                switch (pool.type) {
+                    .timestamp => unreachable,
+                    .statistics => {
+                        const stats = pool.statistics;
+                        const all: extern struct {
+                            rast: pica.Graphics.Rasterizer.Statistics,
+                            traffic: pica.Registers.TrafficStatistics,
+                        } = .{
+                            .rast = if (stats.anyRasterizer()) drv.readRasterizerStatistics() else undefined,
+                            .traffic = if (stats.anyTraffic()) drv.readTrafficStatistics() else undefined,
+                        };
+                        const all_slice: []const u32 = @ptrCast(&all);
+                        const set: std.bit_set.IntegerBitSet(32) = @bitCast(stats);
+
+                        var i: u32 = 0;
+                        var it = set.iterator(.{});
+                        while (it.next()) |index| : (i += 1) storage[i] = all_slice[index] -% storage[i];
+                    },
+                    // TODO: currently not needed
+                    // .performance_counter => @panic("TODO"),
+                }
+                if (k == .end_query) pool.endQuery(query.query);
+                drv.submission_buffer_node = node.nextPtr();
+            },
         } else if (drv.submission_buffer) |cmd_buf| {
             const signal = drv.submission_signals.get(.submit);
             drv.submission_signals.set(.submit, .none);
@@ -659,12 +688,26 @@ const Driver = struct {
                 signalSemaphore(dev, .{
                     .semaphore = sema.toHandle(),
                     .value = signal.value,
-                }) catch unreachable; 
+                }) catch unreachable;
             }
 
             cmd_buf.notifyCompleted();
             drv.submission_buffer = null;
         }
+    }
+
+    fn readTrafficStatistics(drv: *Driver) pica.Registers.TrafficStatistics {
+        const h_dev: *Horizon = @alignCast(@fieldParentPtr("driver_state", drv));
+        const gsp = h_dev.gsp;
+
+        return gsp.readRegisters(pica.Registers.TrafficStatistics, &horizon.memory.gpu_registers.traffic_statistics) catch unreachable;
+    }
+
+    fn readRasterizerStatistics(drv: *Driver) pica.Graphics.Rasterizer.Statistics {
+        const h_dev: *Horizon = @alignCast(@fieldParentPtr("driver_state", drv));
+        const gsp = h_dev.gsp;
+
+        return gsp.readRegisters(pica.Graphics.Rasterizer.Statistics, &horizon.memory.gpu_registers.p3d.rasterizer.statistics) catch unreachable;
     }
 
     fn drainQueues(drv: *Driver) void {
@@ -799,7 +842,7 @@ const Driver = struct {
             }
         }
     }
-    
+
     fn clearState(int_que: *GraphicsServerGpu.Interrupt.Queue, gx: *GraphicsServerGpu.GxCommand.Queue, fbs: *[2]GraphicsServerGpu.FramebufferInfo) void {
         int_que.clear();
         gx.clear();
@@ -848,16 +891,16 @@ const Driver = struct {
                 var current = cmd_buf.head;
                 var i: usize = 1;
                 while (current) |node| : (i += 1) {
-                    log.err(" {d}. {t} -> {*}", .{i, node.kind, node});
+                    log.err(" {d}. {t} -> {*}", .{ i, node.kind, node });
 
                     switch (node.kind) {
                         .graphics => {
                             const gfx: *CommandBuffer.operation.Graphics = @alignCast(@fieldParentPtr("node", node));
-                            log.err("    with head {*} and length (in words) {d}", .{gfx.head, gfx.len});
+                            log.err("    with head {*} and length (in words) {d}", .{ gfx.head, gfx.len });
                         },
-                        .timestamp => {
-                            const timestamp: *CommandBuffer.operation.Timestamp = @alignCast(@fieldParentPtr("node", node));
-                            log.err("    for query {d} and pool {*}", .{timestamp.query, timestamp.pool});
+                        .timestamp, .begin_query, .end_query => {
+                            const query_op: *CommandBuffer.operation.Query = @alignCast(@fieldParentPtr("node", node));
+                            log.err("    for query {d} and pool {*}", .{ query_op.query, query_op.pool });
                         },
                     }
 
@@ -872,7 +915,7 @@ const Driver = struct {
                 log.err("Dumping graphic streams...", .{});
 
                 var current = cmd_buf.head;
-                var i: usize  = 1;
+                var i: usize = 1;
                 while (current) |node| : (i += 1) {
                     defer current = node.nextPtr();
 

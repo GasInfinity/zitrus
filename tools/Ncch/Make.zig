@@ -2,7 +2,7 @@ pub const description = "Make a NCCH (CXI/CFA)";
 
 pub const descriptions: plz.Descriptions(@This()) = .{
     .romfs = "RomFS to embed",
-    
+
     .elf = "Embed code within an ELF executable to the ExeFS",
     .icon = "Embed an icon (SMDH) to the ExeFS",
     .banner = "Embed a banner (CBMD) to the ExeFS",
@@ -59,7 +59,7 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         log.err("ExeFS and ELF/ICN/BMD/LOGO are mutually exclusive", .{});
         return 1;
     }
-    
+
     if ((args.exefs != null or args.elf != null) and args.settings == null) {
         log.err("Building a CXI requires --settings in zon format", .{});
         return 1;
@@ -91,7 +91,7 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         };
 
         break :set settings;
-    }else null;
+    } else null;
     defer if (settings) |set| std.zon.parse.free(gpa, set);
 
     const exefs: []u8, const code_sets: Settings.Code = if (args.exefs) |exefs| blk: {
@@ -101,20 +101,20 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         };
 
         const loaded = loadEntireFile(exefs, io, gpa) catch |err| {
-            log.err("could not load exefs '{s}': {t}", .{exefs, err});
+            log.err("could not load exefs '{s}': {t}", .{ exefs, err });
             return 1;
         };
-        
+
         break :blk .{ loaded, code_sets };
     } else if (args.elf != null or args.logo != null or args.banner != null or args.logo != null) blk: {
         if (args.elf == null) {
-            log.err("Building a CXI without code is not supported, specify an elf with '--elf'", .{}); 
+            log.err("Building a CXI without code is not supported, specify an elf with '--elf'", .{});
             return 1;
         }
 
         var exefs_files_buf: [10]ncch.exefs.File = undefined;
         var exefs_files: std.ArrayList(ncch.exefs.File) = .initBuffer(&exefs_files_buf);
-         
+
         const sets, const code_data = makeCode(args.elf.?, io, gpa) catch |err| {
             log.err("could not make code from elf '{s}': {t}", .{ args.elf.?, err });
             return 1;
@@ -534,7 +534,7 @@ fn makeCode(path: []const u8, io: std.Io, gpa: std.mem.Allocator) !struct { Sett
                 .size = data_aligned_size,
             },
             .bss = bss_size,
-        }, 
+        },
         uncompressed_code,
     };
 }

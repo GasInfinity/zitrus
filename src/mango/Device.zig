@@ -82,7 +82,7 @@ pub const Handle = enum(u32) {
 
     pub fn resetQueryPool(device: Handle, query_pool: mango.QueryPool, first: u32, count: u32) void {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.resetQueryPool(query_pool, first, count); 
+        return b_device.resetQueryPool(query_pool, first, count);
     }
 
     pub fn getQueryPoolResults(device: Handle, query_pool: mango.QueryPool, first: u32, count: u32, data: []u8, stride: u32, flags: mango.QueryResultFlags) mango.GetQueryResultsError!void {

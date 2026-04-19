@@ -13,8 +13,8 @@ query_storage: []u8,
 pub fn init(gpa: std.mem.Allocator, create_info: mango.QueryPoolCreateInfo) !QueryPool {
     const query_size: u32, const query_alignment: std.mem.Alignment = switch (create_info.type) {
         .timestamp => .{ @sizeOf(u64), .of(u64) },
-        .statistics => .{ @sizeOf(u32) * @popCount(@as(u32, @bitCast(create_info.statistics))), .of(u32) },
-        .performance_counter => @panic("TODO"),
+        .statistics => .{ @as(u32, @sizeOf(u32)) * @popCount(@as(u32, @bitCast(create_info.statistics))), .of(u32) },
+        // .performance_counter => @panic("TODO"),
     };
 
     const alignment: std.mem.Alignment = .max(.of(u32), query_alignment);
@@ -33,7 +33,7 @@ pub fn init(gpa: std.mem.Allocator, create_info: mango.QueryPoolCreateInfo) !Que
         .query_size = query_size,
         .available = .{
             .bit_length = create_info.count,
-            .masks = @alignCast(@ptrCast(all[available_start..])), 
+            .masks = @ptrCast(@alignCast(all[available_start..])),
         },
         .query_storage = all[0..query_storage_size],
     };
@@ -43,7 +43,7 @@ pub fn deinit(pool: *QueryPool, gpa: std.mem.Allocator) void {
     const query_alignment: std.mem.Alignment = switch (pool.type) {
         .timestamp => .of(u64),
         .statistics => .of(u32),
-        .performance_counter => @panic("TODO"),
+        // .performance_counter => @panic("TODO"),
     };
 
     const available_start = std.mem.alignForward(u32, pool.query_storage.len, @alignOf(std.bit_set.DynamicBitSetUnmanaged.MaskInt));
@@ -53,15 +53,29 @@ pub fn deinit(pool: *QueryPool, gpa: std.mem.Allocator) void {
     gpa.rawFree(all, .max(.of(u32), query_alignment), @returnAddress());
 }
 
-// NOTE: why are timestamps 64 bits instead of 96? because we want this to be compatible 
+pub fn getQueryStorage(pool: *QueryPool, query: u32) []u8 {
+    std.debug.assert(query < @divExact(pool.query_storage.len, pool.query_size));
+    return pool.query_storage[query * pool.query_size ..][0..pool.query_size];
+}
+
+pub fn beginQuery(pool: *QueryPool, query: u32) void {
+    std.debug.assert(!pool.available.isSet(query)); // The query must not be available
+    @memset(pool.getQueryStorage(query), 0x00);
+}
+
+pub fn endQuery(pool: *QueryPool, query: u32) void {
+    pool.available.set(query);
+}
+
+// NOTE: why are timestamps 64 bits instead of 96? because we want this to be compatible
 // with C and C is unfortunately not based.
 pub fn writeTimestamp(pool: *QueryPool, query: u32, timestamp: u64) void {
     std.debug.assert(pool.type == .timestamp);
     std.debug.assert(pool.query_size == @sizeOf(u64));
     std.debug.assert(query < @divExact(pool.query_storage.len, @sizeOf(u64)));
     std.debug.assert(!pool.available.isSet(query)); // The query must not be available
-    
-    const stored = pool.query_storage[query * @sizeOf(u64)..][0..@sizeOf(u64)];
+
+    const stored = pool.query_storage[query * @sizeOf(u64) ..][0..@sizeOf(u64)];
     stored.* = @bitCast(timestamp);
     pool.available.set(query);
 }
@@ -85,7 +99,7 @@ pub fn getResults(pool: *QueryPool, first: u32, count: u32, data: []u8, stride: 
 
     for (0..count) |i| {
         const available = pool.available.isSet(first + i);
-        if (available) @memcpy(data[stride * i..][0..pool.query_size], pool.query_storage[(first + i) * pool.query_size..][0..pool.query_size]);
+        if (available) @memcpy(data[stride * i ..][0..pool.query_size], pool.query_storage[(first + i) * pool.query_size ..][0..pool.query_size]);
         any_unavailable |= !available;
     }
 

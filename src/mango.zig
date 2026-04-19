@@ -780,10 +780,10 @@ pub const SemaphoreCreateInfo = extern struct {
 pub const QueryType = enum(u32) {
     /// A single `u64` value, signifying a nanosecond-precision timestamp
     timestamp,
-    /// GPU counters, see `QueryStatistics` 
+    /// GPU counters, see `QueryStatistics`
     statistics,
-    /// GPU performance counters
-    performance_counter,
+    // TODO: GPU performance counters
+    // performance_counter,
 };
 
 pub const QueryResultFlags = packed struct(u32) {
@@ -824,6 +824,14 @@ pub const QueryStatistics = packed struct(u32) {
     cpu_vram_reads: bool = false,
     cpu_vram_writes: bool = false,
     _: u9 = 0,
+
+    pub fn anyTraffic(statistics: QueryStatistics) bool {
+        return (@as(u32, @bitCast(statistics)) >> 3) != 0;
+    }
+
+    pub fn anyRasterizer(statistics: QueryStatistics) bool {
+        return (@as(u32, @bitCast(statistics)) & 0b111) != 0;
+    }
 };
 
 pub const QueryPoolCreateInfo = extern struct {
@@ -1635,7 +1643,7 @@ pub const MapMemoryError = error{Unexpected};
 pub const FlushMemoryError = error{Unexpected};
 pub const InvalidateMemoryError = error{Unexpected};
 pub const BindMemoryError = error{Unexpected};
-pub const GetQueryResultsError = error{NotReady, Unexpected};
+pub const GetQueryResultsError = error{ NotReady, Unexpected };
 // TODO: Add error.DeviceLost on GPU hang.
 pub const AcquireNextImageError = error{ Timeout, Unexpected };
 pub const SignalSemaphoreError = error{Unexpected};

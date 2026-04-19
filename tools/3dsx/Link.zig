@@ -143,17 +143,14 @@ const HeadingWriter = struct {
 
     pub fn init(output: *Io.Writer, buffer: []u8) HeadingWriter {
         std.debug.assert(buffer.len <= max_link_chunk_size);
-        
-        return .{
-            .output = output,
-            .writer = .{
-                .buffer = buffer,
-                .end = 0,
-                .vtable = &.{
-                    .drain = drain,
-                },
-            }
-        };
+
+        return .{ .output = output, .writer = .{
+            .buffer = buffer,
+            .end = 0,
+            .vtable = &.{
+                .drain = drain,
+            },
+        } };
     }
 
     pub fn finish(h_writer: *HeadingWriter) !void {

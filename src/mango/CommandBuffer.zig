@@ -281,6 +281,16 @@ pub const Handle = enum(u32) {
         b_cmd.writeTimestamp(pool, query);
     }
 
+    pub fn beginQuery(cmd: Handle, pool: mango.QueryPool, query: u32) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.beginQuery(pool, query);
+    }
+
+    pub fn endQuery(cmd: Handle, pool: mango.QueryPool, query: u32) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.endQuery(pool, query);
+    }
+
     pub fn reset(cmd: Handle, flags: mango.CommandBufferResetFlags) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         return b_cmd.reset(flags);
@@ -307,6 +317,8 @@ pub const operation = struct {
     pub const Kind = enum(u3) {
         graphics,
         timestamp,
+        begin_query,
+        end_query,
     };
 
     // NOTE: as both address and size must be aligned to 16 bytes we can reuse some unused bits!
@@ -318,7 +330,7 @@ pub const operation = struct {
         next: u28,
 
         pub fn empty(kind: Kind) Node {
-            return .{ .kind = kind, .next = 0 };       
+            return .{ .kind = kind, .next = 0 };
         }
 
         pub fn nextPtr(node: Node) ?*Node {
@@ -328,7 +340,7 @@ pub const operation = struct {
 
     pub const Graphics = extern struct {
         node: Node,
-        head: [*]align (16) const u32,
+        head: [*]align(16) const u32,
         len: u32,
     };
 
@@ -362,18 +374,10 @@ pub const operation = struct {
         dst_dimensions: Dimensions,
     };
 
-    pub const Timestamp = extern struct {
+    pub const Query = extern struct {
         node: Node,
         pool: *backend.QueryPool,
         query: u32,
-    };
-
-    pub const BeginQuery = struct {
-        node: Node,
-    };
-
-    pub const EndQuery = struct {
-        node: Node,
     };
 };
 
@@ -856,32 +860,39 @@ pub fn bindLightEnvironmentTable(cmd: *CommandBuffer, slot: mango.LightEnvironme
 }
 
 pub fn writeTimestamp(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32) void {
+    cmd.doQuery(pool, query, .timestamp);
+}
+
+pub fn beginQuery(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32) void {
+    cmd.doQuery(pool, query, .begin_query);
+}
+
+pub fn endQuery(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32) void {
+    cmd.doQuery(pool, query, .end_query);
+}
+
+fn doQuery(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32, kind: operation.Kind) void {
     std.debug.assert(cmd.state == .recording);
 
     if (cmd.current_error) |_| return;
-
-    cmd.emitDirty(backend.static_emission_cost) catch |err| {
-        cmd.current_error = err;
-        return;
-    };
 
     cmd.finalizeCurrent() catch |err| {
         cmd.current_error = err;
         return;
     };
 
-    const timestamp = cmd.allocOperation(operation.Timestamp) catch |err| {
+    const query_op = cmd.allocOperation(operation.Query) catch |err| {
         cmd.current_error = err;
         return;
     };
 
-    timestamp.* = .{
+    query_op.* = .{
         .pool = .fromHandleMutable(pool),
         .query = query,
-        .node = .empty(.timestamp),
+        .node = .empty(kind),
     };
 
-    cmd.pushOperation(&timestamp.node);
+    cmd.pushOperation(&query_op.node);
 }
 
 fn beforeDraw(cmd: *CommandBuffer, draw_count: usize) bool {
@@ -908,7 +919,7 @@ fn emitDirty(cmd: *CommandBuffer, extra_cost: u32) !void {
 
     const max_graphics_emission_cost = if (gfx_dirty) cmd.gfx_state.maxEmitDirtyQueueLength() else 0;
     const max_rendering_emission_cost = if (rnd_dirty) cmd.rnd_state.maxEmitDirtyQueueLength() else 0;
-    const max_emission_cost = max_graphics_emission_cost + max_rendering_emission_cost + extra_cost;
+    const max_emission_cost = backend.static_emission_cost + max_graphics_emission_cost + max_rendering_emission_cost + extra_cost;
 
     try cmd.ensureUnusedCapacity(max_emission_cost);
 
@@ -940,8 +951,8 @@ fn finalizeCurrent(
     };
 
     if (cmd.stream.finalize()) |head| {
-        // NOTE: we're not "leaking" head, if this fails 
-        // the command buffer must be left in an `invalid` state 
+        // NOTE: we're not "leaking" head, if this fails
+        // the command buffer must be left in an `invalid` state
         // anyways.
 
         const gfx_op = try cmd.allocOperation(operation.Graphics);
@@ -958,7 +969,7 @@ fn finalizeCurrent(
 
 fn allocOperation(cmd: *CommandBuffer, comptime Operation: type) !*Operation {
     const needed_size = std.mem.alignForward(usize, @sizeOf(operation.Graphics), 16);
-    
+
     try cmd.ensureUnusedCapacity(needed_size);
 
     const que = cmd.stream.first().?;

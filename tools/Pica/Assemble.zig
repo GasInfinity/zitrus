@@ -127,7 +127,7 @@ pub fn run(args: Assemble, io: std.Io, arena: std.mem.Allocator) !u8 {
             entry_it.reset();
             while (entry_it.next()) |entrypoint| {
                 const entry_info = entrypoint.value_ptr.*;
-                
+
                 string_table.appendSliceAssumeCapacity(entrypoint.key_ptr.*);
                 string_table.appendAssumeCapacity(0);
 

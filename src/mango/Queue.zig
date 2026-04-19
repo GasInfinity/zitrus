@@ -525,12 +525,12 @@ pub fn init(gpa: std.mem.Allocator, typ: Type, device: *backend.Device, capacity
         .head = .init(0),
         .tail = .init(0),
         .capacity = capacity,
-        .size = size, 
+        .size = size,
         .alignment = alignment,
 
         .buffer = all[0..buffer_len],
-        .waits = @alignCast(@ptrCast(all[semas_start..][0..capacity * @sizeOf(SemaphoreOperation)])),
-        .signals = @alignCast(@ptrCast(all[semas_start + (capacity * @sizeOf(SemaphoreOperation))..][0..capacity * @sizeOf(SemaphoreOperation)])),
+        .waits = @ptrCast(@alignCast(all[semas_start..][0 .. capacity * @sizeOf(SemaphoreOperation)])),
+        .signals = @ptrCast(@alignCast(all[semas_start + (capacity * @sizeOf(SemaphoreOperation)) ..][0 .. capacity * @sizeOf(SemaphoreOperation)])),
     };
 }
 
@@ -538,7 +538,7 @@ pub fn deinit(queue: *Queue, gpa: std.mem.Allocator) void {
     const min_alignment: std.mem.Alignment = .max(queue.alignment, .of(SemaphoreOperation));
     const buffer_len = queue.capacity * queue.size;
     const semas_start = std.mem.alignForward(usize, buffer_len, @alignOf(SemaphoreOperation));
-    const all = queue.buffer.ptr[0..semas_start + (2 * queue.capacity * @sizeOf(SemaphoreOperation))];
+    const all = queue.buffer.ptr[0 .. semas_start + (2 * queue.capacity * @sizeOf(SemaphoreOperation))];
 
     gpa.rawFree(all, min_alignment, @returnAddress());
 }
@@ -581,7 +581,7 @@ pub fn popBackBufferAssumeReady(queue: *Queue, item: []u8) SemaphoreOperation {
     std.debug.assert(queue.size == item.len);
 
     const head = queue.head.load(.monotonic); // NOTE: no need for acquire or checking here, we already did in peekBack (and you must peek before popping)!
-    @memcpy(item, queue.buffer[(head * queue.size)..][0..queue.size]); 
+    @memcpy(item, queue.buffer[(head * queue.size)..][0..queue.size]);
     const signal = queue.signals[head];
     queue.head.store((head + 1) % queue.capacity, .monotonic);
     return signal;

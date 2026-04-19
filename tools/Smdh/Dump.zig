@@ -73,7 +73,7 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
         defer out.deinit(arena);
 
         // XXX: we allocate too much, shouldn't we able to convert in-place also here?
-        pica.morton.convert(.untile, 8,  icon_size, @sizeOf(Rgb565), @ptrCast(out.pixels.rgb565), @ptrCast(icon));
+        pica.morton.convert(.untile, 8, icon_size, @sizeOf(Rgb565), @ptrCast(out.pixels.rgb565), @ptrCast(icon));
 
         try out.convert(arena, .rgb24);
         try out.writeToFilePath(arena, io, path, &write_buffer, .{ .png = .{} });

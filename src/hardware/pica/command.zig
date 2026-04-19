@@ -76,11 +76,11 @@ pub const Dump = struct {
 
                             current_offset -= @offsetOf(current.type, next.name);
                             current = next;
-                            
+
                             fully_qualified_name = fully_qualified_name ++ "." ++ next.name;
                         },
                     },
-                    .array => |array| switch(std.math.order(@sizeOf(array.child), @sizeOf(u32))) {
+                    .array => |array| switch (std.math.order(@sizeOf(array.child), @sizeOf(u32))) {
                         .lt => current.type = [@divExact(@sizeOf(u32), @sizeOf(array.child))]array.child,
                         .eq, .gt => {
                             fully_qualified_name = fully_qualified_name ++ std.fmt.comptimePrint("[{d}]", .{current_offset / @sizeOf(array.child)});
@@ -122,11 +122,11 @@ pub const Dump = struct {
             switch (@intFromEnum(single.id)) {
                 (@sizeOf(pica.Graphics) / @sizeOf(u32))...0xFFFF => try w.print("{X:0>8}", .{single.raw}),
                 inline else => |word_offset| {
-                    const info: Info = .find(word_offset * @sizeOf(u32)); 
+                    const info: Info = .find(word_offset * @sizeOf(u32));
 
                     switch (single.mode) {
                         .incremental => {
-                            try w.print("{s} ({X:0>3}) -> ", .{info.name, single.id});
+                            try w.print("{s} ({X:0>3}) -> ", .{ info.name, single.id });
                             try printValue(info.type, single.raw, w);
                         },
                         .consecutive => try printValue(info.type, single.raw, w),
@@ -151,8 +151,8 @@ pub const Dump = struct {
         const hdr: Header = @bitCast(dump.words[1]);
 
         switch (hdr.mode) {
-            .incremental => try w.print("{t} ({b:0>4})", .{hdr.mode, hdr.mask}),
-            .consecutive => try w.print("{t}: {s} ({X:0>3}, {b:0>4})", .{hdr.mode, Single.Info.findName(hdr.id), hdr.id, hdr.mask}),
+            .incremental => try w.print("{t} ({b:0>4})", .{ hdr.mode, hdr.mask }),
+            .consecutive => try w.print("{t}: {s} ({X:0>3}, {b:0>4})", .{ hdr.mode, Single.Info.findName(hdr.id), hdr.id, hdr.mask }),
         }
 
         if (hdr.extra > 0) try w.writeByte('\n');
@@ -162,7 +162,6 @@ pub const Dump = struct {
             .id = hdr.id,
             .raw = dump.words[0],
         };
-
 
         var i: u32 = 0;
         while (true) {
