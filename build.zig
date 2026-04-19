@@ -170,7 +170,8 @@ fn queryBuildVersion(b: *Build) []const u8 {
     switch (std.mem.count(u8, git_describe, "-")) {
         0, 1 => {
             // Tagged release or prerelease
-            if (!std.mem.eql(u8, git_describe, version_string)) {
+            // `[1..]` to skip the 'v' in release tags.
+            if (!std.mem.eql(u8, git_describe[1..], version_string)) {
                 std.log.err("Version '{s}' does not match git tag '{s}'", .{ version_string, git_describe });
                 std.process.exit(1);
             }

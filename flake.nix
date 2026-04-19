@@ -37,7 +37,7 @@
           version = "0.0.0-pre1";
           src = ./.;
           zigReleaseMode = "safe";
-          depsHash = "sha256-e+YWRW6LS4OztpcxhISsFRDfQ6/KTFjaFC+KNI0nPaY=";
+          depsHash = "sha256-OnMCgOdQ/IFFmRSpgftoQ2AfVNbVztEr0qte6idpGRY=";
         };
       })
       zig.packages;
