@@ -34,7 +34,7 @@
       packages = builtins.mapAttrs (system: zigPkgs: {
         default = zigPkgs.default.makePackage {
           pname = "zitrus";
-          version = "0.0.0-pre1";
+          version = "0.0.0-pre2";
           src = ./.;
           zigReleaseMode = "safe";
           depsHash = "sha256-OnMCgOdQ/IFFmRSpgftoQ2AfVNbVztEr0qte6idpGRY=";
