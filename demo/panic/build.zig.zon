@@ -2,7 +2,7 @@
     .name = .panic,
     .version = "0.0.0",
     .fingerprint = 0x9ea781920f7542f6,
-    .minimum_zig_version = "0.14.1",
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .zitrus = .{ .path = "../../" },
     },
