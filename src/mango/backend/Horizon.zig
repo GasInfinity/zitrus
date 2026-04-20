@@ -846,21 +846,11 @@ const Driver = struct {
     fn clearState(int_que: *GraphicsServerGpu.Interrupt.Queue, gx: *GraphicsServerGpu.GxCommand.Queue, fbs: *[2]GraphicsServerGpu.FramebufferInfo) void {
         int_que.clear();
         gx.clear();
-
-        for (fbs, 0..) |*fb, i| _ = fb.update(.{
-            .active = .first,
-            .left_vaddr = null,
-            .right_vaddr = null,
-            .stride = 0,
-            .format = .{
-                .dma_size = .@"64",
-                .pixel_format = .abgr8888,
-                .interlacing = .none,
-                .half_rate = i == 0, // top screen
-            },
-            .select = 0,
-            .attribute = 0,
-        });
+        // NOTE: we previously set the framebuffers to point to physical address 0
+        // but let's better not do that. It may trigger asserts in emulators (such as azahar)
+        // and we gain almost nothing by setting them to a known state (as they will be updated 
+        // afterwards...)
+        _ = fbs; 
     }
 
     // TODO: make this not a panic (error.DeviceLost maybe?)
