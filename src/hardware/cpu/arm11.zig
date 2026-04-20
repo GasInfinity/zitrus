@@ -286,22 +286,22 @@ pub fn Monitor(comptime T: type) type {
         pub fn store(mon: *MonitorSelf, value: T) bool {
             return switch (@bitSizeOf(T)) {
                 8 => asm volatile ("strexb %[fail], %[value], %[ptr]"
-                    : [fail] "=r" (-> bool),
+                    : [fail] "=&r" (-> bool),
                     : [ptr] "p" (&mon.raw),
                       [value] "r" (value),
                     : .{ .memory = true }),
                 16 => asm volatile ("strexh %[fail], %[value], %[ptr]"
-                    : [fail] "=r" (-> bool),
+                    : [fail] "=&r" (-> bool),
                     : [ptr] "p" (&mon.raw),
                       [value] "r" (value),
                     : .{ .memory = true }),
                 32 => asm volatile ("strex %[fail], %[value], %[ptr]"
-                    : [fail] "=r" (-> bool),
+                    : [fail] "=&r" (-> bool),
                     : [ptr] "p" (&mon.raw),
                       [value] "r" (value),
                     : .{ .memory = true }),
                 64 => asm volatile ("strexd %[fail], %[value:Q], %[value:R], %[ptr]"
-                    : [fail] "=r" (-> bool),
+                    : [fail] "=&r" (-> bool),
                     : [ptr] "p" (&mon.raw),
                       [value] "r" (value),
                     : .{ .memory = true }),
