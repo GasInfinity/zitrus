@@ -10,11 +10,11 @@ pub const short: plz.Short(@This()) = .{
     .verbose = 'v',
 };
 
-// pub const OutputFormat = zigimg.Image.Format;
+pub const OutputFormat = zigimg.Image.Format;
 
 output: ?[]const u8,
-// ofmt: OutputFormat = .png,
-verbose: bool,
+ofmt: OutputFormat = .png,
+verbose: ?void,
 
 @"--": struct {
     pub const descriptions: plz.Descriptions(@This()) = .{ .input = "Input file, if none stdin is used" };
@@ -23,7 +23,6 @@ verbose: bool,
 },
 
 pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
-    if (true) @panic("Regressed, wait for zigimg update"); // XXX: Fix this when zigimg updates
     const cwd = std.Io.Dir.cwd();
     const input_file, const input_should_close = if (args.@"--".input) |in|
         .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
@@ -84,7 +83,7 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
                 const meta = try reader.takeStruct(clim.Image, .little);
 
                 maybe_meta = meta;
-                if (args.verbose) log.info("Width: {} | Height: {} | Format: {}", .{ meta.width, meta.height, meta.format });
+                if (args.verbose) |_| log.info("Width: {} | Height: {} | Format: {}", .{ meta.width, meta.height, meta.format });
             },
             else => {
                 log.warn("Unknown block kind: {}. PLEASE, open an issue! Skipping...", .{block_hdr.kind});
@@ -113,46 +112,89 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
     const untiled_image_data: []u8 = try arena.alloc(u8, tiled_image_data.len);
     defer arena.free(untiled_image_data);
 
-    // const default_encoder_opts = switch (args.ofmt) {
-    //     inline else => |t| @unionInit(zigimg.Image.EncoderOptions, @tagName(t), if(@FieldType(zigimg.Image.EncoderOptions, @tagName(t)) == void) {} else .{}),
-    // };
+    const default_encoder_opts = switch (args.ofmt) {
+        inline else => |t| @unionInit(zigimg.Image.EncoderOptions, @tagName(t), if (@FieldType(zigimg.Image.EncoderOptions, @tagName(t)) == void) {} else .{}),
+    };
 
     switch (meta.format) {
         .i4, .a4 => {
             @memset(untiled_image_data, 0x00); // NOTE: undefined bits make partial updates impossible, we MUST do this!
             zitrus.hardware.pica.morton.convertNibbles(.untile, 8, width_po2, untiled_image_data, tiled_image_data);
-            // var img: zigimg.Image = try .create(arena, width_po2, height_po2, .grayscale4);
-            // defer img.deinit(arena);
-            //
-            // for (untiled_image_data, 0..) |src, i| {
-            //     img.pixels.grayscale4[i*2] = .{ .value = @intCast(src & 0xF) };
-            //     img.pixels.grayscale4[i*2+1] = .{ .value = @intCast(src >> 4) };
-            // }
-            //
-            // try img.writeToFile(arena, output_file, &out_buf, default_encoder_opts);
+            var img: zigimg.Image = try .create(arena, width_po2, height_po2, .grayscale4);
+            defer img.deinit(arena);
+
+            for (untiled_image_data, 0..) |src, i| {
+                img.pixels.grayscale4[i * 2] = .{ .value = @intCast(src & 0xF) };
+                img.pixels.grayscale4[i * 2 + 1] = .{ .value = @intCast(src >> 4) };
+            }
+
+            try img.writeToFile(arena, io, output_file, &out_buf, default_encoder_opts);
         },
         .ia88 => {
             zitrus.hardware.pica.morton.convert(.untile, 8, width_po2, @sizeOf(u16), untiled_image_data, tiled_image_data);
 
-            // const img: zigimg.Image = try .fromRawPixelsOwned(width_po2, height_po2, untiled_image_data, .grayscale8Alpha);
-            // try img.writeToFile(arena, output_file, &out_buf, default_encoder_opts);
+            const img: zigimg.Image = try .fromRawPixelsOwned(width_po2, height_po2, untiled_image_data, .grayscale8Alpha);
+            try img.writeToFile(arena, io, output_file, &out_buf, default_encoder_opts);
         },
         .etc1 => {
             // NOTE: Tile size of 2 as each ETC block is 4x4, also as we convert to ETC "pixels" we must divide width/height by 4!
-            zitrus.hardware.pica.morton.convert(.untile, 2, @divExact(width_po2, etc.pixels_per_block), @sizeOf(etc.Block), untiled_image_data, tiled_image_data);
+            const etc_width = @divExact(width_po2, etc.pixels_per_block);
+            const etc_height = @divExact(height_po2, etc.pixels_per_block);
+            zitrus.hardware.pica.morton.convert(.untile, 2, etc_width, @sizeOf(etc.Block), untiled_image_data, tiled_image_data);
 
+            if (args.verbose) |_| log.info("ETC size in blocks {}x{}", .{ etc_width, etc_height });
+            var img: zigimg.Image = try .create(arena, meta.width, meta.height, .rgb24);
+            defer img.deinit(arena);
+
+            const img_slice = img.pixels.rgb24;
+
+            var etc_buf: [16][4]u8 = undefined;
+            block_y: for (0..etc_height) |block_y| {
+                if (block_y * 4 >= meta.height) break :block_y;
+
+                for (0..etc_width) |block_x| {
+                    if (block_x * 4 >= meta.width) continue :block_y;
+
+                    const current = (block_y * etc_width + block_x) * @sizeOf(etc.Block);
+                    const block: etc.Block = std.mem.littleToNative(etc.Block, @bitCast(untiled_image_data[current..][0..@sizeOf(etc.Block)].*));
+
+                    block.bufUnpack(&etc_buf);
+
+                    etc_y: for (0..etc.pixels_per_block) |etc_y| {
+                        const y = block_y * 4 + etc_y;
+                        if (y >= meta.height) break :etc_y;
+
+                        for (0..etc.pixels_per_block) |etc_x| {
+                            const x = block_x * 4 + etc_x;
+
+                            if (x >= meta.width) continue :etc_y;
+
+                            const index = y * meta.width + x;
+                            const color = etc_buf[etc_y * 4 + etc_x];
+
+                            img_slice[index] = .{
+                                .r = color[0],
+                                .g = color[1],
+                                .b = color[2],
+                            };
+                        }
+                    }
+                }
+            }
+
+            try img.writeToFile(arena, io, output_file, &out_buf, default_encoder_opts);
             // NOTE: The 3DS stores ETC1 in little endian instead of big...
-            const as_u64: []align(1) u64 = std.mem.bytesAsSlice(u64, untiled_image_data);
-            for (as_u64) |*d| d.* = @byteSwap(d.*);
-
-            try writer.writeStruct(etc.Pkm{
-                .format = .etc1_rgb,
-                .width = @intCast(width_po2),
-                .height = @intCast(height_po2),
-                .real_width = meta.width,
-                .real_height = meta.height,
-            }, .big);
-            try writer.writeAll(untiled_image_data);
+            // const as_u64: []align(1) u64 = std.mem.bytesAsSlice(u64, untiled_image_data);
+            // for (as_u64) |*d| d.* = @byteSwap(d.*);
+            //
+            // try writer.writeStruct(etc.Pkm{
+            //     .format = .etc1_rgb,
+            //     .width = @intCast(width_po2),
+            //     .height = @intCast(height_po2),
+            //     .real_width = meta.width,
+            //     .real_height = meta.height,
+            // }, .big);
+            // try writer.writeAll(untiled_image_data);
         },
         else => {
             log.err("TODO: {t}", .{meta.format});
@@ -171,7 +213,7 @@ const std = @import("std");
 const plz = @import("plz");
 const zitrus = @import("zitrus");
 
-// const zigimg = @import("zigimg");
+const zigimg = @import("zigimg");
 const etc = zitrus.compress.etc;
 
 const lyt = zitrus.horizon.fmt.layout;

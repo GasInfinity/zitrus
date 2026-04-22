@@ -2,6 +2,7 @@
 const position_vtx_storage align(@sizeOf(u32)) = @embedFile("position_uv.psh").*;
 const position_vtx = &position_vtx_storage;
 
+// TODO: load this from the RomFS
 // NOTE: The image is linear, will be unswizzled later.
 const test_bgr = @embedFile("test.bgr");
 

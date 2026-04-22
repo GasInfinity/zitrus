@@ -12,8 +12,8 @@ pub const short: plz.Short(@This()) = .{
     .path = 'p',
 };
 
-zon: bool,
-minify: bool,
+zon: ?void,
+minify: ?void,
 path: ?[]const u8,
 
 @"--": struct {
@@ -64,10 +64,10 @@ pub fn run(args: List, io: std.Io, arena: std.mem.Allocator) !u8 {
     var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
     var it = view.iterator(dir);
 
-    if (args.zon) {
+    if (args.zon) |_| {
         var serializer: std.zon.Serializer = .{
             .options = .{
-                .whitespace = !args.minify,
+                .whitespace = args.minify != null,
             },
             .writer = &stdout_writer.interface,
         };

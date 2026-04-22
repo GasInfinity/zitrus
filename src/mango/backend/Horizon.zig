@@ -848,9 +848,9 @@ const Driver = struct {
         gx.clear();
         // NOTE: we previously set the framebuffers to point to physical address 0
         // but let's better not do that. It may trigger asserts in emulators (such as azahar)
-        // and we gain almost nothing by setting them to a known state (as they will be updated 
+        // and we gain almost nothing by setting them to a known state (as they will be updated
         // afterwards...)
-        _ = fbs; 
+        _ = fbs;
     }
 
     // TODO: make this not a panic (error.DeviceLost maybe?)

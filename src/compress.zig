@@ -7,6 +7,8 @@ pub const lz11 = @import("compress/lz11.zig");
 pub const lzrev = @import("compress/lzrev.zig");
 
 comptime {
+    _ = etc;
+
     _ = lzrev;
     _ = yaz;
     _ = lz10;
