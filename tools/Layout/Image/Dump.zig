@@ -159,6 +159,9 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
                     const block: etc.Block = std.mem.littleToNative(etc.Block, @bitCast(untiled_image_data[current..][0..@sizeOf(etc.Block)].*));
 
                     block.bufUnpack(&etc_buf);
+                    // XXX: remove this and make etc.zig its own thing!
+                    // const repacked = etc.Block.pack(&etc_buf, .{ .quality = .high });
+                    // repacked.block.bufUnpack(&etc_buf);
 
                     etc_y: for (0..etc.pixels_per_block) |etc_y| {
                         const y = block_y * 4 + etc_y;
@@ -183,18 +186,6 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
             }
 
             try img.writeToFile(arena, io, output_file, &out_buf, default_encoder_opts);
-            // NOTE: The 3DS stores ETC1 in little endian instead of big...
-            // const as_u64: []align(1) u64 = std.mem.bytesAsSlice(u64, untiled_image_data);
-            // for (as_u64) |*d| d.* = @byteSwap(d.*);
-            //
-            // try writer.writeStruct(etc.Pkm{
-            //     .format = .etc1_rgb,
-            //     .width = @intCast(width_po2),
-            //     .height = @intCast(height_po2),
-            //     .real_width = meta.width,
-            //     .real_height = meta.height,
-            // }, .big);
-            // try writer.writeAll(untiled_image_data);
         },
         else => {
             log.err("TODO: {t}", .{meta.format});
