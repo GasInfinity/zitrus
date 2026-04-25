@@ -1,4 +1,5 @@
-pub const etc = @import("compress/etc.zig");
+/// See also https://codeberg.org/GasInfinity/etz/
+pub const etc = @import("etz");
 
 pub const lz = @import("compress/lz.zig");
 pub const yaz = @import("compress/yaz.zig");

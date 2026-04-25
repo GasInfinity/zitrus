@@ -20,6 +20,10 @@
             .url = "git+https://codeberg.org/GasInfinity/plz.git#3fe4050316a90795101ba4f0e698fcc2c1f5b8f9",
             .hash = "plz-0.0.1-_2WTqzLQAADaK6E2Sx2cSQ5DPeS1z7jxZQ0rIRxZaBzp",
         },
+        .etz = .{
+            .url = "git+https://codeberg.org/GasInfinity/etz#7d4d492ac2b36cba6db66dbd76d761cbbb95c01b",
+            .hash = "etz-0.0.1-wMlc0DTAAAAp5dBM6Mh6fhVlmyFT7rQo2q09acEDaswn",
+        },
         // Yes, we need our own fork of zig `lib/` until upstream merges it (if they merge it).
         .@"zig-lib" = .{
             .url = "git+https://codeberg.org/GasInfinity/zig.git?ref=the-os-independence-day-lib-only-0.16.x#bded71fd1c56c571af69c9afa0a96f429582fddd",

@@ -43,6 +43,9 @@ pub fn build(b: *Build) void {
     const plz_dep = b.dependency("plz", .{});
     const plz = plz_dep.module("plz");
 
+    const etz_dep = b.dependency("etz", .{});
+    const etz  = etz_dep.module("etz");
+
     // TODO: Remove this dep, deprecate and archive it.
     const zalloc_dep = b.dependency("zalloc", .{});
     const zalloc = zalloc_dep.module("zalloc");
@@ -64,6 +67,7 @@ pub fn build(b: *Build) void {
         .imports = &.{
             .{ .name = "zalloc", .module = zalloc },
             .{ .name = "zsflt", .module = zsflt },
+            .{ .name = "etz", .module = etz },
         },
     });
 
@@ -83,6 +87,7 @@ pub fn build(b: *Build) void {
             .imports = &.{
                 .{ .name = "zalloc", .module = zalloc },
                 .{ .name = "zsflt", .module = zsflt },
+                .{ .name = "etz", .module = etz },
             },
         }),
         .linkage = .static,
@@ -113,6 +118,7 @@ pub fn build(b: *Build) void {
             .imports = &.{
                 .{ .name = "zalloc", .module = zalloc },
                 .{ .name = "zsflt", .module = zsflt },
+                .{ .name = "etz", .module = etz },
             },
         }),
     });
@@ -340,6 +346,7 @@ fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Com
             .imports = &.{
                 .{ .name = "zalloc", .module = zitrus.import_table.get("zalloc").? },
                 .{ .name = "zsflt", .module = zitrus.import_table.get("zsflt").? },
+                .{ .name = "etz", .module = zitrus.import_table.get("etz").? },
             },
         }),
         .zig_lib_dir = b.named_lazy_paths.get("juice/zig_lib").?,
