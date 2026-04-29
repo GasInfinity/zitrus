@@ -3,7 +3,7 @@
 
 #pragma author GasInfinity
 #pragma description LZ11 compressed data
-#pragma magic [ 11 ]
+#pragma magic [ 11 ] @ 0x00
 #pragma endian little
 #pragma loop_limit 1073741824
 
@@ -18,7 +18,7 @@ type::Size<u24> decompressed_size @ 0x01;
 
 std::mem::Bytes<std::mem::size() - 4> compressed_data @ 4;
 
-std::mem::Section decompressed = std::mem::create_section("Decompressed " + hex::prv::get_information("file_name", ""));
+std::mem::Section decompressed = std::mem::create_section("Decompressed");
 std::mem::Bytes<decompressed_size> decompressed_data @ 0x00 in decompressed;
 
 fn decompress() {
@@ -81,5 +81,5 @@ fn decompress() {
 
 decompress();
 
-hex::core::add_virtual_file("Decompressed " + hex::prv::get_information("file_name", ""), decompressed_data);
+hex::core::add_virtual_file("Decompressed", decompressed_data);
 std::print("Decompressed LZ11, look at the `Decompressed` section or virtual file");

@@ -1,3 +1,5 @@
+#pragma once
+
 import std.array;
 import std.mem;
 import type.magic;

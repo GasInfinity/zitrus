@@ -6,19 +6,11 @@ pub const max_path = 255;
 pub const separator = '/';
 pub const ComponentIterator = std.fs.path.ComponentIterator(.posix, u16);
 
-pub const IvfcHeader = extern struct {
-    pub const Level = extern struct { logical_offset: u64, hash_data_size: u64, block_size: u32, _reserved0: u32 };
-    magic: [4]u8 = "IVFC".*,
-    magic_int: u32 = 0x10000,
-    master_hash_size: u32,
-    levels: [3]ivfc.Level,
-    _reserved0: u32,
-    // XXX: ???
-    optional_info_size: u32,
-
-    comptime {
-        std.debug.assert(@sizeOf(IvfcHeader) == 0x5C);
-    }
+pub const Ivfc= extern struct {
+    hdr: ivfc.Header,
+    l0_size: u32,
+    levels: [3]ivfc.Level align(@alignOf(u32)),
+    header_size: u64 align(@alignOf(u32)),
 };
 
 pub const Header = extern struct {

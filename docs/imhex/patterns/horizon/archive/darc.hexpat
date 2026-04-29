@@ -1,9 +1,9 @@
 // Copyright 2025 GasInfinity
 // SPDX-License-Identifier: MIT
 
+#pragma magic [ 64 61 72 63 ] @ 0x00
 #pragma author GasInfinity
 #pragma description Data Archive
-#pragma magic [ 64 61 72 63 ] @ 0x00
 #pragma endian little
 
 import std.io;

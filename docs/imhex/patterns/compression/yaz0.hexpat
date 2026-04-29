@@ -3,7 +3,7 @@
 
 #pragma author GasInfinity
 #pragma description Yaz0 compressed data
-#pragma magic [ 59 61 7A 30 ]
+#pragma magic [ 59 61 7A 30 ] @ 0x00
 #pragma endian big
 #pragma loop_limit 1073741824
 
@@ -22,7 +22,7 @@ struct Header {
 Header header @ 0x00;
 std::mem::Bytes<std::mem::size() - sizeof(header)> compressed_data @ sizeof(header);
 
-std::mem::Section decompressed = std::mem::create_section("Decompressed " + hex::prv::get_information("file_name", ""));
+std::mem::Section decompressed = std::mem::create_section("Decompressed");
 std::mem::Bytes<header.decompressed_size> decompressed_data @ 0x00 in decompressed;
 
 fn decompress() {
@@ -76,5 +76,6 @@ fn decompress() {
 
 decompress();
 
-hex::core::add_virtual_file("Decompressed " + hex::prv::get_information("file_name", ""), decompressed_data);
+hex::core::add_virtual_file("Decompressed", decompressed_data);
 std::print("Decompressed Yaz, look at the `Decompressed` section or virtual file");
+

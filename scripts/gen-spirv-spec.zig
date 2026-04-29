@@ -135,6 +135,7 @@ fn generateSpec(writer: *std.Io.Writer, gpa: std.mem.Allocator, spec: spirv.Spec
         \\//! This file has been generated with `gen-spirv-spec`. Do not modify it!
         \\ 
         \\pub const Id = enum(u32) { _ };
+        \\pub const LiteralFloat = f32;
         \\pub const LiteralInteger = u32;
         \\pub const LiteralExtInstInteger = enum(u32) { _ };
         \\pub const LiteralSpecConstantOpInteger = enum(u32) { _ };

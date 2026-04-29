@@ -1,6 +1,11 @@
 // Copyright 2025 GasInfinity
 // SPDX-License-Identifier: MIT
 
+// NOTE: same as RomFS, the exefs doesn't have a magic but we can use either ".code", "logo", "icon" or "banner" as such.
+#pragma magic [ 2E 63 6F 64 65 ] @ 0x00 
+#pragma magic [ 6C 6F 67 6F ] @ 0x00
+#pragma magic [ 69 63 6F 6E ] @ 0x00
+#pragma magic [ 62 61 6E 6E 65 72 ] @ 0x00
 #pragma author GasInfinity
 #pragma description CTR Executable Filesystem
 #pragma endian little

@@ -159,9 +159,6 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
                     const block: etc.Block = std.mem.littleToNative(etc.Block, @bitCast(untiled_image_data[current..][0..@sizeOf(etc.Block)].*));
 
                     block.bufUnpack(&etc_buf);
-                    // XXX: remove this and make etc.zig its own thing!
-                    // const repacked = etc.Block.pack(&etc_buf, .{ .quality = .high });
-                    // repacked.block.bufUnpack(&etc_buf);
 
                     etc_y: for (0..etc.pixels_per_block) |etc_y| {
                         const y = block_y * 4 + etc_y;

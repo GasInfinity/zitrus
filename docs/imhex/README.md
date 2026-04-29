@@ -11,8 +11,12 @@ Used to see the differences between what zitrus outputs and the original file, a
 
 ---
 
+- Misc:
+    - 🛠️ IVFC
 - NCCH:
     - 🟢 ExeFS
+    - 🟢 RomFS
+    - 🛠️ NCCH
 - Compression:
     - 🟢 Yaz0
     - 🟢 LZ11

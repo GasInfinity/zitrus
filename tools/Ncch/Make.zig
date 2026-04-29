@@ -25,11 +25,11 @@ pub const short: plz.Short(@This()) = .{
     .banner = 'b',
     .logo = 'l',
 
-    .exefs = 'x',
+    .exefs = 'E',
     .settings = 's',
 
-    .@"title-id" = 't',
-    .@"product-code" = 'p',
+    .@"title-id" = 'T',
+    .@"product-code" = 'P',
 
     .verbose = 'v',
     .output = 'o',
@@ -70,7 +70,7 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         return 1;
     }
 
-    // XXX: We must first parse the IVFC unless we want to suffer.
+    // TODO: IVFC writer
     if (args.romfs != null) @panic("TODO");
 
     const cwd = std.Io.Dir.cwd();
@@ -179,8 +179,11 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
     const exefs_aligned_size: u64 = std.mem.alignForward(u64, exefs.len, horizon.fmt.media_unit);
 
     var exefs_header_hash: [0x20]u8 = @splat(0);
-
     if (exefs.len > 0) std.crypto.hash.sha2.Sha256.hash(@ptrCast(&exefs[0..@sizeOf(ncch.exefs.Header)]), &exefs_header_hash, .{});
+
+    // TODO: RomFS
+    // var romfs_header_hash: [0x20]u8 = @splat(0);
+    // if (romfs.len > 0) std.crypto.hash.sha2.Sha256.hash(@ptrCast(&romfs[0..@sizeOf(ncch.romfs.Ivfc)]), &romfs_header_hash, .{});
 
     const extended_header: ?ncch.ExtendedHeader = if (settings) |set| .{
         .system_control = .{
@@ -550,6 +553,7 @@ const plz = @import("plz");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
 
-const ncch = zitrus.horizon.fmt.ncch;
+const hfmt = zitrus.horizon.fmt;
+const ncch = hfmt.ncch;
 
 const code = zitrus.fmt.code;

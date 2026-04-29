@@ -9,16 +9,20 @@
 //!
 //! See https://registry.khronos.org/SPIR-V/specs/unified1/SPIRV.html
 
-const spec = void; //@import("spirv/spec.zig");
-const Reader = void; //@import("spirv/Reader.zig");
+const spec = void;//@import("spirv/spec.zig");
+const Reader = void;//@import("spirv/Reader.zig");
 
 const testing = std.testing;
 
 test "embed spv" {
     if (true) return;
+    const vtx_storage align(@sizeOf(u32)) = @embedFile("vtx.spv").*;
+    const vtx_spv: []const u32 = @ptrCast(&vtx_storage);
 
-    const vtx_spv = @embedFile("spirv/vtx.spv");
-    var fixed_reader: std.Io.Reader = .fixed(vtx_spv);
+    const mutable_vtx = try testing.allocator.dupe(u32, vtx_spv);
+    defer testing.allocator.free(mutable_vtx);
+
+    var fixed_reader: std.Io.Reader = .fixed(@ptrCast(mutable_vtx));
     const spv_reader: Reader = try .init(&fixed_reader);
 
     std.debug.print("Version: {}.{}\n", .{ spv_reader.version.major, spv_reader.version.minor });
@@ -53,11 +57,13 @@ test "embed spv" {
         break :model try spv_reader.decodeInstruction(spec.instruction.OpMemoryModel, memory_model_inst);
     };
 
+    std.debug.print("Memory Model: {t}, {t}\n", .{addressing_model, memory_model});
     if (addressing_model != .Logical or (memory_model != .Simple and memory_model != .GLSL450)) return error.InvalidMemoryModel;
 
     while (try spv_reader.peekPrefix()) |pref| if (pref.opcode == .OpEntryPoint) {
-        std.debug.print("OpEntryPoint\n", .{});
-        _ = try spv_reader.takeInstruction();
+        const inst = (try spv_reader.takeInstruction()).?;
+        const entry = try spv_reader.decodeInstruction(spec.instruction.OpEntryPoint, inst);
+        std.debug.print("OpEntryPoint '{s}': {} ({any})\n", .{entry.@"2", entry.@"0", entry.@"3"});
     } else break;
 
     // Debug instructions can be skipped safely.
@@ -76,8 +82,6 @@ test "embed spv" {
 
     // We can safely ignore all other types as we'll never see them, we'll bail early in OpCapability.
     while (try spv_reader.peekPrefix()) |pref| switch (pref.opcode) {
-        .OpVariable => _ = try spv_reader.takeInstruction(),
-
         .OpUndef => _ = try spv_reader.takeInstruction(),
         .OpTypeVoid => _ = try spv_reader.takeInstruction(),
         .OpTypeBool => _ = try spv_reader.takeInstruction(),
@@ -87,8 +91,8 @@ test "embed spv" {
         .OpTypeMatrix => _ = try spv_reader.takeInstruction(),
         .OpTypeArray, .OpTypeRuntimeArray => _ = try spv_reader.takeInstruction(),
         .OpTypePointer => _ = try spv_reader.takeInstruction(),
-        .OpTypeFunction => _ = try spv_reader.takeInstruction(),
 
+        .OpVariable => _ = try spv_reader.takeInstruction(),
         .OpConstantTrue, .OpConstantFalse => _ = try spv_reader.takeInstruction(),
 
         .OpConstant => _ = try spv_reader.takeInstruction(),
@@ -102,7 +106,7 @@ test "embed spv" {
         .OpTypeImage, .OpTypeSampler, .OpTypeSampledImage => return error.UnsupportedType,
 
         // First time they appear and can be skipped safely.
-        .OpLine, .OpNoLine, .OpExtInst => _ = try spv_reader.takeInstruction(),
+        .OpLine, .OpNoLine, .OpExtInst => try spv_reader.skipInstruction(),
         else => break,
     };
 

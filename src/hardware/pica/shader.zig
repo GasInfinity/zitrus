@@ -59,12 +59,12 @@ pub const spirv = @import("shader/spirv.zig");
 
 comptime {
     _ = as;
-    std.testing.refAllDecls(Encoder);
+    _ = Encoder;
 
     _ = register;
     _ = encoding;
 
-    // _ = spirv;
+    _ = spirv;
 }
 
 const std = @import("std");

@@ -16,6 +16,7 @@ pub const descriptions: plz.Descriptions(@This()) = .{
     .output = "Output filename. If not specified stdout will be used.",
     .minify = "Emit the neccesary whitespace only",
     .region = "NCCH region to dump",
+    .verify = "Perform extra verification of regions (e.g verify the RomFS IVFC)"
 };
 
 pub const short: plz.Short(@This()) = .{
@@ -23,12 +24,14 @@ pub const short: plz.Short(@This()) = .{
     .minify = 'm',
     .region = 'r',
     .verbose = 'v',
+    .verify = 'V',
 };
 
 output: ?[]const u8 = null,
 minify: ?void,
 region: Region,
 verbose: ?void,
+verify: ?void,
 
 @"--": struct {
     pub const descriptions: plz.Descriptions(@This()) = .{
@@ -130,7 +133,7 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
     var output_writer = output_file.writer(io, &out_buf);
     const writer = &output_writer.interface;
 
-    switch (args.region) {
+    dump: switch (args.region) {
         .settings => {
             // NOTE: It is guaranteed that the hashed region data will be equal to the exheader.
             const exheader: *ncch.ExtendedHeader = @alignCast(std.mem.bytesAsValue(ncch.ExtendedHeader, hashed_region_data));
@@ -167,24 +170,21 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
             }
         },
         .romfs => {
-            var ivfc_header: ncch.romfs.IvfcHeader = undefined;
+            var ivfc_header: ncch.romfs.Ivfc = undefined;
 
-            if (hashed_region_data.len < @sizeOf(ncch.romfs.IvfcHeader)) {
+            if (hashed_region_data.len < @sizeOf(ncch.romfs.Ivfc)) {
                 const as_u8: []u8 = @ptrCast(&ivfc_header);
                 @memcpy(as_u8[0..hashed_region_data.len], hashed_region_data);
-            } else @memcpy(@as([]u8, @ptrCast(&ivfc_header)), hashed_region_data[0..@sizeOf(ncch.romfs.IvfcHeader)]);
+                try reader.readSliceAll(as_u8[hashed_region_data.len..]);
+            } else @memcpy(@as([]u8, @ptrCast(&ivfc_header)), hashed_region_data[0..@sizeOf(ncch.romfs.Ivfc)]);
 
-            if (builtin.cpu.arch.endian() != .little) std.mem.byteSwapAllFields(ncch.romfs.IvfcHeader, &ivfc_header);
+            // TODO: the header is unaligned so byteSwapAllFields will fail
+            // if (builtin.cpu.arch.endian() != .little) ;
 
-            // TODO: Verify data within ivfc / proper IVFC parsing
-            if (ivfc_header.levels[2].block_size > @bitSizeOf(u64)) {
-                log.err("RomFS block size is bigger than an `u64`", .{});
-                return 1;
-            }
-
-            const block_size = @as(u64, 1) << @intCast(ivfc_header.levels[2].block_size);
-            const romfs_start = std.mem.alignForward(u64, std.mem.alignForward(usize, @sizeOf(ncch.romfs.IvfcHeader), 0x20) + @as(u64, ivfc_header.master_hash_size), block_size);
-            const romfs_size = ivfc_header.levels[2].hash_data_size;
+            const ivfc_levels = ivfc_header.levels;
+            const master_hashes_start = std.mem.alignForward(usize, @sizeOf(ncch.romfs.Ivfc), 0x20);
+            const romfs_start = std.mem.alignForward(u64, master_hashes_start + @as(u64, ivfc_header.l0_size), @as(u64, 1) << @intCast(ivfc_header.levels[2].block_size_shift));
+            const romfs_size = ivfc_header.levels[2].size;
 
             if (romfs_start < hashed_region_data.len) {
                 try writer.writeAll(hashed_region_data[@intCast(romfs_start)..]);
@@ -193,6 +193,36 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
                 try reader.discardAll64(romfs_start - hashed_region_data.len);
                 try reader.streamExact64(writer, romfs_size);
             }
+
+            if (args.verify == null) break :dump;
+            if (ncch_reader.getSize()) |_| {
+                const parsed: hfmt.ivfc.Parsed = .{
+                    .l0_size = ivfc_header.l0_size,
+                    .levels = &ivfc_levels,
+                };
+
+                try ncch_reader.seekTo(offset);
+                
+                const block_buffer = try arena.alloc(u8, @as(usize, 1) << @intCast(@max(parsed.levels[0].block_size_shift, parsed.levels[1].block_size_shift, parsed.levels[2].block_size_shift)));
+                defer arena.free(block_buffer);
+
+                const l0_start = master_hashes_start;
+                const l3_start = std.mem.alignForward(u64, l0_start + ivfc_header.l0_size, @as(usize, 1) << @intCast(parsed.levels[2].block_size_shift));
+                const l1_start = std.mem.alignForward(u64, l3_start + parsed.levels[2].size, @as(usize, 1) << @intCast(parsed.levels[0].block_size_shift));
+                const l2_start = std.mem.alignForward(u64, l1_start + parsed.levels[0].size, @as(usize, 1) << @intCast(parsed.levels[1].block_size_shift));
+
+                // L0...L3
+                const offsets: []const u64 = &.{
+                    master_hashes_start,
+                    l1_start,
+                    l2_start,
+                    l3_start, 
+                };
+
+                if (!try parsed.verify(block_buffer, offsets, &ncch_reader)) {
+                    log.err("RomFS may be corrupted, IVFC chain does not match!", .{});
+                }
+            } else |_| log.err("Cannot verify RomFS while streaming from stdin", .{});
         },
         .logo, .exefs => {
             try writer.writeAll(hashed_region_data);
