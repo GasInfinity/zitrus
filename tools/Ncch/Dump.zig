@@ -12,12 +12,7 @@ const Region = enum {
     romfs,
 };
 
-pub const descriptions: plz.Descriptions(@This()) = .{
-    .output = "Output filename. If not specified stdout will be used.",
-    .minify = "Emit the neccesary whitespace only",
-    .region = "NCCH region to dump",
-    .verify = "Perform extra verification of regions (e.g verify the RomFS IVFC)"
-};
+pub const descriptions: plz.Descriptions(@This()) = .{ .output = "Output filename. If not specified stdout will be used.", .minify = "Emit the neccesary whitespace only", .region = "NCCH region to dump", .verify = "Perform extra verification of regions (e.g verify the RomFS IVFC)" };
 
 pub const short: plz.Short(@This()) = .{
     .output = 'o',
@@ -202,7 +197,7 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
                 };
 
                 try ncch_reader.seekTo(offset);
-                
+
                 const block_buffer = try arena.alloc(u8, @as(usize, 1) << @intCast(@max(parsed.levels[0].block_size_shift, parsed.levels[1].block_size_shift, parsed.levels[2].block_size_shift)));
                 defer arena.free(block_buffer);
 
@@ -216,7 +211,7 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
                     master_hashes_start,
                     l1_start,
                     l2_start,
-                    l3_start, 
+                    l3_start,
                 };
 
                 if (!try parsed.verify(block_buffer, offsets, &ncch_reader)) {

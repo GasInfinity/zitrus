@@ -6,7 +6,7 @@ pub const max_path = 255;
 pub const separator = '/';
 pub const ComponentIterator = std.fs.path.ComponentIterator(.posix, u16);
 
-pub const Ivfc= extern struct {
+pub const Ivfc = extern struct {
     hdr: ivfc.Header,
     l0_size: u32,
     levels: [3]ivfc.Level align(@alignOf(u32)),

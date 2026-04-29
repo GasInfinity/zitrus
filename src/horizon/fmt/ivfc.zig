@@ -28,7 +28,7 @@ pub const Level = extern struct {
 pub const Parsed = struct {
     l0_size: u64,
     levels: []const Level,
-    
+
     pub const ReadError = error{InvalidIvfc} || Header.CheckError;
     pub fn read(in: *Io.Reader, levels_buffer: []Level) (Io.Reader.Error || ReadError)!Parsed {
         std.debug.assert(levels_buffer >= 4);
@@ -38,7 +38,7 @@ pub const Parsed = struct {
         const l0_size, const levels = info: switch (hdr.id) {
             .romfs => {
                 const l0_size = try in.takeInt(u32, .little);
-                try in.readSliceEndian(Level, levels_buffer[0..3], .little); 
+                try in.readSliceEndian(Level, levels_buffer[0..3], .little);
                 const hdr_size = try in.takeInt(u64, .little);
                 if (hdr_size != @sizeOf(Header) + @sizeOf(u32) + @sizeOf([3]Level) + @sizeOf(u64)) return error.InvalidIvfc;
                 break :info .{ l0_size, levels_buffer[0..3] };

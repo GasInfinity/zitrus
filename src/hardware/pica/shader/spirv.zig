@@ -9,8 +9,8 @@
 //!
 //! See https://registry.khronos.org/SPIR-V/specs/unified1/SPIRV.html
 
-const spec = void;//@import("spirv/spec.zig");
-const Reader = void;//@import("spirv/Reader.zig");
+const spec = void; //@import("spirv/spec.zig");
+const Reader = void; //@import("spirv/Reader.zig");
 
 const testing = std.testing;
 
@@ -57,13 +57,13 @@ test "embed spv" {
         break :model try spv_reader.decodeInstruction(spec.instruction.OpMemoryModel, memory_model_inst);
     };
 
-    std.debug.print("Memory Model: {t}, {t}\n", .{addressing_model, memory_model});
+    std.debug.print("Memory Model: {t}, {t}\n", .{ addressing_model, memory_model });
     if (addressing_model != .Logical or (memory_model != .Simple and memory_model != .GLSL450)) return error.InvalidMemoryModel;
 
     while (try spv_reader.peekPrefix()) |pref| if (pref.opcode == .OpEntryPoint) {
         const inst = (try spv_reader.takeInstruction()).?;
         const entry = try spv_reader.decodeInstruction(spec.instruction.OpEntryPoint, inst);
-        std.debug.print("OpEntryPoint '{s}': {} ({any})\n", .{entry.@"2", entry.@"0", entry.@"3"});
+        std.debug.print("OpEntryPoint '{s}': {} ({any})\n", .{ entry.@"2", entry.@"0", entry.@"3" });
     } else break;
 
     // Debug instructions can be skipped safely.
