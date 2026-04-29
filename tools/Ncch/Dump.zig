@@ -144,13 +144,17 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
             while (remaining > 0) {
                 var text = reader.takeDelimiterExclusive(0) catch |err| switch (err) {
                     error.ReadFailed => return err,
-                    error.EndOfStream => break,
+                    error.EndOfStream => {
+                        log.err("end of stream before reading the entire plain region, truncated?", .{});
+                        break;
+                    },
                     error.StreamTooLong => {
                         log.err("a string in the plain region is bigger than {} bytes, streaming instead of pretty printing", .{reader.buffer.len});
                         try reader.streamExact64(writer, remaining);
                         break;
                     },
                 };
+                reader.toss(1); // NOTE: this instead of takeDelimiter is on purpose (we want to handle EndOfStream)
 
                 // Could happen if the string was not null terminated and we've read stale data
                 if (text.len + 1 > remaining) {
@@ -165,21 +169,18 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
             }
         },
         .romfs => {
-            var ivfc_header: ncch.romfs.Ivfc = undefined;
-
-            if (hashed_region_data.len < @sizeOf(ncch.romfs.Ivfc)) {
-                const as_u8: []u8 = @ptrCast(&ivfc_header);
-                @memcpy(as_u8[0..hashed_region_data.len], hashed_region_data);
-                try reader.readSliceAll(as_u8[hashed_region_data.len..]);
-            } else @memcpy(@as([]u8, @ptrCast(&ivfc_header)), hashed_region_data[0..@sizeOf(ncch.romfs.Ivfc)]);
-
-            // TODO: the header is unaligned so byteSwapAllFields will fail
-            // if (builtin.cpu.arch.endian() != .little) ;
-
-            const ivfc_levels = ivfc_header.levels;
+            // NOTE: here basically we reject anything that doesn't hash the RomFS IVFC as all NCCHs in existence have
+            // the entire header hashed. Won't complicate the code for an edge case that doesn't exist empirically.
+            var ivfc_reader: std.Io.Reader = .fixed(hashed_region_data);
+            var levels: [3]hfmt.ivfc.Level = undefined;
+            const parsed = hfmt.ivfc.Parsed.read(&ivfc_reader, &levels, .romfs) catch |err| {
+                log.err("invalid RomFS IVFC header: {t}", .{err});
+                return 1;
+            };
+            
             const master_hashes_start = std.mem.alignForward(usize, @sizeOf(ncch.romfs.Ivfc), 0x20);
-            const romfs_start = std.mem.alignForward(u64, master_hashes_start + @as(u64, ivfc_header.l0_size), @as(u64, 1) << @intCast(ivfc_header.levels[2].block_size_shift));
-            const romfs_size = ivfc_header.levels[2].size;
+            const romfs_start = std.mem.alignForward(u64, master_hashes_start + parsed.l0_size, @as(u64, 1) << @intCast(parsed.levels[2].block_size_shift));
+            const romfs_size = parsed.levels[2].size;
 
             if (romfs_start < hashed_region_data.len) {
                 try writer.writeAll(hashed_region_data[@intCast(romfs_start)..]);
@@ -191,18 +192,13 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
 
             if (args.verify == null) break :dump;
             if (ncch_reader.getSize()) |_| {
-                const parsed: hfmt.ivfc.Parsed = .{
-                    .l0_size = ivfc_header.l0_size,
-                    .levels = &ivfc_levels,
-                };
-
                 try ncch_reader.seekTo(offset);
 
                 const block_buffer = try arena.alloc(u8, @as(usize, 1) << @intCast(@max(parsed.levels[0].block_size_shift, parsed.levels[1].block_size_shift, parsed.levels[2].block_size_shift)));
                 defer arena.free(block_buffer);
 
                 const l0_start = master_hashes_start;
-                const l3_start = std.mem.alignForward(u64, l0_start + ivfc_header.l0_size, @as(usize, 1) << @intCast(parsed.levels[2].block_size_shift));
+                const l3_start = std.mem.alignForward(u64, l0_start + parsed.l0_size, @as(usize, 1) << @intCast(parsed.levels[2].block_size_shift));
                 const l1_start = std.mem.alignForward(u64, l3_start + parsed.levels[2].size, @as(usize, 1) << @intCast(parsed.levels[0].block_size_shift));
                 const l2_start = std.mem.alignForward(u64, l1_start + parsed.levels[0].size, @as(usize, 1) << @intCast(parsed.levels[1].block_size_shift));
 

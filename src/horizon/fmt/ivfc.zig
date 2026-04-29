@@ -26,16 +26,19 @@ pub const Level = extern struct {
 };
 
 pub const Parsed = struct {
-    l0_size: u64,
+    l0_size: u32,
     levels: []const Level,
 
     pub const ReadError = error{InvalidIvfc} || Header.CheckError;
-    pub fn read(in: *Io.Reader, levels_buffer: []Level) (Io.Reader.Error || ReadError)!Parsed {
-        std.debug.assert(levels_buffer >= 4);
+    pub fn read(in: *Io.Reader, levels_buffer: []Level, expect: ?Id) (Io.Reader.Error || ReadError)!Parsed {
         const hdr: Header = try in.takeStruct(Header, .little);
         try hdr.check();
 
-        const l0_size, const levels = info: switch (hdr.id) {
+        if (expect) |expected| if (hdr.id != expected) {
+            return error.InvalidIvfc;
+        };
+
+        const l0_size: u32, const levels: []Level = info: switch (hdr.id) {
             .romfs => {
                 const l0_size = try in.takeInt(u32, .little);
                 try in.readSliceEndian(Level, levels_buffer[0..3], .little);
@@ -44,14 +47,25 @@ pub const Parsed = struct {
                 break :info .{ l0_size, levels_buffer[0..3] };
             },
             .disa => {
-                const l0_size = try in.takeInt(u64, .little);
+                const raw_l0_size = try in.takeInt(u64, .little);
+                // NOTE: This is *basically* impossible, it's 99.999999999% more likely it's just corrupt instead.
+                if (raw_l0_size > std.math.maxInt(u32)) return error.InvalidIvfc;
+                const l0_size: u32 = @intCast(raw_l0_size);
+
                 try in.readSliceEndian(Level, levels_buffer[0..4], .little);
                 const hdr_size = try in.takeInt(u32, .little);
                 if (hdr_size != @sizeOf(Header) + @sizeOf(u64) + @sizeOf([4]Level) + @sizeOf(u32)) return error.InvalidIvfc;
                 break :info .{ l0_size, levels_buffer[0..4] };
             },
-            else => return error.UnknownId,
+            _ => return error.InvalidIvfc,
         };
+
+        if (!std.mem.isAligned(l0_size, 0x20)) return error.InvalidIvfc;
+
+        for (levels[0..levels.len], 0..) |hash_level, i| {
+            if (i < (levels.len - 1) and !std.mem.isAlignedGeneric(u64, hash_level.size, 0x20)) return error.InvalidIvfc;
+            if (hash_level.block_size_shift > 32) return error.InvalidIvfc;
+        }
 
         return .{
             .l0_size = l0_size,
@@ -66,7 +80,7 @@ pub const Parsed = struct {
     pub fn verify(parsed: Parsed, block_buffer: []u8, offsets: []const u64, reader: *Io.File.Reader) Io.File.Reader.SeekError!bool {
         const initial_offset = reader.logicalPos();
 
-        var hashes: u64 = (parsed.l0_size / 0x20);
+        var hashes: u32 = @intCast(parsed.l0_size / 0x20);
         var computed_hash: [0x20]u8 = undefined;
         var stored_hash: [0x20]u8 = undefined;
         for (parsed.levels, 1..) |level, level_idx| {
@@ -87,7 +101,7 @@ pub const Parsed = struct {
                 if (!std.mem.eql(u8, &stored_hash, &computed_hash)) return false;
             }
 
-            hashes = std.mem.alignForward(u64, level.size, @as(u64, 1) << @intCast(level.block_size_shift)) >> @intCast(level.block_size_shift);
+            hashes = @intCast(std.mem.alignForward(u64, level.size, @as(u64, 1) << @intCast(level.block_size_shift)) >> @intCast(level.block_size_shift));
         }
 
         try reader.seekTo(initial_offset);
