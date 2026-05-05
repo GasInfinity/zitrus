@@ -30,6 +30,61 @@ pub const Dir = struct {
     };
 };
 
+pub const Terminal = struct {
+    pub const Mode = union(enum) {
+        pub const DebugPsf = struct {
+            renderer: *zitrus.debug.PsfRenderer,
+            /// All colors must have the same byte length, also
+            /// matching `renderer.bytes_per_pixel`
+            palette: *const std.EnumArray(std.Io.Terminal.Color, []const u8),
+
+            pub fn initDefaultBgr888(renderer: *zitrus.debug.PsfRenderer) DebugPsf {
+                return .{
+                    .renderer = renderer,
+                    .palette = comptime &.init(.{
+                        .black = &.{ 0, 0, 0 },
+                        .red = &.{ 0, 0, 170 },
+                        .green = &.{ 0, 170, 0 },
+                        .yellow = &.{ 0, 170, 170 },
+                        .blue = &.{ 170, 0, 0 },
+                        .magenta = &.{ 170, 0, 170 },
+                        .cyan = &.{ 170, 170, 0 },
+                        .white = &.{ 255, 255, 255 },
+                        .bright_black = &.{ 128, 128, 128 },
+                        .bright_red = &.{ 0, 0, 255 },
+                        .bright_green = &.{ 0, 255, 0 },
+                        .bright_yellow = &.{ 0, 255, 255 },
+                        .bright_blue = &.{ 255, 0, 0 },
+                        .bright_magenta = &.{ 255, 0, 255 },
+                        .bright_cyan = &.{ 255, 255, 0 },
+                        .bright_white = &.{ 255, 255, 255 },
+                        .dim = &.{},
+                        .bold = &.{},
+                        .reset = &.{ 255, 255, 255 },
+                    }),
+                };
+            }
+        };
+
+        /// The `Io.Terminal` represents a `zitrus.debug.PsfRenderer`.
+        psf: DebugPsf,
+
+        pub fn setColor(mode: Mode, color: Io.Terminal.Color) error{}!void {
+            switch (mode) {
+                .psf => |psf| {
+                    const native_color = psf.palette.get(color);
+                    if (native_color.len == 0) return; // AKA doesn't exist, don't change anything
+
+                    std.debug.assert(psf.renderer.bytes_per_pixel == native_color.len); // Bad palette, oops!
+
+                    psf.renderer.writer.flush() catch {}; // NOTE: if this errors, it will also error later anyways
+                    @memcpy(psf.renderer.color[0..native_color.len], native_color);
+                },
+            }
+        }
+    };
+};
+
 pub const Operation = struct {
     pub const DeviceIoControl = noreturn;
 };

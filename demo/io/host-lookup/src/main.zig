@@ -3,11 +3,12 @@ pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_o
 pub const std_options: std.Options = .{
     .logFn = log,
 };
+
 pub const init_options: horizon.Init.Application.Software.Options = .{
     .double_buffer = .initFill(false),
 };
 
-var screen_writer: ?*std.Io.Writer = null;
+var screen_terminal: ?std.Io.Terminal = null;
 
 pub fn log(
     comptime level: std.log.Level,
@@ -15,8 +16,19 @@ pub fn log(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (screen_writer) |w| {
-        w.print(@tagName(level) ++ "(" ++ @tagName(scope) ++ "): " ++ format ++ "\n", args) catch {};
+    if (screen_terminal) |t| {
+        const w = t.writer;
+        const level_color: std.Io.Terminal.Color = switch (level) {
+            .debug => .bright_green,
+            .info => .bright_cyan,
+            .warn => .bright_yellow,
+            .err => .bright_red,
+        };
+
+        t.setColor(level_color) catch {};
+        w.writeAll(@tagName(level)) catch {};
+        t.setColor(.reset) catch {};
+        w.print("(" ++ @tagName(scope) ++ "): " ++ format ++ "\n", args) catch {};
         w.flush() catch {};
     }
 
@@ -45,8 +57,15 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     );
     top_renderer.clear();
 
-    screen_writer = &top_renderer.writer;
-    defer screen_writer = null;
+    screen_terminal = .{
+        .writer = &top_renderer.writer,
+        .mode = .{
+            .platform = .{
+                .psf = .initDefaultBgr888(&top_renderer),
+            },
+        },
+    };
+    defer screen_terminal = null;
 
     var bottom_renderer_buf: [64]u8 = undefined;
     var bottom_renderer = zdebug.PsfRenderer.init(
