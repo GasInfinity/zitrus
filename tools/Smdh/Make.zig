@@ -110,13 +110,13 @@ fn loadIcons(arena: std.mem.Allocator, io: std.Io, large_path: []const u8, small
     var large_image = try loadIconWithSize(smdh.Icons.large_size, arena, io, large_path);
     defer large_image.deinit(arena);
 
-    pica.morton.convert(.tile, 8, smdh.Icons.large_size, @sizeOf(Rgb565), &icons.large, @ptrCast(large_image.pixels.rgb565));
+    pica.morton.convert(.tile, 8, &icons.large, @ptrCast(large_image.pixels.rgb565), .full(smdh.Icons.large_size, smdh.Icons.large_size, @sizeOf(Rgb565)));
 
     if (small_path) |path| {
         var small_image = try loadIconWithSize(smdh.Icons.small_size, arena, io, path);
         defer small_image.deinit(arena);
 
-        pica.morton.convert(.tile, 8, smdh.Icons.small_size, @sizeOf(Rgb565), &icons.small, @ptrCast(small_image.pixels.rgb565));
+        pica.morton.convert(.tile, 8, &icons.small, @ptrCast(small_image.pixels.rgb565), .full(smdh.Icons.small_size, smdh.Icons.small_size, @sizeOf(Rgb565)));
     } else {
         var downsampled = try zigimg.Image.create(arena, smdh.Icons.small_size, smdh.Icons.small_size, .rgb565);
         defer downsampled.deinit(arena);
@@ -141,7 +141,7 @@ fn loadIcons(arena: std.mem.Allocator, io: std.Io, large_path: []const u8, small
             }
         }
 
-        pica.morton.convert(.tile, 8, smdh.Icons.small_size, @sizeOf(Rgb565), &icons.small, @ptrCast(downsampled_pixels));
+        pica.morton.convert(.tile, 8, &icons.small, @ptrCast(downsampled_pixels), .full(smdh.Icons.small_size, smdh.Icons.small_size, @sizeOf(Rgb565)));
     }
 
     return icons;

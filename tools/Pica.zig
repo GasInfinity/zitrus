@@ -1,10 +1,11 @@
 pub const description = "Assemble / Dissassemble zitrus PICA200 shader assembly";
 
-const Subcommand = enum { @"asm", disasm };
+const Subcommand = enum { @"asm", disasm, texture };
 
 @"-": union(Subcommand) {
     @"asm": Assemble,
     disasm: Disassemble,
+    texture: Texture,
 },
 
 pub fn run(args: Pica, io: std.Io, arena: std.mem.Allocator) !u8 {
@@ -17,5 +18,6 @@ const Pica = @This();
 
 const Assemble = @import("Pica/Assemble.zig");
 const Disassemble = @import("Pica/Disassemble.zig");
+const Texture = @import("Pica/Texture.zig");
 
 const std = @import("std");

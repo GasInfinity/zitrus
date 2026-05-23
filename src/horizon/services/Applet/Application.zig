@@ -329,7 +329,7 @@ pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, s
         try capture_shm.map(mem, .rw, .rw);
         defer capture_shm.unmap(mem);
 
-        if (apt_capture_info.bottom.format.native()) |pfmt| pica.morton.convert2(
+        if (apt_capture_info.bottom.format.native()) |pfmt| pica.morton.convert(
             .tile,
             8,
             mem[apt_capture_info.bottom.left_offset..][0 .. pica.Screen.height(.bottom) * pica.Screen.width_po2 * pfmt.bytesPerPixel()],
@@ -356,7 +356,7 @@ pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, s
             const stride = pica.Screen.width(.top) * bpp;
             const total_byte_size = pica.Screen.height(.top) * po2_stride;
 
-            pica.morton.convert2(
+            pica.morton.convert(
                 .tile,
                 8,
                 mem[apt_capture_info.top.left_offset..][0..total_byte_size],
@@ -377,7 +377,7 @@ pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, s
                 },
             );
 
-            if (apt_capture_info.enabled_3d) pica.morton.convert2(
+            if (apt_capture_info.enabled_3d) pica.morton.convert(
                 .tile,
                 8,
                 mem[apt_capture_info.top.right_offset..][0..total_byte_size],

@@ -1,4 +1,4 @@
-pub const description = "Assemble a zitrus PICA200 shader assembly (ZPSM) file";
+pub const description = "Assemble a PICA200 shader assembly (PSM) file";
 
 pub const OutputFormat = enum {
     pub const descriptions: plz.Descriptions(@This()) = .{
@@ -32,7 +32,6 @@ output: ?[]const u8,
 
 pub fn run(args: Assemble, io: std.Io, arena: std.mem.Allocator) !u8 {
     const cwd = std.Io.Dir.cwd();
-
     const input_file, const input_should_close = if (args.@"--".input) |input|
         .{ cwd.openFile(io, input, .{ .mode = .read_only }) catch |err| {
             log.err("could not open input file '{s}': {t}", .{ input, err });
@@ -50,8 +49,6 @@ pub fn run(args: Assemble, io: std.Io, arena: std.mem.Allocator) !u8 {
     else
         .{ std.Io.File.stdout(), false };
     defer if (output_should_close) output_file.close(io);
-
-    // const tty_cfg: std.Io.tty.Config = .detect(std.Io.File.stderr());
 
     const input_source = src: {
         var input_reader = input_file.readerStreaming(io, &.{});

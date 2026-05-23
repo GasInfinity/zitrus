@@ -1,4 +1,4 @@
-pub const description = "Disassemble PICA200 shader ISA into zitrus PICA200 shader assembly.";
+pub const description = "Disassemble PICA200 shader ISA into PICA200 shader assembly.";
 
 pub const Format = enum {
     raw,

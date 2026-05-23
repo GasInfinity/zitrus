@@ -7,7 +7,8 @@
 const simple_vtx_storage align(@sizeOf(u32)) = @embedFile("simple.psh").*;
 const simple_vtx = &simple_vtx_storage;
 
-const test_bgr = @embedFile("test.bgr");
+const test_ptx_storage = @embedFile("test.ptx").*;
+const test_ptx = &test_ptx_storage;
 
 pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
 
@@ -202,8 +203,21 @@ pub const Scene = struct {
         }, null);
         errdefer device.destroyQueryPool(statistics_query_pool, null);
 
-        const zero_test_image: SingleImage = try .initLinear(device, gpa, 64, 64, .b8g8r8_unorm, test_bgr, sema, 0);
+        const zero_hdr: zitrus.fmt.zptx.Header = @bitCast(test_ptx[0..@sizeOf(zitrus.fmt.zptx.Header)].*);
+        const zero_test_image: SingleImage = try .initUninitialized(device, gpa, zero_hdr.meta.width(), zero_hdr.meta.height(), zero_hdr.meta.mangoFormat(), .fcram_cached, true);
         errdefer zero_test_image.deinit(device, gpa);
+
+        {
+            const mapped = try device.mapMemory(zero_test_image.memory, .size(0), .whole);
+            defer device.unmapMemory(zero_test_image.memory);
+
+            const blob: []const u8 = test_ptx[@sizeOf(zitrus.fmt.zptx.Header)..][0..zero_hdr.uncompressed_len];
+            @memcpy(mapped[0..blob.len], blob);
+
+            try device.flushMappedMemoryRanges(&.{
+                .range(zero_test_image.memory, .size(0), .whole),
+            });
+        }
 
         const simple_sampler = try device.createSampler(.{
             .mag_filter = .linear,
@@ -220,7 +234,7 @@ pub const Scene = struct {
 
         return .{
             .semaphore = sema,
-            .current_timeline = 1,
+            .current_timeline = 0,
 
             .phong_lut = phong_distribution_lut,
             .input_layout = vertex_input_layout,

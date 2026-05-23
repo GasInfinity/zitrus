@@ -10,6 +10,7 @@ pub const Make3dsx = @import("build/Make3dsx.zig");
 pub const MakeSmdh = @import("build/MakeSmdh.zig");
 pub const MakeRomFs = @import("build/MakeRomFs.zig");
 pub const AssemblePsm = @import("build/AssemblePsm.zig");
+pub const MakePtx = @import("build/MakePtx.zig");
 pub const Link3dsx = @import("build/Link3dsx.zig");
 
 pub const target = struct {

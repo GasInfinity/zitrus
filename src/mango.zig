@@ -148,6 +148,10 @@ pub const MappedMemoryRange = extern struct {
     memory: DeviceMemory,
     offset: DeviceSize,
     size: DeviceSize,
+
+    pub fn range(memory: DeviceMemory, offset: DeviceSize, size: DeviceSize) MappedMemoryRange {
+        return .{ .memory = memory, .offset = offset, .size = size };
+    }
 };
 
 // Don't overlap ImageView formats with AttributeBuffer ones!

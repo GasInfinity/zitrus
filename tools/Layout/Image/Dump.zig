@@ -2,7 +2,7 @@ pub const description = "Dump a (CTR) Layout Image to a PKM (if ETC1) or to the 
 
 pub const descriptions: plz.Descriptions(@This()) = .{
     .output = "Output directory / file. Directory outputs must be specified, if none stdout is used",
-    // .ofmt = "Output format, it is not guaranteed that all work, support depends on zigimg as-is. PNG is used by default",
+    .ofmt = "Output format, it is not guaranteed that all work, support depends on zigimg as-is. PNG is used by default",
 };
 
 pub const short: plz.Short(@This()) = .{
@@ -131,7 +131,7 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
             try img.writeToFile(arena, io, output_file, &out_buf, default_encoder_opts);
         },
         .ia88 => {
-            zitrus.hardware.pica.morton.convert(.untile, 8, width_po2, @sizeOf(u16), untiled_image_data, tiled_image_data);
+            zitrus.hardware.pica.morton.convert(.untile, 8, untiled_image_data, tiled_image_data, .full(width_po2, height_po2, @sizeOf(u16)));
 
             const img: zigimg.Image = try .fromRawPixelsOwned(width_po2, height_po2, untiled_image_data, .grayscale8Alpha);
             try img.writeToFile(arena, io, output_file, &out_buf, default_encoder_opts);
@@ -140,7 +140,7 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
             // NOTE: Tile size of 2 as each ETC block is 4x4, also as we convert to ETC "pixels" we must divide width/height by 4!
             const etc_width = @divExact(width_po2, etc.pixels_per_block);
             const etc_height = @divExact(height_po2, etc.pixels_per_block);
-            zitrus.hardware.pica.morton.convert(.untile, 2, etc_width, @sizeOf(etc.Block), untiled_image_data, tiled_image_data);
+            zitrus.hardware.pica.morton.convert(.untile, 2, untiled_image_data, tiled_image_data, .full(etc_width, etc_height, @sizeOf(etc.Block)));
 
             if (args.verbose) |_| log.info("ETC size in blocks {}x{}", .{ etc_width, etc_height });
             var img: zigimg.Image = try .create(arena, meta.width, meta.height, .rgb24);

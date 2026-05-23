@@ -182,88 +182,66 @@ pub const morton = struct {
     };
 
     /// Asserts that the Morton-tiled Image is divisible by the `tile_size`
-    pub fn convert2(comptime strategy: Strategy, comptime tile_size: usize, dst_pixels: []u8, src_pixels: []const u8, opts: ConversionOptions) void {
+    pub fn convert(comptime strategy: Strategy, comptime tile_size: usize, dst_pixels: []u8, src_pixels: []const u8, opts: ConversionOptions) void {
         comptime std.debug.assert(std.math.isPowerOfTwo(tile_size)); // We depend on this and the PICA only supports 2x2 (ETC), 8x8 and 32x32 tile sizes.
 
         const tile_pixels = (tile_size * tile_size);
         const subtile_mask = (tile_size - 1);
         const tile_shift = comptime std.math.log2(tile_size);
 
-        const output_real_width = opts.output_stride / opts.pixel_size;
-
         for (0..opts.height) |current_y| {
             const input_y = current_y + opts.input_y;
             const output_y = current_y + opts.output_y;
+
+            const linear_y = switch (strategy) {
+                .tile => input_y * opts.input_stride,
+                .untile => output_y * opts.output_stride,
+            };
+
+            const tile_pixel_start_y, const subtile_y: u3 = switch (strategy) {
+                .tile => .{ ((output_y >> tile_shift) * opts.output_stride) << tile_shift, @intCast(output_y & subtile_mask) },
+                .untile => .{ ((input_y >> tile_shift) * opts.input_stride) << tile_shift, @intCast(input_y & subtile_mask) },
+            };
 
             for (0..opts.width) |current_x| {
                 const input_x = current_x + opts.input_x;
                 const output_x = current_x + opts.output_x;
 
-                const src_pixel, const dst_pixel = pxl: switch (strategy) {
+                const src_pixel_slice, const dst_pixel_slice = pxl: switch (strategy) {
                     .tile => {
-                        const src_index = input_y * opts.input_stride + input_x * opts.pixel_size;
+                        const src_index = linear_y + input_x * opts.pixel_size;
 
-                        std.debug.assert((output_real_width & subtile_mask) == 0);
-                        const dst_tile_pixels_per_line = (output_real_width >> tile_shift) * tile_pixels;
-
-                        const dst_tile_y = output_y >> tile_shift;
                         const dst_tile_x = output_x >> tile_shift;
-
-                        const dst_subtile_y: u3 = @intCast(output_y & subtile_mask);
                         const dst_subtile_x: u3 = @intCast(output_x & subtile_mask);
-                        const dst_subtile_morton = toIndex(u3, 2, .{ dst_subtile_x, dst_subtile_y });
+                        const dst_subtile_morton = toIndex(u3, 2, .{ dst_subtile_x, subtile_y });
 
-                        const dst_pixel_start = (dst_tile_y * dst_tile_pixels_per_line) + (dst_tile_x * tile_pixels);
-                        const dst_index = (dst_pixel_start + dst_subtile_morton) * opts.pixel_size;
+                        const dst_pixel_start = tile_pixel_start_y + (dst_tile_x * tile_pixels) * opts.pixel_size;
+                        const dst_index = dst_pixel_start + (dst_subtile_morton * opts.pixel_size);
 
                         break :pxl .{ src_pixels[src_index..][0..opts.pixel_size], dst_pixels[dst_index..][0..opts.pixel_size] };
                     },
                     .untile => {
-                        comptime unreachable; // TODO
+                        const dst_index = linear_y + output_x * opts.pixel_size;
+
+                        const src_tile_x = input_x >> tile_shift;
+                        const src_subtile_x: u3 = @intCast(input_x & subtile_mask);
+                        const src_subtile_morton = toIndex(u3, 2, .{ src_subtile_x, subtile_y });
+
+                        const src_pixel_start = tile_pixel_start_y + (src_tile_x * tile_pixels) * opts.pixel_size;
+                        const src_index = src_pixel_start + (src_subtile_morton * opts.pixel_size);
+
+                        break :pxl .{ src_pixels[src_index..][0..opts.pixel_size], dst_pixels[dst_index..][0..opts.pixel_size] };
                     },
                 };
 
-                @memcpy(dst_pixel, src_pixel);
-            }
-        }
-    }
-
-    pub fn convert(comptime strategy: Strategy, comptime tile_size: usize, width: usize, pixel_size: usize, dst_pixels: []u8, src_pixels: []const u8) void {
-        std.debug.assert(dst_pixels.len == src_pixels.len);
-        const max_tile_subindex = (tile_size * tile_size);
-        const SubindexInt = std.math.IntFittingRange(0, max_tile_subindex - 1);
-
-        const height = @divExact(@divExact(src_pixels.len, pixel_size), width);
-        const width_tiles = @divExact(width, tile_size);
-        const height_tiles = @divExact(height, tile_size);
-        const stride = width * pixel_size;
-
-        var i: usize = 0;
-        for (0..height_tiles) |y_tile| {
-            const y_start = y_tile * tile_size;
-
-            for (0..width_tiles) |x_tile| {
-                const x_start = x_tile * tile_size;
-
-                for (0..max_tile_subindex) |tile| {
-                    const x, const y = toDimensions(SubindexInt, 2, @intCast(tile));
-
-                    const linear_index = i;
-                    const morton_index = (y_start + y) * stride + (x_start + x) * pixel_size;
-
-                    const src_pixel, const dst_pixel = switch (strategy) {
-                        .tile => .{ src_pixels[morton_index..][0..pixel_size], dst_pixels[linear_index..][0..pixel_size] },
-                        .untile => .{ src_pixels[linear_index..][0..pixel_size], dst_pixels[morton_index..][0..pixel_size] },
-                    };
-
-                    @memcpy(dst_pixel, src_pixel);
-                    i += pixel_size;
-                }
+                @memcpy(dst_pixel_slice, src_pixel_slice);
             }
         }
     }
 
     pub fn convertNibbles(comptime strategy: Strategy, comptime tile_size: usize, width: usize, dst_pixels: []u8, src_pixels: []const u8) void {
+        comptime std.debug.assert(std.math.isPowerOfTwo(tile_size)); // We depend on this and the PICA only supports 2x2 (ETC), 8x8 and 32x32 tile sizes.
+        //
         std.debug.assert(dst_pixels.len == src_pixels.len);
         const max_tile_subindex = (tile_size * tile_size);
         const SubindexInt = std.math.IntFittingRange(0, max_tile_subindex - 1);
@@ -622,40 +600,7 @@ pub const TextureUnitType = enum(u3) {
     disabled,
 };
 
-pub const TextureUnitFormat = enum(u4) {
-    pub const Hilo88 = extern struct { g: u8, r: u8 };
-    pub const I8 = packed struct(u8) { i: u8 };
-    pub const A8 = packed struct(u8) { a: u8 };
-    pub const Ia88 = packed struct(u16) { i: u8, a: u8 };
-    pub const I4 = packed struct(u8) { i: u8 };
-    pub const A4 = packed struct(u8) { i: u8 };
-    pub const Ia44 = packed struct(u8) { i: u4, a: u4 };
-
-    abgr8888,
-    bgr888,
-    rgba5551,
-    rgb565,
-    rgba4444,
-    ia88,
-    hilo88,
-    i8,
-    a8,
-    ia44,
-    i4,
-    a4,
-    etc1,
-    etc1a4,
-
-    pub fn scale(format: TextureUnitFormat, size: usize) usize {
-        return switch (format) {
-            .abgr8888 => size << 2,
-            .bgr888 => size * 3,
-            .rgba5551, .rgb565, .rgba4444, .ia88, .hilo88 => size << 1,
-            .i8, .a8, .ia44, .etc1a4 => size,
-            .i4, .a4, .etc1 => size >> 1,
-        };
-    }
-};
+pub const TextureUnitFormat = Graphics.TextureUnits.Format;
 
 pub const TextureUnitTexture2Coordinates = enum(u1) {
     @"2",
@@ -960,6 +905,48 @@ pub const Graphics = extern struct {
             }
         };
 
+        pub const Format = enum(u4) {
+            pub const Abgr8888 = DisplayController.Framebuffer.Pixel.Abgr8888;
+            pub const Bgr888 = DisplayController.Framebuffer.Pixel.Bgr888;
+            pub const Rgb565 = DisplayController.Framebuffer.Pixel.Rgb565;
+            pub const Rgba5551 = DisplayController.Framebuffer.Pixel.Rgba5551;
+            pub const Rgba4444 = DisplayController.Framebuffer.Pixel.Rgba4444;
+            pub const Hilo88 = extern struct { g: u8, r: u8 };
+            pub const I8 = packed struct(u8) { i: u8 };
+            pub const A8 = packed struct(u8) { a: u8 };
+            pub const Ia88 = packed struct(u16) { i: u8, a: u8 };
+            pub const I4 = packed struct(u8) { i: u8 };
+            pub const A4 = packed struct(u8) { i: u8 };
+            pub const Ia44 = packed struct(u8) { i: u4, a: u4 };
+            pub const Etc1 = zitrus.compress.etc.Block;
+            pub const Etc1A4 = extern struct { alpha: BitpackedArray(u4, 16), rgb: Etc1 };
+
+            abgr8888,
+            bgr888,
+            rgba5551,
+            rgb565,
+            rgba4444,
+            ia88,
+            hilo88,
+            i8,
+            a8,
+            ia44,
+            i4,
+            a4,
+            etc1,
+            etc1a4,
+
+            pub fn scale(format: Format, size: usize) usize {
+                return switch (format) {
+                    .abgr8888 => size << 2,
+                    .bgr888 => size * 3,
+                    .rgba5551, .rgb565, .rgba4444, .ia88, .hilo88 => size << 1,
+                    .i8, .a8, .ia44, .etc1a4 => size,
+                    .i4, .a4, .etc1 => size >> 1,
+                };
+            }
+        };
+
         pub const Parameters = packed struct(u32) {
             pub const Etc1Flag = enum(u2) { none, etc1 = 2 };
 
@@ -1018,7 +1005,7 @@ pub const Graphics = extern struct {
             shadow: Shadow,
             _unknown0: u32,
             _unknown1: u32,
-            format: LsbRegister(TextureUnitFormat),
+            format: LsbRegister(Format),
         };
 
         pub const Secondary = extern struct {
@@ -1029,7 +1016,7 @@ pub const Graphics = extern struct {
             parameters: Parameters,
             lod: LevelOfDetail,
             address: AlignedPhysicalAddress(.@"8", .@"8"),
-            format: LsbRegister(TextureUnitFormat),
+            format: LsbRegister(Format),
         };
 
         config: Config,

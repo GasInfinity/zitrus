@@ -29,7 +29,13 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.addAnonymousImport("simple.psh", .{ .root_source_file = simple_shader.out });
-    exe.root_module.addAnonymousImport("test.bgr", .{ .root_source_file = b.path("assets/test.bgr") });
+    exe.root_module.addAnonymousImport("test.ptx", .{
+        .root_source_file = (zitrus.MakePtx.init(zitrus_dep, .{
+            .name = "test.ptx",
+            .file = b.path("assets/test.png"),
+            .format = .etc1,
+        })).out,
+    });
 
     exe.pie = true;
     exe.setLinkerScript(zitrus_dep.namedLazyPath("horizon/ld"));

@@ -477,6 +477,13 @@ pub fn sendNotifyToWait(apt: Applet, service: Service, srv: ServiceManager, id: 
     };
 }
 
+pub fn sendGetSharedFont(apt: Applet, service: Service, srv: ServiceManager) !command.GetSharedFont.Response {
+    return switch ((try apt.lockSendCommand(service, srv, command.GetSharedFont, .{}, .{})).cases()) {
+        .success => |s| s.value,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
 // No errors
 pub fn sendAppletUtility(apt: Applet, service: Service, srv: ServiceManager, utility: Utility, input: []const u8, output: []u8) !void {
     // TODO: return the ResultCode from applet_result in the Response, waiting for ziglang#24231
@@ -622,13 +629,13 @@ pub const command = struct {
     // TODO: CancelApplication
     pub const StartLibraryApplet = ipc.Command(Id, .start_library_applet, struct {
         app: AppId,
-        parameters_size: usize,
+        parameters_size: u32,
         parameter_handle: horizon.Object,
         parameters: ipc.Static(0),
     }, struct {});
     pub const StartSystemApplet = ipc.Command(Id, .start_system_applet, struct {
         app: AppId,
-        parameters_size: usize,
+        parameters_size: u32,
         parameter_handle: horizon.Object,
         parameters: ipc.Static(0),
     }, struct {});
@@ -641,7 +648,7 @@ pub const command = struct {
     // TODO: PrepareToCloseLibraryApplet
     // TODO: PrepareToCloseSystemApplet
     pub const CloseApplication = ipc.Command(Id, .close_application, struct {
-        parameters_size: usize,
+        parameters_size: u32,
         parameter_handle: horizon.Object,
         parameters: ipc.Static(0),
     }, struct {});
@@ -649,7 +656,7 @@ pub const command = struct {
     pub const PrepareToJumpToHomeMenu = ipc.Command(Id, .prepare_to_jump_to_home_menu, struct {}, struct {});
     // Errors: none
     pub const JumpToHomeMenu = ipc.Command(Id, .jump_to_home_menu, struct {
-        parameters_size: usize,
+        parameters_size: u32,
         parameter_handle: horizon.Object,
         parameters: ipc.Static(0),
     }, struct {});
@@ -666,8 +673,8 @@ pub const command = struct {
         media_type: Filesystem.MediaType,
     }, struct {});
     pub const DoApplicationJump = ipc.Command(Id, .do_application_jump, struct {
-        parameter_size: usize,
-        hmac_size: usize,
+        parameter_size: u32,
+        hmac_size: u32,
         parameter: ipc.Static(0),
         hmac: ipc.Static(2),
     }, struct {});
@@ -682,11 +689,15 @@ pub const command = struct {
         id: AppId,
     }, struct {});
     pub const SendCaptureBufferInfo = ipc.Command(Id, .send_capture_buffer_info, struct {
-        capture_size: usize,
+        capture_size: u32,
         capture: ipc.Static(0),
     }, struct {});
     // TODO: ...
     pub const NotifyToWait = ipc.Command(Id, .notify_to_wait, struct { id: AppId }, struct {});
+    pub const GetSharedFont = ipc.Command(Id, .get_shared_font, struct {}, struct {
+        address: [*]align(horizon.heap.page_size) u8,
+        memory: horizon.MemoryBlock, 
+    });
     // TODO: ...
     pub const AppletUtility = ipc.Command(Id, .applet_utility, struct {
         pub const StaticOutput = struct { output: []u8 };
