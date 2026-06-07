@@ -2,8 +2,8 @@ pub const description = "Make a 3DS firmware file from 4 raw/elf sections.";
 
 pub const descriptions: plz.Descriptions(@This()) = .{
     .boot_priority = "Higher values have more priority",
-    .arm9_entry = "ARM9 entrypoint, if none an arm9 elf must be specified",
-    .arm11_entry = "ARM11 entrypoint, if none an arm11 elf must be specified",
+    .@"arm9-entry" = "ARM9 entrypoint, if none an arm9 elf must be specified",
+    .@"arm11-entry" = "ARM11 entrypoint, if none an arm11 elf must be specified",
     .section = "Section to add to the firm",
     .output = "Output file, if none stdout is used",
 };
@@ -41,8 +41,8 @@ pub const Section = struct {
 };
 
 boot_priority: u32 = 0,
-arm9_entry: u32 = 0,
-arm11_entry: u32 = 0,
+@"arm9-entry": u32 = 0,
+@"arm11-entry": u32 = 0,
 elf: plz.Bounded(4, ElfSection) = .empty,
 section: plz.Bounded(4, Section) = .empty,
 verbose: ?void,
@@ -67,8 +67,8 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
     var current_offset: u32 = @sizeOf(firm.Header);
     var hdr: firm.Header = .{
         .boot_priority = args.boot_priority,
-        .arm11_entry = args.arm11_entry,
-        .arm9_entry = args.arm9_entry,
+        .arm11_entry = args.@"arm11-entry",
+        .arm9_entry = args.@"arm9-entry",
         .sections = std.mem.zeroes([4]firm.Section),
         .signature = @splat(0),
     };

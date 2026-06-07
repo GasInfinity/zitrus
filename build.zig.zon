@@ -17,8 +17,8 @@
             .hash = "zigimg-0.1.0-8_eo2uScFwCnpzB1Y2n_jf3euDfMEeCLxJE_E5_W5BNe",
         },
         .plz = .{
-            .url = "git+https://codeberg.org/GasInfinity/plz.git#3fe4050316a90795101ba4f0e698fcc2c1f5b8f9",
-            .hash = "plz-0.0.1-_2WTqzLQAADaK6E2Sx2cSQ5DPeS1z7jxZQ0rIRxZaBzp",
+            .url = "git+https://codeberg.org/GasInfinity/plz.git#3571fe7fe16e6f70c5438b8b3fea4ea4096f18c6",
+            .hash = "plz-0.0.1-_2WTq1_oAADnS6u2AEfUgVzbaGT9v9Q_MqFKQq5etEBK",
         },
         .etz = .{
             .url = "git+https://codeberg.org/GasInfinity/etz#7d4d492ac2b36cba6db66dbd76d761cbbb95c01b",

@@ -31,18 +31,8 @@ pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
     const arena = init.arena.allocator();
 
-    const args = try init.minimal.args.toSlice(arena);
-
-    var diagnostic: plz.Diagnostic = undefined;
     @setEvalBranchQuota(2000);
-    const arguments = plz.parseSlice(Main, "zitrus", &diagnostic, args[1..]) catch {
-        const stderr = try io.lockStderr(&.{}, null);
-        defer io.unlockStderr();
-
-        try diagnostic.render(stderr.terminal(), .default);
-        try stderr.file_writer.interface.flush();
-        return if (diagnostic.kind == .help) 0 else 1;
-    };
+    const arguments = try plz.parseProcessArgs(Main, "zitrus", init);
 
     if (arguments.version) |_| {
         var stdout_writer = std.Io.File.stdout().writer(init.io, &.{});
