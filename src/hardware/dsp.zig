@@ -41,8 +41,8 @@ pub const Status = packed struct(u16) {
     write_fifo_full: bool,
     write_fifo_empty: bool,
     semaphore_irq: bool,
-    reply_register_unwritten: BitpackedArray(bool, 3),
-    command_register_unread: BitpackedArray(bool, 3),
+    pipe_recv_register_unwritten: BitpackedArray(bool, 3),
+    pipe_send_register_unread: BitpackedArray(bool, 3),
 };
 
 pub const Semaphore = extern struct {
@@ -56,8 +56,15 @@ pub const Semaphore = extern struct {
     _unused3: [2]u8,
 };
 
+pub const Stream = extern struct {
+    send: u16,
+    _unused0: [2]u8,
+    recv: u16,
+    _unused1: [2]u8,
+};
+
 pub const Registers = extern struct {
-    fifo: u16,
+    transfer_fifo: u16,
     _unused0: [2]u8,
     transfer_address: Address,
     _unused1: [2]u8,
@@ -66,18 +73,7 @@ pub const Registers = extern struct {
     status: Status,
     _unused3: [2]u8,
     semaphore: Semaphore,
-    command0: u16,
-    _unused4: [2]u8,
-    reply0: u16,
-    _unused5: [2]u8,
-    command1: u16,
-    _unused6: [2]u8,
-    reply1: u16,
-    _unused7: [2]u8,
-    command2: u16,
-    _unused8: [2]u8,
-    reply2: u16,
-    _unused9: [2]u8,
+    stream: [3]Stream,
 };
 
 const dsp = @This();

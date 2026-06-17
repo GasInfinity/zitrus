@@ -222,8 +222,6 @@ pub const Integral = packed union(u4) {
     pub const Integer = enum(u2) { i0, i1, i2, i3 };
 
     bool: Boolean,
-
-    // See ziglang/zig#19754
     int: packed struct(u4) {
         used: Integer,
         _: u2 = 0,

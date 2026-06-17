@@ -49,8 +49,8 @@ pub const Geometry = union(Kind) {
     }
 };
 
-pub const as = @import("shader/as.zig");
 pub const Encoder = @import("shader/Encoder.zig");
+pub const Assembler = @import("shader/Assembler.zig");
 
 pub const register = @import("shader/register.zig");
 pub const encoding = @import("shader/encoding.zig");
@@ -58,7 +58,7 @@ pub const encoding = @import("shader/encoding.zig");
 pub const spirv = @import("shader/spirv.zig");
 
 comptime {
-    _ = as;
+    _ = Assembler;
     _ = Encoder;
 
     _ = register;

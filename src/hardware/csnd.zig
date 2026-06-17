@@ -4,6 +4,9 @@
 //! - https://problemkaputt.de/gbatek.htm#3dssoundandmicrophone
 //! - https://www.3dbrew.org/wiki/CSND_Registers
 
+pub const channels = 32;
+pub const captures = 2;
+
 pub const Volume = enum(u16) {
     pub const min: Volume = .volume(0);
     pub const max: Volume = .volume(0);
@@ -43,12 +46,13 @@ pub const Channel = extern struct {
 
     pub const Control = packed struct(u32) {
         wave_duty: WaveDuty,
-        _unused0: u2 = 0,
-        interpolate_linearly: bool,
+        _unused0: u3 = 0,
+        linearly_interpolate: bool,
         hold_last: bool,
         _unused1: u2 = 0,
         repeat: Repeat,
         format: Format,
+        // Supposedly no effect on PSG?
         pause_disable: bool,
         busy: bool,
         sample_rate: SampleRate,
@@ -66,15 +70,23 @@ pub const Channel = extern struct {
         left: csnd.Volume,
     };
 
+    /// 0x00
     control: Control,
+    /// 0x04
     output_volume: Channel.Volume,
+    /// 0x08
     capture_volume: Channel.Volume,
+    /// 0x0C
     start_address: PhysicalAddress,
+    /// 0x10
     total_size: hardware.LsbRegister(u27),
     // So you can start with some sound and then loop with another? If true cool.
     // XXX: 3dbrew says this is the other channel? When this is 0x0 then mono audio is played. Name is not accurate
+    /// 0x14
     loop_restart_address: PhysicalAddress,
+    /// 0x18
     start_ima_state: ImaAdPcm,
+    /// 0x1C
     restart_ima_state: ImaAdPcm,
 };
 
@@ -99,9 +111,13 @@ pub const Capture = extern struct {
 pub const Registers = extern struct {
     master: MasterControl,
     _unused0: [0x3FC]u8,
-    channels: [32]Channel,
-    captures: [2]Capture,
+    channels: [channels]Channel,
+    captures: [captures]Capture,
 };
+
+comptime {
+    _ = Registers;
+}
 
 const csnd = @This();
 

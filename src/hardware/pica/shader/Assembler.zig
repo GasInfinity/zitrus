@@ -2,6 +2,10 @@
 
 // TODO: Last one, we're missing a proper diagnostic for using two floating constant registers (one must be limited) but that is easy!
 
+const tokenizer = @import("Assembler/tokenizer.zig");
+pub const Tokenizer = tokenizer.Tokenizer;
+pub const Token = tokenizer.Token;
+
 pub const TokenList = std.MultiArrayList(struct {
     tag: Token.Tag,
     start: u32,
@@ -45,7 +49,7 @@ pub const Assembled = struct {
     entrypoints: Assembled.Entrypoint.Map,
     encoded: Encoder,
 
-    errors: []const Error,
+    errors: []const Diagnostic,
 
     pub fn deinit(assembled: *Assembled, gpa: std.mem.Allocator) void {
         assembled.tokens.deinit(gpa);
@@ -71,12 +75,12 @@ pub const Assembled = struct {
         }
 
         const tok_start = a.tokenStart(tok_index);
-        var tokenizer: shader.as.Tokenizer = .{
+        var tokenize: Tokenizer = .{
             .buffer = a.source,
             .index = tok_start,
         };
 
-        const tok = tokenizer.next();
+        const tok = tokenize.next();
         std.debug.assert(tok.tag == tok_tag);
         return a.source[tok.loc.start..tok.loc.end];
     }
@@ -86,10 +90,10 @@ pub const Assembled = struct {
         defer tokens.deinit(gpa);
 
         {
-            var tokenizer: shader.as.Tokenizer = .init(source);
+            var tokenize: Tokenizer = .init(source);
 
             while (true) {
-                const tok = tokenizer.next();
+                const tok = tokenize.next();
 
                 try tokens.append(gpa, .{
                     .tag = tok.tag,
@@ -160,7 +164,7 @@ pub const Assembled = struct {
     }
 };
 
-pub const Error = struct {
+pub const Diagnostic = struct {
     tag: Tag,
     tok_i: u32,
     expected_tok: Token.Tag = .invalid,
@@ -486,7 +490,7 @@ const Alias = packed struct(u16) {
 
 gpa: std.mem.Allocator,
 aliases: Alias.Map,
-errors: std.ArrayList(Error),
+errors: std.ArrayList(Diagnostic),
 source: [:0]const u8,
 tokens: TokenList.Slice,
 encoder: Encoder,
@@ -520,12 +524,12 @@ pub fn tokenSlice(a: Assembler, tok_index: usize) []const u8 {
     }
 
     const tok_start = a.tokenStart(tok_index);
-    var tokenizer: shader.as.Tokenizer = .{
+    var tokenize: Tokenizer = .{
         .buffer = a.source,
         .index = tok_start,
     };
 
-    const tok = tokenizer.next();
+    const tok = tokenize.next();
     std.debug.assert(tok.tag == tok_tag);
     return a.source[tok.loc.start..tok.loc.end];
 }
@@ -1347,49 +1351,42 @@ fn parseFloat(a: *Assembler) !f32 {
     });
 }
 
-fn parseEnum(a: *Assembler, comptime T: type, error_tag: Error.Tag) !T {
+fn parseEnum(a: *Assembler, comptime T: type, error_tag: Diagnostic.Tag) !T {
     const enum_tok_i = try a.expectToken(.identifier);
 
     return if (std.meta.stringToEnum(T, a.tokenSlice(enum_tok_i))) |enum_value|
         enum_value
     else
-        return a.failMsg(.{ .tag = error_tag, .tok_i = enum_tok_i });
+        a.failMsg(.{ .tag = error_tag, .tok_i = enum_tok_i });
 }
 
 fn parseBoolean(a: *Assembler) !bool {
     return switch (a.tokenTag(a.tok_i)) {
-        .true => {
+        .true, .false => |tag| {
             _ = a.nextToken();
-            return true;
+            return tag == .true;
         },
-        .false => {
-            _ = a.nextToken();
-            return false;
-        },
-        else => a.failMsg(.{
-            .tag = .expected_boolean,
-            .tok_i = a.tok_i,
-        }),
+        else => a.fail(.expected_boolean),
     };
 }
 
-fn fail(a: *Assembler, tag: Error.Tag) error{ OutOfMemory, ParseError } {
+fn fail(a: *Assembler, tag: Diagnostic.Tag) error{ OutOfMemory, ParseError } {
     @branchHint(.cold);
     return a.failMsg(.{ .tag = tag, .tok_i = a.tok_i });
 }
 
-fn failMsg(a: *Assembler, msg: Error) error{ OutOfMemory, ParseError } {
+fn failMsg(a: *Assembler, msg: Diagnostic) error{ OutOfMemory, ParseError } {
     @branchHint(.cold);
     try a.errors.append(a.gpa, msg);
     return error.ParseError;
 }
 
-fn warn(a: *Assembler, tag: Error.Tag) !void {
+fn warn(a: *Assembler, tag: Diagnostic.Tag) !void {
     @branchHint(.cold);
     try a.warnMsg(.{ .tag = tag, .tok_i = a.tok_i });
 }
 
-fn warnMsg(a: *Assembler, msg: Error) !void {
+fn warnMsg(a: *Assembler, msg: Diagnostic) !void {
     @branchHint(.cold);
     try a.errors.append(a.gpa, msg);
 }
@@ -1465,4 +1462,3 @@ const Component = encoding.Component;
 const register = shader.register;
 
 const Encoder = shader.Encoder;
-const Token = shader.as.Token;

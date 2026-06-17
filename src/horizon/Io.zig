@@ -353,7 +353,7 @@ pub fn deinit(hio: *HIo) void {
 pub fn io(hio: *HIo) Io {
     return .{
         .userdata = hio,
-        .vtable = if (std.Io.VTable == VTable) &.default else comptime unreachable, // We depend on our zig fork currently
+        .vtable = if (std.Io.VTable == VTable) &.default else comptime unreachable, // We depend on our zig fork currently for this
     };
 }
 

@@ -73,7 +73,7 @@ pub fn run(args: Assemble, io: std.Io, arena: std.mem.Allocator) !u8 {
         defer io.unlockStderr();
 
         for (assembled.errors) |err| {
-            const diagnostic: Diagnostic = .fromError(err, assembled);
+            const diagnostic: Diagnostic = .initAssembler(err, assembled);
 
             try diagnostic.render(stderr.terminal(), args.@"--".input orelse "", input_source);
         }
@@ -263,14 +263,14 @@ const Diagnostic = struct {
     const expected_token: Diagnostic = .init("expected a specific token");
 
     message: []const u8,
-    tok_ctx: ?shader.as.Token.Tag = null,
+    tok_ctx: ?Assembler.Token.Tag = null,
     loc: ?Location = null,
 
     pub fn init(message: []const u8) Diagnostic {
         return .{ .message = message };
     }
 
-    pub fn withTokenContext(diagnostic: Diagnostic, tok_ctx: shader.as.Token.Tag) Diagnostic {
+    pub fn withTokenContext(diagnostic: Diagnostic, tok_ctx: Assembler.Token.Tag) Diagnostic {
         return .{
             .message = diagnostic.message,
             .tok_ctx = tok_ctx,
@@ -329,7 +329,7 @@ const Diagnostic = struct {
         try terminal.setColor(.reset);
     }
 
-    pub fn fromError(err: Assembler.Error, assembled: Assembled) Diagnostic {
+    pub fn initAssembler(err: Assembler.Diagnostic, assembled: Assembled) Diagnostic {
         const tok_i = err.tok_i;
         const tok_start = assembled.tokenStart(tok_i);
         const tok_slice = assembled.tokenSlice(tok_i);
@@ -398,5 +398,5 @@ const zpsh = zitrus.fmt.zpsh;
 const pica = zitrus.hardware.pica;
 const shader = pica.shader;
 
-const Assembler = shader.as.Assembler;
+const Assembler = shader.Assembler;
 const Assembled = Assembler.Assembled;

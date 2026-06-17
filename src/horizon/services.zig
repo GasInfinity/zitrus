@@ -11,6 +11,7 @@ pub const Hid = @import("services/Hid.zig");
 pub const Config = @import("services/Config.zig");
 pub const Filesystem = @import("services/Filesystem.zig");
 pub const ChannelSound = @import("services/ChannelSound.zig");
+pub const Dsp = @import("services/Dsp.zig");
 pub const IrRst = @import("services/IrRst.zig");
 
 pub const Process = @import("services/Process.zig");

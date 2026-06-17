@@ -696,7 +696,7 @@ pub const command = struct {
     pub const NotifyToWait = ipc.Command(Id, .notify_to_wait, struct { id: AppId }, struct {});
     pub const GetSharedFont = ipc.Command(Id, .get_shared_font, struct {}, struct {
         address: [*]align(horizon.heap.page_size) u8,
-        memory: horizon.MemoryBlock, 
+        memory: horizon.MemoryBlock,
     });
     // TODO: ...
     pub const AppletUtility = ipc.Command(Id, .applet_utility, struct {
