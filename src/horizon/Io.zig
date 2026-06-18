@@ -979,7 +979,7 @@ pub const VTable = enum(u0) {
     pub fn now(_: VTable, _: ?*anyopaque, clock: Clock) Io.Timestamp {
         return switch (clock) {
             .awake, .boot => .fromNanoseconds(@intCast(horizon.time.getSystemNanoseconds())),
-            .real => @panic("TODO: now(real)"),
+            .real => .fromNanoseconds(horizon.time.getUnixMilliseconds() * std.time.ns_per_ms),
             .cpu_process, .cpu_thread => .fromNanoseconds(0),
         };
     }

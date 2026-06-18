@@ -57,11 +57,18 @@ pub const Kernel = extern struct {
 
 pub const HardwareType = enum(u8) { product, devboard, debugger, capture, unknown };
 
-pub const DateTime = extern struct {
+pub const SystemTime = extern struct {
     ms_since_january_1900: u64,
-    last_update_tick: u64,
+    /// in CPU ticks
+    last_update: u64,
+    /// ticks/s
     system_clock_frequency: u64,
-    _reserved0: [2]u32,
+    rtc_drift: i64,
+
+    pub fn current(time: SystemTime) u64 {
+        const elapsed_ms = ((horizon.getSystemTick() - time.last_update) * std.time.ms_per_s) / time.system_clock_frequency;
+        return time.ms_since_january_1900 + elapsed_ms;
+    }
 };
 
 pub const WifiLevel = enum(u8) {
@@ -69,6 +76,7 @@ pub const WifiLevel = enum(u8) {
     low,
     mid,
     great,
+    _,
 };
 
 pub const NetworkState = enum(u8) {
@@ -95,11 +103,13 @@ pub const NetworkState = enum(u8) {
 };
 
 pub const Shared = extern struct {
-    datetime_select: u32,
+    /// Published by PTM, updated hourly
+    system_time_select: std.atomic.Value(hardware.LsbRegister(u1)),
     hardware: HardwareType,
     mcu_hardware_info: u8,
     _unknown0: [26]u8,
-    datetime: [2]DateTime,
+    /// Published by PTM, updated hourly
+    system_time: [2]SystemTime,
     wifi_mac: [6]u8,
     wifi_link: WifiLevel,
     network: NetworkState,
@@ -113,6 +123,22 @@ pub const Shared = extern struct {
     active_menu_tid: u64,
     _unknown3: [24]u8,
     headset_connected: u8,
+
+    pub fn latestSystemTime(shared: *Shared) SystemTime {
+        var current = shared.system_time_select.load(.acquire);
+        var last: hardware.LsbRegister(u1) = current;
+
+        return time: while (true) {
+            const time = shared.system_time[current.value];
+
+            last = current;
+            current = shared.system_time_select.load(.acquire);
+            if (current == last) break :time time;
+        };
+    }
 };
 
+const std = @import("std");
 const zitrus = @import("zitrus");
+const hardware = zitrus.hardware;
+const horizon = zitrus.horizon;
