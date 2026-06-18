@@ -136,7 +136,7 @@ pub fn make(writer: *std.Io.Writer, reader: *std.Io.File.Reader, info: code.Info
 
         try reader.seekTo(seg.file_offset);
         for (segment_relocs.items) |rc| {
-            try reader.interface.streamExact(writer, rc.words_to_skip * @sizeOf(u32));
+            try reader.interface.streamExact(writer, @as(usize, rc.words_to_skip) * @sizeOf(u32));
 
             for (0..rc.words_to_patch) |_| {
                 const addend = try reader.interface.takeInt(u32, .little);

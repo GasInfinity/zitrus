@@ -548,7 +548,7 @@ pub fn drawMulti(cmd: *CommandBuffer, draw_count: u32, vertex_info: [*]const man
         return;
     }
 
-    const queue = &cmd.queue;
+    const queue = cmd.stream.first().?;
 
     switch (cmd.gfx_state.misc.primitive_topology) {
         .triangle_list => queue.addMasked(p3d, &p3d.primitive_engine.primitive_config, .{
@@ -1034,6 +1034,44 @@ const StreamContext = struct {
         return ctx.pool.device.vtable.virtualToPhysical(ctx.pool.device, virtual);
     }
 };
+
+comptime {
+    _ = setDepthMode;
+    _ = setCullMode;
+    _ = setFrontFace;
+    _ = setPrimitiveTopology;
+    _ = setViewport;
+    _ = setScissor;
+    _ = setTextureCombiners;
+    _ = setBlendEquation;
+    _ = setColorWriteMask;
+    _ = setDepthTestEnable;
+    _ = setDepthCompareOp;
+    _ = setDepthWriteEnable;
+    _ = setDepthBias;
+    _ = setLogicOpEnable;
+    _ = setLogicOp;
+    _ = setAlphaTestEnable;
+    _ = setAlphaTestCompareOp;
+    _ = setAlphaTestReference;
+    _ = setStencilTestEnable;
+    _ = setStencilOp;
+    _ = setStencilCompareMask;
+    _ = setStencilWriteMask;
+    _ = setTextureCoordinates;
+    _ = setVertexInput;
+    _ = setLightingEnable;
+    _ = setLightEnvironmentEnable;
+    _ = setLightEnvironmentInput;
+    _ = setLightEnvironmentRange;
+    _ = setLightEnvironmentScale;
+    _ = writeTimestamp;
+    _ = beginQuery;
+    _ = endQuery;
+
+    _ = drawMulti;
+    _ = drawMultiIndexed;
+}
 
 const min_stream_segment_size = CommandPool.native_min_size;
 const Stream = command.stream.Custom(StreamContext);
