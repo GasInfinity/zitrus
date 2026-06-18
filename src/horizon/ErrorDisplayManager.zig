@@ -68,9 +68,11 @@ pub fn close(errdisp: ErrDispManager) void {
     errdisp.session.close();
 }
 
+/// Any string larger than 256 bytes will get truncated.
 pub fn sendSetUserString(errdisp: ErrDispManager, str: []const u8) !void {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(errdisp.session, command.SetUserString, .{ .str_size = str.len, .str = .static(str) }, .{})).cases()) {
+    const len = @min(str.len, 256);
+    return switch ((try data.ipc.sendRequest(errdisp.session, command.SetUserString, .{ .str_size = len, .str = .static(str[0..len]) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -91,6 +93,7 @@ pub const command = struct {
     };
 
     pub const Throw = ipc.Command(Id, .throw, FatalError, struct {});
+    // NOTE: Not documented on 3dbrew but the max str_size is 256 or we get a kernel panic.
     pub const SetUserString = ipc.Command(Id, .set_user_string, struct { str_size: usize, str: ipc.Static(0) }, struct {});
 
     comptime {
