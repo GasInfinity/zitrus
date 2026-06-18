@@ -1915,7 +1915,7 @@ pub const Graphics = extern struct {
                 size: Size = .x,
 
                 pub fn byteSize(fmt: Format) usize {
-                    return fmt.type.byteSize() * @as(usize, @intFromEnum(fmt.size) + 1);
+                    return fmt.type.byteSize() * (@as(usize, @intFromEnum(fmt.size)) + 1);
                 }
             };
 
