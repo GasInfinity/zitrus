@@ -88,7 +88,7 @@ pub fn init(gpa: std.mem.Allocator, code: *Code, entry: zpsh.Parsed.EntrypointIt
 
 pub fn deinit(shader: *Shader, gpa: std.mem.Allocator) void {
     const data_start: [*]const u32 = @ptrCast(@alignCast(shader.integer_constants.ptr));
-    const all_data = data_start[0..(shader.integer_constants.len + shader.output_map.len + (shader.floating_constants.len * @sizeOf(pica.F7_16x4)))];
+    const all_data = data_start[0..(shader.integer_constants.len + shader.output_map.len + (shader.floating_constants.len * @divExact(@sizeOf(pica.F7_16x4), @sizeOf(u32))))];
 
     gpa.free(all_data);
     shader.* = undefined;
