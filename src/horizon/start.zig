@@ -21,7 +21,7 @@ fn _start() linksection(".text.base") callconv(.naked) noreturn {
 }
 
 // XXX: Use kernel-provided stack size...
-const stack_size: u32 = if (@hasDecl(root, "zitrus_options") and @FieldType(root, "zitrus_options") != zitrus.ZitrusOptions) root.zitrus_options.stack_size else 128 * 1024;
+const stack_size: u32 = zitrus.options.stack_size;
 var allocated_stack: [stack_size]u8 align(8) linksection(".bss.allocated_stack") = undefined;
 
 fn startup() callconv(.naked) noreturn {

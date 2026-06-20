@@ -16,8 +16,8 @@
 //! * `mango` - A Vulkan-like graphics api for the PICA200.
 
 // TODO: Remove this somehow, the kernel COULD be able to provide us with a stack of X size if we could ask somehow in the 3dsx to luma/azahar
-pub const ZitrusOptions = struct {
-    stack_size: u32,
+pub const Options = struct {
+    stack_size: u32 = 128 * 1024,
 };
 
 comptime {
@@ -50,6 +50,12 @@ pub const mango = @import("mango.zig");
 
 const builtin = @import("builtin");
 const std = @import("std");
+const root = @import("root");
+
+pub const options: Options = if (@hasDecl(root, "zitrus_options"))
+    @field(root, "zitrus_options")
+else 
+    .{};
 
 pub const std_os_options: std.Options.OperatingSystem = if (builtin.target.os.tag == .@"3ds")
     horizon.default_std_os_options
