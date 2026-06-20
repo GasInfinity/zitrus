@@ -9,8 +9,8 @@
             .hash = "zalloc-0.0.0-xJbxwdsmAADqSpLvU298eMJ4MRG-rsepdJcfEEUwudQv",
         },
         .zsflt = .{
-            .url = "git+https://github.com/GasInfinity/zsflt.git#1929cbae9d41c7e1178e494e42aa7b349a68cd8a",
-            .hash = "zsflt-0.0.1-_pCibQ4wAABnfZskVOk2Y14F056VNJtuqVpAEzUNBGfl",
+            .url = "git+https://codeberg.org/GasInfinity/zsflt#6c9dca3ba3ec6e66377ea5e8b6fb60d6a864e078",
+            .hash = "zsflt-0.0.1-_pCibRg4AAAT8b3hKRbqrY_uDTCu4OaWKtSmr7MLqi42",
         },
         .zigimg = .{
             .url = "git+https://github.com/zigimg/zigimg.git#c7e81a13bff1cf4c5b7f085a8360f9d551143d40",

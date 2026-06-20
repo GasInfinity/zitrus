@@ -110,7 +110,7 @@ pub fn sendIsPedometerCounting(ptm: Playtime) !bool {
     };
 }
 
-pub fn sendGetTotalStepCount(ptm: Playtime) !bool {
+pub fn sendGetTotalStepCount(ptm: Playtime) !u32 {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(ptm.session, command.GetTotalStepCount, .{}, .{})).cases()) {
         .success => |s| s.value.steps,
