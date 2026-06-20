@@ -14,6 +14,7 @@ pub const ChannelSound = @import("services/ChannelSound.zig");
 pub const Dsp = @import("services/Dsp.zig");
 pub const IrRst = @import("services/IrRst.zig");
 
+pub const Playtime = @import("services/Playtime.zig");
 pub const Process = @import("services/Process.zig");
 pub const PxiProcess9 = @import("services/PxiProcess9.zig");
 pub const SocketUser = @import("services/SocketUser.zig");
@@ -22,3 +23,27 @@ pub const Loader = @import("services/Loader.zig");
 
 pub const NetworkManagerInfrastructure = @import("services/NetworkManagerInfrastructure.zig");
 pub const NetworkManagerSocket = @import("services/NetworkManagerSocket.zig");
+
+
+comptime {
+    _ = ProcessManagerApplication;
+    _ = ProcessManagerDebug;
+    _ = NUserShell;
+    _ = NUserShellPower;
+    _ = Applet;
+    _ = GraphicsServerGpu;
+    _ = GraphicsServerLcd;
+    _ = Hid;
+    _ = Config;
+    _ = Filesystem;
+    _ = ChannelSound;
+    _ = Dsp;
+    _ = IrRst;
+    _ = Playtime;
+    _ = Process;
+    _ = PxiProcess9;
+    _ = SocketUser;
+    _ = Loader;
+    _ = NetworkManagerInfrastructure;
+    _ = NetworkManagerSocket;
+}

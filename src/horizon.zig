@@ -508,6 +508,27 @@ pub const Timeout = enum(i64) {
     }
 };
 
+pub const ControlSystem = struct {
+    pub const Type = enum(u32) {
+        firm_launch,
+        sleep = 2,
+        configure_firm_launch_parameters,
+        power_state_change = 5,
+        miscellaneous,
+        hardware_reset,
+        hang_arm9,
+        only_small_pages_for_title,
+        configure_cpu_cache,
+        _,
+    };
+
+    pub const ConfigureCpuCache = packed struct(u32) {
+        @"804Mhz": bool = false,
+        l2: bool = false,
+        _: u30 = 0,
+    };
+};
+
 pub const StartupInfo = extern struct {
     priority: i32,
     stack_size: u32,
