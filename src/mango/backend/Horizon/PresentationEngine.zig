@@ -127,8 +127,7 @@ pub fn present(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp_fra
     const chain = pe.chains.getPtr(screen);
     const presents = pe.chain_presents.getPtr(screen);
 
-    // NOTE: The swapchain present queue already handles memory order.
-    _ = presents.fetchAdd(1, .monotonic);
+    if (chain.presentation.displayed) |d| std.debug.assert(d != item.index); // We'll never give you an index which is currently being displayed
 
     const slot: Swapchain.PresentSlot = .{
         .flags = .{
@@ -137,7 +136,7 @@ pub fn present(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp_fra
         .index = item.index,
     };
 
-    const is_next_present = chain.present(slot, arbiter);
+    const is_next_present = chain.present(presents, slot, arbiter);
 
     if (is_next_present) {
         // NOTE: The GSP DOES process presents at vblank but we MUST present BEFORE vblank!
@@ -280,11 +279,13 @@ const Swapchain = struct {
     available_wake: std.atomic.Value(i32),
 
     /// Returns whether the presented slot is the next to be displayed after vblank.
-    pub fn present(chain: *Swapchain, slot: PresentSlot, arbiter: horizon.AddressArbiter) bool {
+    pub fn present(chain: *Swapchain, presents: *std.atomic.Value(u8), slot: PresentSlot, arbiter: horizon.AddressArbiter) bool {
         const presentation = &chain.presentation;
 
         return switch (chain.misc.present_mode) {
             .fifo => blk: {
+                std.debug.assert(presents.fetchAdd(1, .monotonic) < chain.image_count);
+
                 const fifo_queue = &presentation.new.fifo;
                 fifo_queue.pushFrontAssumeCapacity(slot);
 
@@ -295,8 +296,12 @@ const Swapchain = struct {
                 defer single.* = slot;
 
                 if (chain.presentation.new.single) |last| {
+                    std.debug.assert(last.index != slot.index); // Sanity
+                    // We don't increment the amount of presents as we're making available again the last one (i.e a swap basically)
+                    std.debug.assert(presents.load(.monotonic) > 0); // Sanity, if we're here we have a present already
+
                     chain.wakePushAvailable(last.index, arbiter);
-                }
+                } else std.debug.assert(presents.fetchAdd(1, .monotonic) == 0); // Same logic as above applies here
 
                 break :blk true;
             },
