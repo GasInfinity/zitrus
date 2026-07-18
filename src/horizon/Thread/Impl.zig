@@ -123,6 +123,7 @@ pub fn spawnOptions(config: std.Thread.SpawnConfig, comptime f: anytype, args: a
     const tls_data: []u8 = all_memory[tls_offset..][0..tls_size];
     const tls_data_image = horizon.tls.dataImage();
     @memcpy(tls_data[0..tls_data_image.len], tls_data_image);
+    @memset(tls_data[tls_data_image.len..], 0x00);
 
     const stack = all_memory[stack_offset..][0..config.stack_size];
 
