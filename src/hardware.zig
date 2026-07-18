@@ -9,6 +9,7 @@ pub const hid = @import("hardware/hid.zig");
 pub const lgy = @import("hardware/lgy.zig");
 pub const i2c = @import("hardware/i2c.zig");
 pub const lcd = @import("hardware/lcd.zig");
+pub const config = @import("hardware/config.zig");
 
 /// Represents a register which is triggered by writing a value to it.
 pub const Trigger = enum(u1) { trigger = 1 };
