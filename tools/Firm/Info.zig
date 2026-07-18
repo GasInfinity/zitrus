@@ -2,30 +2,33 @@ pub const description = "List the sections of a firmware and optionally check th
 
 pub const descriptions: plz.Descriptions(@This()) = .{
     .minify = "Emit the neccesary whitespace only",
-    .check_hash = "Check hashes of files inside the FIRM",
+    .@"check-hash" = "Check hashes of the sections inside the FIRM",
+    .@"detect-content" = "Detect the content of the sections inside the FIRM",
 };
 
 pub const short: plz.Short(@This()) = .{
     .minify = 'm',
-    .check_hash = 'c',
+    .@"check-hash" = 'c',
+    .@"detect-content" = 'd',
 };
 
 minify: ?void,
-check_hash: ?void,
+@"check-hash": ?void,
+@"detect-content": ?void,
 
 @"--": struct {
     pub const descriptions: plz.Descriptions(@This()) = .{
-        .input = "Input file, if none stdin is used",
+        .input = "Input file. Use '-' for standard input",
     };
 
-    input: ?[]const u8,
+    input: []const u8,
 },
 
 pub fn run(args: Info, io: std.Io, arena: std.mem.Allocator) !u8 {
     const cwd = std.Io.Dir.cwd();
-    const input_file, const input_should_close = if (args.@"--".input) |in|
-        .{ cwd.openFile(io, in, .{ .mode = .read_only }) catch |err| {
-            log.err("could not open FIRM '{s}': {t}", .{ in, err });
+    const input_file, const input_should_close = if (!std.mem.eql(u8, args.@"--".input, "-"))
+        .{ cwd.openFile(io, args.@"--".input, .{ .mode = .read_only }) catch |err| {
+            log.err("could not open FIRM '{s}': {t}", .{ args.@"--".input, err });
             return 1;
         }, true }
     else
@@ -82,7 +85,7 @@ pub fn run(args: Info, io: std.Io, arena: std.mem.Allocator) !u8 {
             _ => try section_info.field("copy_method", @intFromEnum(section.copy_method), .{}),
         }
 
-        if (args.check_hash) |_| {
+        if (args.@"check-hash") |_| {
             try input_reader.seekTo(section.offset);
 
             const data = try reader.readAlloc(arena, section.size);
@@ -90,6 +93,20 @@ pub fn run(args: Info, io: std.Io, arena: std.mem.Allocator) !u8 {
 
             try section_info.field("hash-check", section.check(data), .{});
         }
+
+        if (args.@"detect-content") |_| {
+            const start = section.address;
+            const end = start + section.size;
+            const detected: Detected = if (firm_hdr.arm11_entry >= start and firm_hdr.arm11_entry <= end)
+                .arm11
+            else if (firm_hdr.arm9_entry >= start and firm_hdr.arm9_entry <= end)
+                .arm9
+            else
+                .binary;
+
+            try section_info.field("detected", detected, .{});
+        }
+
         try section_info.end();
     }
     try sections_info.end();
@@ -99,6 +116,12 @@ pub fn run(args: Info, io: std.Io, arena: std.mem.Allocator) !u8 {
     try writer.flush();
     return 0;
 }
+
+const Detected = enum {
+    binary,
+    arm9,
+    arm11,
+};
 
 const Info = @This();
 
