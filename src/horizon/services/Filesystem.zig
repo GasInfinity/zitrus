@@ -772,10 +772,10 @@ pub const command = struct {
     pub const GetSdmcLog = ipc.Command(Id, .get_sdmc_log, struct { buffer_size: usize, buffer: ipc.Mapped(.w) }, struct {});
     pub const GetNandLog = ipc.Command(Id, .get_nand_log, struct { buffer_size: usize, buffer: ipc.Mapped(.w) }, struct {});
     pub const ClearSdmcLog = ipc.Command(Id, .clear_sdmc_log, struct {}, struct {});
-    pub const ClearNandLog = ipc.Command(Id, .clear_sdmc_log, struct {}, struct {});
-    pub const CardSlotIsInserted = ipc.Command(Id, .card_slot_is_inserted, struct {}, struct { inserted: bool });
-    pub const CardSlotPowerOn = ipc.Command(Id, .card_slot_power_on, struct {}, struct { status: u8 });
-    pub const CardSlotPowerOff = ipc.Command(Id, .card_slot_power_off, struct {}, struct { status: u8 });
+    pub const ClearNandLog = ipc.Command(Id, .clear_nand_log, struct {}, struct {});
+    pub const IsCardInserted = ipc.Command(Id, .is_card_inserted, struct {}, struct { inserted: bool });
+    pub const PowerOnCardSlot = ipc.Command(Id, .power_on_card_slot, struct {}, struct { status: u8 });
+    pub const PowerOffCardSlot = ipc.Command(Id, .power_off_card_slot, struct {}, struct { status: u8 });
     pub const CardSlotGetCardIfPowerStatus = ipc.Command(Id, .card_slot_get_card_if_power_status, struct {}, struct { powered: bool });
 
     // TODO: CardNor commands
@@ -828,9 +828,9 @@ pub const command = struct {
         get_nand_log,
         clear_sdmc_log,
         clear_nand_log,
-        card_slot_is_inserted,
-        card_slot_power_on,
-        card_slot_power_off,
+        is_card_inserted,
+        power_on_card_slot,
+        power_off_card_slot,
         card_slot_get_card_if_power_status,
         card_nor_direct_command,
         card_nor_direct_command_with_address,
