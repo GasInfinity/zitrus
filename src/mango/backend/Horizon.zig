@@ -540,14 +540,20 @@ const Driver = struct {
 
         clearState(int_que, gx, fbs);
 
+        var irq_timeouts: usize = 0;
         while (h_dev.running.load(.monotonic)) {
             // It's impossible to get less than 1 interrupt per second, we always get an interrupt,
             // even if we don't have right!
             h_dev.interrupt_event.wait(.fromNanoseconds(std.time.ns_per_s)) catch |err| switch (err) {
-                error.Timeout => drv.lost(null),
+                // XXX: This is a workaround for rosalina, see the doc comment in `lose_irq_timeouts`
+                error.Timeout => if (irq_timeouts >= lose_irq_timeouts) drv.lost(null) else {
+                    irq_timeouts += 1;
+                    continue;
+                },
                 else => unreachable,
             };
 
+            irq_timeouts = 0;
             drv.drainInterrupts();
             drv.drainCommandBufferNodes();
             drv.drainQueues();
@@ -936,6 +942,10 @@ comptime {
 // anything taking more than 1s in any queue is sus
 // TODO: move this somewhere else
 const lose_ns_sentinel = 1 * std.time.ns_per_s;
+
+// XXX: This is a workaround, opening the rosalina menu for more than 1s (the timeout)
+// will make the event timeout... 
+const lose_irq_timeouts = 2;
 
 const Horizon = @This();
 
