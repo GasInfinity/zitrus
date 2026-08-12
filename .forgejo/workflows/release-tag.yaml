@@ -3,11 +3,9 @@ on:
   push:
     tags:
       - "v*"
-permissions:
-  contents: write
 jobs:
   build-release:
-    runs-on: ubuntu-latest-x86_64-medium
+    runs-on: medium
     steps:
       - uses: actions/checkout@v5
         with:

@@ -6,7 +6,7 @@ on:
       - main
 jobs:
   build-test:
-    runs-on: ubuntu-latest-x86_64-medium
+    runs-on: medium
     steps:
       - uses: actions/checkout@v6
         with:

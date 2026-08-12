@@ -3,11 +3,9 @@ on:
   push:
     branches:
       - main
-permissions:
-  contents: write
 jobs:
   release-dev:
-    runs-on: ubuntu-latest-x86_64-medium
+    runs-on: medium
     steps:
       - uses: actions/checkout@v6
         with:
