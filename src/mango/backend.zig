@@ -23,13 +23,10 @@ pub const Horizon = @import("backend/Horizon.zig");
 
 pub const log = std.log.scoped(.mango);
 pub const validation = @import("validation.zig");
-pub const debug = @import("debug.zig");
 
 pub const Device = @import("Device.zig");
 pub const Queue = @import("Queue.zig");
 pub const Semaphore = @import("Semaphore.zig");
-pub const DeviceMemory = @import("DeviceMemory.zig");
-pub const Buffer = @import("Buffer.zig");
 pub const Image = @import("Image.zig");
 pub const ImageView = @import("ImageView.zig");
 pub const Shader = @import("Shader.zig");
@@ -37,14 +34,12 @@ pub const QueryPool = @import("QueryPool.zig");
 pub const CommandPool = @import("CommandPool.zig");
 pub const CommandBuffer = @import("CommandBuffer.zig");
 pub const Sampler = @import("Sampler.zig");
-pub const Surface = @import("Surface.zig");
-pub const Swapchain = @import("Swapchain.zig");
 pub const LightLookupTable = @import("LightLookupTable.zig");
+pub const FogLookupTable = @import("FogLookupTable.zig");
 
 pub const GraphicsState = @import("GraphicsState.zig");
 pub const RenderingState = @import("RenderingState.zig");
 
-pub const TextureCombinerState = @import("TextureCombinerState.zig");
 pub const VertexInputLayout = @import("VertexInputLayout.zig");
 
 /// Calculates the dimension of a specific mip level.
@@ -214,16 +209,12 @@ comptime {
     _ = Device;
     _ = Queue;
     _ = Semaphore;
-    _ = DeviceMemory;
-    _ = Buffer;
     _ = Image;
     _ = ImageView;
     _ = CommandPool;
     _ = CommandBuffer;
     _ = Shader;
     _ = Sampler;
-    _ = Surface;
-    _ = Swapchain;
     _ = VertexInputLayout;
     _ = validation;
 }

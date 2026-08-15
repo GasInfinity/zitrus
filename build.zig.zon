@@ -4,13 +4,9 @@
     .fingerprint = 0xa735bcf8f4b10813, // Changing this has security and trust implications.
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
-        .zalloc = .{
-            .url = "git+https://github.com/GasInfinity/zalloc.git#14ab564b8683d6e7498ea455e47bd0dd08e4eb76",
-            .hash = "zalloc-0.0.0-xJbxwdsmAADqSpLvU298eMJ4MRG-rsepdJcfEEUwudQv",
-        },
         .zsflt = .{
-            .url = "git+https://codeberg.org/GasInfinity/zsflt#6c9dca3ba3ec6e66377ea5e8b6fb60d6a864e078",
-            .hash = "zsflt-0.0.1-_pCibRg4AAAT8b3hKRbqrY_uDTCu4OaWKtSmr7MLqi42",
+            .url = "git+https://codeberg.org/GasInfinity/zsflt#5039da6d8c45b0e02ac5135c380caa43103412ce",
+            .hash = "zsflt-0.0.1-_pCibX05AAA4X6bmhb-6ob4MOgGCstpQLEiiksIm_Xhy",
         },
         .zigimg = .{
             .url = "git+https://github.com/zigimg/zigimg.git#c7e81a13bff1cf4c5b7f085a8360f9d551143d40",
@@ -21,8 +17,8 @@
             .hash = "plz-0.0.1-_2WTq1_oAADnS6u2AEfUgVzbaGT9v9Q_MqFKQq5etEBK",
         },
         .etz = .{
-            .url = "git+https://codeberg.org/GasInfinity/etz#7d4d492ac2b36cba6db66dbd76d761cbbb95c01b",
-            .hash = "etz-0.0.1-wMlc0DTAAAAp5dBM6Mh6fhVlmyFT7rQo2q09acEDaswn",
+            .url = "git+https://codeberg.org/GasInfinity/etz#fadbb7a1c5f410a0ebc087f4db7813e32ec8d51e",
+            .hash = "etz-0.0.1-wMlc0CzAAACMm7jLFn5qpLLPVDudXQZo7X617nTd-1_X",
         },
         // Yes, we need our own fork of zig `lib/` until upstream merges it (if they merge it).
         .@"zig-lib" = .{

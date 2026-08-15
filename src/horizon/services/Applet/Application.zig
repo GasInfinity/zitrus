@@ -377,7 +377,7 @@ pub fn screenTransfer(app: *Application, apt: Applet, service: Applet.Service, s
                 },
             );
 
-            if (apt_capture_info.enabled_3d) pica.morton.convert(
+            if (apt_capture_info.@"3d") pica.morton.convert(
                 .tile,
                 8,
                 mem[apt_capture_info.top.right_offset..][0..total_byte_size],

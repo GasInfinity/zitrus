@@ -108,22 +108,6 @@ pub export fn mgFreeCommandBuffers(device: mango.Device, command_pool: mango.Com
     return device.freeCommandBuffers(command_pool, buffers[0..buffers_len]);
 }
 
-pub export fn mgCreateBuffer(device: mango.Device, create_info: *const mango.BufferCreateInfo, allocator: c.ZigAllocator, buffer: *mango.Buffer) MgResult {
-    buffer.* = device.createBuffer(create_info.*, allocator.allocator()) catch |err| return translateError(err);
-
-    return .success;
-}
-
-pub export fn mgDestroyBuffer(device: mango.Device, buffer: mango.Buffer, allocator: c.ZigAllocator) void {
-    return device.destroyBuffer(buffer, allocator.allocator());
-}
-
-pub export fn mgBindBufferMemory(device: mango.Device, buffer: mango.Buffer, memory: mango.DeviceMemory, memory_offset: mango.DeviceSize) MgResult {
-    device.bindBufferMemory(buffer, memory, memory_offset) catch |err| return translateError(err);
-
-    return .success;
-}
-
 pub export fn mgCreateImage(device: mango.Device, create_info: *const mango.ImageCreateInfo, allocator: c.ZigAllocator, image: *mango.Image) MgResult {
     image.* = device.createImage(create_info.*, allocator.allocator()) catch |err| return translateError(err);
 
@@ -132,12 +116,6 @@ pub export fn mgCreateImage(device: mango.Device, create_info: *const mango.Imag
 
 pub export fn mgDestroyImage(device: mango.Device, image: mango.Image, allocator: c.ZigAllocator) void {
     return device.destroyImage(image, allocator.allocator());
-}
-
-pub export fn mgBindImageMemory(device: mango.Device, image: mango.Image, memory: mango.DeviceMemory, memory_offset: mango.DeviceSize) MgResult {
-    device.bindImageMemory(image, memory, memory_offset) catch |err| return translateError(err);
-
-    return .success;
 }
 
 pub export fn mgCreateImageView(device: mango.Device, create_info: *const mango.ImageViewCreateInfo, allocator: c.ZigAllocator, image_view: *mango.ImageView) MgResult {
@@ -160,28 +138,18 @@ pub export fn mgDestroySampler(device: mango.Device, sampler: mango.Sampler, all
     return device.destroySampler(sampler, allocator.allocator());
 }
 
-pub export fn mgCreateSwapchain(device: mango.Device, create_info: mango.SwapchainCreateInfo, allocator: c.ZigAllocator, swapchain: *mango.Swapchain) MgResult {
-    swapchain.* = device.createSwapchain(create_info, allocator.allocator()) catch |err| return translateError(err);
-
-    return .success;
-}
-
-pub export fn mgDestroySwapchain(device: mango.Device, swapchain: mango.Swapchain, allocator: c.ZigAllocator) void {
-    return device.destroySwapchain(swapchain, allocator.allocator());
-}
-
-pub export fn mgGetSwapchainImages(device: mango.Device, swapchain: mango.Swapchain, image_count: *usize, images: ?[*]mango.Image) MgResult {
+pub export fn mgGetDisplayImages(device: mango.Device, display: mango.Swapchain, image_count: *usize, images: ?[*]mango.Image) MgResult {
     if (images) |non_null_images| {
-        _ = device.getSwapchainImages(swapchain, non_null_images[0..image_count.*]) catch |err| return translateError(err);
+        image_count.* = device.getDisplayImages(display, non_null_images[0..image_count.*]) catch |err| return translateError(err);
         return .success;
     }
 
-    image_count.* = device.getSwapchainImages(swapchain, &.{}) catch |err| return translateError(err);
+    image_count.* = device.getDisplayImages(display, &.{}) catch |err| return translateError(err);
     return .success;
 }
 
-pub export fn mgAcquireNextImage(device: mango.Device, swapchain: mango.Swapchain, timeout: u64, next_image: *u8) MgResult {
-    next_image.* = device.acquireNextImage(swapchain, timeout) catch |err| return translateError(err);
+pub export fn mgAcquireNextImage(device: mango.Device, display: mango.Display, timeout: u64, next_image: *u8) MgResult {
+    next_image.* = device.acquireNextImage(display, timeout) catch |err| return translateError(err);
 
     return .success;
 }
@@ -263,10 +231,6 @@ pub export fn mgCmdSetDepthMode(cmd: mango.CommandBuffer, mode: mango.DepthMode)
 
 pub export fn mgCmdSetCullMode(cmd: mango.CommandBuffer, cull_mode: mango.CullMode) void {
     return cmd.setCullMode(cull_mode);
-}
-
-pub export fn mgCmdSetFrontFace(cmd: mango.CommandBuffer, front_face: mango.FrontFace) void {
-    return cmd.setFrontFace(front_face);
 }
 
 pub export fn mgCmdSetPrimitiveTopology(cmd: mango.CommandBuffer, primitive_topology: mango.PrimitiveTopology) void {

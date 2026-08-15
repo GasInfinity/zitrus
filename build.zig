@@ -47,11 +47,6 @@ pub fn build(b: *Build) void {
     const etz_dep = b.dependency("etz", .{});
     const etz  = etz_dep.module("etz");
 
-    // TODO: Remove this dep, deprecate and archive it.
-    const zalloc_dep = b.dependency("zalloc", .{});
-    const zalloc = zalloc_dep.module("zalloc");
-
-    // TODO: Move this one to codeberg
     const zsflt_dep = b.dependency("zsflt", .{});
     const zsflt = zsflt_dep.module("zsflt");
 
@@ -66,7 +61,6 @@ pub fn build(b: *Build) void {
     const zitrus = b.addModule("zitrus", .{
         .root_source_file = b.path("src/zitrus.zig"),
         .imports = &.{
-            .{ .name = "zalloc", .module = zalloc },
             .{ .name = "zsflt", .module = zsflt },
             .{ .name = "etz", .module = etz },
         },
@@ -86,7 +80,6 @@ pub fn build(b: *Build) void {
                 .os_tag = .@"3ds",
             }),
             .imports = &.{
-                .{ .name = "zalloc", .module = zalloc },
                 .{ .name = "zsflt", .module = zsflt },
                 .{ .name = "etz", .module = etz },
             },
@@ -117,7 +110,6 @@ pub fn build(b: *Build) void {
             .root_source_file = b.path("src/zitrus.zig"),
             .target = b.resolveTargetQuery(.{}),
             .imports = &.{
-                .{ .name = "zalloc", .module = zalloc },
                 .{ .name = "zsflt", .module = zsflt },
                 .{ .name = "etz", .module = etz },
             },
@@ -324,11 +316,6 @@ const StandaloneTest = struct {
 
 const standalone_tests: []const StandaloneTest = &.{
     .{ .name = "hos", .path = "test/hos.zig" },
-    .{
-        .name = "mango",
-        .path = "test/mango.zig",
-        .psm = &.{"test/mango/render/pos.psm"},
-    },
 };
 
 fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Compile) void {
@@ -345,7 +332,6 @@ fn makeTestSteps(b: *Build, zitrus: *Build.Module, zitrus_tools: *Build.Step.Com
                 .os_tag = .@"3ds",
             }),
             .imports = &.{
-                .{ .name = "zalloc", .module = zitrus.import_table.get("zalloc").? },
                 .{ .name = "zsflt", .module = zitrus.import_table.get("zsflt").? },
                 .{ .name = "etz", .module = zitrus.import_table.get("etz").? },
             },

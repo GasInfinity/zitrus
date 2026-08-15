@@ -26,16 +26,15 @@ const vtable: Device.VTable = .{
     .getShaderCode = getShaderCode,
     .destroyShaderCode = destroyShaderCode,
 
-    .allocateMemory = allocateMemory,
-    .freeMemory = freeMemory,
-    .mapMemory = mapMemory,
-    .unmapMemory = unmapMemory,
-    .flushMappedMemoryRanges = flushMappedMemoryRanges,
-    .invalidateMappedMemoryRanges = invalidateMappedMemoryRanges,
+    .allocatePrivate = allocatePrivate,
+    .freePrivate = freePrivate,
+    .hostToDevice = hostToDevice,
+    .flushCachedMemoryRanges = flushCachedMemoryRanges,
+    .invalidateCachedMemoryRanges = invalidateCachedMemoryRanges,
 
-    .createSwapchain = createSwapchain,
-    .destroySwapchain = destroySwapchain,
-    .getSwapchainImages = getSwapchainImages,
+    .configureDisplay = configureDisplay,
+    .resetDisplay = resetDisplay,
+    .getDisplayImages = getDisplayImages,
     .acquireNextImage = acquireNextImage,
 
     .waitSemaphores = waitSemaphores,
@@ -124,11 +123,13 @@ gsp_thread_index: u8,
 gsp_shm_memory_block: MemoryBlock,
 gsp_shm: *GraphicsServerGpu.Shared,
 interrupt_event: Event,
+
 driver: horizon.Thread.Impl,
 driver_state: Driver,
 
 running: std.atomic.Value(bool),
-vram_gpas: std.EnumArray(zitrus.memory.VRamBank, VRamBankAllocator),
+vram_gpas: std.EnumArray(zitrus.memory.VRamBank, BankAllocator),
+fcram_base_addr_offset: u32,
 
 presentation_engine: PresentationEngine,
 code_cache: CodeCache,
@@ -156,17 +157,23 @@ pub fn create(create_info: CreateInfo, gpa: std.mem.Allocator) !*Horizon {
     try queue_result.response.gsp_memory.map(shared_memory, .rw, .dont_care);
     errdefer queue_result.response.gsp_memory.unmap(shared_memory);
 
-    var fill_queue: Queue = try .init(gpa, .fill, &h_device.device, backend.max_buffered_queue_items, @sizeOf(Queue.FillItem), .of(Queue.FillItem));
+    var fill_queue: Queue = try .init(gpa, .fill, &h_device.device, backend.max_buffered_queue_items, @sizeOf(Queue.Fill), .of(Queue.Fill));
     errdefer fill_queue.deinit(gpa);
 
-    var transfer_queue: Queue = try .init(gpa, .transfer, &h_device.device, backend.max_buffered_queue_items, @sizeOf(Queue.TransferItem), .of(Queue.TransferItem));
+    var transfer_queue: Queue = try .init(gpa, .transfer, &h_device.device, backend.max_buffered_queue_items, @sizeOf(Queue.Transfer), .of(Queue.Transfer));
     errdefer transfer_queue.deinit(gpa);
 
-    var submit_queue: Queue = try .init(gpa, .submit, &h_device.device, backend.max_buffered_queue_items, @sizeOf(Queue.SubmitItem), .of(Queue.SubmitItem));
+    var submit_queue: Queue = try .init(gpa, .submit, &h_device.device, backend.max_buffered_queue_items, @sizeOf(Queue.Submit), .of(Queue.Submit));
     errdefer submit_queue.deinit(gpa);
 
-    var present_queue: Queue = try .init(gpa, .present, &h_device.device, backend.max_present_queue_items, @sizeOf(Queue.PresentationItem), .of(Queue.PresentationItem));
+    var present_queue: Queue = try .init(gpa, .present, &h_device.device, backend.max_present_queue_items, @sizeOf(Queue.Presentation), .of(Queue.Presentation));
     errdefer present_queue.deinit(gpa);
+
+    const fcram_base_offset: u32 = switch (horizon.getProcessInfo(.current, .linear_address_range_base_offset).cases()) {
+        .success => |r| @intCast(r.value),
+        // Can only happen if kernel is < 2.44?
+        .failure => zitrus.memory.fcram_begin - horizon.memory.old_linear_heap_begin,
+    };
 
     h_device.* = .{
         .device = .{
@@ -187,13 +194,14 @@ pub fn create(create_info: CreateInfo, gpa: std.mem.Allocator) !*Horizon {
             .a = .init(@ptrFromInt(horizon.memory.vram_a_begin)),
             .b = .init(@ptrFromInt(horizon.memory.vram_b_begin)),
         }),
-        .presentation_engine = .init(),
+        .presentation_engine = .init(fcram_base_offset),
         .gsp_owned = true,
         .gsp = gsp,
         .gsp_thread_index = @intCast(queue_result.response.thread_index),
         .gsp_shm_memory_block = queue_result.response.gsp_memory,
         .gsp_shm = @ptrCast(shared_memory),
         .interrupt_event = interrupt_event,
+        .fcram_base_addr_offset = fcram_base_offset,
         .driver = undefined, // NOTE: The driver thread creation is deferred as we want to fully initialize things first!
         .driver_state = .init,
         .code_cache = .empty,
@@ -298,153 +306,74 @@ fn destroyShaderCode(dev: *Device, code: *backend.Shader.Code) void {
     h_dev.code_cache.destroy(dev.gpa, h_dev.arbiter, code);
 }
 
-fn allocateMemory(dev: *Device, allocate_info: mango.MemoryAllocateInfo, gpa: std.mem.Allocator) mango.ObjectCreationError!mango.DeviceMemory {
-    _ = gpa;
+pub fn allocatePrivate(dev: *Device, index: mango.PrivateMemoryIndex, len: u32) mango.PrivateAllocationError![]const u8 {
     const h_dev: *Horizon = @alignCast(@fieldParentPtr("device", dev));
-    const aligned_allocation_size = std.mem.alignForward(usize, @intFromEnum(allocate_info.allocation_size), horizon.heap.page_size);
-
-    const allocated_memory: backend.DeviceMemory = switch (allocate_info.memory_type) {
-        .fcram_cached => fcram: {
-            const allocated_virtual_address = switch (horizon.controlMemory(.{
-                .kind = .commit,
-                .area = .all,
-                .linear = true,
-            }, null, null, aligned_allocation_size, .rw).cases()) {
-                .success => |s| s.value,
-                .failure => return error.OutOfMemory,
-            };
-
-            break :fcram .{ .data = .init(allocated_virtual_address, horizon.memory.toPhysical(@intFromPtr(allocated_virtual_address)), aligned_allocation_size, .fcram) };
-        },
-        // XXX: Hardcore 1, 2 as VRAM (A) and VRAM (B) with DEVICE_LOCAL only, see above.
-        .vram_a, .vram_b => |type_bank| vram: {
-            const bank: zitrus.memory.VRamBank = switch (type_bank) {
-                .vram_a => .a,
-                .vram_b => .b,
-                else => unreachable,
-            };
-            const vram_bank_gpa = h_dev.vram_gpas.getPtr(bank);
-            const allocated_virtual_address = try vram_bank_gpa.alloc(aligned_allocation_size, VRamBankAllocator.min_alignment);
-
-            break :vram .{ .data = .init(allocated_virtual_address.ptr, horizon.memory.toPhysical(@intFromPtr(allocated_virtual_address.ptr)), aligned_allocation_size, @enumFromInt(@as(u2, @intFromEnum(bank)) + 1)) };
+    return switch (index) {
+        .a, .b => {
+            const bank: zitrus.memory.VRamBank = @enumFromInt(@intFromEnum(index));
+            return h_dev.vram_gpas.getPtr(bank).alloc(len);
         },
     };
-
-    return allocated_memory.toHandle();
 }
 
-fn freeMemory(dev: *Device, memory: mango.DeviceMemory, gpa: std.mem.Allocator) void {
-    _ = gpa;
+pub fn freePrivate(dev: *Device, buffer: []const u8) void {
     const h_dev: *Horizon = @alignCast(@fieldParentPtr("device", dev));
-    const b_memory: backend.DeviceMemory = .fromHandle(memory);
+    const bank: zitrus.memory.VRamBank = switch (@intFromPtr(buffer.ptr)) {
+        horizon.memory.vram_a_begin...(horizon.memory.vram_a_end - 1) => .a,
+        horizon.memory.vram_b_begin...(horizon.memory.vram_b_end - 1) => .b,
+        else => unreachable, // Yeah... watch your memory!
+    };
 
-    std.debug.assert(b_memory.data.valid);
-
-    switch (b_memory.data.heap) {
-        .fcram => _ = horizon.controlMemory(.{
-            .kind = .free,
-            .area = .all,
-            .linear = true,
-        }, @ptrCast(b_memory.virtualAddress()), null, b_memory.size(), .rw),
-        .vram_a, .vram_b => {
-            const bank: zitrus.memory.VRamBank = switch (b_memory.data.heap) {
-                .fcram => unreachable,
-                .vram_a => .a,
-                .vram_b => .b,
-            };
-
-            const vram_bank_gpa = h_dev.vram_gpas.getPtr(bank);
-            vram_bank_gpa.free(b_memory.virtualAddress()[0..b_memory.size()]);
-        },
-    }
+    h_dev.vram_gpas.getPtr(bank).free(buffer);
 }
 
-fn mapMemory(dev: *Device, memory: mango.DeviceMemory, offset: mango.DeviceSize, size: mango.DeviceSize) mango.MapMemoryError![]u8 {
+pub fn hostToDevice(dev: *Device, buffer: []const u8) mango.HostToDeviceError!mango.DeviceSlice {
     _ = dev;
-    const b_memory: backend.DeviceMemory = .fromHandle(memory);
-    const b_offset = @intFromEnum(offset);
-
-    std.debug.assert(std.mem.isAligned(b_offset, horizon.heap.page_size) and b_offset <= b_memory.size());
-
-    if (size != .whole) {
-        std.debug.assert(@intFromEnum(size) <= (b_memory.size() - b_offset));
-
-        return (b_memory.virtualAddress() + b_offset)[0..@intFromEnum(size)];
-    }
-
-    return (b_memory.virtualAddress() + b_offset)[0 .. b_memory.size() - b_offset];
+    return switch (horizon.memory.toPhysical(@intFromPtr(buffer.ptr))) {
+        .zero => return error.ValidationFailed,
+        _ => |addr| .{ .address = addr, .len = buffer.len },
+    };
 }
 
-fn unmapMemory(device: *Device, memory: mango.DeviceMemory) void {
-    _ = device;
-    _ = memory;
-    // NOTE: Currently does nothing, could do something in the future
+/// Asserts the slice was created by `hostToDevice`
+pub fn deviceToHost(dev: *Horizon, ptr: u32) [*]u8 {
+    return horizon.memory.toVirtual(ptr, dev.fcram_base_addr_offset).?; // Panic? The pointer 100% didn't come from `hostToDevice`!
 }
 
-fn flushMappedMemoryRanges(dev: *Device, ranges: []const mango.MappedMemoryRange) mango.FlushMemoryError!void {
+pub fn flushCachedMemoryRanges (dev: *Device, ranges: []const []const u8) mango.FlushMemoryError!void {
     _ = dev;
-
     for (ranges) |range| {
-        const b_memory: backend.DeviceMemory = .fromHandle(range.memory);
-
-        const offset = @intFromEnum(range.offset);
-        const flushed_memory = switch (range.size) {
-            .whole => b_memory.virtualAddress()[offset..][0..(b_memory.size() - offset)],
-            _ => |sz| sz: {
-                const size = @intFromEnum(sz);
-
-                std.debug.assert(size <= (b_memory.size() - offset));
-
-                break :sz b_memory.virtualAddress()[offset..][0..size];
-            },
-        };
-
         // TODO: error handling
-        _ = horizon.flushProcessDataCache(.current, flushed_memory);
-    }
+        _ = horizon.flushProcessDataCache(.current, range);
+    } 
 }
 
-fn invalidateMappedMemoryRanges(dev: *Device, ranges: []const mango.MappedMemoryRange) mango.InvalidateMemoryError!void {
+pub fn invalidateCachedMemoryRanges (dev: *Device, ranges: []const []const u8) mango.InvalidateMemoryError!void {
     _ = dev;
-
     for (ranges) |range| {
-        const b_memory: backend.DeviceMemory = .fromHandle(range.memory);
-
-        const offset = @intFromEnum(range.offset);
-        const invalidated_memory = switch (range.size) {
-            .whole => b_memory.virtualAddress()[offset..][0..(b_memory.size() - offset)],
-            _ => |sz| sz: {
-                const size = @intFromEnum(sz);
-
-                std.debug.assert(size <= (b_memory.size() - offset));
-
-                break :sz b_memory.virtualAddress()[offset..][0..size];
-            },
-        };
-
         // TODO: error handling
-        _ = horizon.invalidateProcessDataCache(.current, invalidated_memory);
+        _ = horizon.invalidateProcessDataCache(.current, range);
     }
 }
 
-fn createSwapchain(dev: *Device, create_info: mango.SwapchainCreateInfo, gpa: std.mem.Allocator) mango.ObjectCreationError!mango.Swapchain {
+fn configureDisplay(dev: *Device, display: mango.Display, configure_info: *const mango.DisplayConfigureInfo) mango.ConfigureDisplayError!void {
     const h_dev: *Horizon = @alignCast(@fieldParentPtr("device", dev));
-    return h_dev.presentation_engine.initSwapchain(create_info, gpa);
+    return h_dev.presentation_engine.configureDisplay(display, configure_info);
 }
 
-fn destroySwapchain(dev: *Device, swapchain: mango.Swapchain, gpa: std.mem.Allocator) void {
+fn resetDisplay(dev: *Device, display: mango.Display) void {
     const h_dev: *Horizon = @alignCast(@fieldParentPtr("device", dev));
-    return h_dev.presentation_engine.deinitSwapchain(h_dev.gsp, h_dev.gsp_owned, swapchain, gpa);
+    return h_dev.presentation_engine.resetDisplay(h_dev.gsp, h_dev.gsp_owned, display);
 }
 
-fn getSwapchainImages(dev: *Device, swapchain: mango.Swapchain, images: []mango.Image) mango.GetSwapchainImagesError!u8 {
+fn getDisplayImages(dev: *Device, display: mango.Display, images: []mango.Image) mango.GetDisplayImagesError!u8 {
     const h_dev: *Horizon = @alignCast(@fieldParentPtr("device", dev));
-    return h_dev.presentation_engine.getSwapchainImages(swapchain, images);
+    return h_dev.presentation_engine.getDisplayImages(display, images);
 }
 
-fn acquireNextImage(dev: *Device, swapchain: mango.Swapchain, timeout: u64) mango.AcquireNextImageError!u8 {
+fn acquireNextImage(dev: *Device, display: mango.Display, timeout: u64) mango.AcquireNextImageError!u8 {
     const h_dev: *Horizon = @alignCast(@fieldParentPtr("device", dev));
-    return h_dev.presentation_engine.acquireNextImage(h_dev.arbiter, swapchain, timeout);
+    return h_dev.presentation_engine.acquireNextImage(h_dev.arbiter, display, timeout);
 }
 
 fn waitSemaphores(dev: *Device, wait_info: mango.SemaphoreWaitInfo, timeout: u64) mango.WaitSemaphoreError!void {
@@ -601,6 +530,7 @@ const Driver = struct {
                     if (drv.submission_buffer_busy.contains(kind)) {
                         std.debug.assert(drv.submission_signals.get(kind).sema == null); // We must have no signals here!
                         drv.submission_buffer_busy.setPresent(kind, false);
+                        drv.submission_buffer_node = drv.submission_buffer_node.?.nextPtr();
                         continue;
                     }
 
@@ -629,18 +559,34 @@ const Driver = struct {
         if (!drv.submission_buffer_busy.eql(.empty)) return;
 
         drain_nodes: while (drv.submission_buffer_node) |node| switch (node.kind) {
-            .graphics => |kind| {
+            .fill, .graphics => |kind| {
                 const queue_type: Queue.Type = switch (kind) {
                     .graphics => .submit,
+                    .fill => .fill,
                     .timestamp, .begin_query, .end_query => unreachable,
                 };
 
                 switch (dev.queue_statuses.getPtr(queue_type).load(.monotonic)) {
                     .work_completed, .idle, .waiting => {
-                        const gfx: *CommandBuffer.operation.Graphics = @alignCast(@fieldParentPtr("node", node));
-                        std.debug.assert(std.mem.isAligned(@intFromPtr(gfx.head), 16) and std.mem.isAligned(gfx.len, 4));
+                        switch (kind) {
+                            .graphics => {
+                                const gfx: *CommandBuffer.operation.Graphics = @alignCast(@fieldParentPtr("node", node));
+                                std.debug.assert(std.mem.isAligned(@intFromPtr(gfx.head), 16) and std.mem.isAligned(gfx.len, 4));
+                                gx.pushFrontAssumeCapacity(.initProcessCommandList(gfx.head[0..gfx.len], .none, .none, .none));
+                            },
+                            .fill => {
+                                const op: *CommandBuffer.operation.Fill = @alignCast(@fieldParentPtr("node", node));
+                                const fill = op.operation;
+                                const data: []align(8) u8 = @alignCast(h_dev.deviceToHost(@intFromEnum(fill.ptr))[0..fill.extra.len]);
 
-                        gx.pushFrontAssumeCapacity(.initProcessCommandList(gfx.head[0..gfx.len], .none, .none, .none));
+                                gx.pushFrontAssumeCapacity(.initMemoryFill(.{ .init(data, switch (fill.extra.size) {
+                                    inline .@"16", .@"24", .@"32" => |t| @unionInit(GraphicsServerGpu.GxCommand.MemoryFill.Unit.Value, @tagName(t), @truncate(fill.value)),
+                                    else => .fill24(@truncate(fill.value)),
+                                }), null }, .none));
+                            },
+                            .timestamp, .begin_query, .end_query => unreachable
+                        }
+
                         drv.submission_buffer_busy.setPresent(queue_type, true);
                         drv.submission_time.set(queue_type, horizon.time.getSystemNanoseconds());
                         dev.queue_statuses.getPtr(queue_type).store(.working, .monotonic);
@@ -767,28 +713,33 @@ const Driver = struct {
                     .fill, .transfer => {
                         const signal = signal: switch (kind) {
                             .fill => {
-                                const fill, const signal = queue.popBackAssumeReady(Queue.FillItem);
-                                gx.pushFrontAssumeCapacity(.initMemoryFill(.{ .init(fill.data, fill.value), null }, .none));
+                                const fill, const signal = queue.popBackAssumeReady(Queue.Fill);
+                                const data: []align(8) u8 = @alignCast(h_dev.deviceToHost(@intFromEnum(fill.ptr))[0..fill.extra.len]);
+
+                                gx.pushFrontAssumeCapacity(.initMemoryFill(.{ .init(data, switch (fill.extra.size) {
+                                    inline .@"16", .@"24", .@"32" => |t| @unionInit(GraphicsServerGpu.GxCommand.MemoryFill.Unit.Value, @tagName(t), @truncate(fill.value)),
+                                    else => .fill24(@truncate(fill.value)),
+                                }), null }, .none));
                                 break :signal signal;
                             },
                             .transfer => {
-                                const transfer, const signal = queue.popBackAssumeReady(Queue.TransferItem);
+                                const transfer, const signal = queue.popBackAssumeReady(Queue.Transfer);
                                 switch (transfer.flags.kind) {
                                     .copy => gx.pushFrontAssumeCapacity(.initTextureCopy(
-                                        transfer.src,
-                                        transfer.dst,
+                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.src))),
+                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.dst))),
                                         transfer.flags.extra.copy,
-                                        transfer.input_gap_size,
-                                        transfer.output_gap_size,
+                                        transfer.src_gap_line,
+                                        transfer.dst_gap_line,
                                         .none,
                                     )),
                                     .linear_tiled, .tiled_linear, .tiled_tiled => gx.pushFrontAssumeCapacity(.initDisplayTransfer(
-                                        transfer.src,
-                                        transfer.dst,
+                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.src))),
+                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.dst))),
                                         transfer.flags.extra.transfer.src_fmt,
-                                        transfer.input_gap_size,
+                                        transfer.src_gap_line,
                                         transfer.flags.extra.transfer.dst_fmt,
-                                        transfer.output_gap_size,
+                                        transfer.dst_gap_line,
                                         .{
                                             .mode = switch (transfer.flags.kind) {
                                                 .copy => unreachable,
@@ -814,7 +765,7 @@ const Driver = struct {
                         drv.submission_time.set(kind, horizon.time.getSystemNanoseconds());
                     },
                     .present => {
-                        const present, _ = queue.popBackAssumeReady(Queue.PresentationItem);
+                        const present, _ = queue.popBackAssumeReady(Queue.Presentation);
 
                         // NOTE: Same as above, the present queue is "special".
                         // It never has to wait to present (the user is the one who waits when acquiring an image!)
@@ -824,10 +775,10 @@ const Driver = struct {
                     .submit => {
                         if (drv.submission_buffer) |_| continue :queue; // We have to finish the current one
 
-                        const submit, const signal = queue.popBackAssumeReady(Queue.SubmitItem);
+                        const submit, const signal = queue.popBackAssumeReady(Queue.Submit);
                         drv.submission_signals.getPtr(kind).* = signal;
 
-                        const b_cmd = submit.cmd_buffer;
+                        const b_cmd = submit.cmd;
                         drv.submission_buffer = b_cmd;
                         drv.submission_buffer_node = b_cmd.head;
 
@@ -878,32 +829,12 @@ const Driver = struct {
         log.err("Affected queue: {s}", .{if (maybe_kind) |k| @tagName(k) else "irq (none)"});
 
         if (drv.submission_buffer) |cmd_buf| {
-            log.err("With active submission buffer", .{});
+            log.err("With active submission buffer 0x{X:0>8}", .{@intFromPtr(cmd_buf)});
 
             var busy_it = drv.submission_buffer_busy.iterator();
             while (busy_it.next()) |queue_type| log.err(" -> which had the {t} queue busy", .{queue_type});
 
-            {
-                var current = cmd_buf.head;
-                var i: usize = 1;
-                while (current) |node| : (i += 1) {
-                    log.err(" {d}. {t} -> {*}", .{ i, node.kind, node });
-
-                    switch (node.kind) {
-                        .graphics => {
-                            const gfx: *CommandBuffer.operation.Graphics = @alignCast(@fieldParentPtr("node", node));
-                            log.err("    with head {*} and length (in words) {d}", .{ gfx.head, gfx.len });
-                        },
-                        .timestamp, .begin_query, .end_query => {
-                            const query_op: *CommandBuffer.operation.Query = @alignCast(@fieldParentPtr("node", node));
-                            log.err("    for query {d} and pool {*}", .{ query_op.query, query_op.pool });
-                        },
-                    }
-
-                    if (node == drv.submission_buffer_node) log.err("    -----> GPU was lost here", .{});
-                    current = node.nextPtr();
-                }
-            }
+            log.err("{f}", .{cmd_buf.fmtDump(drv.submission_buffer_node)});
 
             // TODO: make this configurable as a lot of other things.
             // This bloats the binary A LOT (we're literally bringing entire type info of all the registers)
@@ -933,10 +864,10 @@ const Driver = struct {
     }
 };
 
-const VRamBankAllocator = zalloc.bitmap.StaticBitmapAllocator(.fromByteUnits(4096), zitrus.memory.vram_bank_size);
+const BankAllocator = @import("Horizon/BankAllocator.zig");
 
 comptime {
-    std.debug.assert(VRamBankAllocator.min_alignment_byte_units == 4096);
+    _ = BankAllocator;
 }
 
 // anything taking more than 1s in any queue is sus
@@ -962,7 +893,6 @@ const Queue = backend.Queue;
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const zalloc = @import("zalloc");
 
 const horizon = zitrus.horizon;
 const AddressArbiter = horizon.AddressArbiter;

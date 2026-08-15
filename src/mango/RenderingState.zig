@@ -17,7 +17,9 @@ pub const Dirty = packed struct(u32) {
     light_parameters: bool = false,
     light_factors: bool = false,
     light_tables: bool = false,
-    _: u16 = 0,
+    invalidate_output_merger: bool = false,
+    invalidate_texture_units: bool = false,
+    _: u14 = 0,
 
     pub fn setUniformsDirty(dirty: *Dirty, stage: mango.ShaderStage, location: UniformLocation) void {
         dirty.uniforms |= (@as(u6, 1) << @intCast(@intFromEnum(stage) * std.enums.values(UniformLocation).len + @intFromEnum(location)));
@@ -204,46 +206,31 @@ pub fn bindShaders(rnd: *RenderingState, stages: []const mango.ShaderStage, shad
     }
 }
 
-pub fn bindVertexBuffers(rnd: *RenderingState, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
-    if (binding_count == 0) return;
+pub fn bindVertexBuffers(rnd: *RenderingState, first_binding: u32, buffers: []const mango.DeviceSlice) void {
+    if (buffers.len == 0) return;
 
     // NOTE: `comptime` here is needed even if the len is comptime? It somehow tries to read the array (which IS invalid as it shouldn't be accessed directly)
-    std.debug.assert(first_binding < (comptime p3d.primitive_engine.attributes.vertex_buffers.len) and first_binding + binding_count <= (comptime p3d.primitive_engine.attributes.vertex_buffers.len));
-    std.debug.assertReadable(std.mem.sliceAsBytes(buffers[0..binding_count]));
-    std.debug.assertReadable(std.mem.sliceAsBytes(offsets[0..binding_count]));
+    std.debug.assert(first_binding < (comptime p3d.primitive_engine.attributes.vertex_buffers.len) and first_binding + buffers.len <= (comptime p3d.primitive_engine.attributes.vertex_buffers.len));
+    std.debug.assertReadable(std.mem.sliceAsBytes(buffers));
 
-    for (0..binding_count) |i| {
+    for (0..buffers.len) |i| {
         const current_binding = first_binding + i;
-        const offset = offsets[i];
-        const buffer: backend.Buffer = .fromHandle(buffers[i]);
-
-        std.debug.assert(offset <= buffer.size);
-        std.debug.assert(buffer.usage.vertex_buffer);
-
-        const buffer_physical_address = buffer.memory_info.boundPhysicalAddress();
-        const bound_vertex_offset = (@intFromEnum(buffer_physical_address) - @intFromEnum(backend.global_attribute_buffer_base)) + offset;
+        const bound_vertex_offset = (@intFromEnum(buffers[i].address) - @intFromEnum(backend.global_attribute_buffer_base));
 
         rnd.vertex_buffers_offset[current_binding] = @intCast(bound_vertex_offset);
     }
 
     rnd.misc.vertex_buffers_dirty_start, rnd.misc.vertex_buffers_dirty_end = if (rnd.dirty.vertex_buffers)
-        .{ @intCast(@min(first_binding, rnd.misc.vertex_buffers_dirty_start)), @intCast(@max(first_binding + binding_count, rnd.misc.vertex_buffers_dirty_end)) }
+        .{ @intCast(@min(first_binding, rnd.misc.vertex_buffers_dirty_start)), @intCast(@max(first_binding + buffers.len, rnd.misc.vertex_buffers_dirty_end)) }
     else
-        .{ @intCast(first_binding), @intCast(first_binding + binding_count) };
+        .{ @intCast(first_binding), @intCast(first_binding + buffers.len) };
 
     rnd.dirty.vertex_buffers = true;
 }
 
-pub fn bindIndexBuffer(rnd: *RenderingState, buffer: mango.Buffer, offset: u32, index_type: mango.IndexType) void {
-    const index_buffer: backend.Buffer = .fromHandle(buffer);
-
-    std.debug.assert(offset <= index_buffer.size);
-    std.debug.assert(index_buffer.usage.index_buffer);
-
-    const index_buffer_address: u32 = @intFromEnum(index_buffer.memory_info.boundPhysicalAddress()) + offset;
-
+pub fn bindIndexBuffer(rnd: *RenderingState, buffer: mango.DeviceSlice, index_type: mango.IndexType) void {
     rnd.misc.index_format = index_type.native();
-    rnd.index_buffer_offset = @intCast(index_buffer_address - @intFromEnum(backend.global_attribute_buffer_base));
+    rnd.index_buffer_offset = @intCast(@intFromEnum(buffer.address) - @intFromEnum(backend.global_attribute_buffer_base));
 }
 
 pub fn bindFloatUniforms(rnd: *RenderingState, stage: mango.ShaderStage, first_uniform: u32, uniforms: []const [4]f32) void {
@@ -338,6 +325,11 @@ pub fn setLightFactors(rnd: *RenderingState, first_light: u32, light_factors: []
     rnd.dirty.light_factors = true;
 }
 
+pub fn memoryBarrier(rnd: *RenderingState, target: mango.MemoryBarrierTarget) void {
+    rnd.dirty.invalidate_output_merger = target.render_attachments;
+    rnd.dirty.invalidate_texture_units = target.sampled_images;
+}
+
 pub fn anyDirty(state: *RenderingState) bool {
     return @as(u32, @bitCast(state.dirty)) != 0;
 }
@@ -394,6 +386,14 @@ pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
 
     if (dirty.isAnyTextureUnitDirty()) {
         rnd.emitDirtyTextureUnits(queue);
+    } else if (dirty.invalidate_texture_units) {
+        queue.addMasked(p3d, &p3d.texture_units.config, .{
+            .texture_enabled = .init(rnd.texture_unit_enabled),
+            .texture_3_coordinates = .@"0",
+            .texture_3_enabled = false,
+            .texture_2_coordinates = .@"1",
+            .invalidate_texture_cache = true, // NOTE: Not affected by the mask
+        }, 0b0100);
     }
 
     if (dirty.light_environment_factors) {
@@ -568,6 +568,8 @@ pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
                 .flip_vertically = true,
             },
         });
+    } else if (dirty.invalidate_output_merger) {
+        queue.add(p3d, &p3d.output_merger.invalidate, .init(.trigger));
     }
 
     dirty.* = .{};
@@ -586,8 +588,8 @@ fn emitDirtyTextureUnits(rnd: *RenderingState, queue: *command.Queue) void {
 
         const image: *backend.Image = .fromHandleMutable(rnd.texture_units[0].view.data.image);
 
-        std.debug.assert(!image.memory_info.isUnbound());
-        const address = image.memory_info.boundPhysicalAddress();
+        std.debug.assert(image.address != .zero);
+        const address = image.address;
         const image_format = image.info.format.nativeTextureUnitFormat();
         const format = image_view.data.format().nativeTextureUnitFormat();
 
@@ -654,8 +656,8 @@ fn emitDirtyTextureUnits(rnd: *RenderingState, queue: *command.Queue) void {
 
         const image: *backend.Image = .fromHandleMutable(rnd.texture_units[unit].view.data.image);
 
-        std.debug.assert(!image.memory_info.isUnbound());
-        const address = image.memory_info.boundPhysicalAddress();
+        std.debug.assert(image.address != .zero);
+        const address = image.address;
         const format = image_view.data.format().nativeTextureUnitFormat();
 
         const unit_register = switch (unit) {
@@ -693,7 +695,7 @@ fn emitDirtyTextureUnits(rnd: *RenderingState, queue: *command.Queue) void {
         .texture_3_coordinates = .@"0",
         .texture_3_enabled = false,
         .texture_2_coordinates = .@"1",
-        .clear_texture_cache = true, // NOTE: Not affected by the mask
+        .invalidate_texture_cache = true, // NOTE: Not affected by the mask
     }, 0b0101);
 }
 

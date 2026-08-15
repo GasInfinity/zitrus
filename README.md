@@ -77,7 +77,6 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 - [info](demo/info) is a simple app that currently shows the console region and model (will be updated to show more info over time).
 - [bitmap](demo/bitmap/) is a port of the bitmap example in libctru's 3ds-examples.
 - [flappy](demo/flappy) is a simple fully functional flappy bird clone written entirely with software blitting.
-- [gpu](demo/gpu/) is a playground for [mango](src/mango.zig), bleeding edge features are tested there. Not really an example per-se.
 
 --- 
 

@@ -54,6 +54,18 @@ pub const AppId = enum(u32) {
     application_notepad = 0x409,
 };
 
+pub const SystemProcessorTimeSlice = enum(u32) {
+    lowest = 5,
+    highest = 89,
+    _,
+
+    /// Asserts the range is between 5 and 89 (inclusive)
+    pub fn slice(value: u32) SystemProcessorTimeSlice {
+        std.debug.assert(value >= 5 and value <= 89);
+        return @enumFromInt(value);
+    }
+};
+
 pub const Position = enum(u3) {
     none = 0b111,
     app = 0,
@@ -132,13 +144,12 @@ pub const Transition = enum(u32) {
     unlock_resume = 0x10,
 };
 
+// NOTE: It seems you CAN'T capture ABGR framebuffers
 pub const CaptureBuffer = extern struct {
     pub const Format = enum(u32) {
         none = std.math.maxInt(u32),
-        /// 4 bytes, `A B G R`.
-        abgr8888 = 0,
         /// 3 bytes, `B G R`.
-        bgr888,
+        bgr888 = 1,
         /// Packed, 2 bytes, `RRRRRGGGGGGBBBBB`.
         rgb565,
         /// Packed, 2 bytes, `RRRRRGGGGGBBBBBA`.
@@ -150,7 +161,6 @@ pub const CaptureBuffer = extern struct {
         pub fn native(fmt: Format) ?zitrus.hardware.pica.ColorFormat {
             return switch (fmt) {
                 .none, _ => null,
-                .abgr8888 => .abgr8888,
                 .bgr888 => .bgr888,
                 .rgb565 => .rgb565,
                 .rgba5551 => .rgba5551,
@@ -166,7 +176,7 @@ pub const CaptureBuffer = extern struct {
     };
 
     size: u32,
-    enabled_3d: bool,
+    @"3d": bool,
     _reserved0: [3]u8 = @splat(0),
     top: Info,
     bottom: Info,
@@ -184,10 +194,10 @@ pub const CaptureBuffer = extern struct {
         const top_size = top_framebuffers * top_framebuffer_size;
         const bottom_size = pica.Screen.bottom.height() * pica.Screen.width_po2 * capture.bottom.format.pixel_format.bytesPerPixel();
 
-        return CaptureBuffer{
+        return .{
             // So, the GSP trips when this value is exactly what it should? XXX: Why do I need to multiply bottom_size by 2 for library applets?
             .size = (top_size + bottom_size * 2),
-            .enabled_3d = (capture.top.format.interlacing == .enable),
+            .@"3d" = (capture.top.format.interlacing == .enable),
             .top = .{
                 .left_offset = 0,
                 .right_offset = top_framebuffer_size * (top_framebuffers - 1),
@@ -512,6 +522,24 @@ pub fn sendUnlockTransition(apt: Applet, service: Service, srv: ServiceManager, 
     return apt.sendAppletUtility(service, srv, .unlock_transition, std.mem.asBytes(&transition), &.{});
 }
 
+pub fn sendSetSystemProcessorTimeSlice(apt: Applet, service: Service, srv: ServiceManager, slice: SystemProcessorTimeSlice, lock: bool) !void {
+    return switch ((try apt.lockSendCommand(service, srv, command.SetSystemProcessorTimeSlice, .{
+        .slice = slice,
+        .lock = lock,
+    }, .{})).cases()) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendGetSystemProcessorTimeSlice(apt: Applet, service: Service, srv: ServiceManager) !SystemProcessorTimeSlice {
+    return switch ((try apt.lockSendCommand(service, srv, command.GetSystemProcessorTimeSlice, .{
+    }, .{})).cases()) {
+        .success => |s| s.value.slice,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
 pub fn lockSendCommand(apt: Applet, service: Service, srv: ServiceManager, comptime DefinedCommand: type, request: DefinedCommand.Request, static_output: DefinedCommand.RequestStaticOutput) !Result(DefinedCommand.Response) {
     try apt.lock.wait(.none);
     defer apt.lock.release();
@@ -707,6 +735,16 @@ pub const command = struct {
         input: ipc.Static(1),
     }, struct { applet_result: ResultCode, output: ipc.Static(0) });
     // TODO: ...
+    pub const SetSystemProcessorTimeSlice = ipc.Command(Id, .set_system_processor_time_slice, struct {
+        _one: u32 = 1,
+        slice: SystemProcessorTimeSlice,
+        lock: bool,
+    }, struct {});
+    pub const GetSystemProcessorTimeSlice = ipc.Command(Id, .get_system_processor_time_slice, struct {
+        _one: u32 = 1,
+    }, struct {
+        slice: SystemProcessorTimeSlice,
+    });
 
     pub const Id = enum(u16) {
         get_lock_handle = 0x0001,
@@ -787,8 +825,8 @@ pub const command = struct {
         set_fatal_err_disp_mode,
         get_applet_program_info,
         hardware_reset_async,
-        set_application_cpu_time_limit,
-        get_application_cpu_time_limit,
+        set_system_processor_time_slice,
+        get_system_processor_time_slice,
         get_startup_argument,
         wrap1,
         unwrap1,

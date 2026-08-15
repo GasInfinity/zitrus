@@ -35,19 +35,14 @@ pub const Handle = enum(u32) {
         b_cmd.bindShaders(stages, shaders);
     }
 
-    pub fn bindVertexBuffersSlice(cmd: Handle, first_binding: u32, buffers: []const mango.Buffer, offsets: []const u32) void {
-        std.debug.assert(buffers.len == offsets.len);
-        return cmd.bindVertexBuffers(first_binding, buffers.len, buffers.ptr, offsets.ptr);
+    pub fn bindVertexBuffers(cmd: Handle, first_binding: u32, buffers: []const mango.DeviceSlice) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.rnd_state.bindVertexBuffers(first_binding, buffers);
     }
 
-    pub fn bindVertexBuffers(cmd: Handle, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
+    pub fn bindIndexBuffer(cmd: Handle, buffer: mango.DeviceSlice, index_type: mango.IndexType) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.bindVertexBuffers(first_binding, binding_count, buffers, offsets);
-    }
-
-    pub fn bindIndexBuffer(cmd: Handle, buffer: mango.Buffer, offset: u32, index_type: mango.IndexType) void {
-        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.bindIndexBuffer(buffer, offset, index_type);
+        return b_cmd.bindIndexBuffer(buffer, index_type);
     }
 
     pub fn bindFloatUniforms(cmd: Handle, stage: mango.ShaderStage, first_uniform: u32, uniforms: []const [4]f32) void {
@@ -131,17 +126,12 @@ pub const Handle = enum(u32) {
         return b_cmd.setCullMode(cull_mode);
     }
 
-    pub fn setFrontFace(cmd: Handle, front_face: mango.FrontFace) void {
-        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.setFrontFace(front_face);
-    }
-
     pub fn setPrimitiveTopology(cmd: Handle, primitive_topology: mango.PrimitiveTopology) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         return b_cmd.setPrimitiveTopology(primitive_topology);
     }
 
-    pub fn setViewport(cmd: Handle, viewport: mango.Viewport) void {
+    pub fn setViewport(cmd: Handle, viewport: mango.Rect2D) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         return b_cmd.setViewport(viewport);
     }
@@ -151,9 +141,34 @@ pub const Handle = enum(u32) {
         return b_cmd.setScissor(scissor);
     }
 
-    pub fn setTextureCombiners(cmd: Handle, texture_combiners: []const mango.TextureCombinerUnit, texture_combiner_buffer_sources: []const mango.TextureCombinerUnit.BufferSources) void {
+    pub fn setTextureCombinersEffect(cmd: Handle, effect: mango.TextureCombinerEffect) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        return b_cmd.setTextureCombiners(texture_combiners, texture_combiner_buffer_sources);
+        return b_cmd.setTextureCombinersEffect(effect);
+    }
+
+    pub fn setTextureCombinersEffectDepthFlip(cmd: Handle, flip: bool) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setTextureCombinersEffectDepthFlip(flip);
+    }
+
+    pub fn setTextureCombinersBufferColor(cmd: Handle, buffer_color: *const [4]u8) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setTextureCombinersBufferColor(buffer_color);
+    }
+
+    pub fn setTextureCombinersBufferSources(cmd: Handle, first: u32, buffer_sources: []const mango.TextureCombinerUnit.BufferSources) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setTextureCombinersBufferSources(first, buffer_sources);
+    }
+
+    pub fn setTextureCombiners(cmd: Handle, first: u32, combiners: []const mango.TextureCombinerUnit) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setTextureCombiners(first, combiners);
+    }
+
+    pub fn setFogColor(cmd: Handle, color: *const [3]u8) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        return b_cmd.setFogColor(color);
     }
 
     pub fn setBlendEquation(cmd: Handle, blend_equation: mango.ColorBlendEquation) void {
@@ -181,9 +196,9 @@ pub const Handle = enum(u32) {
         return b_cmd.setDepthWriteEnable(enable);
     }
 
-    pub fn setDepthBias(cmd: Handle, constant: f32) void {
+    pub fn setDepthParameters(cmd: Handle, scale: f32, bias: f32) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
-        b_cmd.setDepthBias(constant);
+        b_cmd.setDepthParameters(scale, bias);
     }
 
     pub fn setLogicOpEnable(cmd: Handle, enable: bool) void {
@@ -276,6 +291,11 @@ pub const Handle = enum(u32) {
         b_cmd.bindLightEnvironmentTable(slot, table);
     }
 
+    pub fn bindFogTable(cmd: Handle, table: mango.FogLookupTable) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.bindFogTable(table);
+    }
+
     pub fn writeTimestamp(cmd: Handle, pool: mango.QueryPool, query: u32) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         b_cmd.writeTimestamp(pool, query);
@@ -289,6 +309,21 @@ pub const Handle = enum(u32) {
     pub fn endQuery(cmd: Handle, pool: mango.QueryPool, query: u32) void {
         const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
         b_cmd.endQuery(pool, query);
+    }
+
+    pub fn memoryBarrier(cmd: Handle, target: mango.MemoryBarrierTarget) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.memoryBarrier(target);
+    }
+
+    pub fn clearColorImage(cmd: Handle, info: *const mango.ClearColorInfo) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.clearColorImage(info);
+    }
+
+    pub fn clearDepthStencilImage(cmd: Handle, info: *const mango.ClearDepthStencilInfo) void {
+        const b_cmd: *CommandBuffer = .fromHandleMutable(cmd);
+        b_cmd.clearDepthStencilImage(info);
     }
 
     pub fn reset(cmd: Handle, flags: mango.CommandBufferResetFlags) void {
@@ -319,6 +354,7 @@ pub const operation = struct {
         timestamp,
         begin_query,
         end_query,
+        fill,
     };
 
     // NOTE: as both address and size must be aligned to 16 bytes we can reuse some unused bits!
@@ -338,40 +374,27 @@ pub const operation = struct {
         }
     };
 
+    /// 12 bytes
     pub const Graphics = extern struct {
         node: Node,
         head: [*]align(16) const u32,
         len: u32,
     };
 
+    /// 16 bytes
     pub const Fill = extern struct {
-        pub const Size = pica.DisplayController.Framebuffer.Pixel.Size;
+        pub const Operation = backend.Queue.Fill;
 
         node: Node,
-        address: [*]align(16) u8,
-        value: u32,
+        operation: backend.Queue.Fill,
     };
 
-    pub const Copy = extern struct {
-        pub const Line = pica.PictureFormatter.Copy.Line;
+    /// 24 bytes
+    pub const Transfer = extern struct {
+        pub const Operation = backend.Queue.Transfer;
 
         node: Node,
-        src: [*]align(16) const u8,
-        dst: [*]align(16) u8,
-        src_line: Line,
-        dst_line: Line,
-        size: u32,
-    };
-
-    pub const Blit = extern struct {
-        pub const Dimensions = pica.PictureFormatter.Dimensions;
-        pub const Kind = enum(u2) { linear_tiled, tiled_linear, tiled_tiled };
-
-        node: Node,
-        src: [*]align(16) const u8,
-        dst: [*]align(16) u8,
-        src_dimensions: Dimensions,
-        dst_dimensions: Dimensions,
+        operation: Operation,
     };
 
     pub const Query = extern struct {
@@ -454,16 +477,16 @@ pub fn bindShaders(cmd: *CommandBuffer, stages: []const mango.ShaderStage, shade
     cmd.rnd_state.bindShaders(stages, shaders);
 }
 
-pub fn bindVertexBuffers(cmd: *CommandBuffer, first_binding: u32, binding_count: u32, buffers: [*]const mango.Buffer, offsets: [*]const u32) void {
+pub fn bindVertexBuffers(cmd: *CommandBuffer, first_binding: u32, binding_count: u32, buffers: []const mango.DeviceSlice) void {
     std.debug.assert(cmd.state == .recording);
 
-    return cmd.rnd_state.bindVertexBuffers(first_binding, binding_count, buffers, offsets);
+    return cmd.rnd_state.bindVertexBuffers2(first_binding, binding_count, buffers);
 }
 
-pub fn bindIndexBuffer(cmd: *CommandBuffer, buffer: mango.Buffer, offset: u32, index_type: mango.IndexType) void {
+pub fn bindIndexBuffer(cmd: *CommandBuffer, buffer: mango.DeviceSlice, index_type: mango.IndexType) void {
     std.debug.assert(cmd.state == .recording);
 
-    return cmd.rnd_state.bindIndexBuffer(buffer, offset, index_type);
+    return cmd.rnd_state.bindIndexBuffer(buffer, index_type);
 }
 
 pub fn bindFloatUniforms(cmd: *CommandBuffer, stage: mango.ShaderStage, first_uniform: u32, uniforms: []const [4]f32) void {
@@ -714,17 +737,12 @@ pub fn setCullMode(cmd: *CommandBuffer, cull_mode: mango.CullMode) void {
     cmd.gfx_state.setCullMode(cull_mode);
 }
 
-pub fn setFrontFace(cmd: *CommandBuffer, front_face: mango.FrontFace) void {
-    std.debug.assert(cmd.state == .recording);
-    cmd.gfx_state.setFrontFace(front_face);
-}
-
 pub fn setPrimitiveTopology(cmd: *CommandBuffer, primitive_topology: mango.PrimitiveTopology) void {
     std.debug.assert(cmd.state == .recording);
     cmd.gfx_state.setPrimitiveTopology(primitive_topology);
 }
 
-pub fn setViewport(cmd: *CommandBuffer, viewport: mango.Viewport) void {
+pub fn setViewport(cmd: *CommandBuffer, viewport: mango.Rect2D) void {
     std.debug.assert(cmd.state == .recording);
     cmd.gfx_state.setViewport(viewport);
 }
@@ -734,9 +752,34 @@ pub fn setScissor(cmd: *CommandBuffer, scissor: mango.Scissor) void {
     cmd.gfx_state.setScissor(scissor);
 }
 
-pub fn setTextureCombiners(cmd: *CommandBuffer, texture_combiners: []const mango.TextureCombinerUnit, texture_combiner_buffer_sources: []const mango.TextureCombinerUnit.BufferSources) void {
+pub fn setTextureCombinersEffect(cmd: *CommandBuffer, effect: mango.TextureCombinerEffect) void {
     std.debug.assert(cmd.state == .recording);
-    cmd.gfx_state.setTextureCombiners(texture_combiners, texture_combiner_buffer_sources);
+    cmd.gfx_state.setTextureCombinersEffect(effect);
+}
+
+pub fn setTextureCombinersEffectDepthFlip(cmd: *CommandBuffer, flip: bool) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.setTextureCombinersEffectDepthFlip(flip);
+}
+
+pub fn setTextureCombinersBufferColor(cmd: *CommandBuffer, buffer_color: *const [4]u8) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.setTextureCombinersBufferColor(buffer_color);
+}
+
+pub fn setTextureCombinersBufferSources(cmd: *CommandBuffer, first: u32, buffer_sources: []const mango.TextureCombinerUnit.BufferSources) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.setTextureCombinersBufferSources(first, buffer_sources);
+}
+
+pub fn setTextureCombiners(cmd: *CommandBuffer, first: u32, combiners: []const mango.TextureCombinerUnit) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.setTextureCombiners(first, combiners);
+}
+
+pub fn setFogColor(cmd: *CommandBuffer, color: *const [3]u8) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.setFogColor(color);
 }
 
 pub fn setBlendEquation(cmd: *CommandBuffer, blend_equation: mango.ColorBlendEquation) void {
@@ -764,9 +807,9 @@ pub fn setDepthWriteEnable(cmd: *CommandBuffer, enable: bool) void {
     cmd.gfx_state.setDepthWriteEnable(enable);
 }
 
-pub fn setDepthBias(cmd: *CommandBuffer, constant: f32) void {
+pub fn setDepthParameters(cmd: *CommandBuffer, scale: f32, bias: f32) void {
     std.debug.assert(cmd.state == .recording);
-    cmd.gfx_state.setDepthBias(constant);
+    cmd.gfx_state.setDepthParameters(scale, bias);
 }
 
 pub fn setLogicOpEnable(cmd: *CommandBuffer, enable: bool) void {
@@ -859,21 +902,44 @@ pub fn bindLightEnvironmentTable(cmd: *CommandBuffer, slot: mango.LightEnvironme
     cmd.gfx_state.bindLightEnvironmentTable(slot, table);
 }
 
+pub fn bindFogTable(cmd: *CommandBuffer, table: mango.FogLookupTable) void {
+    std.debug.assert(cmd.state == .recording);
+    cmd.gfx_state.bindFogTable(table);
+}
+
 pub fn writeTimestamp(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32) void {
+    std.debug.assert(cmd.state == .recording);
     cmd.doQuery(pool, query, .timestamp);
 }
 
 pub fn beginQuery(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32) void {
+    std.debug.assert(cmd.state == .recording);
     cmd.doQuery(pool, query, .begin_query);
 }
 
 pub fn endQuery(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32) void {
+    std.debug.assert(cmd.state == .recording);
     cmd.doQuery(pool, query, .end_query);
 }
 
-fn doQuery(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32, kind: operation.Kind) void {
+pub fn memoryBarrier(cmd: *CommandBuffer, target: mango.MemoryBarrierTarget) void {
     std.debug.assert(cmd.state == .recording);
+    cmd.rnd_state.memoryBarrier(target);
+}
 
+pub fn clearColorImage(cmd: *CommandBuffer, info: *const mango.ClearColorInfo) void {
+    std.debug.assert(cmd.state == .recording);
+    var it: operation.Fill.Operation.Iterator = .initColor(info);
+    cmd.doQueueOperations(operation.Fill, .fill, &it);
+}
+
+pub fn clearDepthStencilImage(cmd: *CommandBuffer, info: *const mango.ClearDepthStencilInfo) void {
+    std.debug.assert(cmd.state == .recording);
+    var it: operation.Fill.Operation.Iterator = .initDepth(info);
+    cmd.doQueueOperations(operation.Fill, .fill, &it);
+}
+
+fn doQuery(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32, kind: operation.Kind) void {
     if (cmd.current_error) |_| return;
 
     cmd.finalizeCurrent() catch |err| {
@@ -893,6 +959,29 @@ fn doQuery(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32, kind: operati
     };
 
     cmd.pushOperation(&query_op.node);
+}
+
+fn doQueueOperations(cmd: *CommandBuffer, comptime T: type, kind: operation.Kind, it: *T.Operation.Iterator) void {
+    if (cmd.current_error) |_| return;
+
+    cmd.finalizeCurrent() catch |err| {
+        cmd.current_error = err;
+        return;
+    };
+
+    while (it.next()) |current| {
+        const op = cmd.allocOperation(T) catch |err| {
+            cmd.current_error = err;
+            return;
+        };
+
+        op.* = .{
+            .node = .empty(kind),
+            .operation = current,
+        };
+
+        cmd.pushOperation(&op.node);
+    }
 }
 
 fn beforeDraw(cmd: *CommandBuffer, draw_count: usize) bool {
@@ -995,7 +1084,7 @@ fn pushOperation(cmd: *CommandBuffer, node: *operation.Node) void {
 }
 
 fn ensureUnusedCapacity(cmd: *CommandBuffer, capacity: usize) !void {
-    const remaining = if (cmd.stream.first()) |que| (que.unusedCapacitySlice().len - cmd.stream.start) else 0;
+    const remaining = if (cmd.stream.first()) |que| (que.buffer.len - cmd.stream.start) else 0;
 
     if (remaining < capacity) {
         @branchHint(.unlikely);
@@ -1018,6 +1107,13 @@ pub fn notifyCompleted(cmd: *CommandBuffer) void {
     @atomicStore(backend.CommandBuffer.State, &cmd.state, .executable, .monotonic);
 }
 
+pub fn fmtDump(cmd: *CommandBuffer, mark: ?*operation.Node) Dumper {
+    return .{
+        .cmd = cmd,
+        .mark = mark,
+    };
+}
+
 pub fn toHandle(image: *CommandBuffer) Handle {
     return @enumFromInt(@intFromPtr(image));
 }
@@ -1035,10 +1131,54 @@ const StreamContext = struct {
     }
 };
 
+const Dumper = struct {
+    cmd: *CommandBuffer,
+    mark: ?*operation.Node,
+
+    pub fn format(dumper: Dumper, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        const cmd = dumper.cmd;
+        try writer.print("CommandBuffer 0x{X:0>8} ({t})\n", .{@intFromPtr(cmd), cmd.state});
+
+        var current = cmd.head;
+        var i: usize = 1;
+        while (current) |node| : (i += 1) {
+            try writer.print("{d}. {t} -> 0x{X:0>8}\n", .{i, node.kind, @intFromPtr(node)});
+
+            switch (node.kind) {
+                .graphics => {
+                    const gfx: *CommandBuffer.operation.Graphics = @alignCast(@fieldParentPtr("node", node));
+                    try writer.print(
+                        \\  with head 0x{X:0>8} (virtual) and length (in words) {d}
+                        \\
+                    , .{@intFromPtr(gfx.head), gfx.len});
+                },
+                .fill => {
+                    const op: *CommandBuffer.operation.Fill = @alignCast(@fieldParentPtr("node", node));
+                    const fill = op.operation;
+
+                    try writer.print(
+                        \\  with head 0x{X:0>8} (device/physical), length (in bytes) {d} and pattern 0x{X:0>8} ({t} bits)
+                        \\
+                    , .{@intFromEnum(fill.ptr), fill.extra.len, fill.value, fill.extra.size});
+                },
+                .timestamp, .begin_query, .end_query => {
+                    const query_op: *CommandBuffer.operation.Query = @alignCast(@fieldParentPtr("node", node));
+                    try writer.print(
+                        \\  for query {d} and pool 0x{X:0>8}
+                        \\
+                    , .{query_op.query, @intFromPtr(query_op.pool)});
+                },
+            }
+
+            if (node == dumper.mark) log.err("    -----> Here", .{});
+            current = node.nextPtr();
+        }
+    }
+};
+
 comptime {
     _ = setDepthMode;
     _ = setCullMode;
-    _ = setFrontFace;
     _ = setPrimitiveTopology;
     _ = setViewport;
     _ = setScissor;
@@ -1048,7 +1188,7 @@ comptime {
     _ = setDepthTestEnable;
     _ = setDepthCompareOp;
     _ = setDepthWriteEnable;
-    _ = setDepthBias;
+    _ = setDepthParameters;
     _ = setLogicOpEnable;
     _ = setLogicOp;
     _ = setAlphaTestEnable;
@@ -1089,8 +1229,9 @@ const RenderingState = backend.RenderingState;
 const std = @import("std");
 const zitrus = @import("zitrus");
 const mango = zitrus.mango;
-const pica = zitrus.hardware.pica;
-const PhysicalAddress = zitrus.hardware.PhysicalAddress;
+const hardware = zitrus.hardware;
+const pica = hardware.pica;
+const PhysicalAddress = hardware.PhysicalAddress;
 
 const command = pica.command;
 

@@ -45,6 +45,52 @@ pub const graphics_state = struct {
         \\[CommandBuffer] {[0]s} must be set
         \\| dynamic state is mandatory
     ;
+
+    pub const alpha_test = struct {
+        pub const op_must_be_set =
+            \\[CommandBuffer] alpha test op must be set
+            \\| dynamic state is mandatory, alpha test is enabled
+        ;
+
+        pub const reference_must_be_set =
+            \\[CommandBuffer] alpha test reference must be set
+            \\| dynamic state is mandatory, alpha test is enabled
+        ; 
+    };
+
+    pub const depth_test = struct {
+        pub const mode_must_be_set =
+            \\[CommandBuffer] depth mode must be set
+            \\| dynamic state is mandatory, depth test is enabled
+        ;
+
+        pub const parameters_must_be_set =
+            \\[CommandBuffer] depth parameters must be set
+            \\| dynamic state is mandatory, depth test is enabled
+        ;
+
+        pub const write_must_be_set =
+            \\[CommandBuffer] depth write must be set
+            \\| dynamic state is mandatory, depth test is enabled
+        ;
+
+        pub const op_must_be_set = 
+            \\[CommandBuffer] depth compare operation must be set
+            \\| dynamic state is mandatory, depth test is enabled
+        ;
+    };
+
+    pub const fog = struct {
+        pub const color_must_be_set =
+            \\[CommandBuffer] fog color must be set
+            \\| dynamic state is mandatory, fog is enabled
+        ;
+
+        pub const lookup_table_must_be_set =
+            \\[CommandBuffer] fog lookup table must be set
+            \\| dynamic state is mandatory, fog is enabled
+        ; 
+    };
 };
 
 pub const shader = struct {
@@ -121,7 +167,7 @@ pub fn init(comptime T: type, value: T) Data(T) {
     return if (enabled) value else {};
 }
 
-/// Emits an `error.ValidationFailed` when enabled, asserts on `ReleaseSmall` and `ReleaseFast` builds.
+/// Emits an `error.ValidationFailed` when enabled, asserts when validation is not enabled.
 pub fn assert(condition: bool, comptime format: []const u8, args: anytype) Error!void {
     if (!check(condition, format, args)) {
         if (enabled) return error.ValidationFailed;

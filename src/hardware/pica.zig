@@ -140,7 +140,7 @@ pub const morton = struct {
         try testing.expectEqual(0b011101, toIndex(u3, 2, .{ 7, 2 }));
     }
 
-    // TODO: We could test fuzzing (zig 0.16.0) value -> toDimensions -> toIndex -> value, as it must always be idempotent
+    // TODO: We could test fuzzing (zig 0.17.0?) value -> toDimensions -> toIndex -> value, as it must always be idempotent
 
     pub const Strategy = enum {
         /// Linear -> Morton
@@ -349,7 +349,6 @@ pub const TextureUnit = enum(u2) {
     @"3",
 };
 
-/// The front face is always counter-clockwise and cannot be changed.
 pub const CullMode = enum(u2) {
     /// No triangles are discarded.
     none,
@@ -774,9 +773,13 @@ pub const Graphics = extern struct {
             _unused3: u7 = 0,
         };
 
-        pub const DepthMap = extern struct {
+        /// (z_clip / w_clip) * scale + bias 
+        pub const Depth = extern struct {
             pub const Mode = enum(u1) {
                 /// Precision is evenly distributed.
+                ///   
+                /// Multiplies the final depth value by `w`
+                /// resulting in z_clip * scale + bias * w_clip
                 w,
                 /// Precision is higher close to the near plane.
                 z,
@@ -826,7 +829,7 @@ pub const Graphics = extern struct {
         _unknown1: [1]u32,
         /// Maps depth from NDC [0, -1] to framebuffer [0, 1].
         /// 0x134
-        depth_map: DepthMap,
+        depth: Depth,
         /// 0x13C
         num_inputs: LsbRegister(u3),
         /// 0x140
@@ -869,7 +872,7 @@ pub const Graphics = extern struct {
         /// 0x1AC
         _unknown9: [2]u32,
         /// 0x1B4
-        depth_map_mode: LsbRegister(DepthMap.Mode),
+        depth_mode: LsbRegister(Depth.Mode),
         /// Does not seem to have an effect but it's still documented like this
         /// 0x1B8
         _unused_render_buffer_dimensions: u32, // XXX: Why would the rasterizer need output dimensions?
@@ -891,16 +894,16 @@ pub const Graphics = extern struct {
             _unused2: u1 = 1,
             texture_2_coordinates: TextureUnitTexture2Coordinates,
             _unused3: u2 = 0,
-            clear_texture_cache: bool,
+            invalidate_texture_cache: bool,
             _unused4: u15 = 0,
 
             pub fn format(cfg: Config, w: *std.Io.Writer) std.Io.Writer.Error!void {
-                try w.print("Enable: {f}, Enable procedural: {} | T2 source: {}, T3 source: {} | Clear cache: {}", .{
+                try w.print("Enable: {f}, Enable procedural: {} | T2 source: {}, T3 source: {} | Invalidate: {}", .{
                     cfg.texture_enabled,
                     cfg.texture_3_enabled,
                     cfg.texture_2_coordinates,
                     cfg.texture_3_coordinates,
-                    cfg.clear_texture_cache,
+                    cfg.invalidate_texture_cache,
                 });
             }
         };
@@ -1040,8 +1043,19 @@ pub const Graphics = extern struct {
         lut_data: [8]u32,
     };
 
+    /// 6 texture combiners with 4 (5) buffer units (for combiners 1-4)
+    ///
+    /// Each buffer unit can get its value from the previous one or the output
+    /// of the previous combiner. The 0th buffer unit gets it's value from `buffer_color`.
+    ///
+    /// The final output has 3 different modes:
+    ///   - `standard` -> no special effects are added
+    ///   - `fog` -> a fog effect is added to the final output; the factor is calculated from 
+    ///   a lookup table indexed by remapping the fragment depth from [0.0, 1.0] to [0, 127].
+    ///   Final output is mixed with `fog_color` based on the factor stored in the LUT.
+    ///   - `gas` -> needs more RE, interacts with the `gas` output merger mode.
     pub const TextureCombiners = extern struct {
-        pub const FogMode = enum(u3) { disabled, fog = 5, gas = 7 };
+        pub const Effect = enum(u3) { none, fog = 5, gas = 7 };
         pub const ShadingDensity = enum(u1) { plain, depth };
         pub const BufferSource = enum(u1) { previous_buffer, previous };
         pub const Multiplier = enum(u2) { @"1x", @"2x", @"4x" };
@@ -1106,12 +1120,12 @@ pub const Graphics = extern struct {
         };
 
         pub const Config = packed struct(u32) {
-            fog_mode: FogMode,
+            effect: Effect,
             shading_density_source: ShadingDensity,
             _unused0: u4 = 0,
             combiner_color_buffer_src: BitpackedArray(BufferSource, 4),
             combiner_alpha_buffer_src: BitpackedArray(BufferSource, 4),
-            z_flip: bool,
+            depth_flip: bool,
             _unused1: u7 = 0,
             _unknown0: u2 = 0,
             _unused2: u6 = 0,
@@ -1127,10 +1141,10 @@ pub const Graphics = extern struct {
             }
 
             pub fn format(cfg: Config, w: *std.Io.Writer) std.Io.Writer.Error!void {
-                try w.print("Fog Mode: {}, Shading Density: {}, Flip Z: {} | Color Buffer Src: {}, Alpha Buffer Src: {}", .{
-                    cfg.fog_mode,
+                try w.print("Effect: {}, Shading Density: {}, Flip Depth: {} | Color Buffer Src: {}, Alpha Buffer Src: {}", .{
+                    cfg.effect,
                     cfg.shading_density_source,
-                    cfg.z_flip,
+                    cfg.depth_flip,
                     cfg.combiner_color_buffer_src,
                     cfg.combiner_alpha_buffer_src,
                 });
@@ -1186,9 +1200,34 @@ pub const Graphics = extern struct {
             scales: Scales,
         };
 
-        pub const FogLutValue = packed struct(u24) {
+        pub const FogData = packed struct(u32) {
             next_difference: Q1_11,
-            value: UQ0_11,
+            entry: UQ0_11,
+            _unused0: u8 = 0,
+
+            pub fn initContext(context: anytype) [128]FogData {
+                var lut: [128]FogData = undefined;
+
+                var last: f32 = context.value(0.0);
+                for (1..lut.len) |i| {
+                    const input = @as(f32, @floatFromInt(i)) / 128.0;
+
+                    const current: f32 = context.value(input);
+                    defer last = current;
+
+                    lut[i - 1] = .{
+                        .entry = .ofSaturating(last),
+                        .next_difference = .ofSaturating(current - last),
+                    };
+                }
+
+                lut[127] = .{ .entry = .ofSaturating(last), .next_difference = .ofSaturating(context.value(1.0) - last) };
+                return lut;
+            }
+
+            pub fn format(data: FogData, w: *std.Io.Writer) std.Io.Writer.Error!void {
+                try w.print("Entry: {}, Diff: {}", .{ data.entry, data.next_difference });
+            }
         };
 
         /// 0x200
@@ -1207,7 +1246,7 @@ pub const Graphics = extern struct {
         gas_accumulation_max: LsbRegister(F5_10),
         fog_lut_index: LsbRegister(u16),
         _unknown5: u32,
-        fog_lut_data: [8]LsbRegister(FogLutValue),
+        fog_lut_data: [8]FogData,
         @"4": Unit,
         _unknown6: [3]u32,
         @"5": Unit,

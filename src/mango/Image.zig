@@ -108,12 +108,12 @@ pub fn init(create_info: mango.ImageCreateInfo) !Image {
 
     return .{
         .info = .init(create_info),
-        .memory_info = .empty,
+        .address = .zero,
     };
 }
 
 info: Info,
-memory_info: DeviceMemory.BoundMemoryInfo,
+address: zitrus.hardware.PhysicalAddress,
 
 pub fn toHandle(image: *Image) Handle {
     return @enumFromInt(@intFromPtr(image));

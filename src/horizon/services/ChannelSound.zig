@@ -3,11 +3,11 @@
 pub const service = "csnd:SND";
 
 pub const Command = extern struct {
-    pub const Offset = enum(i16) {
+    pub const Offset = enum(u16) {
         none = 0xFFFF,
         _,
 
-        pub fn offset(value: i16) Offset {
+        pub fn offset(value: u16) Offset {
             return @enumFromInt(value);
         }
     };
@@ -47,12 +47,16 @@ pub const Command = extern struct {
     pub const Parameters = extern union {
         pub const None = extern struct {};
         pub const SetChannelPlayback = extern struct {
-            pub const Operation = enum(u8) { start, stop };
+            pub const Operation = enum(u8) { stop, start };
             channel: hardware.LsbRegister(Channel.Id),
             /// If `start`, begins audio playback.
             /// Otherwise stops it and resets `csnd` registers.
             operation: Operation,
             _unused0: [19]u8 = @splat(0),
+
+            pub fn playback(channel: Channel.Id, operation: Operation) SetChannelPlayback {
+                return .{ .channel = .init(channel), .operation = operation };
+            }
         };
 
         pub const SetChannelPaused = extern struct {
@@ -102,14 +106,14 @@ pub const Command = extern struct {
 
         pub const SetChannelSampleRate = extern struct {
             channel: hardware.LsbRegister(Channel.Id),
-            sample_rate: hardware.LsbRegister(csnd.SampleRate),
+            sample_rate: hardware.LsbRegister(SampleRate),
             _unused0: [16]u8 = @splat(0),
         };
 
         pub const SetChannelVolume = extern struct {
             channel: hardware.LsbRegister(Channel.Id),
-            channel_volume: csnd.Channel.Volume,
-            capture_volume: csnd.Channel.Volume,
+            channel_volume: Channel.Volume,
+            capture_volume: Channel.Volume,
             _unused0: [12]u8 = @splat(0),
         };
 
@@ -131,16 +135,16 @@ pub const Command = extern struct {
                 _unused0: u1 = 0,
                 linearly_interpolate: bool,
                 _unused1: u3 = 0,
-                repeat: csnd.Channel.Repeat,
-                format: csnd.Channel.Format,
+                repeat: Channel.Repeat,
+                format: Channel.Format,
                 disable_pause: bool,
-                _unused2: u1,
-                sample_rate: csnd.SampleRate,
+                _unused2: u1 = 0,
+                sample_rate: SampleRate,
             };
 
-            control: csnd.Channel.Control,
-            channel_volume: csnd.Channel.Volume,
-            capture_volume: csnd.Channel.Volume,
+            control: SetChannelSound.Control,
+            channel_volume: Channel.Volume,
+            capture_volume: Channel.Volume,
             address: hardware.PhysicalAddress,
             second_address: hardware.PhysicalAddress,
             size: u32,
@@ -152,12 +156,12 @@ pub const Command = extern struct {
                 _unused0: u9 = 0,
                 disable_pause: bool,
                 _unused1: u1,
-                sample_rate: csnd.SampleRate,
+                sample_rate: SampleRate,
             };
 
             control: Control,
-            channel_volume: csnd.Channel.Volume,
-            capture_volume: csnd.Channel.Volume,
+            channel_volume: Channel.Volume,
+            capture_volume: Channel.Volume,
             duty: hardware.LsbRegister(csnd.Channel.WaveDuty),
             _unused0: [8]u8 = @splat(0),
         };
@@ -171,8 +175,8 @@ pub const Command = extern struct {
             };
 
             control: Control,
-            channel_volume: csnd.Channel.Volume,
-            capture_volume: csnd.Channel.Volume,
+            channel_volume: Channel.Volume,
+            capture_volume: Channel.Volume,
             _unused0: [12]u8 = @splat(0),
         };
 
@@ -217,16 +221,37 @@ pub const Command = extern struct {
     first_finished: bool = false,
     _padding0: [3]u8 = @splat(0),
     parameters: Parameters,
+
+    pub fn setChannelPlayback(next: Offset, playback: Parameters.SetChannelPlayback) Command {
+        return .{
+            .next = next,
+            .id = .set_channel_playback,
+            .parameters = .{ .set_channel_playback = playback },
+        };
+    }
+
+    pub fn setChannelSound(next: Offset, sound: Parameters.SetChannelSound) Command {
+        return .{
+            .next = next,
+            .id = .set_channel_sound,
+            .parameters = .{ .set_channel_sound = sound },
+        };
+    }
 };
 
+pub const SampleRate = csnd.SampleRate;
 pub const Channel = extern struct {
+    pub const Volume = csnd.Channel.Volume;
+    pub const Format = csnd.Channel.Format;
+    pub const Repeat = csnd.Channel.Repeat;
     pub const Id = enum(u5) {
-        pub const Mask = packed struct(u8) { @"0": bool, @"1": bool, @"2": bool, @"3": bool, _: u4 };
+        pub const Mask = hardware.BitpackedArray(bool, 32);
 
-        @"0",
-        @"1",
-        @"2",
-        @"3",
+        _,
+
+        pub fn channel(value: u5) Id {
+            return @enumFromInt(value);
+        }
     };
 
     active: bool,
@@ -267,6 +292,20 @@ pub fn close(snd: ChannelSound) void {
     snd.session.close();
 }
 
+pub fn sendInitialize(snd: ChannelSound, shared_memory_size: u32, dsp_state_offset: u32, channel_state_offset: u32, capture_unit_state_offset: u32, direct_sound_state_offset: u32) !Handles {
+    const data = tls.get();
+    return switch ((try data.ipc.sendRequest(snd.session, command.Initialize, .{
+        .shared_memory_size = shared_memory_size,
+        .dsp_state_offset = dsp_state_offset,
+        .channel_state_offset = channel_state_offset,
+        .capture_unit_state_offset = capture_unit_state_offset,
+        .direct_sound_state_offset = direct_sound_state_offset, 
+    }, .{})).cases()) {
+        .success => |s| s.value.handles.wrapped,
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
 pub fn sendShutdown(snd: ChannelSound) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(snd.session, command.Shutdown, .{}, .{})).cases()) {
@@ -294,7 +333,7 @@ pub fn sendPlaySoundDirectly(snd: ChannelSound, channel: Channel.Id, priority: P
 pub fn sendAcquireSoundChannels(snd: ChannelSound) !Channel.Id.Mask {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(snd.session, command.AcquireSoundChannels, .{}, .{})).cases()) {
-        .success => |s| s.value.response.available,
+        .success => |s| s.value.available,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -310,7 +349,7 @@ pub fn sendReleaseSoundChannels(snd: ChannelSound) !void {
 pub fn sendAcquireCaptureUnit(snd: ChannelSound) !Capture.Id {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(snd.session, command.AcquireCaptureUnit, .{}, .{})).cases()) {
-        .success => |s| s.value.response.unit,
+        .success => |s| s.value.unit,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -318,7 +357,7 @@ pub fn sendAcquireCaptureUnit(snd: ChannelSound) !Capture.Id {
 pub fn sendReleaseCaptureUnit(snd: ChannelSound, unit: Capture.Id) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(snd.session, command.ReleaseCaptureUnit, .{ .unit = unit }, .{})).cases()) {
-        .success => |s| s.value.response.unit,
+        .success => |s| s.value.unit,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }

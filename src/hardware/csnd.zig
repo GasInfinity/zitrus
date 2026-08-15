@@ -9,7 +9,7 @@ pub const captures = 2;
 
 pub const Volume = enum(u16) {
     pub const min: Volume = .volume(0);
-    pub const max: Volume = .volume(0);
+    pub const max: Volume = .volume(0x8000);
 
     _,
 
@@ -25,6 +25,10 @@ pub const SampleRate = enum(u16) {
     _,
 
     pub fn rate(value: u16) SampleRate {
+        return @enumFromInt(@as(u32, 67_027_964) / value);
+    }
+
+    pub fn raw(value: u16) SampleRate {
         std.debug.assert(value <= 0xFFBE);
         return @enumFromInt(value);
     }
@@ -66,8 +70,15 @@ pub const Channel = extern struct {
     };
 
     pub const Volume = packed struct(u32) {
-        right: csnd.Volume,
         left: csnd.Volume,
+        right: csnd.Volume,
+
+        pub fn init(volume: u15, pan: i16) Channel.Volume {
+            return .{
+                .left = @enumFromInt(std.math.clamp(@as(i32, volume) - @max(0, pan), 0, @intFromEnum(csnd.Volume.max))),
+                .right = @enumFromInt(std.math.clamp(@as(i32, volume) + @min(pan, 0), 0, @intFromEnum(csnd.Volume.max))),
+            };
+        }
     };
 
     /// 0x00

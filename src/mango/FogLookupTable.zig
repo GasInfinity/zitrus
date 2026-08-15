@@ -12,15 +12,15 @@ const ExternAdapterContext = struct {
     }
 };
 
-data: [256]Data,
+data: [128]Data,
 
-pub fn init(create_info: mango.LightLookupTableCreateInfo) LightLookupTable {
+pub fn init(create_info: mango.FogLookupTableCreateInfo) FogLookupTable {
     return .{
         .data = if (create_info.map) |map|
             Data.initContext(ExternAdapterContext{
                 .map = map,
                 .ctx = create_info.context,
-            }, create_info.range == .positive)
+            })
         else if (create_info.context) |_|
             @panic("TODO")
         else
@@ -28,16 +28,16 @@ pub fn init(create_info: mango.LightLookupTableCreateInfo) LightLookupTable {
     };
 }
 
-pub fn toHandle(lut: *LightLookupTable) Handle {
+pub fn toHandle(lut: *FogLookupTable) Handle {
     return @enumFromInt(@intFromPtr(lut));
 }
 
-pub fn fromHandleMutable(handle: Handle) *LightLookupTable {
-    return @as(*LightLookupTable, @ptrFromInt(@intFromEnum(handle)));
+pub fn fromHandleMutable(handle: Handle) *FogLookupTable {
+    return @as(*FogLookupTable, @ptrFromInt(@intFromEnum(handle)));
 }
 
-const LightLookupTable = @This();
-const Data = pica.Graphics.FragmentLighting.LookupTable.Data;
+const FogLookupTable = @This();
+const Data = pica.Graphics.TextureCombiners.FogData;
 
 const backend = @import("backend.zig");
 

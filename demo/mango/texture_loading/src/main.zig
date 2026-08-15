@@ -8,113 +8,82 @@ const test_bgr = @embedFile("test.bgr");
 
 pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
 
-const Vertex = extern struct {
-    pos: [2]f32,
-    uv: [2]f32,
+const Model = extern struct {
+    const Vertex = extern struct {
+        pos: [2]f32,
+        uv: [2]f32,
+    };
+
+    vertices: [4]Vertex,
+    indices: [6]u8,
 };
 
-const vertices: []const Vertex = &.{
-    .{ .pos = .{ -0.5, -0.5 }, .uv = .{ 0, 0 } },
-    .{ .pos = .{ 0.5, -0.5 }, .uv = .{ 1, 0 }  },
-    .{ .pos = .{ -0.5, 0.5 }, .uv = .{ 0, 1 }  },
-    .{ .pos = .{ 0.5, 0.5 }, .uv = .{ 1, 1 }  },
+const model_data: Model = .{
+    .vertices = .{
+        .{ .pos = .{ -0.5, -0.5 }, .uv = .{ 0, 0 } },
+        .{ .pos = .{ 0.5, -0.5 }, .uv = .{ 1, 0 }  },
+        .{ .pos = .{ -0.5, 0.5 }, .uv = .{ 0, 1 }  },
+        .{ .pos = .{ 0.5, 0.5 }, .uv = .{ 1, 1 }  },
+    },
+    .indices = .{ 0, 1, 2, 2, 1, 3 },
 };
-const indices: []const u8 = &.{ 0, 1, 2, 2, 1, 3 };
 
 pub fn main(init: horizon.Init.Application.Mango) !void {
-    const gpa = init.app.base.gpa;
     const device: mango.Device = init.device;
 
     var state: State = try .init(device);
     defer state.deinit(device);
 
-    const model_buffer = try device.createBuffer(.{
-        .size = .size(@sizeOf(Vertex) * 4 + 6),
-        .usage = .{
-            .vertex_buffer = true,
-            .index_buffer = true,
-        },
-    }, gpa);
-    defer device.destroyBuffer(model_buffer, null);
+    const model = try state.fcram.dupe(Model, (&model_data)[0..1]);
+    defer state.fcram.free(model);
 
-    const buffer_memory = try device.allocateMemory(.{
-        .memory_type = .fcram_cached,
-        .allocation_size = .size(@sizeOf(Vertex) * 4 + 6),
-    }, null);
-    defer device.freeMemory(buffer_memory, null);
+    const model_gpu = try device.hostToDevice(@ptrCast(model));
+    try device.flushCachedMemoryRanges(&.{@ptrCast(model)});
 
-    {
-        const mapped = try device.mapMemory(buffer_memory, .size(0), .whole);
-        defer device.unmapMemory(buffer_memory);
-
-        const vtx_data: *[4]Vertex = @alignCast(std.mem.bytesAsValue([4]Vertex, mapped));
-        const idx_data: *[6]u8 = std.mem.bytesAsValue([6]u8, mapped[@sizeOf([4]Vertex)..]);
-
-        @memcpy(vtx_data, vertices);
-        @memcpy(idx_data, indices);
-
-        try device.flushMappedMemoryRanges(&.{
-            .{
-                .memory = buffer_memory,
-                .offset = .size(0),
-                .size = .whole,
-            },
-        });
-    }
-    try device.bindBufferMemory(model_buffer, buffer_memory, .size(0));
-
-    const simple_shader = try device.createShader(.init(.psh, position_vtx, "main"), null);
-    defer device.destroyShader(simple_shader, null);
+    const simple_shader = try device.createShader(.init(.psh, position_vtx, "main"));
+    defer device.destroyShader(simple_shader);
 
     const vertex_input_layout = try device.createVertexInputLayout(.init(&.{
-        .{
-            .stride = @sizeOf(Vertex),
-        },
+        .{ .stride = @sizeOf(Model.Vertex) },
     }, &.{
         .{
             .location = .v0,
             .binding = .@"0",
             .format = .r32g32_sfloat,
-            .offset = @offsetOf(Vertex, "pos"),
+            .offset = @offsetOf(Model.Vertex, "pos"),
         },
         .{
             .location = .v1,
             .binding = .@"0",
             .format = .r32g32_sfloat,
-            .offset = @offsetOf(Vertex, "uv"),
+            .offset = @offsetOf(Model.Vertex, "uv"),
         },
-    }, &.{}), null);
-    defer device.destroyVertexInputLayout(vertex_input_layout, null);
+    }, &.{}));
+    defer device.destroyVertexInputLayout(vertex_input_layout);
 
-    const texture_memory = try device.allocateMemory(.{
-        .memory_type = .vram_a,
-        .allocation_size = .size(64 * 64 * 3),
-    }, null);
-    defer device.freeMemory(texture_memory, null);
+    const texture_buffer = try device.allocatePrivate(.a, 64 * 64 * 3);
+    defer device.freePrivate(texture_buffer);
+    const texture_gpu_buffer = try device.hostToDevice(texture_buffer);
 
     const texture = try device.createImage(.{
         .flags = .{},
-        .type = .@"2d",
         .tiling = .optimal,
-        .usage = .{
-            .transfer_dst = true,
-            .sampled = true,
-        },
+        .usage = .{ .sampled = true },
         .extent = .{ .width = 64, .height = 64 },
         .format = .b8g8r8_unorm,
         .mip_levels = .@"1",
         .array_layers = .@"1",
-    }, null);
-    defer device.destroyImage(texture, null);
-    try device.bindImageMemory(texture, texture_memory, .size(0));
+    });
+    defer device.destroyImage(texture);
+    try device.bindImageMemory(texture, texture_gpu_buffer);
 
     const texture_view = try device.createImageView(.{
         .type = .@"2d",
         .format = .b8g8r8_unorm,
         .image = texture,
         .subresource_range = .full,
-    }, null);
-    defer device.destroyImageView(texture_view, null);
+    });
+    defer device.destroyImageView(texture_view);
 
     const linear_sampler = try device.createSampler(.{
         .mag_filter = .linear,
@@ -126,46 +95,25 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         .min_lod = 0,
         .max_lod = 0,
         .border_color = @splat(0),
-    }, null);
-    defer device.destroySampler(linear_sampler, null);
+    });
+    defer device.destroySampler(linear_sampler);
 
     {
-        const staging_memory = try device.allocateMemory(.{
-            .memory_type = .fcram_cached,
-            .allocation_size = .size(64*64*3),
-        }, null);
-        defer device.freeMemory(staging_memory, null);
+        const staging = try state.fcram.alloc(u8, 64*64*3);
+        defer state.fcram.free(staging);
+        const staging_gpu = try device.hostToDevice(staging);
 
-        const staging_buffer = try device.createBuffer(.{
-            .size = .size(64*64*3), 
-            .usage = .{
-                .transfer_src = true,
-            }
-        }, null);
-        defer device.destroyBuffer(staging_buffer, null);
-        try device.bindBufferMemory(staging_buffer, staging_memory, .size(0));
-
-        const mapped = try device.mapMemory(staging_memory, .size(0), .size(64*64*3));
-        defer device.unmapMemory(staging_memory);
-
-        @memcpy(mapped, test_bgr);
-        try device.flushMappedMemoryRanges(&.{
-            .{
-                .memory = staging_memory,
-                .offset = .size(0),
-                .size = .whole,
-            }
-        });
+        @memcpy(staging, test_bgr);
+        try device.flushCachedMemoryRanges(&.{staging});
         
-        try device.getQueue(.transfer).copyBufferToImage(.{
-            .wait_semaphore = &.init(state.sema, state.sync),
-            .src_buffer = staging_buffer,
-            .src_offset = .size(0),
+        try device.copyBufferToImage(&.init(state.sema, state.sync), &.init(state.sema, state.sync + 1), &.{
+            .src_buffer = staging_gpu,
             .dst_image = texture,
             .dst_subresource = .full,
-            .signal_semaphore = &.init(state.sema, state.sync + 1),
         });
 
+        // We're waiting here because we're freeing the staging memory afterwards, instead of doing this you could let the allocation live until the next frame
+        // to reclaim it.
         state.sync += 1;
         try device.waitSemaphores(.init(&.{state.sema}, &.{state.sync}), std.math.maxInt(u64));
     }
@@ -198,7 +146,6 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         cmd.setDepthTestEnable(false);
         cmd.setStencilTestEnable(false);
         cmd.setCullMode(.none);
-        cmd.setFrontFace(.ccw);
         cmd.setPrimitiveTopology(.triangle_list);
         cmd.setColorWriteMask(.rgba);
         cmd.setBlendEquation(.{
@@ -209,35 +156,27 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
             .dst_alpha_factor = .zero,
             .alpha_op = .add,
         });
-        cmd.setTextureCombiners(&.{
-            .{
-                .color_src = .{.primary_color, .texture_0, .primary_color},
-                .alpha_src = @splat(.primary_color),
-                .color_factor = @splat(.src_color),
-                .alpha_factor = @splat(.src_alpha),
-                .color_op = .modulate,
-                .alpha_op = .replace,
+        cmd.setTextureCombinersEffect(.none);
+        cmd.setTextureCombiners(5, &.{.{
+            .color_src = .{.primary_color, .texture_0, .primary_color},
+            .alpha_src = @splat(.primary_color),
+            .color_factor = @splat(.src_color),
+            .alpha_factor = @splat(.src_alpha),
+            .color_op = .modulate,
+            .alpha_op = .replace,
 
-                .color_scale = .@"1x",
-                .alpha_scale = .@"1x",
+            .color_scale = .@"1x",
+            .alpha_scale = .@"1x",
 
-                .constant = @splat(0),
-            },
-        }, &.{});
+            .constant = @splat(0),
+        }});
 
         // Render to the top screen
-        cmd.setViewport(.{
-            .rect = .{
-                .offset = .{ .x = 0, .y = 0 },
-                .extent = .{ .width = 240, .height = 400 },
-            },
-            .min_depth = 0.0,
-            .max_depth = 1.0,
-        });
+        cmd.setViewport(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 400 } });
         cmd.setScissor(.inside(.{ .offset = .{ .x = 0, .y = 0 }, .extent = .{ .width = 240, .height = 400 } }));
 
-        cmd.bindIndexBuffer(model_buffer, @sizeOf([4]Vertex), .u8);
-        cmd.bindVertexBuffersSlice(0, &.{model_buffer}, &.{0});
+        cmd.bindIndexBuffer(model_gpu.slice(@offsetOf(Model, "indices"), 6), .u8);
+        cmd.bindVertexBuffers(0, &.{model_gpu});
         cmd.bindCombinedImageSamplers(0, &.{
             .{
                 .image = texture_view,
@@ -252,7 +191,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
             });
             defer cmd.endRendering();
 
-            cmd.drawIndexed(indices.len, 0, 0);
+            cmd.drawIndexed(model[0].indices.len, 0, 0);
         }
         try cmd.end();
         

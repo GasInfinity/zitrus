@@ -906,6 +906,8 @@ pub const Interruptable = packed struct(u32) {
 };
 
 pub const Mutex = packed struct(u32) {
+    pub const none: Mutex = .{ .sync = .none };
+
     pub const CreateError = error{} || Object.Error;
     pub const WaitError = Synchronization.WaitError;
     pub const WaitManyError = Synchronization.WaitManyError;
@@ -1290,6 +1292,9 @@ pub const Process = packed struct(u32) {
 
         /// Gets the `horizon.Process.Capability.KernelFlags` of the process with all zeroed out except `MemoryType`
         memory_region = 19,
+        /// Gets the offset to which linear virtual adresses are mapped to physical ones.
+        /// Wrapping addition/subtraction must be used.
+        linear_address_range_base_offset,
     };
 
     pub const Capability = packed union(u32) {
@@ -2171,7 +2176,7 @@ pub fn unbindInterrupt(id: InterruptId, int: Interruptable) result.Code {
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn invalidateProcessDataCache(prc: Process, data: []u8) result.Code {
+pub fn invalidateProcessDataCache(prc: Process, data: []const u8) result.Code {
     return asm volatile ("svc 0x52"
         : [code] "={r0}" (-> result.Code),
         : [process] "{r0}" (prc),

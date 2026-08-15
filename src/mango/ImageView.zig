@@ -78,7 +78,7 @@ pub fn getRenderingInfo(view: ImageView) RenderingInfo {
     return .{
         .width = @intCast(view_width),
         .height = @intCast(view_height),
-        .address = .fromAddress(@intFromEnum(image.memory_info.boundPhysicalAddress()) + img_offset),
+        .address = .fromAddress(@intFromEnum(image.address) + img_offset),
     };
 }
 

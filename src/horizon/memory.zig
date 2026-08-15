@@ -12,11 +12,11 @@ pub const lcd_begin: usize = 0x1ED02000;
 pub const gpu_begin: usize = 0x1EF00000;
 pub const io_end: usize = 0x1F000000;
 pub const vram_begin: usize = io_end;
-pub const vram_end: usize = vram_begin + memory.vram_size;
+pub const vram_end: usize = vram_begin + (memory.vram_size - 1);
 pub const vram_a_begin: usize = vram_begin;
-pub const vram_a_end: usize = vram_a_begin + memory.vram_bank_size;
-pub const vram_b_begin: usize = vram_a_end;
-pub const vram_b_end: usize = vram_b_begin + memory.vram_bank_size;
+pub const vram_a_end: usize = vram_a_begin + (memory.vram_bank_size - 1);
+pub const vram_b_begin: usize = vram_a_end + 1;
+pub const vram_b_end: usize = vram_b_begin + (memory.vram_bank_size - 1);
 pub const linear_heap_begin: usize = 0x30000000;
 pub const linear_heap_end: usize = linear_heap_begin + 0x10000000;
 
@@ -36,6 +36,14 @@ pub fn toPhysical(ptr: usize) zitrus.hardware.PhysicalAddress {
         vram_begin...vram_end => (ptr - vram_begin) + memory.vram_begin,
         else => 0,
     });
+}
+
+pub fn toVirtual(ptr: usize, fcram_base_offset: u32) ?[*]u8 {
+    return switch (ptr) {
+        zitrus.memory.fcram_begin...zitrus.memory.fcram_end_n3ds => @ptrFromInt(ptr -% fcram_base_offset),
+        zitrus.memory.vram_begin...zitrus.memory.vram_end => @ptrFromInt((ptr - zitrus.memory.vram_begin) + horizon.memory.vram_begin),
+        else => null,
+    };
 }
 
 const zitrus = @import("zitrus");

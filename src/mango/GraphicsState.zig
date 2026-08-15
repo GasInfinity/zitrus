@@ -5,8 +5,8 @@ pub const Dirty = packed struct(u64) {
     geometry_shader_code: bool = false,
     primitive_topology: bool = false,
     cull_mode: bool = false,
-    depth_map_mode: bool = false,
-    depth_map_parameters: bool = false,
+    depth_mode: bool = false,
+    depth_parameters: bool = false,
     viewport_parameters: bool = false,
     scissor_parameters: bool = false,
     depth_test_masks: bool = false,
@@ -18,7 +18,8 @@ pub const Dirty = packed struct(u64) {
     stencil_config: bool = false,
     stencil_operation: bool = false,
     combiners_config: bool = false,
-    combiners: hardware.BitpackedArray(bool, 6) = .splat(false),
+    combiners: bool = false,
+    combiners_buffer_color: bool = false,
     vertex_input_layout: bool = false,
     texture_config: bool = false,
     lighting_enable: bool = false,
@@ -27,13 +28,14 @@ pub const Dirty = packed struct(u64) {
     light_environment_scale: bool = false,
     light_environment_absolute: bool = false,
     light_luts: hardware.BitpackedArray(bool, 6) = .splat(false),
-    _: u26 = 0,
+    fog_color: bool = false,
+    fog_lut: bool = false,
+    _: u28 = 0,
 };
 
 pub const DepthParameters = struct {
-    min_depth: f32,
-    max_depth: f32,
-    constant: f32 = 0,
+    scale: f32,
+    bias: f32,
 };
 
 pub const Viewport = packed struct(u40) {
@@ -52,9 +54,8 @@ pub const Scissor = packed struct(u40) {
 
 pub const Misc = packed struct {
     primitive_topology: pica.PrimitiveTopology,
-    cull_mode_ccw: pica.CullMode,
-    is_front_ccw: bool,
-    depth_mode: Graphics.Rasterizer.DepthMap.Mode,
+    cull_mode: pica.CullMode,
+    depth_mode: Graphics.Rasterizer.Depth.Mode,
     is_scissor_inside: bool,
     depth_test_enable: bool,
     depth_test_op: pica.CompareOperation,
@@ -107,18 +108,22 @@ pub const LightEnvironment = struct {
 pub const Check = struct {
     pub const Set = packed struct {
         cull_mode: bool = false,
-        front_face: bool = false,
         primitive_topology: bool = false,
         viewport: bool = false,
         scissor: bool = false,
-        texture_combiners: bool = false,
+        texture_combiners_effect: bool = false,
+        last_texture_combiner: bool = false,
+        texture_combiners_effect_depth_flip: bool = false,
+        texture_combiners_buffer_color: bool = false,
+        fog_color: bool = false,
+        fog_lut: bool = false,
         blend_equation: bool = false,
         blend_constants: bool = false,
         color_write_mask: bool = false,
         depth_test_enable: bool = false,
         depth_write_enable: bool = false,
         depth_compare_op: bool = false,
-        depth_bias: bool = false,
+        depth_parameters: bool = false,
         depth_mode: bool = false,
         logic_op_enable: bool = false,
         logic_op: bool = false,
@@ -139,12 +144,18 @@ pub const empty: GraphicsState = .{
     // NOTE: Always modified as a whole, can be `undefined`.
     .blend_config = undefined,
     .blend_constants = undefined,
-    .depth_map_parameters = undefined,
+    .depth_parameters = undefined,
     // NOTE: Always modified as a whole, can be `undefined`.
     .viewport = undefined,
     // NOTE: Always modified as a whole, can be `undefined`.
     .scissor = undefined,
-    .combiners = undefined,
+    .combiners_config = std.mem.zeroes(pica.Graphics.TextureCombiners.Config),
+    .combiners_units = undefined,
+    .combiners_first = std.math.maxInt(u8),
+    .combiners_last = std.math.minInt(u8),
+    .combiners_buffer_color = undefined,
+    .fog_color = undefined,
+    .fog_lut = undefined,
     // NOTE: Always modified as a whole, can be `undefined`.
     .vtx_input = undefined,
     .light_environment = undefined,
@@ -160,12 +171,18 @@ stencil: Stencil,
 /// Always modify this as a whole or change `empty`
 blend_config: BlendConfig,
 blend_constants: [4]u8,
-depth_map_parameters: DepthParameters,
+depth_parameters: DepthParameters,
 /// Always modify this as a whole or change `empty`
 viewport: Viewport,
 /// Always modify this as a whole or change `empty`
 scissor: Scissor,
-combiners: TextureCombinerState = .empty,
+combiners_config: TextureCombiners.Config,
+combiners_units: [6]TextureCombiners.Unit,
+combiners_first: u8,
+combiners_last: u8,
+combiners_buffer_color: [4]u8,
+fog_color: [3]u8,
+fog_lut: mango.FogLookupTable,
 /// Always modify this as a whole or change `empty`
 vtx_input: VertexInputLayout,
 light_environment: LightEnvironment,
@@ -177,27 +194,13 @@ pub fn setDepthMode(state: *GraphicsState, mode: mango.DepthMode) void {
     if (validation.enabled) state.check.set.depth_mode = true;
 
     state.misc.depth_mode = mode.native();
-    state.dirty.depth_map_mode = true;
+    state.dirty.depth_mode = true;
 }
 
 pub fn setCullMode(state: *GraphicsState, cull_mode: mango.CullMode) void {
     if (validation.enabled) state.check.set.cull_mode = true;
 
-    const native_cull_mode_ccw = cull_mode.native(.ccw);
-
-    state.misc.cull_mode_ccw = native_cull_mode_ccw;
-    state.dirty.cull_mode = true;
-}
-
-pub fn setFrontFace(state: *GraphicsState, front_face: mango.FrontFace) void {
-    if (validation.enabled) state.check.set.front_face = true;
-
-    const front_ccw = switch (front_face) {
-        .ccw => true,
-        .cw => false,
-    };
-
-    state.misc.is_front_ccw = front_ccw;
+    state.misc.cull_mode = @enumFromInt(@intFromEnum(cull_mode));
     state.dirty.cull_mode = true;
 }
 
@@ -210,13 +213,13 @@ pub fn setPrimitiveTopology(state: *GraphicsState, primitive_topology: mango.Pri
     state.dirty.primitive_topology = true;
 }
 
-pub fn setViewport(state: *GraphicsState, viewport: mango.Viewport) void {
+pub fn setViewport(state: *GraphicsState, viewport: mango.Rect2D) void {
     if (validation.enabled) state.check.set.viewport = true;
 
-    const viewport_x: u10 = @intCast(viewport.rect.offset.x);
-    const viewport_y: u10 = @intCast(viewport.rect.offset.y);
-    const viewport_width_minus_one: u10 = @intCast(viewport.rect.extent.width - 1);
-    const viewport_height_minus_one: u10 = @intCast(viewport.rect.extent.height - 1);
+    const viewport_x: u10 = @intCast(viewport.offset.x);
+    const viewport_y: u10 = @intCast(viewport.offset.y);
+    const viewport_width_minus_one: u10 = @intCast(viewport.extent.width - 1);
+    const viewport_height_minus_one: u10 = @intCast(viewport.extent.height - 1);
 
     state.viewport = .{
         .x = viewport_x,
@@ -225,10 +228,6 @@ pub fn setViewport(state: *GraphicsState, viewport: mango.Viewport) void {
         .height_minus_one = viewport_height_minus_one,
     };
     state.dirty.viewport_parameters = true;
-
-    state.depth_map_parameters.min_depth = viewport.min_depth;
-    state.depth_map_parameters.max_depth = viewport.max_depth;
-    state.dirty.depth_map_parameters = true;
 }
 
 pub fn setScissor(state: *GraphicsState, scissor: mango.Scissor) void {
@@ -251,12 +250,59 @@ pub fn setScissor(state: *GraphicsState, scissor: mango.Scissor) void {
     state.dirty.scissor_parameters = true;
 }
 
-pub fn setTextureCombiners(state: *GraphicsState, combiners: []const mango.TextureCombinerUnit, combiner_buffer_sources: []const mango.TextureCombinerUnit.BufferSources) void {
-    if (validation.enabled) state.check.set.texture_combiners = true;
+pub fn setTextureCombinersEffect(state: *GraphicsState, effect: mango.TextureCombinerEffect) void {
+    if (validation.enabled) state.check.set.texture_combiners_effect = true;
 
-    state.combiners = .compile(combiners, combiner_buffer_sources);
-    state.dirty.combiners = comptime .splat(true);
+    state.combiners_config.effect = switch (effect) {
+        .none => .none,
+        .fog => .fog,
+    };
     state.dirty.combiners_config = true;
+}
+
+pub fn setTextureCombinersEffectDepthFlip(state: *GraphicsState, flip: bool) void {
+    if (validation.enabled) state.check.set.texture_combiners_effect_depth_flip = true;
+
+    state.combiners_config.depth_flip = flip;
+    state.dirty.combiners_config = true;
+}
+
+pub fn setTextureCombinersBufferColor(state: *GraphicsState, buffer_color: *const [4]u8) void {
+    if (validation.enabled) state.check.set.texture_combiners_buffer_color = true;
+
+    state.combiners_buffer_color = buffer_color;
+    state.dirty.combiners_buffer_color = true;
+}
+
+pub fn setTextureCombinersBufferSources(state: *GraphicsState, first: u32, buffer_sources: []const mango.TextureCombinerUnit.BufferSources) void {
+    std.debug.assert(first + buffer_sources.len <= 4);
+
+    for (buffer_sources, 0..) |sources, index| {
+        state.combiners_config.setColorBufferSource(@enumFromInt(first + index), sources.color_buffer_src.native());
+        state.combiners_config.setAlphaBufferSource(@enumFromInt(first + index), sources.alpha_buffer_src.native());
+    }
+
+    state.dirty.combiners_config = true;
+}
+
+pub fn setTextureCombiners(state: *GraphicsState, first: u32, combiners: []const mango.TextureCombinerUnit) void {
+    std.debug.assert(first + combiners.len <= 6);
+    if (validation.enabled) state.check.set.last_texture_combiner = state.check.set.last_texture_combiner or (first + combiners.len == 6);
+
+    for (combiners, 0..) |combiner, i| {
+        state.combiners_units[first + i] = combiner.native();
+    }
+
+    state.combiners_first = @intCast(@min(first, state.combiners_first));
+    state.combiners_last = @intCast(@max(first + combiners.len, state.combiners_last));
+    state.dirty.combiners = true;
+}
+
+pub fn setFogColor(state: *GraphicsState, color: *const [3]u8) void {
+    if (validation.enabled) state.check.set.fog_color = true;
+
+    state.fog_color = color.*;
+    state.dirty.fog_color = true;
 }
 
 pub fn setBlendEquation(state: *GraphicsState, blend_equation: mango.ColorBlendEquation) void {
@@ -308,11 +354,14 @@ pub fn setDepthWriteEnable(state: *GraphicsState, enable: bool) void {
     state.dirty.depth_test_masks = true;
 }
 
-pub fn setDepthBias(state: *GraphicsState, bias: f32) void {
-    if (validation.enabled) state.check.set.depth_bias = true;
+pub fn setDepthParameters(state: *GraphicsState, scale: f32, bias: f32) void {
+    if (validation.enabled) state.check.set.depth_parameters = true;
 
-    state.depth_map_parameters.constant = bias;
-    state.dirty.depth_map_parameters = true;
+    state.depth_parameters = .{
+        .scale = scale,
+        .bias = bias,
+    };
+    state.dirty.depth_parameters = true;
 }
 
 pub fn setLogicOpEnable(state: *GraphicsState, enable: bool) void {
@@ -493,6 +542,13 @@ pub fn bindLightEnvironmentTable(state: *GraphicsState, slot: mango.LightEnviron
     state.dirty.light_luts = luts;
 }
 
+pub fn bindFogTable(state: *GraphicsState, table: mango.FogLookupTable) void {
+    if (validation.enabled) state.check.set.fog_lut = true;
+
+    state.fog_lut = table;
+    state.dirty.fog_lut = true;
+}
+
 pub fn bindShaders(state: *GraphicsState, stages: []const mango.ShaderStage, shaders: []const mango.Shader) void {
     std.debug.assert(stages.len == shaders.len and stages.len < 2);
 
@@ -541,7 +597,7 @@ pub fn anyDirty(state: *GraphicsState) bool {
 /// Its a safe upper bound, not the exact amount needed.
 pub fn maxEmitDirtyQueueLength(state: *GraphicsState) usize {
     // NOTE: This must be FAST as its always checked every drawcall!
-    var max: usize = (@as(usize, state.dirty.combiners.raw) * 9) + (@as(usize, state.dirty.light_luts.raw) * 300) + (@as(usize, @intFromBool(state.dirty.vertex_shader)) * 32) + (@as(usize, @intFromBool(state.dirty.geometry_shader)) * 32);
+    var max: usize = (@as(usize, state.combiners_last -| state.combiners_first) * 9) + ((@as(usize, @intFromBool(state.dirty.fog_lut)) * 130)) + (@as(usize, state.dirty.light_luts.raw) * 300) + (@as(usize, @intFromBool(state.dirty.vertex_shader)) * 32) + (@as(usize, @intFromBool(state.dirty.geometry_shader)) * 32);
 
     if (state.dirty.vertex_shader_code) max += if (state.vertex_shader) |vtx|
         10 + vtx.code.instructions.len + vtx.code.descriptors.len
@@ -552,7 +608,7 @@ pub fn maxEmitDirtyQueueLength(state: *GraphicsState) usize {
         10 + gs.code.instructions.len + gs.code.descriptors.len
     else
         0;
-    return max + 72;
+    return max + 96;
 }
 
 pub fn validate(state: *GraphicsState) !void {
@@ -563,11 +619,11 @@ pub fn validate(state: *GraphicsState) !void {
     const conditions: []const bool = &.{
         state.vertex_shader != null,
         check.set.cull_mode,
-        check.set.front_face,
         check.set.primitive_topology,
         check.set.viewport,
         check.set.scissor,
-        check.set.texture_combiners,
+        check.set.texture_combiners_effect,
+        check.set.last_texture_combiner,
         check.set.blend_equation,
         check.set.color_write_mask,
         check.set.depth_test_enable,
@@ -581,11 +637,11 @@ pub fn validate(state: *GraphicsState) !void {
     const kinds: []const []const u8 = &.{
         "vertex shader",
         "cull mode",
-        "front face",
         "primitive topology",
         "viewport",
         "scissor",
-        "texture combiners",
+        "texture combiners effect",
+        "last texture combiner",
         "blend equation",
         "color write mask",
         "depth test enable",
@@ -600,6 +656,33 @@ pub fn validate(state: *GraphicsState) !void {
 
     for (conditions, kinds) |condition, kind| {
         success &= validation.check(condition, validation.graphics_state.must_be_set, .{kind});
+    }
+
+    if (check.set.alpha_test_enable and state.misc.alpha_test_enable) {
+        success &= validation.check(state.check.set.alpha_test_op, validation.graphics_state.alpha_test.op_must_be_set, .{});
+        success &= validation.check(state.check.set.alpha_test_reference, validation.graphics_state.alpha_test.reference_must_be_set, .{});
+    }
+
+    if (check.set.depth_test_enable and state.misc.depth_test_enable) {
+        success &= validation.check(state.check.set.depth_mode, validation.graphics_state.depth_test.mode_must_be_set, .{});
+        success &= validation.check(state.check.set.depth_parameters, validation.graphics_state.depth_test.parameters_must_be_set, .{});
+        success &= validation.check(state.check.set.depth_write_enable, validation.graphics_state.depth_test.write_must_be_set, .{});
+        success &= validation.check(state.check.set.depth_compare_op, validation.graphics_state.depth_test.op_must_be_set, .{});
+    }
+
+    if (check.set.texture_combiners_effect) {
+        if (state.combiners_config.effect != .none) {
+            success &= validation.check(state.check.set.texture_combiners_effect_depth_flip, validation.graphics_state.must_be_set, .{"texture combiners effect depth flip"});
+        }
+
+        switch (state.combiners_config.effect) {
+            .none => {},
+            .fog => {
+                success &= validation.check(state.check.set.fog_color, validation.graphics_state.fog.color_must_be_set, .{});
+                success &= validation.check(state.check.set.fog_lut and state.fog_lut != .null, validation.graphics_state.fog.lookup_table_must_be_set, .{});
+            },
+            .gas => {},
+        }
     }
 
     if (!success) return error.ValidationFailed;
@@ -725,16 +808,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
 
     if (state.dirty.cull_mode) {
         // NOTE: emission takes 2 words
-        const cull_mode_ccw = state.misc.cull_mode_ccw;
-        const is_front_ccw = state.misc.is_front_ccw;
-
-        queue.add(p3d, &p3d.rasterizer.cull_config, .init(if (is_front_ccw)
-            cull_mode_ccw
-        else switch (cull_mode_ccw) {
-            .none => .none,
-            .ccw => .cw,
-            .cw => .ccw,
-        }));
+        queue.add(p3d, &p3d.rasterizer.cull_config, .init(state.misc.cull_mode));
     }
 
     if (state.dirty.viewport_parameters) {
@@ -767,19 +841,16 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
         });
     }
 
-    if (state.dirty.depth_map_mode) {
+    if (state.dirty.depth_mode) {
         // NOTE: emission takes 2 words
-        queue.add(p3d, &p3d.rasterizer.depth_map_mode, .init(state.misc.depth_mode));
+        queue.add(p3d, &p3d.rasterizer.depth_mode, .init(state.misc.depth_mode));
     }
 
-    if (state.dirty.depth_map_parameters) {
+    if (state.dirty.depth_parameters) {
         // NOTE: emission takes 4 words
-        const depth_map_scale = (state.depth_map_parameters.min_depth - state.depth_map_parameters.max_depth);
-        const depth_map_bias = state.depth_map_parameters.min_depth + state.depth_map_parameters.constant;
-
-        queue.add(p3d, &p3d.rasterizer.depth_map, .{
-            .scale = .init(.of(depth_map_scale)),
-            .bias = .init(.of(depth_map_bias)),
+        queue.add(p3d, &p3d.rasterizer.depth, .{
+            .scale = .init(.of(state.depth_parameters.scale)),
+            .bias = .init(.of(state.depth_parameters.bias)),
         });
     }
 
@@ -871,19 +942,23 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
 
     if (state.dirty.combiners_config) {
         // NOTE: emission takes 2 words
-        queue.add(p3d, &p3d.texture_combiners.config, state.combiners.config);
+        queue.add(p3d, &p3d.texture_combiners.config, state.combiners_config);
     }
 
-    if (state.dirty.combiners.raw != 0) {
+    if (state.dirty.combiners) {
         // NOTE: emission takes 8 words per combiner
         const combiner_regs = &p3d.texture_combiners;
         const units: []const *volatile Graphics.TextureCombiners.Unit = &.{ &combiner_regs.@"0", &combiner_regs.@"1", &combiner_regs.@"2", &combiner_regs.@"3", &combiner_regs.@"4", &combiner_regs.@"5" };
-        const units_start: usize = units.len - state.combiners.configured;
 
-        var i: u8 = 0;
-        while (i < state.combiners.configured) : (i += 1) {
-            queue.add(p3d, units[units_start + i], state.combiners.units[i]);
+        var i: u8 = state.combiners_first;
+        while (i < state.combiners_last) : (i += 1) {
+            queue.add(p3d, units[i], state.combiners_units[i]);
         }
+    }
+
+    if (state.dirty.combiners_buffer_color) {
+        // NOTE: emission takes 2 words
+        queue.add(p3d, &p3d.texture_combiners.buffer_color, state.combiners_buffer_color);
     }
 
     if (state.dirty.vertex_input_layout) {
@@ -919,7 +994,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
             .texture_3_coordinates = state.misc.texture_3_coordinates,
             .texture_3_enabled = false, // TODO: Procedural texture support, should be part of gfx state, not rendering unlike normal textures!
             .texture_2_coordinates = state.misc.texture_2_coordinates,
-            .clear_texture_cache = false,
+            .invalidate_texture_cache = false,
         }, 0b0010);
     }
 
@@ -957,6 +1032,18 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
         };
     }
 
+    if (state.dirty.fog_color) {
+        // NOTE: emission takes 2 words
+        queue.add(p3d, &p3d.texture_combiners.fog_color, state.fog_color ++ .{0});
+    }
+
+    if (state.dirty.fog_lut) {
+        const b_table: *backend.FogLookupTable = .fromHandleMutable(state.fog_lut);
+
+        queue.add(p3d, &p3d.texture_combiners.fog_lut_index, .init(0));
+        queue.addConsecutive(p3d, &p3d.texture_combiners.fog_lut_data[0], &b_table.data);
+    }
+
     state.dirty = .{};
 }
 
@@ -975,7 +1062,6 @@ const GraphicsState = @This();
 const backend = @import("backend.zig");
 const validation = backend.validation;
 
-const TextureCombinerState = backend.TextureCombinerState;
 const VertexInputLayout = backend.VertexInputLayout;
 
 const std = @import("std");
@@ -987,6 +1073,7 @@ const pica = hardware.pica;
 
 const Graphics = pica.Graphics;
 const FragmentLighting = Graphics.FragmentLighting;
+const TextureCombiners = Graphics.TextureCombiners;
 const BlendConfig = Graphics.OutputMerger.BlendConfig;
 
 const command = pica.command;

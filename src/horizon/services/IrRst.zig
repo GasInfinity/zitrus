@@ -4,7 +4,7 @@ pub const Input = @import("IrRst/Input.zig");
 
 pub const service = "ir:rst";
 
-pub const Pad = packed struct(u32) {
+pub const Pad = extern struct {
     pub const State = packed struct(u32) {
         _unused0: u14 = 0,
         zl: bool,
@@ -18,7 +18,6 @@ pub const Pad = packed struct(u32) {
     };
 
     pub const CStickState = extern struct { x: i16, y: i16 };
-
     pub const Entry = extern struct { current: State, pressed: State, released: State, c_stick: CStickState };
 
     tick: u64,
@@ -54,11 +53,8 @@ pub const Handles = struct {
 
 pub fn sendGetHandles(rst: IrRst) !Handles {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(rst.session, command.GetIPCHandles, .{}, .{})).cases()) {
-        .success => |s| .{
-            .shm = @bitCast(@intFromEnum(s.value.handles[0])),
-            .ev = @bitCast(@intFromEnum(s.value.handles[1])),
-        },
+    return switch ((try data.ipc.sendRequest(rst.session, command.GetHandles, .{}, .{})).cases()) {
+        .success => |s| s.value.handles.wrapped,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -81,7 +77,7 @@ pub fn sendShutdown(rst: IrRst) !void {
 
 pub const command = struct {
     pub const GetHandles = ipc.Command(Id, .get_handles, struct {}, struct {
-        shm_event: [2]horizon.Object,
+        handles: ipc.HandleArray(Handles),
     });
     pub const Initialize = ipc.Command(Id, .initialize, struct { ms_update_period: u32, use_raw_c_stick: bool }, struct {});
     pub const Shutdown = ipc.Command(Id, .shutdown, struct {}, struct {});

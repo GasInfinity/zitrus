@@ -15,13 +15,38 @@
 
 // TODO: Have validation-layer behaviour with a toggle at the expense of more checks and more memory usage.
 
-pub const DeviceSize = enum(u32) {
-    whole = std.math.maxInt(u32),
-    _,
+pub const Display = enum(u8) {
+    top,
+    bottom,
+};
 
-    pub fn size(value: u32) DeviceSize {
-        return @enumFromInt(value);
+pub const DeviceSlice = packed struct(u64) {
+    pub const empty: DeviceSlice = .{ .address = .zero, .len = 0 };
+    address: zitrus.hardware.PhysicalAddress,
+    len: u32,
+
+    pub fn slice(sl: DeviceSlice, offset: u32, len: u32) DeviceSlice {
+        std.debug.assert(offset + len <= sl.len);
+        return .{ .address = .fromAddress(@intFromEnum(sl.address) + offset), .len = len };
     }
+
+    pub fn openSlice(sl: DeviceSlice, offset: u32) DeviceSlice {
+        std.debug.assert(offset <= sl.len);
+        return .{ .address = .fromAddress(@intFromEnum(sl.address) + offset), .len = sl.len - offset };
+    }
+};
+
+pub const MemoryRequirements = extern struct {
+    size: u32,
+    alignment: u32,
+};
+
+pub const MemoryBarrierTarget = packed struct(u8) {
+    /// Currently bound color and depth attachments
+    render_attachments: bool = false, 
+    /// Currently bound sampled images
+    sampled_images: bool = false, 
+    _: u6 = 0,
 };
 
 pub const ImageArrayLayer = enum(u8) {
@@ -87,71 +112,11 @@ pub const PresentMode = enum(u8) {
     fifo,
 };
 
-pub const QueueFamily = enum(u8) {
-    fill,
-    transfer,
-    submit,
-    present,
-};
-
-/// The 3DS always has 3 heaps.
-///     - FCRAM
-///     - VRAM (A, 3MiB always)
-///     - VRAM (B, 3MiB always)
-pub const MemoryHeap = extern struct {
-    pub const Flags = packed struct(u8) {
-        /// Access of this memory by the GPU *will* be faster
-        device_local: bool,
-        _: u7 = false,
-    };
-
-    size: DeviceSize,
-    flags: Flags,
-};
-
-pub const MemoryHeapIndex = enum(u8) {
-    fcram,
-    vram_a,
-    vram_b,
-};
-
-pub const KnownMemoryType = enum(u8) {
-    fcram_cached,
-    vram_a,
-    vram_b,
-};
-
-pub const MemoryType = extern struct {
-    pub const Flags = packed struct(u8) {
-        /// The memory is the most efficient to be accessed by the GPU. Set if and only if the heap is `device_local`.
-        device_local: bool,
-        /// The memory can be accessed by the host via `mapMemory` and `unmapMemory`.
-        host_visible: bool,
-        /// The memory must be flushed and invalidated via `flushMappedMemoryRanges` and `invalidateMappedMemoryRanges`.
-        host_cached: bool,
-        /// NOTE: Seems it's not supported by the Horizon kernel unless specified in the exheader, see https://github.com/LumaTeam/Luma3DS/issues/2166.
-        /// 3DSX homebrew loaded by Luma will have RO (coherent it seems?) VRAM access
-        host_coherent: bool,
-        _: u4 = 0,
-    };
-
-    heap_index: MemoryHeapIndex,
-    flags: Flags,
-};
-
-pub const MemoryAllocateInfo = extern struct {
-    allocation_size: DeviceSize,
-    memory_type: KnownMemoryType,
-};
-
-pub const MappedMemoryRange = extern struct {
-    memory: DeviceMemory,
-    offset: DeviceSize,
-    size: DeviceSize,
-
-    pub fn range(memory: DeviceMemory, offset: DeviceSize, size: DeviceSize) MappedMemoryRange {
-        return .{ .memory = memory, .offset = offset, .size = size };
-    }
+pub const PrivateMemoryIndex = enum(u8) {
+    /// 3 MiB
+    a,
+    /// 3 MiB
+    b,
 };
 
 // Don't overlap ImageView formats with AttributeBuffer ones!
@@ -477,7 +442,7 @@ pub const DepthMode = enum(u8) {
     /// Precision is higher close to the near plane.
     z_buffer,
 
-    pub fn native(mode: DepthMode) Graphics.Rasterizer.DepthMap.Mode {
+    pub fn native(mode: DepthMode) Graphics.Rasterizer.Depth.Mode {
         return switch (mode) {
             .w_buffer => .w,
             .z_buffer => .z,
@@ -684,6 +649,11 @@ pub const TextureCombinerOperation = enum(u8) {
     }
 };
 
+pub const TextureCombinerEffect = enum(u8) {
+    none,
+    fog,
+};
+
 pub const Multiplier = enum(u8) {
     // zig fmt: off
     @"1x", @"2x", @"4x", @"8x", @"0.25x", @"0.5x",
@@ -724,53 +694,24 @@ pub const TextureCombinerBufferSource = enum(u8) {
     }
 };
 
-pub const FrontFace = enum(u8) {
-    /// Triangles with a positive area are considered to be front-facing.
-    ccw,
-    /// Triangles with a negative area are considered to be front-facing.
-    cw,
-};
-
 pub const CullMode = enum(u8) {
     /// No triangles are discarded.
     none,
-    /// The front-facing triangles are culled.
-    front,
-    /// The back-facing triangles are culled.
-    back,
+    /// Triangles with a counter-clockwise winding order are culled.
+    ccw,
+    /// Triangles with a clockwise winding order are culled.
+    cw,
 
-    pub fn native(mode: CullMode, front: FrontFace) pica.CullMode {
-        return switch (mode) {
-            .none => .none,
-            .front => switch (front) {
-                .ccw => .ccw,
-                .cw => .cw,
-            },
-            .back => switch (front) {
-                .ccw => .cw,
-                .cw => .ccw,
-            },
-        };
-    }
+    comptime { std.debug.assert(std.meta.eql(@typeInfo(CullMode).@"enum".fields, @typeInfo(pica.CullMode).@"enum".fields)); }
 };
 
-pub const PipelineBindPoint = enum(u8) {
-    graphics,
-};
-
-pub const SwapchainCreateInfo = extern struct {
-    pub const ImageMemoryInfo = extern struct {
-        memory: DeviceMemory,
-        memory_offset: DeviceSize,
-    };
-
-    surface: Surface,
+pub const DisplayConfigureInfo = extern struct {
+    extent: Extent2D,
     present_mode: PresentMode,
-    image_usage: ImageCreateInfo.Usage,
     image_format: Format,
     image_array_layers: ImageArrayLayers,
     image_count: u8,
-    image_memory_info: [*]const ImageMemoryInfo,
+    image_memory: [*]const DeviceSlice,
 };
 
 pub const SemaphoreCreateInfo = extern struct {
@@ -867,28 +808,7 @@ pub const CommandBufferResetFlags = packed struct(u8) {
     _: u7 = 0,
 };
 
-pub const BufferCreateInfo = extern struct {
-    pub const Usage = packed struct(u8) {
-        /// Specifies that the buffer can be used as the source of a transfer operation.
-        transfer_src: bool = false,
-        /// Specifies that the buffer can be used as the destination of a transfer operation.
-        transfer_dst: bool = false,
-        /// Specifies that the buffer can be used as an index buffer.
-        index_buffer: bool = false,
-        /// Specifies that the buffer can be used as a vertex buffer.
-        vertex_buffer: bool = false,
-        _: u4 = 0,
-    };
-
-    size: DeviceSize,
-    usage: Usage,
-};
-
 pub const ImageCreateInfo = extern struct {
-    pub const Type = enum(u8) {
-        @"2d",
-    };
-
     pub const Tiling = enum(u8) {
         /// The images are tiled in a PICA200 specific format (8x8 or 32x32 tiles).
         optimal,
@@ -897,10 +817,6 @@ pub const ImageCreateInfo = extern struct {
     };
 
     pub const Usage = packed struct(u8) {
-        /// Specifies that the image can be used as the source of a transfer operation.
-        transfer_src: bool = false,
-        /// Specifies that the image can be used as the destination of a transfer operation.
-        transfer_dst: bool = false,
         /// Specifies that the image can be used to create an ImageView suitable for binding with a sampler.
         sampled: bool = false,
         /// Specifies that the image can be used to create an ImageView suitable for use as a color attachment.
@@ -909,7 +825,7 @@ pub const ImageCreateInfo = extern struct {
         depth_stencil_attachment: bool = false,
         /// Specifies that the image can be used to create an ImageView suitable for use as a shadow attachment.
         shadow_attachment: bool = false,
-        _: u2 = 0,
+        _: u4 = 0,
     };
 
     pub const Flags = packed struct(u8) {
@@ -921,7 +837,6 @@ pub const ImageCreateInfo = extern struct {
     };
 
     flags: Flags,
-    type: Type,
     tiling: Tiling,
     usage: Usage,
     extent: Extent2D,
@@ -1061,12 +976,6 @@ pub const Scissor = extern struct {
     }
 };
 
-pub const Viewport = extern struct {
-    rect: Rect2D,
-    min_depth: f32,
-    max_depth: f32,
-};
-
 pub const VertexAttributeBinding = enum(u8) { @"0", @"1", @"2", @"3", @"4", @"5", @"6", @"7", @"8", @"9", @"10", @"11" };
 pub const VertexAttributeLocation = enum(u8) { v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11 };
 
@@ -1198,72 +1107,46 @@ pub const TextureCombinerUnit = extern struct {
 };
 
 pub const CopyBufferInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreQueueOperation = null,
-    src_buffer: Buffer,
-    src_offset: DeviceSize,
-    dst_buffer: Buffer,
-    dst_offset: DeviceSize,
-    size: DeviceSize,
-    signal_semaphore: ?*const SemaphoreQueueOperation = null,
-};
-
-pub const BufferCopy = extern struct {
-    src_offset: DeviceSize,
-    dst_offset: DeviceSize,
-    size: DeviceSize,
+    src_buffer: DeviceSlice,
+    dst_buffer: DeviceSlice,
 };
 
 pub const FillPatternType = enum(u8) { u16, u24, u32 };
 
 pub const FillBufferInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreQueueOperation = null,
-    buffer: Buffer,
-    offset: DeviceSize,
-    size: DeviceSize,
+    buffer: DeviceSlice,
     pattern_type: FillPatternType,
     pattern: u32,
-    signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
 pub const CopyBufferToImageInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreQueueOperation = null,
-    src_buffer: Buffer,
-    src_offset: DeviceSize,
+    src_buffer: DeviceSlice,
     dst_image: Image,
     dst_subresource: ImageSubresourceLayers,
-    signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
 pub const BlitImageInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreQueueOperation = null,
     src_image: Image,
     dst_image: Image,
     src_subresource: ImageSubresourceLayers,
     dst_subresource: ImageSubresourceLayers,
-    signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
 pub const ClearColorInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreQueueOperation = null,
-    subresource_range: ImageSubresourceRange,
     image: Image,
     color: [4]u8,
-    signal_semaphore: ?*const SemaphoreQueueOperation = null,
+    subresource_range: ImageSubresourceRange,
 };
 
 pub const ClearDepthStencilInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreQueueOperation = null,
-    subresource_range: ImageSubresourceRange,
     image: Image,
+    subresource_range: ImageSubresourceRange,
     depth: f32,
     stencil: u8,
-    signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
 pub const SubmitInfo = extern struct {
-    wait_semaphore: ?*const SemaphoreQueueOperation = null,
     command_buffer: CommandBuffer,
-    signal_semaphore: ?*const SemaphoreQueueOperation = null,
 };
 
 pub const ImageSubresourceRange = extern struct {
@@ -1299,17 +1182,16 @@ pub const PresentInfo = extern struct {
         _: u7 = 0,
     };
 
-    wait_semaphore: ?*const SemaphoreQueueOperation = null,
-    swapchain: Swapchain,
+    display: Display,
     image_index: u8,
-    flags: Flags,
+    flags: Flags = .{}, 
 };
 
-pub const SemaphoreQueueOperation = extern struct {
+pub const SemaphoreOperation = extern struct {
     value: u64,
     semaphore: Semaphore,
 
-    pub fn init(semaphore: Semaphore, value: u64) SemaphoreQueueOperation {
+    pub fn init(semaphore: Semaphore, value: u64) SemaphoreOperation {
         return .{
             .semaphore = semaphore,
             .value = value,
@@ -1336,6 +1218,17 @@ pub const SemaphoreWaitInfo = extern struct {
 pub const SemaphoreSignalInfo = extern struct {
     semaphore: Semaphore,
     value: u64,
+};
+
+pub const FogLookupTableCreateInfo = extern struct {
+    /// A function which maps an input value *x* to its factor.
+    ///
+    /// If `null`, context is an array of *128* `f32` factors.
+    map: ?*const fn (?*anyopaque, f32) callconv(.c) f32 = null,
+    /// If `map` is not null, this is the context passed to it.
+    ///
+    /// Otherwise if it's not null, it must be an array of *128* `f32` factors.
+    context: ?*anyopaque = null,
 };
 
 // So here's how mango somewhat *abstracts* the fragment lighting stage
@@ -1371,7 +1264,7 @@ pub const LightLookupTableCreateInfo = extern struct {
     map: ?*const fn (?*anyopaque, f32) callconv(.c) f32,
     /// If `map` is not null, this is the context passed to it.
     ///
-    /// Otherwise it must an array of *257* `f32` factors.
+    /// Otherwise if it's not null, it must be an array of *257* `f32` factors.
     context: ?*anyopaque,
     /// Whether the input domain of the lookup table is `[0.0, 1.0]`
     /// or `[-1.0, 1.0]`.
@@ -1625,10 +1518,7 @@ pub fn createHorizonBackedDevice(create_info: HorizonDeviceCreateInfo, gpa: std.
 }
 
 pub const Device = backend.Device.Handle;
-pub const Queue = backend.Queue.Handle;
-pub const DeviceMemory = backend.DeviceMemory.Handle;
 pub const Semaphore = backend.Semaphore.Handle;
-pub const Buffer = backend.Buffer.Handle;
 pub const Image = backend.Image.Handle;
 pub const ImageView = backend.ImageView.Handle;
 pub const Shader = backend.Shader.Handle;
@@ -1637,11 +1527,14 @@ pub const CommandPool = backend.CommandPool.Handle;
 pub const CommandBuffer = backend.CommandBuffer.Handle;
 pub const VertexInputLayout = backend.VertexInputLayout.Handle;
 pub const Sampler = backend.Sampler.Handle;
-pub const Surface = backend.Surface.Handle;
-pub const Swapchain = backend.Swapchain.Handle;
 
 pub const LightLookupTable = backend.LightLookupTable.Handle;
+pub const FogLookupTable = backend.FogLookupTable.Handle;
 
+pub const ConfigureDisplayError = error{ Unsupported, ValidationFailed, Unexpected };
+pub const PrivateAllocationError = error{OutOfMemory};
+
+pub const HostToDeviceError = error{ ValidationFailed, OutOfMemory, Unexpected };
 pub const ObjectCreationError = error{ ValidationFailed, OutOfMemory, Unexpected };
 pub const MapMemoryError = error{Unexpected};
 pub const FlushMemoryError = error{Unexpected};
@@ -1654,7 +1547,7 @@ pub const SignalSemaphoreError = error{Unexpected};
 pub const WaitSemaphoreError = error{ Timeout, Unexpected };
 pub const ReleaseDeviceError = error{Unexpected};
 pub const ReacquireDeviceError = error{Unexpected};
-pub const GetSwapchainImagesError = error{Unexpected};
+pub const GetDisplayImagesError = error{Unexpected};
 
 comptime {
     _ = backend;

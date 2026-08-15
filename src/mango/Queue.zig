@@ -7,403 +7,6 @@
 //!
 //! Must not depend on anything Horizon related, that is handled by the `Device` which is environment-dependent.
 
-pub const Handle = enum(u32) {
-    null = 0,
-    _,
-
-    /// Copies the region specified onto the destination buffer.
-    ///
-    /// Valid Usage:
-    /// - Offsets must be aligned to 8 bytes.
-    pub fn copyBuffer(queue: Handle, info: mango.CopyBufferInfo) !void {
-        const transfer: *Queue = .fromHandleMutable(queue, .transfer);
-        const b_src_buffer: backend.Buffer = .fromHandle(info.src_buffer);
-        const b_dst_buffer: backend.Buffer = .fromHandle(info.dst_buffer);
-
-        const src_virt = b_src_buffer.memory_info.boundVirtualAddress();
-        const dst_virt = b_dst_buffer.memory_info.boundVirtualAddress();
-
-        const src_size = b_src_buffer.sizeByAmount(info.size, info.src_offset);
-        const dst_size = b_dst_buffer.sizeByAmount(info.size, info.dst_offset);
-        std.debug.assert(src_size == dst_size);
-
-        const src = src_virt[@intFromEnum(info.src_offset)..][0..src_size];
-        const dst = dst_virt[@intFromEnum(info.dst_offset)..][0..dst_size];
-
-        return transfer.pushFrontBounded(TransferItem, .{
-            .flags = .{
-                .kind = .copy,
-                .extra = .{
-                    // XXX: Yes this could fail but how can the size be higher than 2^29 really?
-                    .copy = @intCast(src_size),
-                },
-            },
-            .src = @alignCast(src.ptr),
-            .dst = @alignCast(dst.ptr),
-            .input_gap_size = @splat(0),
-            .output_gap_size = @splat(0),
-        }, .initSemaphoreOperation(info.wait_semaphore), .initSemaphoreOperation(info.signal_semaphore));
-    }
-
-    // TODO: Provide a software fallback for directly using host memory (akin to VK_EXT_host_image_copy)
-    pub fn copyBufferToImage(queue: Handle, info: mango.CopyBufferToImageInfo) !void {
-        const transfer: *Queue = .fromHandleMutable(queue, .transfer);
-        const b_src_buffer: *backend.Buffer = .fromHandleMutable(info.src_buffer);
-        const b_dst_image: *backend.Image = .fromHandleMutable(info.dst_image);
-
-        const src_memory: backend.DeviceMemory.BoundMemoryInfo = b_src_buffer.memory_info;
-        const dst_memory: backend.DeviceMemory.BoundMemoryInfo = b_dst_image.memory_info;
-
-        const native_fmt = b_dst_image.info.format.nativeColorFormat();
-        const pixel_size = native_fmt.bytesPerPixel();
-
-        const dst_width: usize = b_dst_image.info.width();
-        const dst_height: usize = b_dst_image.info.height();
-
-        const dst_mip_width = backend.imageLevelDimension(dst_width, @intFromEnum(info.dst_subresource.mip_level));
-        const dst_mip_height = backend.imageLevelDimension(dst_height, @intFromEnum(info.dst_subresource.mip_level));
-
-        std.debug.assert(dst_mip_width >= 64 and dst_mip_height >= 16);
-
-        const dst_mip_offset = pixel_size * backend.imageLevelOffset(dst_width * dst_height, dst_mip_width * dst_mip_height);
-        const dst_mip_size = pixel_size * dst_mip_width * dst_mip_height;
-
-        const dst_image_full_layer_size = @as(usize, b_dst_image.info.layer_size) * pixel_size;
-
-        const src_virt = src_memory.boundVirtualAddress();
-        const dst_virt = dst_memory.boundVirtualAddress();
-
-        const dst_blitting_layers = b_dst_image.info.layersByAmount(info.dst_subresource.layer_count, info.dst_subresource.base_array_layer);
-
-        var src_virt_offset = src_virt + @intFromEnum(info.src_offset);
-        var dst_image_layer_virt_offset = dst_virt + dst_image_full_layer_size * @intFromEnum(info.dst_subresource.base_array_layer) + dst_mip_offset;
-        var i: usize = 0;
-
-        // TODO: Add the memcpy flag again
-
-        while (i < dst_blitting_layers) : ({
-            i += 1;
-            dst_image_layer_virt_offset += dst_image_full_layer_size;
-            src_virt_offset += dst_mip_size;
-        }) {
-            // NOTE: Queue operations start and execute sequentially within a queue.
-            const wait_op: SemaphoreOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else .none;
-            const signal_op: SemaphoreOperation = if (i == (dst_blitting_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else .none;
-
-            try transfer.pushFrontBounded(TransferItem, .{
-                .flags = .{
-                    .kind = .linear_tiled,
-                    .extra = .{
-                        .transfer = .{
-                            .src_fmt = native_fmt,
-                            .dst_fmt = native_fmt,
-                            .downscale = .none,
-                        },
-                    },
-                },
-                .src = @alignCast(src_virt_offset),
-                .dst = @alignCast(dst_image_layer_virt_offset),
-                .input_gap_size = .{ @intCast(dst_mip_width), @intCast(dst_mip_height) },
-                .output_gap_size = .{ @intCast(dst_mip_width), @intCast(dst_mip_height) },
-            }, wait_op, signal_op);
-        }
-    }
-
-    pub fn copyImageToBuffer(queue: Handle) void {
-        const transfer: *Queue = .fromHandleMutable(queue, .transfer);
-        _ = transfer;
-        @panic("TODO");
-    }
-
-    pub fn copyImageToImage(queue: Handle) void {
-        const transfer: *Queue = .fromHandleMutable(queue, .transfer);
-        _ = transfer;
-        @panic("TODO");
-    }
-
-    /// Blit an image onto another performing format conversion and scaling when appropiate.
-    ///
-    /// The operation is done layer by layer on the specified mip levels. When scaling is done,
-    /// a linear (also called box) filter is applied.
-    ///
-    /// Valid Usage:
-    /// The tiling of the source and destination images **must** not be both LINEAR.
-    ///
-    /// The sizes of the source and destination image dimensions **can** *only* differ when:
-    /// - The width of the destination is half the width of the source.
-    /// - The width and height of the destination is half the width of the source.
-    pub fn blitImage(queue: Handle, info: mango.BlitImageInfo) !void {
-        const transfer: *Queue = .fromHandleMutable(queue, .transfer);
-
-        const b_src_image: *backend.Image = .fromHandleMutable(info.src_image);
-        const b_dst_image: *backend.Image = .fromHandleMutable(info.dst_image);
-
-        const src_blitting_layers = b_src_image.info.layersByAmount(info.src_subresource.layer_count, info.src_subresource.base_array_layer);
-        const dst_blitting_layers = b_dst_image.info.layersByAmount(info.dst_subresource.layer_count, info.dst_subresource.base_array_layer);
-
-        std.debug.assert(src_blitting_layers == dst_blitting_layers); // Obvously, we must have matching layers to copy.
-
-        const src_color_format, const dst_color_format = switch (b_src_image.info.format) {
-            // NOTE: we can (ab)use the GPU DMA for unswizzling images of the same format.
-            .d16_unorm, .g8r8_unorm, .i8a8_unorm => |f| if (b_dst_image.info.format == f) .{ .rgb565, .rgb565 } else unreachable,
-            .d24_unorm => |f| if (b_dst_image.info.format == f) .{ .bgr888, .bgr888 } else unreachable,
-            .d24_unorm_s8_uint => |f| if (b_dst_image.info.format == f) .{ .abgr8888, .abgr8888 } else unreachable,
-            else => |fmt| .{ fmt.nativeColorFormat(), b_dst_image.info.format.nativeColorFormat() }, // it must be a valid color format if not
-        };
-
-        const src_width: usize = b_src_image.info.width();
-        const src_height: usize = b_src_image.info.height();
-
-        const src_mip_width = backend.imageLevelDimension(src_width, @intFromEnum(info.src_subresource.mip_level));
-        const src_mip_height = backend.imageLevelDimension(src_height, @intFromEnum(info.src_subresource.mip_level));
-
-        const dst_width: usize = b_dst_image.info.width();
-        const dst_height: usize = b_dst_image.info.height();
-
-        const dst_mip_width = backend.imageLevelDimension(dst_width, @intFromEnum(info.src_subresource.mip_level));
-        const dst_mip_height = backend.imageLevelDimension(dst_height, @intFromEnum(info.src_subresource.mip_level));
-
-        std.debug.assert(src_mip_width >= dst_mip_width and src_mip_height >= dst_mip_height); // Output must not be bigger than input.
-
-        // Only allow downscale of the X or XY axes. Otherwise sizes must match (for simplicity, the hardware allows bigger inputs than outputs, does that have an use-case?).
-        // TODO: Yes dummy, if you have a bigger input you're basically blitting subimages!
-        const downscale: pica.PictureFormatter.Flags.Downscale = if (dst_mip_width < src_mip_width and dst_mip_height < src_mip_height) blk: {
-            std.debug.assert(dst_mip_width == (src_mip_width >> 1) and dst_mip_height == (src_mip_height >> 1));
-            break :blk .@"2x2";
-        } else if (dst_mip_width < src_mip_width) blk: {
-            std.debug.assert(dst_mip_width == (src_mip_width >> 1) and dst_mip_height == (src_mip_height >> 1));
-            break :blk .@"2x1";
-        } else blk: {
-            @branchHint(.likely);
-            std.debug.assert(src_mip_width == dst_mip_width and src_mip_height == dst_mip_height and !(b_src_image.info.optimally_tiled and b_dst_image.info.optimally_tiled));
-            break :blk .none;
-        };
-
-        const kind: TransferItem.Flags.Kind = switch (b_src_image.info.optimally_tiled) {
-            false => switch (b_dst_image.info.optimally_tiled) {
-                false => unreachable, // NOTE: Blits are not supported between LINEAR -> LINEAR, hardware doesn't support it explicitly.
-                true => .linear_tiled,
-            },
-            true => switch (b_dst_image.info.optimally_tiled) {
-                false => .tiled_linear,
-                true => .tiled_tiled,
-            },
-        };
-
-        switch (kind) {
-            .linear_tiled, .tiled_linear => std.debug.assert(src_width >= 64 and src_height >= 16),
-            .tiled_tiled => std.debug.assert(src_width >= 64 and src_height >= 32),
-            .copy => unreachable,
-        }
-
-        const src_bpp = src_color_format.bytesPerPixel();
-        const dst_bpp = dst_color_format.bytesPerPixel();
-
-        const src_image_full_layer_size: usize = @as(usize, b_src_image.info.layer_size) * src_bpp;
-        const dst_image_full_layer_size: usize = @as(usize, b_dst_image.info.layer_size) * dst_bpp;
-
-        const src_virt = b_src_image.memory_info.boundVirtualAddress();
-        const dst_virt = b_dst_image.memory_info.boundVirtualAddress();
-
-        const src_mip_offset = src_bpp * backend.imageLevelOffset(src_width * src_height, src_mip_width * src_mip_height);
-        const dst_mip_offset = dst_bpp * backend.imageLevelOffset(dst_width * dst_height, dst_mip_width * dst_mip_height);
-
-        var i: usize = 0;
-        var src_image_layer_virt_offset = src_virt + src_image_full_layer_size * @intFromEnum(info.src_subresource.base_array_layer) + src_mip_offset;
-        var dst_image_layer_virt_offset = dst_virt + dst_image_full_layer_size * @intFromEnum(info.dst_subresource.base_array_layer) + dst_mip_offset;
-
-        while (i < dst_blitting_layers) : ({
-            i += 1;
-            src_image_layer_virt_offset += src_image_full_layer_size;
-            dst_image_layer_virt_offset += dst_image_full_layer_size;
-        }) {
-            // NOTE: Queue operations start and execute sequentially within a queue.
-            const wait_op: SemaphoreOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else .none;
-            const signal_op: SemaphoreOperation = if (i == (dst_blitting_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else .none;
-
-            try transfer.pushFrontBounded(TransferItem, .{
-                .flags = .{
-                    .kind = kind,
-                    .extra = .{
-                        .transfer = .{
-                            .src_fmt = src_color_format,
-                            .dst_fmt = dst_color_format,
-                            .downscale = downscale,
-                            .use_32x32 = false,
-                        },
-                    },
-                },
-                .src = @alignCast(src_image_layer_virt_offset),
-                .dst = @alignCast(dst_image_layer_virt_offset),
-                .input_gap_size = .{ @intCast(src_mip_width), @intCast(src_mip_height) },
-                .output_gap_size = .{ @intCast(src_mip_width), @intCast(src_mip_height) },
-            }, wait_op, signal_op);
-        }
-    }
-
-    pub fn fillBuffer(queue: Handle, info: mango.FillBufferInfo) !void {
-        const fill: *Queue = .fromHandleMutable(queue, .fill);
-        const buffer: *backend.Buffer = .fromHandleMutable(info.buffer);
-
-        const virt = buffer.memory_info.boundVirtualAddress();
-        const size = buffer.sizeByAmount(info.size, info.offset);
-
-        const dst = virt[@intFromEnum(info.offset)..][0..size];
-
-        try fill.pushFrontBounded(FillItem, .{
-            .data = @alignCast(dst),
-            .value = switch (info.pattern_type) {
-                .u16 => .fill16(@truncate(info.pattern)),
-                .u24 => .fill24(@truncate(info.pattern)),
-                .u32 => .fill32(info.pattern),
-            },
-        }, .initSemaphoreOperation(info.wait_semaphore), .initSemaphoreOperation(info.signal_semaphore));
-    }
-
-    /// Clear one color attachment image.
-    pub fn clearColorImage(queue: Handle, info: mango.ClearColorInfo) !void {
-        const fill: *Queue = .fromHandleMutable(queue, .fill);
-        const color = info.color;
-        const b_image: *backend.Image = .fromHandleMutable(info.image);
-
-        const clear_scale: usize, const clear_value: GraphicsServerGpu.GxCommand.MemoryFill.Unit.Value = switch (b_image.info.format) {
-            .a8b8g8r8_unorm => .{
-                @sizeOf(u32),
-                .fill32(@bitCast(pica.ColorFormat.Abgr8888{
-                    .r = color[0],
-                    .g = color[1],
-                    .b = color[2],
-                    .a = color[3],
-                })),
-            },
-            .b8g8r8_unorm => .{
-                3,
-                .fill24(@bitCast(pica.ColorFormat.Bgr888{
-                    .r = color[0],
-                    .g = color[1],
-                    .b = color[2],
-                })),
-            },
-            // .a8b8g8r8_unorm =>,
-            .r5g6b5_unorm_pack16, .r5g5b5a1_unorm_pack16, .r4g4b4a4_unorm_pack16, .g8r8_unorm => .{
-                @sizeOf(u16),
-                .fill16(switch (b_image.info.format) {
-                    .r5g6b5_unorm_pack16 => @bitCast(pica.ColorFormat.Rgb565{
-                        .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
-                        .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u6)) / std.math.maxInt(u8)),
-                        .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
-                    }),
-                    .r5g5b5a1_unorm_pack16 => @bitCast(pica.ColorFormat.Rgba5551{
-                        .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
-                        .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
-                        .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
-                        .a = @intFromBool(color[3] != 0),
-                    }),
-                    .r4g4b4a4_unorm_pack16 => @bitCast(pica.ColorFormat.Rgba4444{
-                        .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
-                        .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
-                        .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
-                        .a = @intCast((@as(usize, color[3]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
-                    }),
-                    .g8r8_unorm => @bitCast(pica.TextureUnitFormat.Hilo88{
-                        .r = color[0],
-                        .g = color[1],
-                    }),
-                    else => unreachable,
-                }),
-            },
-            else => unreachable,
-        };
-
-        const cleared_levels = b_image.info.levelsByAmount(info.subresource_range.level_count, info.subresource_range.base_mip_level);
-        const cleared_layers = b_image.info.layersByAmount(info.subresource_range.layer_count, info.subresource_range.base_array_layer);
-
-        const virt_start = b_image.memory_info.boundVirtualAddress();
-        const full_layer_size = clear_scale * b_image.info.layer_size;
-
-        // We can fully clear all the layers! This common case must be optimized!
-        if (info.subresource_range.base_mip_level == .@"0" and cleared_levels == b_image.info.levels()) {
-            return fill.pushFrontBounded(FillItem, .{
-                .data = @alignCast(virt_start[(full_layer_size * @intFromEnum(info.subresource_range.base_array_layer))..][0..(full_layer_size * cleared_layers)]),
-                .value = clear_value,
-            }, .initSemaphoreOperation(info.wait_semaphore), .initSemaphoreOperation(info.signal_semaphore));
-        }
-
-        const width: usize = b_image.info.width();
-        const height: usize = b_image.info.height();
-
-        const mip_width = backend.imageLevelDimension(width, @intFromEnum(info.subresource_range.base_mip_level));
-        const mip_height = backend.imageLevelDimension(height, @intFromEnum(info.subresource_range.base_mip_level));
-
-        const mip_offset = clear_scale * backend.imageLevelOffset(width * mip_height, mip_width * mip_height);
-        const full_cleared_size = clear_scale * backend.imageLayerSize(mip_width * mip_height, cleared_levels);
-
-        var current_virt_offset: [*]u8 = virt_start + full_layer_size * @intFromEnum(info.subresource_range.base_array_layer) + mip_offset;
-        var i: usize = 0;
-
-        while (i < cleared_layers) : ({
-            current_virt_offset += full_layer_size;
-            i += 1;
-        }) {
-            // NOTE: Queue operations start and execute sequentially within a queue.
-            const wait_op: SemaphoreOperation = if (i == 0) .initSemaphoreOperation(info.wait_semaphore) else .none;
-            const signal_op: SemaphoreOperation = if (i == (cleared_layers - 1)) .initSemaphoreOperation(info.signal_semaphore) else .none;
-
-            try fill.pushFrontBounded(FillItem, .{
-                .data = @alignCast(current_virt_offset[0..full_cleared_size]),
-                .value = clear_value,
-            }, wait_op, signal_op);
-        }
-    }
-
-    pub fn clearDepthStencilImage(queue: Handle, info: mango.ClearDepthStencilInfo) !void {
-        std.debug.assert(0.0 <= info.depth and info.depth <= 1.0);
-
-        // TODO: Subresource range
-        const fill: *Queue = .fromHandleMutable(queue, .fill);
-        const depth = info.depth;
-        const stencil = info.stencil;
-
-        const b_image: *backend.Image = .fromHandleMutable(info.image);
-        const bound_virtual = b_image.memory_info.boundVirtualAddress();
-
-        const clear_slice, const clear_value: GraphicsServerGpu.GxCommand.MemoryFill.Unit.Value = switch (b_image.info.format) {
-            .d16_unorm => .{ bound_virtual[0..(b_image.info.size() * @sizeOf(u16))], .fill16(@intFromFloat(@trunc(depth * std.math.maxInt(u16)))) },
-            .d24_unorm => .{ bound_virtual[0..(b_image.info.size() * 3)], .fill24(@intFromFloat(@trunc(depth * std.math.maxInt(u24)))) },
-            .d24_unorm_s8_uint => .{ bound_virtual[0..(b_image.info.size() * @sizeOf(u32))], .fill32(@as(u32, @intFromFloat(@trunc(depth * std.math.maxInt(u24)))) | (@as(u32, stencil) << 24)) },
-            else => unreachable,
-        };
-
-        return fill.pushFrontBounded(FillItem, .{
-            .data = @alignCast(clear_slice),
-            .value = clear_value,
-        }, .initSemaphoreOperation(info.wait_semaphore), .initSemaphoreOperation(info.signal_semaphore));
-    }
-
-    pub fn submit(queue: Handle, submit_info: mango.SubmitInfo) !void {
-        const submt: *Queue = .fromHandleMutable(queue, .submit);
-        const b_cmd: *backend.CommandBuffer = .fromHandleMutable(submit_info.command_buffer);
-        b_cmd.notifyPending();
-
-        return submt.pushFrontBounded(SubmitItem, .{
-            .cmd_buffer = b_cmd,
-        }, .initSemaphoreOperation(submit_info.wait_semaphore), .initSemaphoreOperation(submit_info.signal_semaphore));
-    }
-
-    pub fn present(queue: Handle, info: mango.PresentInfo) !void {
-        const prsent: *Queue = .fromHandleMutable(queue, .present);
-        const screen = backend.Swapchain.fromHandle(info.swapchain);
-
-        return prsent.pushFrontBounded(PresentationItem, .{
-            .misc = .{
-                .screen = screen,
-                .ignore_stereo = info.flags.ignore_stereoscopic,
-            },
-            .index = info.image_index,
-        }, .initSemaphoreOperation(info.wait_semaphore), .none);
-    }
-};
-
 pub const Type = enum {
     fill,
     transfer,
@@ -417,7 +20,7 @@ pub const SemaphoreOperation = struct {
     sema: ?*backend.Semaphore,
     value: u64,
 
-    pub fn initSemaphoreOperation(maybe_op: ?*const mango.SemaphoreQueueOperation) SemaphoreOperation {
+    pub fn init(maybe_op: ?*const mango.SemaphoreOperation) SemaphoreOperation {
         return if (maybe_op) |op| .{
             .sema = .fromHandleMutable(op.semaphore),
             .value = op.value,
@@ -425,12 +28,217 @@ pub const SemaphoreOperation = struct {
     }
 };
 
-pub const FillItem = struct {
-    data: []align(8) u8,
-    value: GraphicsServerGpu.GxCommand.MemoryFill.Unit.Value,
+
+pub const Fill = extern struct {
+    pub const Size = pica.DisplayController.Framebuffer.Pixel.Size;
+    pub const Extra = packed struct(u32) {
+        len: u30, // More than 1GB is sus
+        size: Size,
+    };
+
+    ptr: hardware.AlignedPhysicalAddress(.@"8", .@"1"),
+    extra: Extra,
+    value: u32,
+
+    pub const Iterator = struct {
+        current: u32,
+        clear_len: u30,
+        next_len: u32,
+        remaining: u32,
+
+        value: u32,
+        size: Size,
+        
+        pub fn init() Iterator {
+        }
+
+        pub fn initColor(info: *const mango.ClearColorInfo) Iterator {
+            const color = info.color;
+            const b_image: *backend.Image = .fromHandleMutable(info.image);
+
+            const clear_scale: usize, const clear_value: u32, const clear_size: Fill.Size = switch (b_image.info.format) {
+                .a8b8g8r8_unorm => .{
+                    @sizeOf(u32),
+                    @bitCast(pica.ColorFormat.Abgr8888{
+                        .r = color[0],
+                        .g = color[1],
+                        .b = color[2],
+                        .a = color[3],
+                    }),
+                    .@"32",
+                },
+                .b8g8r8_unorm => .{
+                    3,
+                    @as(u24, @bitCast(pica.ColorFormat.Bgr888{
+                        .r = color[0],
+                        .g = color[1],
+                        .b = color[2],
+                    })),
+                    .@"24"
+                },
+                .r5g6b5_unorm_pack16, .r5g5b5a1_unorm_pack16, .r4g4b4a4_unorm_pack16, .g8r8_unorm => .{
+                    @sizeOf(u16),
+                    @as(u16, switch (b_image.info.format) {
+                        .r5g6b5_unorm_pack16 => @bitCast(pica.ColorFormat.Rgb565{
+                            .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
+                            .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u6)) / std.math.maxInt(u8)),
+                            .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
+                        }),
+                        .r5g5b5a1_unorm_pack16 => @bitCast(pica.ColorFormat.Rgba5551{
+                            .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
+                            .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
+                            .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u5)) / std.math.maxInt(u8)),
+                            .a = @intFromBool(color[3] != 0),
+                        }),
+                        .r4g4b4a4_unorm_pack16 => @bitCast(pica.ColorFormat.Rgba4444{
+                            .r = @intCast((@as(usize, color[0]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
+                            .g = @intCast((@as(usize, color[1]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
+                            .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
+                            .a = @intCast((@as(usize, color[3]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
+                        }),
+                        .g8r8_unorm => @bitCast(pica.TextureUnitFormat.Hilo88{
+                            .r = color[0],
+                            .g = color[1],
+                        }),
+                        else => unreachable,
+                    }),
+                    .@"16",
+                },
+                else => unreachable,
+            };
+
+            const cleared_levels = b_image.info.levelsByAmount(info.subresource_range.level_count, info.subresource_range.base_mip_level);
+            const cleared_layers = b_image.info.layersByAmount(info.subresource_range.layer_count, info.subresource_range.base_array_layer);
+
+            std.debug.assert(b_image.address != .zero);
+            const phys_start = @intFromEnum(b_image.address);
+            const full_layer_size = clear_scale * b_image.info.layer_size;
+
+            // We can fully clear all the layers! This common case must be optimized!
+            if (info.subresource_range.base_mip_level == .@"0" and cleared_levels == b_image.info.levels()) {
+                const len: u32 = @intCast(full_layer_size * cleared_layers);
+
+                return .{
+                    .current = phys_start + (full_layer_size * @intFromEnum(info.subresource_range.base_array_layer)),
+                    .clear_len = @intCast(len), // Impossible, if a safety panic hits here; you have bigger problems
+                    .next_len = len,
+                    .remaining = 1,
+
+                    .value = clear_value,
+                    .size = clear_size,
+                };
+            }
+
+            const width: usize = b_image.info.width();
+            const height: usize = b_image.info.height();
+
+            const mip_width = backend.imageLevelDimension(width, @intFromEnum(info.subresource_range.base_mip_level));
+            const mip_height = backend.imageLevelDimension(height, @intFromEnum(info.subresource_range.base_mip_level));
+
+            const mip_offset = clear_scale * backend.imageLevelOffset(width * mip_height, mip_width * mip_height);
+            const full_cleared_size = clear_scale * backend.imageLayerSize(mip_width * mip_height, cleared_levels);
+
+            return .{
+                .current = phys_start + full_layer_size * @intFromEnum(info.subresource_range.base_array_layer) + mip_offset,
+                .clear_len = @intCast(full_cleared_size), // Impossible, if a safety panic hits here; you have bigger problems
+                .next_len = full_layer_size,
+                .remaining = cleared_layers,
+
+                .value = clear_value,
+                .size = clear_size,
+            };
+        }
+
+        pub fn initDepth(info: *const mango.ClearDepthStencilInfo) Iterator {
+            std.debug.assert(0.0 <= info.depth and info.depth <= 1.0);
+
+            // TODO: Subresource range
+            const depth = info.depth;
+            const stencil = info.stencil;
+
+            const b_image: *backend.Image = .fromHandleMutable(info.image);
+
+            const clear_scale: usize, const clear_value: u32, const clear_size: Fill.Size = switch (b_image.info.format) {
+                .d16_unorm => .{
+                    @sizeOf(u16),
+                    @as(u16, @intFromFloat(@trunc(depth * std.math.maxInt(u16)))),
+                    .@"16",
+                },
+                .d24_unorm => .{
+                    3,
+                    @as(u24, @intFromFloat(@trunc(depth * std.math.maxInt(u24)))),
+                    .@"24",
+                },
+                .d24_unorm_s8_uint => .{
+                    @sizeOf(u32),
+                    @as(u24, @intFromFloat(@trunc(depth * std.math.maxInt(u24)))) | (@as(u32, stencil) << 24),
+                    .@"32",
+                },
+                else => unreachable,
+            };
+
+            const cleared_levels = b_image.info.levelsByAmount(info.subresource_range.level_count, info.subresource_range.base_mip_level);
+            const cleared_layers = b_image.info.layersByAmount(info.subresource_range.layer_count, info.subresource_range.base_array_layer);
+
+            const phys_start = @intFromEnum(b_image.address);
+            const full_layer_size = clear_scale * b_image.info.layer_size;
+
+            // We can fully clear all the layers! This common case must be optimized!
+            if (info.subresource_range.base_mip_level == .@"0" and cleared_levels == b_image.info.levels()) {
+                const len: u32 = @intCast(full_layer_size * cleared_layers);
+
+                return .{
+                    .current = phys_start + (full_layer_size * @intFromEnum(info.subresource_range.base_array_layer)),
+                    .clear_len = @intCast(len), // Impossible, if a safety panic hits here; you have bigger problems
+                    .next_len = len,
+                    .remaining = 1,
+
+                    .value = clear_value,
+                    .size = clear_size,
+                };
+            }
+
+            const width: usize = b_image.info.width();
+            const height: usize = b_image.info.height();
+
+            const mip_width = backend.imageLevelDimension(width, @intFromEnum(info.subresource_range.base_mip_level));
+            const mip_height = backend.imageLevelDimension(height, @intFromEnum(info.subresource_range.base_mip_level));
+
+            const mip_offset = clear_scale * backend.imageLevelOffset(width * mip_height, mip_width * mip_height);
+            const full_cleared_size = clear_scale * backend.imageLayerSize(mip_width * mip_height, cleared_levels);
+
+            return .{
+                .current = phys_start + full_layer_size * @intFromEnum(info.subresource_range.base_array_layer) + mip_offset,
+                .clear_len = @intCast(full_cleared_size), // Impossible, if a safety panic hits here; you have bigger problems
+                .next_len = full_layer_size,
+                .remaining = cleared_layers,
+
+                .value = clear_value,
+                .size = clear_size,
+            };
+        }
+
+        pub fn next(it: *Iterator) ?Fill {
+            if (it.remaining == 0) return null;
+
+            defer {
+                it.current += it.next_len;
+                it.remaining -= 1;
+            }
+
+            return .{
+                .ptr = .fromAddress(it.current),
+                .extra = .{
+                    .len = it.clear_len,
+                    .size = it.size,
+                },
+                .value = it.value,
+            };
+        }
+    };
 };
 
-pub const TransferItem = struct {
+pub const Transfer = extern struct {
     pub const Flags = packed struct(u32) {
         pub const Kind = enum(u2) {
             copy,
@@ -452,16 +260,212 @@ pub const TransferItem = struct {
         },
     };
 
-    src: [*]align(8) const u8,
-    dst: [*]align(8) u8,
-    input_gap_size: [2]u16,
-    output_gap_size: [2]u16,
+    src: hardware.AlignedPhysicalAddress(.@"8", .@"1"),
+    dst: hardware.AlignedPhysicalAddress(.@"8", .@"1"),
+    src_gap_line: [2]u16,
+    dst_gap_line: [2]u16,
     flags: Flags,
+
+    pub const Iterator = struct {
+        current_src: u32,
+        current_dst: u32,
+        src_next_len: u32,
+        dst_next_len: u32,
+        remaining: u32,
+
+        src_gap_line: [2]u16,
+        dst_gap_line: [2]u16,
+        flags: Flags,
+
+        pub fn initBuffer(info: *const mango.CopyBufferInfo) Iterator {
+            std.debug.assert(info.src_buffer.len == info.dst_buffer.len);
+
+            return .{
+                .current_src = @intFromEnum(info.src_buffer.address),
+                .current_dst = @intFromEnum(info.dst_buffer.address),
+                .src_next_len = 0,
+                .dst_next_len = 0,
+                .remaining = 1,
+
+                .src_gap_line = @splat(0),
+                .dst_gap_line = @splat(0),
+                .flags = .{
+                    .kind = .copy,
+                    .extra = .{
+                        .copy = @intCast(info.dst_buffer.len), // Panic here? You have bigger problems buddy
+                    },
+                },
+            };
+        }
+
+        pub fn initBlit(info: *const mango.BlitImageInfo) Iterator {
+            const b_src_image: *backend.Image = .fromHandleMutable(info.src_image);
+            const b_dst_image: *backend.Image = .fromHandleMutable(info.dst_image);
+
+            const src_blitting_layers = b_src_image.info.layersByAmount(info.src_subresource.layer_count, info.src_subresource.base_array_layer);
+            const dst_blitting_layers = b_dst_image.info.layersByAmount(info.dst_subresource.layer_count, info.dst_subresource.base_array_layer);
+
+            std.debug.assert(src_blitting_layers == dst_blitting_layers); // Obvously, we must have matching layers to copy.
+
+            const src_color_format, const dst_color_format = switch (b_src_image.info.format) {
+                // NOTE: we can (ab)use the GPU DMA for unswizzling images of the same format.
+                .d16_unorm, .g8r8_unorm, .i8a8_unorm => |f| if (b_dst_image.info.format == f) .{ .rgb565, .rgb565 } else unreachable,
+                .d24_unorm => |f| if (b_dst_image.info.format == f) .{ .bgr888, .bgr888 } else unreachable,
+                .d24_unorm_s8_uint => |f| if (b_dst_image.info.format == f) .{ .abgr8888, .abgr8888 } else unreachable,
+                else => |fmt| .{ fmt.nativeColorFormat(), b_dst_image.info.format.nativeColorFormat() }, // it must be a valid color format if not
+            };
+
+            const src_width: usize = b_src_image.info.width();
+            const src_height: usize = b_src_image.info.height();
+
+            const src_mip_width = backend.imageLevelDimension(src_width, @intFromEnum(info.src_subresource.mip_level));
+            const src_mip_height = backend.imageLevelDimension(src_height, @intFromEnum(info.src_subresource.mip_level));
+
+            const dst_width: usize = b_dst_image.info.width();
+            const dst_height: usize = b_dst_image.info.height();
+
+            const dst_mip_width = backend.imageLevelDimension(dst_width, @intFromEnum(info.src_subresource.mip_level));
+            const dst_mip_height = backend.imageLevelDimension(dst_height, @intFromEnum(info.src_subresource.mip_level));
+
+            std.debug.assert(src_mip_width >= dst_mip_width and src_mip_height >= dst_mip_height); // Output must not be bigger than input.
+
+            // Only allow downscale of the X or XY axes. Otherwise sizes must match (for simplicity, the hardware allows bigger inputs than outputs, does that have an use-case?).
+            // TODO: Yes dummy, if you have a bigger input you're basically blitting subimages!
+            const downscale: pica.PictureFormatter.Flags.Downscale = if (dst_mip_width < src_mip_width and dst_mip_height < src_mip_height) blk: {
+                std.debug.assert(dst_mip_width == (src_mip_width >> 1) and dst_mip_height == (src_mip_height >> 1));
+                break :blk .@"2x2";
+            } else if (dst_mip_width < src_mip_width) blk: {
+                std.debug.assert(dst_mip_width == (src_mip_width >> 1));
+                break :blk .@"2x1";
+            } else blk: {
+                @branchHint(.likely);
+                std.debug.assert(src_mip_width == dst_mip_width and src_mip_height == dst_mip_height and !(b_src_image.info.optimally_tiled and b_dst_image.info.optimally_tiled));
+                break :blk .none;
+            };
+
+            const kind: Transfer.Flags.Kind = switch (b_src_image.info.optimally_tiled) {
+                false => switch (b_dst_image.info.optimally_tiled) {
+                    false => unreachable, // NOTE: Blits are not supported between LINEAR -> LINEAR, hardware doesn't support it explicitly.
+                    true => .linear_tiled,
+                },
+                true => switch (b_dst_image.info.optimally_tiled) {
+                    false => .tiled_linear,
+                    true => .tiled_tiled,
+                },
+            };
+
+            switch (kind) {
+                .linear_tiled, .tiled_linear => std.debug.assert(src_width >= 64 and src_height >= 16),
+                .tiled_tiled => std.debug.assert(src_width >= 64 and src_height >= 32),
+                .copy => unreachable,
+            }
+
+            const src_bpp = src_color_format.bytesPerPixel();
+            const dst_bpp = dst_color_format.bytesPerPixel();
+
+            const src_image_full_layer_size: usize = @as(usize, b_src_image.info.layer_size) * src_bpp;
+            const dst_image_full_layer_size: usize = @as(usize, b_dst_image.info.layer_size) * dst_bpp;
+
+            std.debug.assert(b_src_image.address != .zero and b_dst_image.address != .zero);
+            const src = @intFromEnum(b_src_image.address);
+            const dst = @intFromEnum(b_dst_image.address);
+
+            const src_mip_offset = src_bpp * backend.imageLevelOffset(src_width * src_height, src_mip_width * src_mip_height);
+            const dst_mip_offset = dst_bpp * backend.imageLevelOffset(dst_width * dst_height, dst_mip_width * dst_mip_height);
+
+            const gap_line: [2]u16 = .{ @intCast(src_mip_width), @intCast(src_mip_height) };
+
+            return .{
+                .current_src = src + src_image_full_layer_size * @intFromEnum(info.src_subresource.base_array_layer) + src_mip_offset,
+                .current_dst = dst + dst_image_full_layer_size * @intFromEnum(info.dst_subresource.base_array_layer) + dst_mip_offset,
+                .src_next_len = src_image_full_layer_size,
+                .dst_next_len = dst_image_full_layer_size,
+                .remaining = dst_blitting_layers,
+                .src_gap_line = gap_line,
+                .dst_gap_line = gap_line,
+                .flags = .{
+                    .kind = kind,
+                    .extra = .{
+                        .transfer = .{
+                            .src_fmt = src_color_format,
+                            .dst_fmt = dst_color_format,
+                            .downscale = downscale,
+                            .use_32x32 = false,
+                        },
+                    },
+                },
+            };
+        }
+
+        pub fn initBufferToImage(info: *const mango.CopyBufferToImageInfo) Iterator {
+            const b_dst_image: *backend.Image = .fromHandleMutable(info.dst_image);
+
+            const native_fmt = b_dst_image.info.format.nativeColorFormat();
+            const pixel_size = native_fmt.bytesPerPixel();
+
+            const dst_width: usize = b_dst_image.info.width();
+            const dst_height: usize = b_dst_image.info.height();
+
+            const dst_mip_width = backend.imageLevelDimension(dst_width, @intFromEnum(info.dst_subresource.mip_level));
+            const dst_mip_height = backend.imageLevelDimension(dst_height, @intFromEnum(info.dst_subresource.mip_level));
+
+            std.debug.assert(dst_mip_width >= 64 and dst_mip_height >= 16);
+
+            const dst_mip_offset = pixel_size * backend.imageLevelOffset(dst_width * dst_height, dst_mip_width * dst_mip_height);
+            const dst_mip_size = pixel_size * dst_mip_width * dst_mip_height;
+
+            const dst_image_full_layer_size = @as(usize, b_dst_image.info.layer_size) * pixel_size;
+
+            std.debug.assert(b_dst_image.address != .zero);
+            const dst = @intFromEnum(b_dst_image.address);
+
+            const dst_blitting_layers = b_dst_image.info.layersByAmount(info.dst_subresource.layer_count, info.dst_subresource.base_array_layer);
+
+            const gap_line: [2]u16 = .{ @intCast(dst_mip_width), @intCast(dst_mip_height) };
+
+            return .{
+                .current_src = @intFromEnum(info.src_buffer.address),
+                .current_dst = dst + dst_image_full_layer_size * @intFromEnum(info.dst_subresource.base_array_layer) + dst_mip_offset,
+                .src_next_len = dst_mip_size,
+                .dst_next_len = dst_image_full_layer_size,
+                .remaining = dst_blitting_layers,
+                .src_gap_line = gap_line,
+                .dst_gap_line = gap_line,
+                .flags = .{
+                    .kind = .linear_tiled,
+                    .extra = .{
+                        .transfer = .{
+                            .src_fmt = native_fmt,
+                            .dst_fmt = native_fmt,
+                            .downscale = .none,
+                        },
+                    },
+                },
+            };
+        }
+
+        pub fn next(it: *Iterator) ?Transfer {
+            if (it.remaining == 0) return null;
+            defer {
+                it.current_src += it.src_next_len;
+                it.current_dst += it.dst_next_len;
+                it.remaining -= 1;
+            }
+
+            return .{
+                .src = .fromAddress(it.current_src),
+                .dst = .fromAddress(it.current_dst),
+                .src_gap_line = it.src_gap_line,
+                .dst_gap_line = it.dst_gap_line,
+                .flags = it.flags,
+            };
+        }
+    };
 };
 
-pub const SubmitItem = struct { cmd_buffer: *backend.CommandBuffer };
+pub const Submit = extern struct { cmd: *backend.CommandBuffer };
 
-pub const PresentationItem = struct {
+pub const Presentation = struct {
     pub const Misc = packed struct(u8) {
         screen: pica.Screen,
         ignore_stereo: bool,
@@ -593,26 +597,14 @@ pub fn popBackAssumeReady(queue: *Queue, comptime T: type) struct { T, Semaphore
     return .{ value, signal };
 }
 
-pub fn toHandle(queue: *Queue) Handle {
-    return @enumFromInt(@intFromPtr(queue));
-}
-
-pub fn fromHandleMutable(handle: Handle, typ: Type) *Queue {
-    const queue: *Queue = @ptrFromInt(@intFromEnum(handle));
-    std.debug.assert(queue.type == typ);
-    return queue;
-}
-
 const Queue = @This();
 
 const backend = @import("backend.zig");
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const zalloc = @import("zalloc");
-
-const horizon = zitrus.horizon;
-const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
 
 const mango = zitrus.mango;
-const pica = zitrus.hardware.pica;
+
+const hardware = zitrus.hardware;
+const pica = hardware.pica;
