@@ -6,15 +6,21 @@ handles: Hid.Handles,
 shm_memory_data: *align(horizon.heap.page_size) Hid.Shared,
 
 pub fn init(hid: Hid) !Input {
+    const shm_memory_data = horizon.heap.allocShared(@sizeOf(Hid.Shared));
+    // NOTE: No errdefer as allocShared is strictly a bump-allocator without `free`
+    return try .initAddress(hid, @ptrCast(shm_memory_data));
+}
+
+pub fn initAddress(hid: Hid, shared_address: *align(horizon.heap.page_size) Hid.Shared) !Input {
     var handles = try hid.sendGetHandles();
     errdefer handles.close();
 
-    const shm_memory_data = horizon.heap.allocShared(@sizeOf(Hid.Shared));
-    try handles.shm.map(shm_memory_data, .r, .dont_care);
+    try handles.shm.map(@ptrCast(shared_address), .r, .dont_care);
+    errdefer handles.shm.unmap(@ptrCast(shared_address));
 
     return .{
         .handles = handles,
-        .shm_memory_data = std.mem.bytesAsValue(Hid.Shared, shm_memory_data),
+        .shm_memory_data = shared_address,
     };
 }
 

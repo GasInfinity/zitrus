@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added a lot more docs to `ChannelSound` based on discovered reverse engineered things.
+- Added `ChannelSound.Engine` as an abstraction to manage state.
+- Added initial `demo/mango/flappy`; simple flappy bird clone hw accelerated.
+- Added `demo/sound/csnd`; playing sound via the CSND service directly.
+- Added `blitImage` to `mango.CommandBuffer`
+- Added `initAddress` to some service wrappers so you can bring your own shared address (if you don't want to use the global bump allocator)
+
+- Changed `demo/mango/texture_loading` to load the texture from the RomFS instead of embedding it.
+
 ## [2026-08-21] BREAKING
 
 - Added more validation.

@@ -2,10 +2,6 @@
 const position_vtx_storage align(@sizeOf(u32)) = @embedFile("position_uv.psh").*;
 const position_vtx = &position_vtx_storage;
 
-// TODO: load this from the RomFS
-// NOTE: The image is linear, will be unswizzled later.
-const test_bgr = @embedFile("test.bgr");
-
 pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
 
 const Model = extern struct {
@@ -29,10 +25,21 @@ const model_data: Model = .{
 };
 
 pub fn main(init: horizon.Init.Application.Mango) !void {
+    const io = init.app.base.io;
     const device: mango.Device = init.device;
 
-    var state: State = try .init(device);
+    var state: State = try .init(device, false);
     defer state.deinit(device);
+
+    try horizon.Io.global.initStorage(init.app.srv, .fs, 0);
+    defer horizon.Io.global.deinitFilesystem();
+
+    try horizon.Io.global.mountSelfRomFs("romfs");
+
+    var top: [2]Framebuffer = @splat(.empty);
+    defer for (&top) |fb| fb.deinit(device);
+    for (&top) |*fb| fb.* = try .init(device, 240, 400, .b8g8r8_unorm, .undefined);
+    defer device.waitIdle(); // Wait for any operation in-progress
 
     const model = try state.fcram.dupe(Model, (&model_data)[0..1]);
     defer state.fcram.free(model);
@@ -97,15 +104,18 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         .border_color = @splat(0),
     });
     defer device.destroySampler(linear_sampler);
-
     {
+        // TODO: Load an encoded image instead of raw bytes
+        const texture_file = try std.Io.Dir.cwd().openFile(io, "romfs:/test.bgr", .{});
+        defer texture_file.close(io);
+
         const staging = try state.fcram.alloc(u8, 64*64*3);
         defer state.fcram.free(staging);
         const staging_gpu = try device.hostToDevice(staging);
 
-        @memcpy(staging, test_bgr);
+        if(try texture_file.readPositionalAll(io, staging, 0) != staging.len) return error.ImageTooShort;
+
         try device.flushCachedMemoryRanges(&.{staging});
-        
         try device.copyBufferToImage(&.init(state.sema, state.sync), &.init(state.sema, state.sync + 1), &.{
             .src_buffer = staging_gpu,
             .dst_image = texture,
@@ -129,14 +139,15 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         const pad = input.pollPad();
         if (pad.current.start) break :main_loop;
 
-        const cmd, const color_attachment = try state.acquireNextTarget(device);
+        const cmd = try state.acquireNext(device);
+        const color_attachment_img = top[state.current].color.image;
+        const color_attachment = top[state.current].color.view;
 
         // Same command recording workflow as Vulkan.
         //
         // However, some things change.
         // E.g: We have `bindCombinedImageSamplers`, `bindLightEnvironmentFactors`, `bindLights`, ...
         try cmd.begin();
-
         // Set the initial state, the validation (in safe modes) will guide you
         cmd.bindShaders(&.{.vertex}, &.{simple_shader});
         cmd.setVertexInput(vertex_input_layout);
@@ -193,14 +204,49 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
 
             cmd.drawIndexed(model[0].indices.len, 0, 0);
         }
+
         try cmd.end();
         
-        try state.submitBlit(device, @splat(0x22));
+        const top_idx = try device.acquireNextImage(.top, std.math.maxInt(u64));
+        const bottom_idx = try device.acquireNextImage(.bottom, std.math.maxInt(u64));
+
+        try device.present(&.init(state.sema, state.sync), &.{
+            .display = .bottom,
+            .image_index = bottom_idx,
+            .flags = .{},
+        });
+
+        try device.clearColorImage(&.init(state.sema, state.sync), &.init(state.sema, state.sync + 1), &.{
+            .subresource_range = .full,
+            .image = color_attachment_img,
+            .color = @splat(0x22),
+        });
+
+        try device.submit(&.init(state.sema, state.sync + 1), &.init(state.sema, state.sync + 2), &.{
+            .command_buffer = state.cmd[state.current],
+        });
+
+        try device.blitImage(&.init(state.sema, state.sync + 2), &.init(state.sema, state.sync + 3), &.{
+            .src_image = color_attachment_img,
+            .dst_image = state.top_images[top_idx],
+            .src_subresource = .full,
+            .dst_subresource = .full,
+        });
+
+        try device.present(&.init(state.sema, state.sync + 3), &.{
+            .display = .top,
+            .image_index = top_idx,
+            .flags = .{},
+        });
+
+        state.sync += 3;
+        state.syncNext();
     }
 }
 
 const common = @import("common");
 const State = common.State;
+const Framebuffer = common.Framebuffer;
 
 const mango = zitrus.mango;
 const horizon = zitrus.horizon;

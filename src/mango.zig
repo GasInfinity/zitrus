@@ -836,13 +836,13 @@ pub const ImageCreateInfo = extern struct {
         _: u6 = 0,
     };
 
-    flags: Flags,
+    flags: Flags = .{},
     tiling: Tiling,
     usage: Usage,
     extent: Extent2D,
     format: Format,
-    mip_levels: ImageMipLevels,
-    array_layers: ImageArrayLayers,
+    mip_levels: ImageMipLevels = .@"1",
+    array_layers: ImageArrayLayers = .@"1",
 };
 
 pub const ImageViewCreateInfo = extern struct {

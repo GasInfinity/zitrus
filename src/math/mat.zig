@@ -2,7 +2,7 @@
 //!
 //! They all transform to the PICA200 NDC volume (Same as OpenGL/VK/D3D except Z [0, -1]).
 //! If you already have a matrix which expects a VK/D3D Z [0, 1] and don't want to use
-//! these helpers, you can negate m33 and m34
+//! these helpers, you can negate m33 and m34 (or multiply by a matrix applying a scale of -1 to Z)
 //!
 //! Some operations are provided for the sake of completeness (translation, scale, ...)
 
@@ -150,29 +150,30 @@ pub fn lookAt(position: @Vector(3, f32), forward: @Vector(3, f32), up: @Vector(3
     };
 }
 
-// TODO: right-handed ortho
-pub fn ortho(l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
+pub fn ortho(comptime handedness: Handedness, l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
+    const handedness_factor: comptime_float = @floatFromInt(@intFromEnum(handedness));
     const x_scale = r - l;
     const y_scale = b - t;
-    const z_scale = n - f;
+    const z_scale = f - n;
 
     return .{
         .{ 2 / x_scale, 0, 0, -(r + l) / x_scale },
         .{ 0, 2 / y_scale, 0, -(b + t) / y_scale },
-        .{ 0, 0, 1 / z_scale, -n / z_scale },
+        .{ 0, 0, handedness_factor * -1 / z_scale, handedness_factor * n / z_scale },
         .{ 0, 0, 0, 1 },
     };
 }
 
-pub fn orthoRotate90Cw(l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
+pub fn orthoRotate90Cw(comptime handedness: Handedness, l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
+    const handedness_factor: comptime_float = @floatFromInt(@intFromEnum(handedness));
     const x_scale = r - l;
     const y_scale = b - t;
-    const z_scale = n - f;
+    const z_scale = f - n;
 
     return .{
-        .{ 0, 2 / y_scale, 0, -(b + t) / y_scale },
+        .{ 0, -2 / y_scale, 0, (b + t) / y_scale },
         .{ -2 / x_scale, 0, 0, (r + l) / x_scale },
-        .{ 0, 0, 1 / z_scale, -n / z_scale },
+        .{ 0, 0, handedness_factor * -1 / z_scale, handedness_factor * n / z_scale },
         .{ 0, 0, 0, 1 },
     };
 }

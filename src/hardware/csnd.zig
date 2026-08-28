@@ -34,17 +34,42 @@ pub const SampleRate = enum(u16) {
     }
 };
 
-pub const MasterControl = packed struct(u32) {
-    volume: Volume,
-    mute: bool,
-    _unused0: u13,
-    dissonant_disable: bool,
-    /// When this is not true, some registers won't be written.
-    read_write: bool,
+pub const Master = extern struct {
+    pub const Control = packed struct(u32) {
+        volume: Volume,
+        mute: bool,
+        _unused0: u13,
+        dissonant_disable: bool,
+        /// When this is not true, some registers won't be written.
+        read_write: bool,
+    };
+
+    control: Control,
+    _unused0: [3]u32,
+    // CSND writes the process acquired channel mask (0xFFFFFF00 always) here on cmd 0x200
+    // CSND reads two times on cmd 0x300; ANDs it with acquired channels and captures and writes both at `acquired_state_offset`
+    unk_channels: u32,
+    // CSND writes the process acquired capture mask (depends) here on cmd 0x200
+    unk_capture_units: u8,
+    _unused1: [3]u8,
 };
 
 pub const Channel = extern struct {
-    pub const WaveDuty = enum(u3) { _ };
+    pub const WaveDuty = enum(u3) {
+        pub const @"12.5": WaveDuty = .duty(0);
+        pub const @"25.0": WaveDuty = .duty(1);
+        pub const @"37.5": WaveDuty = .duty(2);
+        pub const @"50.0": WaveDuty = .duty(3);
+        pub const @"62.5": WaveDuty = .duty(4);
+        pub const @"75.0": WaveDuty = .duty(5);
+        pub const @"87.5": WaveDuty = .duty(6);
+        pub const @"0.0": WaveDuty = .duty(7);
+        _,
+
+        pub fn duty(value: u3) WaveDuty {
+            return @enumFromInt(value);
+        }
+    };
     pub const Format = enum(u2) { pcm8, pcm16, ima_adpcm, psg };
     pub const Repeat = enum(u2) { manual, loop, one_shot, loop_constant };
 
@@ -90,11 +115,10 @@ pub const Channel = extern struct {
     /// 0x0C
     start_address: PhysicalAddress,
     /// 0x10
-    total_size: hardware.LsbRegister(u27),
+    size: hardware.LsbRegister(u27),
     // So you can start with some sound and then loop with another? If true cool.
-    // XXX: 3dbrew says this is the other channel? When this is 0x0 then mono audio is played. Name is not accurate
     /// 0x14
-    loop_restart_address: PhysicalAddress,
+    restart_address: PhysicalAddress,
     /// 0x18
     start_ima_state: ImaAdPcm,
     /// 0x1C
@@ -115,13 +139,16 @@ pub const Capture = extern struct {
 
     control: Control,
     sample_rate: LsbRegister(SampleRate),
-    length: LsbRegister(u24),
+    size: LsbRegister(u24),
     address: PhysicalAddress,
 };
 
 pub const Registers = extern struct {
-    master: MasterControl,
-    _unused0: [0x3FC]u8,
+    master: Master,
+    _unused0: [0x3e8]u8,
+    /// PSG Support:
+    /// - Square on channels 8-13
+    /// - Noise on channels 14-15
     channels: [channels]Channel,
     captures: [captures]Capture,
 };

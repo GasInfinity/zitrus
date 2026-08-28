@@ -43,7 +43,7 @@ input: *Hid.Input,
 
 /// Same behaviour as `app.waitEventTimeout(.none)`
 pub fn waitEvent(app: Application) !Event {
-    return app.waitEventTimeout(.none).?;
+    return (try app.waitEventTimeout(.none)).?;
 }
 
 /// Same behaviour as `app.waitEventTimeout(.fromNanoseconds(0))`

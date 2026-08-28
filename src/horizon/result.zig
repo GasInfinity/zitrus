@@ -139,6 +139,7 @@ pub const Module = enum(u8) {
     pub fn SpecificDescription(comptime module: Module) type {
         return switch (module) {
             .fs => Description.Filesystem,
+            .csnd => Description.Filesystem,
             else => Description,
         };
     }
@@ -170,6 +171,36 @@ pub const Description = enum(u10) {
         not_implemented,
         invalid_address,
         invalid_pointer,
+        invalid_handle,
+        not_initialized,
+        already_initialized,
+        not_found,
+        cancel_requested,
+        already_exists,
+        out_of_range,
+        timeout,
+        invalid_result_value,
+        _,
+    };
+
+    pub const ChannelSound = enum(u10) {
+        direct_sound_sleeping = 1,
+        direct_sound_priority = 2,
+
+        invalid_selection = 1000,
+        too_large,
+        permission_denied,
+        already_done,
+        invalid_size,
+        invalid_enum_value,
+        invalid_combination,
+        no_data,
+        busy,
+        unaligned_address,
+        unaligned_size,
+        out_of_memory,
+        not_implemented,
+        invalid_address, invalid_pointer,
         invalid_handle,
         not_initialized,
         already_initialized,
@@ -295,6 +326,10 @@ pub const Code = packed struct(i32) {
     pub const fs_unexpected_entry_kind: Code = @bitCast(@as(u32, 0xC92044FA));
     pub const fs_unexpected_open_flags: Code = @bitCast(@as(u32, 0xC92044E6));
     pub const fs_entry_already_exists: Code = @bitCast(@as(u32, 0xC82044BE));
+
+    pub const csnd_not_initialized: Code = @bitCast(@as(u32, 0xc960b7f8)); 
+    pub const csnd_direct_sound_sleeping: Code = @bitCast(@as(u32, 0xc940b401)); 
+    pub const csnd_direct_sound_priority: Code = @bitCast(@as(u32, 0xc940b402)); 
 
     description: Description = .success,
     module: Module = .common,

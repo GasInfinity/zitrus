@@ -31,7 +31,6 @@ pub const Exception = extern struct {
     };
 
     info: Info,
-
     registers: Registers,
 };
 

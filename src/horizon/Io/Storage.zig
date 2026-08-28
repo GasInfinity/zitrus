@@ -232,6 +232,7 @@ pub const Filesystem = struct {
 
     /// Not Thread-Safe
     pub fn mountArchive(filesystem: *Filesystem, gpa: std.mem.Allocator, name: []const u8, id: FilesystemSrv.ArchiveId, path_type: FilesystemSrv.PathType, path: []const u8) !void {
+        std.debug.assert(filesystem.fs.session != horizon.Session.Client.none); // Forgot to init storage!
         return try filesystem.mount(gpa, name, .{
             .archive = try filesystem.fs.sendOpenArchive(id, path_type, path),
         });
@@ -239,6 +240,7 @@ pub const Filesystem = struct {
 
     /// Not Thread-Safe
     pub fn mountSelfRomFs(filesystem: *Filesystem, gpa: std.mem.Allocator, name: []const u8) !void {
+        std.debug.assert(filesystem.fs.session != horizon.Session.Client.none); // Forgot to init storage!
         return try filesystem.mount(gpa, name, .{
             .romfs = try .initSelf(filesystem.fs, gpa),
         });

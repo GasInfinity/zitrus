@@ -5,16 +5,21 @@
 handles: IrRst.Handles,
 shm_memory_data: *align(horizon.heap.page_size) IrRst.Shared,
 
-pub fn init(hid: IrRst) !Input {
-    var handles = try hid.sendGetHandles();
+pub fn init(irrst: IrRst) !Input {
+    const shm_memory_data = horizon.heap.allocShared(@sizeOf(IrRst.Shared));
+    return try .initAddress(irrst, @ptrCast(shm_memory_data));
+}
+
+pub fn initAddress(irrst: IrRst, shared_address: *align(horizon.heap.page_size) IrRst.Shared) !Input {
+    var handles = try irrst.sendGetHandles();
     errdefer handles.close();
 
-    const shm_memory_data = horizon.heap.allocShared(@sizeOf(IrRst.Shared));
-    try handles.shm.map(shm_memory_data, .r, .dont_care);
+    try handles.shm.map(@ptrCast(shared_address), .r, .dont_care);
+    errdefer handles.shm.unmap(@ptrCast(shared_address));
 
     return .{
         .handles = handles,
-        .shm_memory_data = @ptrCast(shm_memory_data),
+        .shm_memory_data = shared_address,
     };
 }
 

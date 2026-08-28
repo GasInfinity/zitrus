@@ -230,7 +230,6 @@ pub const Codec = union(enum) {
 
     pub const ReadError = error{BadTranslationHeader};
     pub fn bufRead(comptime codec: Codec, comptime T: type, buffer: []const u32) !T {
-        // TODO: Azahar HLE is not behaving the same as the 3DS, investigate later. For now we'll remove these checks
         return switch (codec) {
             .raw => @as(*align(@sizeOf(u32)) const T, @ptrCast(buffer)).*,
             .static_slice => blk: {

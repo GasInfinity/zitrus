@@ -1,0 +1,9 @@
+.{
+    .titles = .{
+        .english = .{
+            .title = "Direct CSND",
+            .description = "did you hear that?",
+            .publisher = "zitrus",
+        },
+    },
+}

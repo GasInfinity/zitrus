@@ -21,9 +21,9 @@ pub const SocketUser = @import("services/SocketUser.zig");
 
 pub const Loader = @import("services/Loader.zig");
 
+pub const NetworkDaemon = @import("services/NetworkDaemon.zig");
 pub const NetworkManagerInfrastructure = @import("services/NetworkManagerInfrastructure.zig");
 pub const NetworkManagerSocket = @import("services/NetworkManagerSocket.zig");
-
 
 comptime {
     _ = ProcessManagerApplication;
@@ -44,6 +44,7 @@ comptime {
     _ = PxiProcess9;
     _ = SocketUser;
     _ = Loader;
+    _ = NetworkDaemon;
     _ = NetworkManagerInfrastructure;
     _ = NetworkManagerSocket;
 }

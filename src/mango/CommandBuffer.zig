@@ -355,6 +355,7 @@ pub const operation = struct {
         begin_query,
         end_query,
         fill,
+        transfer,
     };
 
     // NOTE: as both address and size must be aligned to 16 bytes we can reuse some unused bits!
@@ -939,6 +940,12 @@ pub fn clearDepthStencilImage(cmd: *CommandBuffer, info: *const mango.ClearDepth
     cmd.doQueueOperations(operation.Fill, .fill, &it);
 }
 
+pub fn blitImage(cmd: *CommandBuffer, info: *const mango.BlitImageInfo) !void {
+    std.debug.assert(cmd.state == .recording);
+    var it: operation.Transfer.Operation.Iterator = .initBlit(info);
+    cmd.doQueueOperations(operation.Transfer, .transfer, &it);
+}
+
 fn doQuery(cmd: *CommandBuffer, pool: mango.QueryPool, query: u32, kind: operation.Kind) void {
     if (cmd.current_error) |_| return;
 
@@ -1157,9 +1164,36 @@ const Dumper = struct {
                     const fill = op.operation;
 
                     try writer.print(
-                        \\  with head 0x{X:0>8} (device/physical), length (in bytes) {d} and pattern 0x{X:0>8} ({t} bits)
+                        \\  with address 0x{X:0>8} (device/physical), length (in bytes) {d} and pattern 0x{X:0>8} ({t} bits)
                         \\
                     , .{@intFromEnum(fill.ptr), fill.extra.len, fill.value, fill.extra.size});
+                },
+                .transfer => {
+                    const op: *CommandBuffer.operation.Transfer = @alignCast(@fieldParentPtr("node", node));
+                    const transfer = op.operation;
+
+                    switch (transfer.flags.kind) {
+                        .copy => try writer.print(
+                            \\ copy src 0x{X:0>8} (device/physical) to dst 0x{X:0>8} (device/physical), length (in bytes) {d}
+                            \\
+                        , .{@intFromEnum(transfer.src), @intFromEnum(transfer.dst), transfer.flags.extra.copy}),
+                        .linear_tiled, .tiled_linear, .tiled_tiled => try writer.print(
+                            \\ {t} (32x32: {}, downscale: {t}) src 0x{X:0>8} (device/physical) {d}x{d}@{t} to dst 0x{X:0>8} (device/physical) {d}x{d}@{t} 
+                            \\
+                        , .{
+                            transfer.flags.kind,
+                            transfer.flags.extra.transfer.use_32x32,
+                            transfer.flags.extra.transfer.downscale,
+                            @intFromEnum(transfer.src),
+                            transfer.src_gap_line[0],
+                            transfer.src_gap_line[1],
+                            transfer.flags.extra.transfer.src_fmt,
+                            @intFromEnum(transfer.dst),
+                            transfer.dst_gap_line[0],
+                            transfer.dst_gap_line[1],
+                            transfer.flags.extra.transfer.dst_fmt,
+                        }),
+                    }
                 },
                 .timestamp, .begin_query, .end_query => {
                     const query_op: *CommandBuffer.operation.Query = @alignCast(@fieldParentPtr("node", node));

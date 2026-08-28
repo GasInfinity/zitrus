@@ -559,10 +559,11 @@ const Driver = struct {
         if (!drv.submission_buffer_busy.eql(.empty)) return;
 
         drain_nodes: while (drv.submission_buffer_node) |node| switch (node.kind) {
-            .fill, .graphics => |kind| {
+            .fill, .graphics, .transfer => |kind| {
                 const queue_type: Queue.Type = switch (kind) {
                     .graphics => .submit,
                     .fill => .fill,
+                    .transfer => .transfer,
                     .timestamp, .begin_query, .end_query => unreachable,
                 };
 
@@ -583,6 +584,40 @@ const Driver = struct {
                                     inline .@"16", .@"24", .@"32" => |t| @unionInit(GraphicsServerGpu.GxCommand.MemoryFill.Unit.Value, @tagName(t), @truncate(fill.value)),
                                     else => .fill24(@truncate(fill.value)),
                                 }), null }, .none));
+                            },
+                            .transfer => {
+                                const op: *CommandBuffer.operation.Transfer = @alignCast(@fieldParentPtr("node", node));
+                                const transfer = op.operation;
+
+                                switch (transfer.flags.kind) {
+                                    .copy => gx.pushFrontAssumeCapacity(.initTextureCopy(
+                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.src))),
+                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.dst))),
+                                        transfer.flags.extra.copy,
+                                        transfer.src_gap_line,
+                                        transfer.dst_gap_line,
+                                        .none,
+                                    )),
+                                    .linear_tiled, .tiled_linear, .tiled_tiled => gx.pushFrontAssumeCapacity(.initDisplayTransfer(
+                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.src))),
+                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.dst))),
+                                        transfer.flags.extra.transfer.src_fmt,
+                                        transfer.src_gap_line,
+                                        transfer.flags.extra.transfer.dst_fmt,
+                                        transfer.dst_gap_line,
+                                        .{
+                                            .mode = switch (transfer.flags.kind) {
+                                                .copy => unreachable,
+                                                .linear_tiled => .linear_tiled,
+                                                .tiled_linear => .tiled_linear,
+                                                .tiled_tiled => .tiled_tiled,
+                                            },
+                                            .downscale = transfer.flags.extra.transfer.downscale,
+                                            .use_32x32 = transfer.flags.extra.transfer.use_32x32,
+                                        },
+                                        .none,
+                                    )),
+                                }
                             },
                             .timestamp, .begin_query, .end_query => unreachable
                         }

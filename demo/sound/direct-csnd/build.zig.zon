@@ -1,0 +1,15 @@
+.{
+    .name = .csnd,
+    .version = "0.0.0",
+    .fingerprint = 0xefc1b29001ee134a, // Changing this has security and trust implications.
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zitrus = .{ .path = "../../../" },
+    },
+    .paths = .{
+        "assets",
+        "src",
+        "build.zig",
+        "build.zig.zon",
+    },
+}

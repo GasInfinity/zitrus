@@ -8,10 +8,8 @@ pub fn build(b: *std.Build) void {
     const zitrus_dep = b.dependency("zitrus", .{});
     const zitrus_mod = zitrus_dep.module("zitrus");
 
-    const zigimg_dep = b.dependency("zigimg", .{});
-
     const exe = b.addExecutable(.{
-        .name = "texture_loading.elf",
+        .name = "flappy.elf",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = b.resolveTargetQuery(.{
@@ -22,18 +20,17 @@ pub fn build(b: *std.Build) void {
             .imports = &.{
                 .{ .name = "zitrus", .module = zitrus_mod },
                 .{ .name = "common", .module = common_dep.module("common") },
-                .{ .name = "zigimg", .module = zigimg_dep.module("zigimg") },
             },
         }),
         .zig_lib_dir = zitrus_dep.namedLazyPath("juice/zig_lib"),
     });
 
-    const shader = zitrus.AssemblePsm.init(zitrus_dep, .{
-        .name = "position_uv.psh",
-        .root_source_file = b.path("assets/position_uv.psm"),
+    const basic_shader = zitrus.AssemblePsm.init(zitrus_dep, .{
+        .name = "basic.psh",
+        .root_source_file = b.path("assets/basic.psm"),
     });
 
-    exe.root_module.addAnonymousImport("position_uv.psh", .{ .root_source_file = shader.out });
+    exe.root_module.addAnonymousImport("basic.psh", .{ .root_source_file = basic_shader.out });
 
     exe.pie = true;
     exe.setLinkerScript(zitrus_dep.namedLazyPath("horizon/ld"));
@@ -43,13 +40,8 @@ pub fn build(b: *std.Build) void {
         .settings = b.path("smdh-settings.zon"),
     });
 
-    const romfs: zitrus.MakeRomFs = .init(zitrus_dep, .{
-        .root = b.path("assets/romfs"),
-    });
-
     const final_3dsx = zitrus.Make3dsx.init(zitrus_dep, .{
         .exe = exe,
-        .romfs = romfs.out,
         .smdh = smdh.out,
     });
 

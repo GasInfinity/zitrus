@@ -316,12 +316,12 @@ pub const command = struct {
     pub const EnableNotification = ipc.Command(Id, .enable_notification, struct {}, struct { notification_received: Semaphore });
     pub const RegisterService = ipc.Command(Id, .register_service, struct {
         name: [8]u8,
-        name_len: usize,
+        name_len: u32,
         max_sessions: i16,
     }, struct { server: ServerPort });
     pub const UnregisterService = ipc.Command(Id, .unregister_service, struct {
         name: [8]u8,
-        name_len: usize,
+        name_len: u32,
     }, struct {});
     pub const GetServiceHandle = ipc.Command(Id, .get_service_handle, struct {
         pub const Flags = packed struct(u32) {
@@ -332,22 +332,22 @@ pub const command = struct {
             _: u31 = 0,
         };
         name: [8]u8,
-        name_len: usize,
+        name_len: u32,
         flags: Flags,
     }, struct { service: ipc.MoveHandles(ClientSession) });
     pub const RegisterPort = ipc.Command(Id, .register_port, struct {
         name: [8]u8,
-        name_len: usize,
+        name_len: u32,
         port: ClientPort,
     }, struct {});
     pub const UnregisterPort = ipc.Command(Id, .unregister_port, struct {
         name: [8]u8,
-        name_len: usize,
+        name_len: u32,
     }, struct {});
     // XXX: What kind of port does this retrieve? I suppose a client port, also check if its moved from~
     pub const GetPort = ipc.Command(Id, .get_port, struct {
         name: [8]u8,
-        name_len: usize,
+        name_len: u32,
         wait_until_found: bool,
     }, struct { port: ClientPort });
     pub const Subscribe = ipc.Command(Id, .subscribe, struct {
