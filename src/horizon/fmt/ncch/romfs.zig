@@ -7,10 +7,137 @@ pub const separator = '/';
 pub const ComponentIterator = std.fs.path.ComponentIterator(.posix, u16);
 
 pub const Ivfc = extern struct {
-    hdr: ivfc.Header,
+    hdr: ivfc.Header = .{ .id = .romfs },
     l0_size: u32,
     levels: [3]ivfc.Level align(@alignOf(u32)),
-    header_size: u64 align(@alignOf(u32)),
+    header_size: u64 align(@alignOf(u32)) = @sizeOf(Ivfc),
+
+    pub const Written = struct { size: u64 };
+
+    pub fn write(
+        writer: *Io.File.Writer,
+        buffer: []u8,
+        reader: *Io.Reader,
+        /// You can use `zitrus.horizon.fmt.ivfc.Level.acceptableBlockSizeShift`
+        l3_block_size_shift: u32,
+        gpa: std.mem.Allocator,
+        /// When non-null, asserts this is the amount of bytes read from `reader`
+        maybe_size: ?u64,
+    ) !Written {
+        const Sha256 = std.crypto.hash.sha2.Sha256;
+        const initial_offset = writer.logicalPos();
+        const l3_block_size = @as(u64, 1) << @intCast(l3_block_size_shift);
+
+        const l0_offset = std.mem.alignForward(u64, @sizeOf(Ivfc), 0x20);
+        const l3_offset = std.mem.alignForward(u64, l0_offset + @sizeOf([0x20]u8), l3_block_size);
+
+        try writer.seekTo(initial_offset + l3_offset);
+
+        var block_writer: ivfc.BlockHashingWriter = try .initCapacity(gpa, l3_block_size, buffer, &writer.interface, @intCast(if (maybe_size) |sz| ((sz + (l3_block_size - 1)) >> @intCast(l3_block_size_shift)) else 0));
+        defer block_writer.deinit();
+
+        const l3_size = try reader.streamRemaining(&block_writer.writer);
+        try block_writer.end();
+
+        if (maybe_size) |sz| std.debug.assert(l3_size == sz);
+
+        const l2_size = (block_writer.hashes.items.len * 0x20);
+        const l2_block_shift = ivfc.Level.acceptableBlockSizeShift(l2_size);
+        const l2_block_size = @as(usize, 1) << @intCast(l2_block_shift);
+
+        const l1_size = @max(1, (l2_size + (l2_block_size - 1)) >> @intCast(l2_block_shift)) << 5;
+        const l1_block_shift = ivfc.Level.acceptableBlockSizeShift(l1_size);
+        const l1_block_size = @as(usize, 1) << @intCast(l1_block_shift);
+
+        const l2_logical_offset = std.mem.alignForward(u64, l1_size, l2_block_size);
+        const l3_logical_offset = std.mem.alignForward(u64, l2_logical_offset + l2_size, l3_block_size);
+
+        const l1_offset = std.mem.alignForward(u64, l3_offset + l3_size, @as(u64, 1) << @intCast(l1_block_shift));
+        const l2_offset = std.mem.alignForward(u64, l1_offset + l1_size, @as(u64, 1) << @intCast(l2_block_shift));
+        const full_size = l2_offset + std.mem.alignForward(u64, l2_size, l2_block_size);
+
+        const hdr: Ivfc = .{
+            .l0_size = 0x20,
+            .levels = .{
+                .{
+                    .logical_offset = 0,
+                    .size = l1_size,
+                    .block_size_shift = l1_block_shift,
+                },
+                .{
+                    .logical_offset = l2_logical_offset,
+                    .size = l2_size,
+                    .block_size_shift = l2_block_shift,
+                },
+                .{
+                    .logical_offset = l3_logical_offset,
+                    .size = l3_size,
+                    .block_size_shift = l3_block_size_shift,
+                },
+            },
+        };
+
+        const l2_hashes = block_writer.hashes.items;
+
+        try writer.seekTo(initial_offset);
+        try writer.interface.writeStruct(hdr, .little);
+        try writer.seekTo(initial_offset + l2_offset);
+        try writer.interface.writeAll(@ptrCast(l2_hashes));
+        try writer.seekTo(initial_offset + l1_offset);
+
+        var l2_consumed_bytes: usize = 0;
+        var l1_consumed_bytes: usize = 0;
+
+        var l1_hasher: Sha256 = .init(.{});
+        var l1_hash: [0x20]u8 = undefined;
+        // Also called "master hash"
+        var l0_hasher: Sha256 = .init(.{});
+        var l0_hash: [0x20]u8 = undefined;
+
+        for (block_writer.hashes.items) |*hash| {
+            l1_hasher.update(hash);
+            l2_consumed_bytes += hash.len;
+
+            if (l2_consumed_bytes == l2_block_size) {
+                l1_hasher.final(&l1_hash);
+                l1_hasher = .init(.{});
+                l2_consumed_bytes = 0;
+
+                l0_hasher.update(&l1_hash);
+                l1_consumed_bytes += l1_hash.len; 
+
+                try writer.interface.writeAll(&l1_hash);
+            }
+        }
+
+        @memset(&l0_hash, 0x00);
+        if (l2_consumed_bytes > 0 and l2_consumed_bytes < l2_block_size) {
+            while (l2_consumed_bytes < l2_block_size) {
+                l1_hasher.update(&l0_hash);
+                l2_consumed_bytes += l0_hash.len;
+            }
+
+            l1_hasher.final(&l1_hash);
+            l0_hasher.update(&l1_hash);
+            l1_consumed_bytes += l1_hash.len;
+
+            try writer.interface.writeAll(&l1_hash);
+        }
+
+        std.debug.assert(l1_consumed_bytes <= l1_block_size);
+        while (l1_consumed_bytes < l1_block_size) {
+            l0_hasher.update(&l0_hash);
+            l1_consumed_bytes += l0_hash.len;
+        }
+        l0_hasher.final(&l0_hash);
+
+        try writer.seekTo(initial_offset + l0_offset);
+        try writer.interface.writeAll(&l0_hash);
+
+        return .{
+            .size = full_size,
+        };
+    }
 };
 
 pub const Header = extern struct {
@@ -796,7 +923,6 @@ test "builder and view are idempotent" {
 
     {
         const sp = try view.openFile(.root, std.unicode.utf8ToUtf16LeStringLiteral("A/BC/¿qué?"));
-        std.log.debug("{}", .{sp});
         const sp_stat = sp.stat(view);
         const sp_data = builder.file_data.items[@intCast(sp_stat.offset)..][0..@intCast(sp_stat.size)];
 
@@ -810,6 +936,8 @@ const testing = std.testing;
 
 const builtin = @import("builtin");
 const std = @import("std");
+const Io = std.Io;
+
 const zitrus = @import("zitrus");
 const hfmt = zitrus.horizon.fmt;
 const ivfc = hfmt.ivfc;

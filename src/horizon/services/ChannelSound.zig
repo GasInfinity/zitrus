@@ -644,7 +644,7 @@ pub const command = struct {
     pub const ExecuteCommands = ipc.Command(Id, .execute_commands, struct { shm_offset: u32 }, struct {});
     /// May fail with 0xc960b7f8 (not initialized), 0xc940b401 (sleeping and direct sound is not ignoring sleep) or 0xc940b402 (not enough priority)
     ///
-    /// Maximum of 4 direct sounds; since CSND doesn't check the index so you can write OOB anywhere so be careful.
+    /// Maximum of 4 direct sounds; since CSND doesn't check the index you can write OOB anywhere so be careful.
     /// Maximum priority of 0, minimum of 32; if priority is lower or equal than current it will replace it, if not it fails with 0xc940b402.
     pub const PlaySoundDirectly = ipc.Command(Id, .play_sound_directly, struct { id: DirectSound.Id, priority: DirectSound.Priority }, struct {});
     /// Never fails
@@ -655,7 +655,7 @@ pub const command = struct {
     ///
     /// Just clears the process acquired sound channels.
     pub const ReleaseSoundChannels = ipc.Command(Id, .release_sound_channels, struct {}, struct {});
-    /// Never fails
+    /// May fail
     ///
     /// Acquires from a pool shared by all processes; a maximum of 2 capture units can be acquired overall.
     /// Zeroes out the acquired capture unit data in shared memory.
@@ -665,11 +665,11 @@ pub const command = struct {
     /// Releases to a pool shared by all processes.
     pub const ReleaseCaptureUnit = ipc.Command(Id, .release_capture_unit, struct { unit: Capture.Id }, struct {});
     /// Only accepts linear memory
-    pub const FlushDataCache = ipc.Command(Id, .flush_data_cache, struct { address: usize, size: usize, process: horizon.Process }, struct {});
+    pub const FlushDataCache = ipc.Command(Id, .flush_data_cache, struct { address: u32, size: u32, process: horizon.Process }, struct {});
     /// Only accepts linear memory
-    pub const StoreDataCache = ipc.Command(Id, .store_data_cache, struct { address: usize, size: usize, process: horizon.Process }, struct {});
+    pub const StoreDataCache = ipc.Command(Id, .store_data_cache, struct { address: u32, size: u32, process: horizon.Process }, struct {});
     /// Only accepts linear memory
-    pub const InvalidateDataCache = ipc.Command(Id, .invalidate_data_cache, struct { address: usize, size: usize, process: horizon.Process }, struct {});
+    pub const InvalidateDataCache = ipc.Command(Id, .invalidate_data_cache, struct { address: u32, size: u32, process: horizon.Process }, struct {});
     /// Never fails.
     ///
     /// Resets all direct sound, channel and capture-related state.

@@ -52,4 +52,13 @@ pub fn build(b: *std.Build) void {
     link_step.dependOn(&link.run.step);
 
     if (b.args) |args| link.run.addArgs(args);
+
+    const cxi: zitrus.MakeCxi = .init(zitrus_dep, .{
+        .exe = exe,
+        .settings = b.path("cxi-settings.zon"),
+        .smdh = smdh.out,
+        .romfs = romfs.out,
+    });
+
+    cxi.install(b, .default);
 }

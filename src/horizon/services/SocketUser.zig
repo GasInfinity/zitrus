@@ -723,6 +723,9 @@ pub const command = struct {
     pub const CloseAll = ipc.Command(Id, .close_all, struct {
         process_id: ipc.ReplaceByProcessId = .replace,
     }, struct {});
+    pub const SetSocketLimit = ipc.Command(Id, .set_socket_limit, struct {
+        limit: u32,
+    }, struct {});
     pub const AddGlobalSocket = ipc.Command(Id, .add_global_socket, struct {
         socket: Descriptor,
     }, struct {});
@@ -761,7 +764,7 @@ pub const command = struct {
         get_resolver_info,
         send_to_multiple,
         close_all,
-        remove_global_socket,
+        set_socket_limit,
         add_global_socket,
     };
 };

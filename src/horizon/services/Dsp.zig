@@ -18,6 +18,28 @@ pub const command = struct {
     pub const Send = ipc.Command(Id, .send, struct { stream: u2, data: u16 }, struct {});
     pub const SendReady = ipc.Command(Id, .send_ready, struct { stream: u2 }, struct { ready: bool });
 
+    pub const SetSemaphore = ipc.Command(Id, .set_semaphore, struct { value: u16 }, struct {});
+    pub const GetSemaphore = ipc.Command(Id, .get_semaphore, struct {}, struct { value: u16 });
+    pub const ClearSemaphore = ipc.Command(Id, .clear_semaphore, struct { mask: u32 }, struct {});
+    pub const MaskSemaphore = ipc.Command(Id, .mask_semaphore, struct { mask: u32 }, struct {});
+    pub const IsSemaphoreRequested = ipc.Command(Id, .is_semaphore_requested, struct { mask: u32 }, struct {});
+
+    pub const LoadComponent = ipc.Command(Id, .load_component, struct {
+        size: u32,
+        program_mask: u32,
+        data_mask: u32,
+        buffer: ipc.Mapped(.r),
+    }, struct { loaded: bool, buffer: ipc.Mapped(.r) });
+    pub const UnloadComponent = ipc.Command(Id, .unload_component, struct {}, struct {});
+
+    pub const FlushDataCache = ipc.Command(Id, .flush_data_cache, struct { address: u32, size: u32, process: horizon.Process }, struct {});
+    pub const InvalidateDataCache = ipc.Command(Id, .invalidate_data_cache, struct { address: u32, size: u32, process: horizon.Process }, struct {});
+    pub const RegisterInterruptEvents = ipc.Command(Id, .register_interrupt_events, struct { irq: u32, channel: u32, event: horizon.Event }, struct {});
+    pub const GetPhysicalAddress = ipc.Command(Id, .get_virtual_address, struct { virtual: u32 }, struct { physical: u32 });
+    pub const GetVirtualAddress = ipc.Command(Id, .get_virtual_address, struct { physical: u32 }, struct { virtual: u32 });
+    pub const ForceHeadphoneOutput = ipc.Command(Id, .force_headphone_output, struct { force: bool }, struct {});
+    pub const IsDspOccupied = ipc.Command(Id, .is_dsp_occupied, struct {}, struct { occupied: bool });
+
     pub const Id = enum(u16) {
         recv = 0x0001,
         recv_ready,
@@ -29,7 +51,7 @@ pub const command = struct {
         get_semaphore,
         clear_semaphore,
         mask_semaphore,
-        check_semaphore_request,
+        is_semaphore_requested,
         convert_process_address_from_dsp_dram,
         write_process_pipe,
         read_pipe,

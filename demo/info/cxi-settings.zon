@@ -1,0 +1,214 @@
+.{
+    .title = "ZTR-INFO",
+    .product_code = "CTR-H-ZTRI",
+    .remaster_version = 1,
+    .title_id = .{ .unique = 44444 },
+    .flags = .{ .compress = true, .allow_sd_usage = true },
+    .stack_size = 262144,
+    .access_control = .{
+        .kernel = .{
+            .version = .{ .major = 2, .minor = 58 },
+            .flags = .{
+                .allow_debug = true,
+                .force_debug = false,
+                .allow_non_alphanumeric = true,
+                .shared_page_writing = true,
+                .allow_privileged_priorities = false,
+                .allow_main_args = true,
+                .shared_device_memory = true,
+                .runnable_on_sleep = false,
+                .memory_type = .application,
+                .special_memory = false,
+                .allow_cpu2 = true,
+            },
+            .handle_table_size = 1024,
+            .system_call_access = .{
+                .control_memory,
+                .query_memory,
+                .exit,
+                .get_process_affinity_mask,
+                .set_process_affinity_mask,
+                .get_process_ideal_processor,
+                .set_process_ideal_processor,
+                .create_thread,
+                .exit_thread,
+                .sleep_thread,
+                .get_thread_priority,
+                .set_thread_priority,
+                .get_thread_affinity_mask,
+                .set_thread_affinity_mask,
+                .get_thread_ideal_processor,
+                .set_thread_ideal_processor,
+                .get_cpu_count,
+                .run,
+                .create_mutex,
+                .release_mutex,
+                .create_semaphore,
+                .release_semaphore,
+                .create_event,
+                .signal_event,
+                .clear_event,
+                .create_timer,
+                .set_timer,
+                .cancel_timer,
+                .clear_timer,
+                .create_memory_block,
+                .map_memory_block,
+                .unmap_memory_block,
+                .create_address_arbiter,
+                .arbitrate_address,
+                .close_handle,
+                .wait_synchronization,
+                .wait_synchronization_multiple,
+                .signal_and_wait,
+                .duplicate_handle,
+                .get_system_tick,
+                .get_handle_info,
+                .get_system_info,
+                .get_process_info,
+                .get_thread_info,
+                .connect_to_port,
+                .send_sync_request1,
+                .send_sync_request2,
+                .send_sync_request3,
+                .send_sync_request4,
+                .send_sync_request,
+                .open_process,
+                .open_thread,
+                .get_process_id,
+                .get_process_id_of_thread,
+                .get_thread_id,
+                .get_resource_limit,
+                .get_resource_limit_limit_values,
+                .get_resource_limit_current_values,
+                .get_thread_context,
+                .break_execution,
+                .output_debug_string,
+                .control_performance_counter,
+                .create_port,
+                .create_session_to_port,
+                .create_session,
+                .accept_session,
+                .reply_and_receive1,
+                .reply_and_receive2,
+                .reply_and_receive3,
+                .reply_and_receive4,
+                .reply_and_receive,
+                .bind_interrupt,
+                .unbind_interrupt,
+                .invalidate_process_data_cache,
+                .store_process_data_cache,
+                .flush_process_data_cache,
+                .start_inter_process_dma,
+                .stop_dma,
+                .get_dma_state,
+                .restart_dma,
+                .debug_active_process,
+                .break_debug_process,
+                .terminate_debug_process,
+                .get_process_debug_event,
+                .continue_debug_event,
+                .get_process_list,
+                .get_thread_list,
+                .get_debug_thread_context,
+                .set_debug_thread_context,
+                .query_debug_process_memory,
+                .read_process_memory,
+                .write_process_memory,
+                .set_hardware_breakpoint,
+                .get_debug_thread_parameter,
+                .control_process_memory,
+                .map_process_memory,
+                .unmap_process_memory,
+                .create_codeset,
+                .create_process,
+                .terminate_process,
+                .set_process_resource_limits,
+                .create_resource_limit,
+                .set_resource_limit_limit_values,
+                .add_code_segment,
+                .backdoor,
+                .set_state,
+                .query_process_memory,
+            },
+        },
+        .new_speedup = .{ .enable_l2_cache = false, .cpu_speed = .@"268Mhz" },
+        .new_execution = .{ .mode = .legacy },
+        .execution = .{
+            .ideal_processor = 0,
+            .affinity_mask = 1,
+            .mode = .prod,
+            .priority = 48,
+        },
+        .storage = .{
+            .extended_save_data_id = 0,
+            .save_data_id = 0,
+            .storage_uuid = 0,
+            .access = .{
+                .system_application = true,
+                .hardware_check = true,
+                .filesystem_tool = true,
+                .debug = true,
+                .twl_card_backup = true,
+                .twl_nand_data = true,
+                .boss = false,
+                .sdmc = true,
+                .core = true,
+                .nand_ro = false,
+                .nand_rw = false,
+                .nand_ro_rw = false,
+                .system_settings = true,
+                .cardboard = false,
+                .export_import_ivs = false,
+                .sdmc_wo = true,
+                .switch_cleanup = false,
+                .save_data_move = false,
+                .shop = false,
+                .shell = false,
+                .home_menu = false,
+                .seed_db = false,
+            },
+        },
+        .service_access = .{
+            "APT:U",
+            "cfg:u",
+            "fs:USER",
+            "gsp::Gpu",
+            "hid:USER",
+        },
+        .category = .application,
+    },
+    .dependencies = .{
+        // 0x4013000002402, // ac
+        // 0x4013000001502, // am
+        // 0x4013000003402, // boss
+        // 0x4013000001602, // camera
+        // 0x4013000002602, // cecd
+        0x4013000001702, // cfg
+        // 0x4013000001802, // codec
+        // 0x4013000002702, // csnd
+        // 0x4013000002802, // dlp
+        // 0x4013000001A02, // dsp
+        // 0x4013000003202, // friends
+        // 0x4013000001B02, // gpio
+        0x4013000001C02, // gsp
+        0x4013000001D02, // hid
+        // 0x4013000002902, // http
+        // 0x4013000001E02, // i2c
+        // 0x4013000003302, // ir
+        // 0x4013000001F02, // mcu
+        // 0x4013000002002, // mic
+        // 0x4013000002B02, // ndm
+        // 0x4013000003502, // news
+        // 0x4013000002C02, // nim
+        // 0x4013000002D02, // nwm
+        // 0x4013000002102, // pdn
+        // 0x4013000003102, // ps
+        // 0x4013000002202, // ptm
+        // 0x4013000003702, // ro
+        // 0x4013000002E02, // sockets
+        // 0x4013000002302, // spi
+        // 0x4013000002F02, // ssl
+        0x4013000008002, // ns
+    },
+}

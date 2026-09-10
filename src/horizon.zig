@@ -34,7 +34,7 @@
 //! * `tls` - `tls.Block` and `threadlocal` variable support,
 //! also where the `ipc.Buffer` is stored for `IPC` communication.
 //!
-//! * `fmt` - Do you need to parse a `fmt.ncch.romfs`? Or maybe a `fmt.smdh`?
+//! * `fmt` - Do you need to parse a `fmt.ncch.romfs`? Or maybe a `fmt.ncch.smdh`?
 //! There you'll find all `Horizon`-related formats implemented in `zitrus`.
 //!
 //! * `start` - The glue between your `main` and the real entrypoint,

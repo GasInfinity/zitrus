@@ -72,14 +72,11 @@ pub fn run(args: Lz11, io: std.Io, arena: std.mem.Allocator) !u8 {
         return 0;
     }
 
-    log.warn("Only a 'fastestest' compression is currently supported (a.k.a: no compression), file size will be bigger!", .{});
-
-    // TODO: Migrate to normal `Compress` when implemented.
     var output_buf: [4096]u8 = undefined;
     var output_writer = output_file.writerStreaming(io, &output_buf);
 
     var compress_buf: [lz11.max_window_len]u8 = undefined;
-    var compressor: lz11.Compress.Raw = .init(&output_writer.interface, &compress_buf);
+    var compressor: lz11.Compress = .init(&output_writer.interface, &compress_buf, .default);
 
     if (input_reader.getSize()) |size| {
         if (size >= std.math.maxInt(u24)) {
@@ -109,7 +106,7 @@ pub fn run(args: Lz11, io: std.Io, arena: std.mem.Allocator) !u8 {
         // We need to allocate as we don't know the size in advance :(
     }
 
-    try compressor.end();
+    try compressor.finish();
     try output_writer.interface.flush();
     return 0;
 }

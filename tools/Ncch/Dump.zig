@@ -131,7 +131,7 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
     dump: switch (args.region) {
         .settings => {
             // NOTE: It is guaranteed that the hashed region data will be equal to the exheader.
-            const exheader: *ncch.ExtendedHeader = @alignCast(std.mem.bytesAsValue(ncch.ExtendedHeader, hashed_region_data));
+            const exheader: *ncch.Header.Extended = @alignCast(std.mem.bytesAsValue(ncch.ExtendedHeader, hashed_region_data));
             if (builtin.cpu.arch.endian() != .little) std.mem.byteSwapAllFields(ncch.ExtendedHeader, exheader);
 
             const access_descriptor = try reader.takeStruct(ncch.AccessDescriptor, .little);

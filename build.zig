@@ -7,11 +7,13 @@ pub const version: std.SemanticVersion = .{
 
 pub const MakeFirm = @import("build/MakeFirm.zig");
 pub const Make3dsx = @import("build/Make3dsx.zig");
+pub const Link3dsx = @import("build/Link3dsx.zig");
 pub const MakeSmdh = @import("build/MakeSmdh.zig");
 pub const MakeRomFs = @import("build/MakeRomFs.zig");
+pub const MakeCxi = @import("build/MakeCxi.zig");
+
 pub const AssemblePsm = @import("build/AssemblePsm.zig");
 pub const MakePtx = @import("build/MakePtx.zig");
-pub const Link3dsx = @import("build/Link3dsx.zig");
 
 pub const target = struct {
     /// Freestanding target query, use `arm-3ds` to target the horizon (a.k.a the 3DS OS) userland instead 

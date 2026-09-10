@@ -6,7 +6,7 @@
 
 pub const magic = 0x11;
 pub const history_len = 4096;
-pub const max_window_len = 2 * history_len + 65808;
+pub const max_window_len = 2 * history_len + Match.max_len;
 
 pub const Header = packed struct(u32) {
     magic: u8 = magic,
@@ -23,6 +23,9 @@ pub const Header = packed struct(u32) {
 };
 
 pub const Match = packed struct(u8) {
+    pub const min_offset = 1;
+    pub const max_len = 65808;
+    pub const max_size = 4;
     pub const Length = enum(u4) {
         /// Two bytes follow, length is `(extra << 4 | u8[0] >> 4) + 17` and offset `((u8[0] & 0xF) << 8 | u8[1]) + 1`
         extra = 0,
@@ -51,6 +54,42 @@ pub const Match = packed struct(u8) {
 
         return .{ .offset = offset, .len = len };
     }
+
+    /// Asserts `writer` capacity is at least `max_size`
+    pub fn write(writer: *Writer, match: lz.Match) Writer.Error!void {
+        const encoded_offset = match.offset - 1;
+
+        if (match.len >= 273) {
+            const encoded_len = match.len - 273;
+            const encoded: Match = .{
+                .extra = @intCast(encoded_len >> 12),
+                .len = .big_extra,
+            }; 
+
+            try writer.writeStruct(encoded, .little);
+            try writer.writeByte(@intCast((encoded_len >> 4) & 0xFF));
+            try writer.writeByte(@intCast(((encoded_len << 4) & 0xF0) | (encoded_offset >> 8)));
+            try writer.writeByte(@intCast(encoded_offset & 0xFF));
+        } else if (match.len >= 17) {
+            const encoded_len = match.len - 17;
+            const encoded: Match = .{
+                .extra = @intCast(encoded_len >> 4),
+                .len = .extra,
+            };
+
+            try writer.writeStruct(encoded, .little);
+            try writer.writeByte(@intCast(((encoded_len << 4) & 0xF0) | (encoded_offset >> 8)));
+            try writer.writeByte(@intCast(encoded_offset & 0xFF));
+        } else {
+            const encoded: Match = .{
+                .extra = @intCast(encoded_offset >> 8),
+                .len = @enumFromInt(match.len - 1),
+            };
+
+            try writer.writeStruct(encoded, .little);
+            try writer.writeByte(@intCast(encoded_offset & 0xFF));
+        }
+    }
 };
 
 pub fn blockKind(block: u1) lz.Block {
@@ -71,6 +110,11 @@ pub const Compress = lz.Compress(lz11);
 pub const Decompress = lz.Decompress(lz11);
 
 // TODO: Tests
+
+comptime {
+    _ = Compress;
+    _ = Decompress;
+}
 
 const testing = std.testing;
 

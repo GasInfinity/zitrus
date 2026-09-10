@@ -47,12 +47,9 @@ pub const AnyUtf = union(enum(u1)) {
 pub const title = @import("fmt/title.zig");
 
 pub const ivfc = @import("fmt/ivfc.zig");
-/// Deprecated: use `ncch.smdh` instead.
-pub const smdh = ncch.smdh;
 pub const ncsd = @import("fmt/ncsd.zig");
 pub const ncch = @import("fmt/ncch.zig");
 pub const dvl = @import("fmt/dvl.zig");
-pub const fnt = @import("fmt/fnt.zig");
 
 pub const archive = @import("fmt/archive.zig");
 pub const layout = @import("fmt/layout.zig");
@@ -63,7 +60,6 @@ comptime {
     _ = title;
 
     _ = ivfc;
-    _ = smdh;
     _ = ncch;
     _ = dvl;
 

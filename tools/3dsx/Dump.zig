@@ -66,7 +66,7 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
 
     const ex_hdr = try input_reader.interface.takeStruct(@"3dsx".ExtendedHeader, .little);
 
-    if (ex_hdr.smdh_size != 0 and ex_hdr.smdh_size != @sizeOf(fmt.smdh.Smdh)) {
+    if (ex_hdr.smdh_size != 0 and ex_hdr.smdh_size != @sizeOf(fmt.ncch.smdh.Smdh)) {
         log.err("3dsx does not contain a valid SMDH, size is {}", .{ex_hdr.smdh_size});
         return 1;
     }
@@ -92,7 +92,7 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
             return 1;
         }
 
-        try input_reader.interface.streamExact(writer, @sizeOf(fmt.smdh.Smdh));
+        try input_reader.interface.streamExact(writer, @sizeOf(fmt.ncch.smdh.Smdh));
         try writer.flush();
 
         break :blk true;

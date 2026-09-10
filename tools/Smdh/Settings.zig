@@ -301,4 +301,4 @@ const Settings = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");
-const smdh = zitrus.horizon.fmt.smdh;
+const smdh = zitrus.horizon.fmt.ncch.smdh;

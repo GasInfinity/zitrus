@@ -10,9 +10,18 @@ All notable changes to this project will be documented in this file.
 - Added `demo/sound/csnd`; playing sound via the CSND service directly.
 - Added `blitImage` to `mango.CommandBuffer`
 - Added `initAddress` to some service wrappers so you can bring your own shared address (if you don't want to use the global bump allocator)
+- Added `horizon.fmt.ncch.romfs.Ivfc.write`
+- Added support for adding a RomFS to NCCHs via `ncch make`
+- Added lz compressors based/imported on/from zig's `std.compress.flate`
+- Added `build/MakeCxi`, do note that `ncch make` it is still not finished but now supports compressed code.
+- Added more hardware types in `zitrus.hardware`
+- Added `pdn`, `mic:u`, `spi` and `i2c` services under `pdn.Sleep/Gpu/...`, `MicrophoneUser`, `Spi` and `I2c`
 
+- Changed `horizon.fmt.ncch.ExtendedHeader` to `horizon.fmt.ncch.Header.Extended`
 - Changed `demo/mango/texture_loading` to load the texture from the RomFS instead of embedding it.
+- Moved `zitrus.horizon.fmt.ncch.ExtendedHeader` -> `zitrus.horizon.fmt.ncch.Header.Extended`
 
+- Removed `zitrus.horizon.fmt.smdh` (-> `zitrus.horizon.fmt.ncch.smdh`), it was deprecated a LONG time ago.
 ## [2026-08-21] BREAKING
 
 - Added more validation.

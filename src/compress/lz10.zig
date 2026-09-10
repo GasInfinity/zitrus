@@ -6,7 +6,7 @@
 
 pub const magic = 0x10;
 pub const history_len = 4096;
-pub const max_window_len = 2 * history_len + 18;
+pub const max_window_len = 2 * history_len + Match.max_len;
 
 pub const Header = packed struct(u32) {
     magic: u8 = magic,
@@ -23,6 +23,10 @@ pub const Header = packed struct(u32) {
 };
 
 pub const Match = packed struct(u16) {
+    pub const min_offset = 1;
+    pub const max_len = 18;
+    pub const max_size = 2;
+
     /// The real value is `(offset_hi << 8) | offset_lo + 1`
     offset_hi: u4,
     /// The real value is `len + 3`
@@ -36,6 +40,18 @@ pub const Match = packed struct(u16) {
         const len = @as(u5, hdr.len) + 3;
 
         return .{ .offset = offset, .len = len };
+    }
+
+    /// Asserts `writer` capacity is at least `max_size`
+    pub fn write(writer: *Writer, match: lz.Match) Writer.Error!void {
+        const encoded_offset = match.offset - 1;
+        const encoded: Match = .{
+            .len = @intCast(match.len - 3),
+            .offset_hi = @intCast(encoded_offset >> 8),
+            .offset_lo = @intCast(encoded_offset & 0xFF),
+        };
+
+        try writer.writeStruct(encoded, .little);
     }
 };
 
@@ -57,6 +73,11 @@ pub const Compress = lz.Compress(lz10);
 pub const Decompress = lz.Decompress(lz10);
 
 // TODO: Tests
+
+comptime {
+    _ = Compress;
+    _ = Decompress;
+}
 
 const testing = std.testing;
 

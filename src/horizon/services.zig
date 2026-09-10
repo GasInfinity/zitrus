@@ -13,6 +13,7 @@ pub const Filesystem = @import("services/Filesystem.zig");
 pub const ChannelSound = @import("services/ChannelSound.zig");
 pub const Dsp = @import("services/Dsp.zig");
 pub const IrRst = @import("services/IrRst.zig");
+pub const MicrophoneUser = @import("services/MicrophoneUser.zig");
 
 pub const Playtime = @import("services/Playtime.zig");
 pub const Process = @import("services/Process.zig");
@@ -24,6 +25,10 @@ pub const Loader = @import("services/Loader.zig");
 pub const NetworkDaemon = @import("services/NetworkDaemon.zig");
 pub const NetworkManagerInfrastructure = @import("services/NetworkManagerInfrastructure.zig");
 pub const NetworkManagerSocket = @import("services/NetworkManagerSocket.zig");
+
+pub const pdn = @import("services/pdn.zig");
+pub const I2c = @import("services/I2c.zig");
+pub const Spi = @import("services/Spi.zig");
 
 comptime {
     _ = ProcessManagerApplication;
@@ -47,4 +52,7 @@ comptime {
     _ = NetworkDaemon;
     _ = NetworkManagerInfrastructure;
     _ = NetworkManagerSocket;
+
+    _ = I2c;
+    _ = Spi;
 }

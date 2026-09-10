@@ -657,14 +657,16 @@ pub const Buffer = extern struct {
         @memcpy(buffer.packed_command.parameters[1..][0..written.len], &written);
     }
 
-    pub const ReadError = error{
-        BadIpcHeader,
-    } || Codec.ReadError;
+    pub const CheckError = error{BadIpcHeader};
+    pub const ReadError = CheckError || Codec.ReadError;
+
+    pub fn checkResponse(buffer: *Buffer, comptime DefinedCommand: type) CheckError!ResultCode {
+        if (buffer.packed_command.header.command_id != @intFromEnum(DefinedCommand.id)) return error.BadIpcHeader;
+        return @bitCast(buffer.packed_command.parameters[0]);
+    }
 
     pub fn readResponse(buffer: *Buffer, comptime DefinedCommand: type) ReadError!Result(DefinedCommand.Response) {
-        if (buffer.packed_command.header.command_id != @intFromEnum(DefinedCommand.id)) return error.BadIpcHeader;
-
-        const code: horizon.result.Code = @bitCast(buffer.packed_command.parameters[0]);
+        const code = try buffer.checkResponse(DefinedCommand);
 
         if (!code.isSuccess()) return .of(code, undefined);
 

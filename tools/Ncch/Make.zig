@@ -70,9 +70,6 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         return 1;
     }
 
-    // TODO: IVFC writer
-    if (args.romfs != null) @panic("TODO");
-
     const cwd = std.Io.Dir.cwd();
     const settings = if (args.settings) |sett| set: {
         const zon = cwd.readFileAllocOptions(io, sett, arena, .unlimited, .@"4", 0) catch |err| {
@@ -115,11 +112,19 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         var exefs_files_buf: [10]ncch.exefs.File = undefined;
         var exefs_files: std.ArrayList(ncch.exefs.File) = .initBuffer(&exefs_files_buf);
 
-        const sets, const code_data = makeCode(args.elf.?, io, gpa) catch |err| {
+        const sets, var code_data = makeCode(args.elf.?, io, gpa) catch |err| {
             log.err("could not make code from elf '{s}': {t}", .{ args.elf.?, err });
             return 1;
         };
         defer gpa.free(code_data);
+
+        if (settings.?.flags.compress) {
+            var buffer: [lzrev.max_window_len]u8 = undefined;
+            const compressed_code_data = try lzrev.allocCompress(gpa, &buffer, code_data, .best);
+            gpa.free(code_data);
+            code_data = compressed_code_data;
+        }
+
         exefs_files.appendAssumeCapacity(.init(".code", code_data));
 
         const smdh_data: []u8 = if (args.icon) |smdh_path| loadEntireFile(smdh_path, io, arena) catch {
@@ -155,41 +160,19 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
     } else .{ &.{}, undefined };
     defer gpa.free(exefs);
 
-    const output_file, const output_should_close = if (args.output) |out|
-        .{ cwd.createFile(io, out, .{}) catch |err| {
-            log.err("could not open output file '{s}': {t}", .{ out, err });
-            return 1;
-        }, true }
-    else
-        .{ std.Io.File.stdout(), false };
-    defer if (output_should_close) output_file.close(io);
-
-    var output_buffer: [4096]u8 = undefined;
-    var output_writer = output_file.writerStreaming(io, &output_buffer);
-    const out = &output_writer.interface;
-
     const title_id: horizon.fmt.title.Id = .{
         .variation = if (args.@"title-id") |tid| @truncate(tid) else settings.?.title_id.variation,
         .unique = if (args.@"title-id") |tid| @truncate(tid >> 8) else settings.?.title_id.unique,
-        .category = @bitCast(settings.?.title_id.category),
+        .category = if (settings) |set| @bitCast(set.title_id.category) else .{},
         .platform = .@"3ds",
     };
 
-    const has_romfs_included = false;
-    const exefs_aligned_size: u64 = std.mem.alignForward(u64, exefs.len, horizon.fmt.media_unit);
-
-    var exefs_header_hash: [0x20]u8 = @splat(0);
-    if (exefs.len > 0) std.crypto.hash.sha2.Sha256.hash(@ptrCast(&exefs[0..@sizeOf(ncch.exefs.Header)]), &exefs_header_hash, .{});
-
-    // TODO: RomFS
-    // var romfs_header_hash: [0x20]u8 = @splat(0);
-    // if (romfs.len > 0) std.crypto.hash.sha2.Sha256.hash(@ptrCast(&romfs[0..@sizeOf(ncch.romfs.Ivfc)]), &romfs_header_hash, .{});
-
+    const has_romfs_included = args.romfs != null;
     const extended_header: ?ncch.ExtendedHeader = if (settings) |set| .{
         .system_control = .{
             .application_title = zitrus.fmt.fixedArrayFromSlice(u8, 8, set.title),
             .flags = .{
-                .compressed_code = false, // TODO: LzRev compression
+                .compressed_code = set.flags.compress,
                 .allow_sd_usage = set.flags.allow_sd_usage,
             },
             .remaster_version = 0,
@@ -339,21 +322,70 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         },
     } else null;
 
-    var extended_header_hash: [0x20]u8 = undefined;
-    std.crypto.hash.sha2.Sha256.hash(@ptrCast(&extended_header), &extended_header_hash, .{});
+    const output_file, const output_should_close = if (args.output) |out|
+        .{ cwd.createFile(io, out, .{ .read = true }) catch |err| {
+            log.err("could not open output file '{s}': {t}", .{ out, err });
+            return 1;
+        }, true }
+    else
+        .{ std.Io.File.stdout(), false };
+    defer if (output_should_close) output_file.close(io);
 
-    try out.splatByteAll(0x0, 0x100); // XXX: What do we do about the signature?
-    try out.writeStruct(ncch.Header{
+    var output_buffer: [4096]u8 = undefined;
+    var output_writer = output_file.writerStreaming(io, &output_buffer);
+    const out = &output_writer.interface;
+
+    const exefs_aligned_size: u64 = std.mem.alignForward(u64, exefs.len, horizon.fmt.media_unit);
+    const exefs_header_aligned_hash_size: u64 = std.mem.alignForward(u64, @sizeOf(ncch.exefs.Header), horizon.fmt.media_unit);
+
+    var exefs_header_hash: [0x20]u8 = @splat(0);
+    if (exefs.len > 0) std.crypto.hash.sha2.Sha256.hash(@ptrCast(&exefs[0..@intCast(exefs_header_aligned_hash_size)]), &exefs_header_hash, .{});
+
+    const extended_header_offset: u64 = @sizeOf(ncch.Header.WithSignature);
+    const exefs_aligned_offset: u64 = std.mem.alignForward(u64, extended_header_offset + @as(u64, if (extended_header) |_| @sizeOf(ncch.ExtendedHeader) + @sizeOf(ncch.AccessDescriptor) else 0), horizon.fmt.media_unit);
+    const romfs_aligned_offset: u64 = std.mem.alignForward(u64, exefs_aligned_offset + exefs.len, horizon.fmt.media_unit);
+
+    const romfs_size = if (args.romfs) |romfs_path| blk: {
+        const romfs_file = cwd.openFile(io, romfs_path, .{ .mode = .read_only }) catch |err| {
+            log.err("could not open RomFS'{s}': {t}", .{ romfs_path, err });
+            return error.NotLoaded;
+        };
+        defer romfs_file.close(io);
+
+        var romfs_buffer: [512]u8 = undefined;
+        var romfs_reader = romfs_file.reader(io, &romfs_buffer);
+
+        const romfs_size = try romfs_reader.getSize();
+        try output_writer.seekTo(romfs_aligned_offset);
+
+        var romfs_writer_buffer: [512]u8 = undefined;
+        // NOTE: We'd like to use `ivfc.Level.acceptableBlockSizeShift` instead of `12` but azahar assumes L3 has a block size of 4096 (so we workaround it!)...
+        const written = try ncch.romfs.Ivfc.write(&output_writer, &romfs_writer_buffer, &romfs_reader.interface, 12, gpa, romfs_size);
+        break :blk written.size;
+    } else 0;
+    const romfs_aligned_size: u64 = std.mem.alignForward(u64, romfs_size, horizon.fmt.media_unit);
+    const romfs_header_aligned_hash_size: u64 = std.mem.alignForward(u64, @sizeOf(ncch.romfs.Ivfc), horizon.fmt.media_unit);
+    const ncch_end = romfs_aligned_offset + romfs_aligned_size;
+    try output_file.setLength(io, ncch_end);
+
+    var romfs_header_hash: [0x20]u8 = @splat(0);
+    if (has_romfs_included) try hashedFileSlice(&romfs_header_hash, io, output_file, romfs_aligned_offset, romfs_header_aligned_hash_size);
+
+    try output_writer.seekTo(0);
+    var extended_header_hash: [0x20]u8 = @splat(0);
+    if (extended_header) |*ex_hdr| Sha256.hash(@ptrCast(&ex_hdr), &extended_header_hash, .{});
+
+    const hdr: ncch.Header = .{
         .content_size = 0,
         .partition_id = title_id, // XXX: Does this always match the title id?
         .maker_code = 0x3030, // XXX: What is this?
         .version = .cxi,
         .hash = undefined,
         .title_id = title_id,
-        .logo_region_hash = undefined,
+        .logo_region_hash = @splat(0),
         .product_code = zitrus.fmt.fixedArrayFromSlice(u8, 16, args.@"product-code" orelse if (settings) |s| s.product_code else "ZTR-BREW"),
         .extended_header_hash = extended_header_hash,
-        .extended_header_size = @sizeOf(ncch.ExtendedHeader),
+        .extended_header_size = if (extended_header) |_| @sizeOf(ncch.ExtendedHeader) else 0,
         .flags = .{
             .platform = .ctr,
             .crypto_method = 0,
@@ -373,17 +405,18 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         .plain_region_size = 0,
         .logo_region_offset = 0,
         .logo_region_size = 0,
-        // NOTE: ExeFS implies ExHeader (at least for us, and currently)
-        .exefs_offset = if (exefs.len > 0) comptime @divExact(@sizeOf(ncch.Header.WithSignature) + @sizeOf(ncch.ExtendedHeader) + @sizeOf(ncch.AccessDescriptor), horizon.fmt.media_unit) else 0,
+        .exefs_offset = @intCast(@divExact(exefs_aligned_offset, horizon.fmt.media_unit)),
         .exefs_size = @intCast(@divExact(exefs_aligned_size, horizon.fmt.media_unit)),
-        .exefs_hash_region_size = comptime @divExact(@sizeOf(ncch.exefs.Header), horizon.fmt.media_unit), // The header already contains hashes
-        // TODO: Set RomFS
-        .romfs_offset = 0,
-        .romfs_size = 0,
-        .romfs_hash_region_size = 0,
+        .exefs_hash_region_size = @intCast(@divExact(exefs_header_aligned_hash_size, horizon.fmt.media_unit)), // The header already contains hashes
+        .romfs_offset = @intCast(@divExact(romfs_aligned_offset, horizon.fmt.media_unit)),
+        .romfs_size = @intCast(@divExact(romfs_aligned_size, horizon.fmt.media_unit)),
+        .romfs_hash_region_size = @intCast(@divExact(romfs_header_aligned_hash_size, horizon.fmt.media_unit)), // Same as the exefs; we have the L0 hash
         .exefs_superblock_hash = exefs_header_hash,
-        .romfs_superblock_hash = @splat(0),
-    }, .little);
+        .romfs_superblock_hash = romfs_header_hash,
+    };
+
+    try out.splatByteAll(0x0, 0x100); // XXX: What do we do about the signature?
+    try out.writeStruct(hdr, .little);
 
     if (extended_header) |exheader| {
         try out.writeStruct(exheader, .little);
@@ -400,11 +433,13 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         const access_descriptor_signature: [0x100]u8 = @splat(0);
         const header_modulus: [0x100]u8 = @splat(0);
 
-        try out.writeStruct(ncch.AccessDescriptor{
+        const access_descriptor: ncch.AccessDescriptor = .{
             .signature = access_descriptor_signature,
             .header_rsa_modulus = header_modulus,
             .access_control = access_descriptor_control,
-        }, .little);
+        };
+
+        try out.writeStruct(access_descriptor, .little);
     }
 
     try out.writeAll(exefs);
@@ -413,9 +448,18 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
     return 0;
 }
 
+fn hashedFileSlice(out: *[0x20]u8, io: Io, file: std.Io.File, offset: u64, len: u64) !void {
+    var hashing_buffer: [512]u8 = undefined;
+    var hashing: Io.Writer.Hashing(Sha256) = .init(&hashing_buffer);
+
+    var reader = file.reader(io, &.{});
+    try reader.seekTo(offset);
+    try reader.interface.streamExact64(&hashing.writer, len);
+    hashing.hasher.final(out);
+}
+
 fn loadEntireFile(path: []const u8, io: std.Io, gpa: std.mem.Allocator) ![]u8 {
     const cwd = std.Io.Dir.cwd();
-
     const file = cwd.openFile(io, path, .{ .mode = .read_only }) catch |err| {
         log.err("could not open input file '{s}': {t}", .{ path, err });
         return error.NotLoaded;
@@ -549,10 +593,14 @@ const log = std.log.scoped(.ncch);
 
 const builtin = @import("builtin");
 const std = @import("std");
+const Io = std.Io;
+const Sha256 = std.crypto.hash.sha2.Sha256;
+
 const plz = @import("plz");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
 
+const lzrev = zitrus.compress.lzrev;
 const hfmt = zitrus.horizon.fmt;
 const ncch = hfmt.ncch;
 

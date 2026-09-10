@@ -250,4 +250,4 @@ const elf = std.elf;
 
 const zitrus = @import("zitrus");
 const code = zitrus.fmt.code;
-const smdh = zitrus.horizon.fmt.smdh;
+const smdh = zitrus.horizon.fmt.ncch.smdh;

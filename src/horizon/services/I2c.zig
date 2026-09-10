@@ -1,4 +1,10 @@
-pub const Service = enum(u2) {
+//! Access I2C hardware
+//!
+//! Based on 3dbrew & the implementation `3ds_i2c` by `@ZeroSkill1` under `The Unlicense`:
+//!  - https://github.com/ZeroSkill1/3ds_i2c
+//!  - https://www.3dbrew.org/wiki/I2C_Services
+
+pub const Service = enum {
     mcu,
     camera,
     lcd,
@@ -24,6 +30,10 @@ pub const Service = enum(u2) {
     }
 };
 
+pub const Device = enum(u8) {
+    _,
+};
+
 session: ClientSession,
 
 pub fn open(service: Service, srv: ServiceManager) !I2c {
@@ -35,28 +45,156 @@ pub fn close(i2c: I2c) void {
 }
 
 pub const command = struct {
+    pub const WriteRegisterMasked8 = ipc.Command(Id, .write_register_masked8, struct {
+        device: Device,
+        register: u8,
+        value: u8,
+        mask: u8,
+    }, struct {});
+    pub const SetRegister8 = ipc.Command(Id, .set_register8, struct {
+        device: Device,
+        register: u8,
+        mask: u8,
+    }, struct {});
+    pub const ClearRegister8 = ipc.Command(Id, .clear_register8, struct {
+        device: Device,
+        register: u8,
+        mask: u8,
+    }, struct {});
+    pub const MultiWriteRegisterMasked16 = ipc.Command(Id, .multi_write_register_masked16, struct {
+        register: u16,
+        value: u16,
+        mask: u16,
+        devices_len: u32,
+        devices: ipc.Static(0),
+    }, struct {});
+    pub const WriteRegister8 = ipc.Command(Id, .write_register8, struct {
+        device: Device,
+        register: u8,
+        value: u8,
+    }, struct {});
+    pub const WriteDevice8 = ipc.Command(Id, .write_device8, struct {
+        device: Device,
+        value: u8,
+    }, struct {});
+    pub const WriteRegister16 = ipc.Command(Id, .write_register16, struct {
+        device: Device,
+        register: u16,
+        value: u16,
+    }, struct {});
+    pub const MultiWriteRegister16 = ipc.Command(Id, .multi_write_register16, struct {
+        register: u16,
+        value: u16,
+        devices_len: u32,
+        devices: ipc.Static(0),
+    }, struct {});
+    pub const ReadRegister8= ipc.Command(Id, .read_register8, struct {
+        device: Device,
+        register: u8,
+    }, struct {
+        value: u8,
+    });
+    pub const ReadRegister16= ipc.Command(Id, .read_register16, struct {
+        device: Device,
+        register: u16,
+    }, struct {
+        value: u16,
+    });
+    pub const WriteRegisters8= ipc.Command(Id, .write_registers8, struct {
+        device: Device,
+        register: u8,
+        values_len: u32,
+        values: ipc.Static(1),
+    }, struct {});
+    pub const WriteRegisters16= ipc.Command(Id, .write_registers16, struct {
+        device: Device,
+        register: u16,
+        values_len: u32,
+        values: ipc.Static(1),
+    }, struct {});
+    pub const ReadRegisters8= ipc.Command(Id, .read_registers8, struct {
+        pub const StaticOutput = struct { values: []u8 };
+        device: Device,
+        register: u8,
+        values_len: u32,
+    }, struct {
+        values: ipc.Static(0),
+    });
+    // pub const WriteRegisters8_2= ipc.Command(Id, .write_registers8, struct {}, struct {});
+    pub const ReadRegisters8Delayed= ipc.Command(Id, .read_registers8_delayed, struct {
+        pub const StaticOutput = struct { values: []u8 };
+
+        device: Device,
+        register: u8,
+        values_len: u32,
+    }, struct {
+        values: ipc.Static(0),
+    });
+    pub const ReadRegisters16 = ipc.Command(Id, .read_registers16, struct {
+        pub const StaticOutput = struct { values: []u16 };
+
+        device: Device,
+        register: u8,
+        values_len: u32,
+    }, struct {
+        values: ipc.Static(0),
+    });
+    pub const WriteRegistersMapped = ipc.Command(Id, .write_registers_mapped, struct {
+        device: Device,
+        register: u8,
+        values_len: u32,
+        values: ipc.Mapped(.r),
+    }, struct {
+        values: ipc.Mapped(.r),
+    });
+    pub const ReadRegistersMapped = ipc.Command(Id, .read_registers_mapped, struct {
+        device: Device,
+        register: u8,
+        values_len: u32,
+        values: ipc.Mapped(.w),
+    }, struct {
+        values: ipc.Mapped(.w),
+    });
+    pub const ReadDevice8 = ipc.Command(Id, .read_device8, struct {
+        device: Device,
+    }, struct {
+        value: u8,
+    });
+    pub const MultiWriteDevice8 = ipc.Command(Id, .multi_write_device8, struct {
+        device: Device,
+        values_len: u32,
+        values: ipc.Static(1),
+    }, struct {});
+    pub const MultiReadDevice8 = ipc.Command(Id, .multi_read_device8, struct {
+        pub const StaticOutput = struct { values: []u8 };
+        device: Device,
+        values_len: u32,
+    }, struct {
+        values: ipc.Static(0)
+    });
+
     pub const Id = enum(u16) {
-        set_register_bits8 = 0x0001,
-        enable_register_bits8,
-        disable_register_bits8,
-        multi_set_register_bits16,
+        write_register_masked8 = 0x0001,
+        set_register8,
+        clear_register8,
+        multi_write_register_masked16,
         write_register8,
-        write_command8,
+        write_device8,
         write_register16,
         multi_write_register16,
         read_register8,
         read_register16,
-        write_register_buffer8,
-        write_register_buffer16,
-        read_register_buffer8,
-        write_register_buffer,
-        read_register_buffer,
-        read_eeprom,
-        write_register_buffer2,
-        read_register_buffer2,
-        read_device_raw8,
-        write_device_raw,
-        read_device_raw,
+        write_registers8,
+        write_registers16,
+        read_registers8,
+        write_registers8_2,
+        read_registers8_delayed,
+        read_registers16,
+        write_registers_mapped,
+        read_registers_mapped,
+        read_device8,
+        multi_write_device8,
+        multi_read_device8,
     };
 };
 

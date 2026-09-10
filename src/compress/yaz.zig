@@ -6,7 +6,7 @@
 
 pub const magic = "Yaz0";
 pub const history_len = 4096;
-pub const max_window_len = 2 * history_len + 273;
+pub const max_window_len = 2 * history_len + Match.max_len;
 
 pub const Header = extern struct {
     magic: [magic.len]u8 = magic.*,
@@ -25,6 +25,9 @@ pub const Header = extern struct {
 };
 
 pub const Match = packed struct(u16) {
+    pub const min_offset = 1;
+    pub const max_len = 273;
+    pub const max_size = 3;
     pub const Length = enum(u4) { extra = 0, _ };
 
     /// The real value is `(offset_hi << 8) | offset_lo + 1`
@@ -44,6 +47,30 @@ pub const Match = packed struct(u16) {
         };
 
         return .{ .offset = offset, .len = len };
+    }
+
+    /// Asserts `writer` capacity is at least `max_size`
+    pub fn write(writer: *Writer, match: lz.Match) Writer.Error!void {
+        const encoded_offset = match.offset - 1;
+        if (match.len > 18) {
+            const encoded: Match = .{
+                .len = .extra,
+                .offset_hi = @intCast(encoded_offset >> 8),
+                .offset_lo = @intCast(encoded_offset & 0xFF),
+            };
+
+            try writer.writeStruct(encoded, .little);
+            try writer.writeByte(@intCast(match.len - 18)); 
+        } else {
+            const encoded: Match = .{
+                .len = @enumFromInt(match.len - 2),
+                .offset_hi = @intCast(encoded_offset >> 8),
+                .offset_lo = @intCast(encoded_offset & 0xFF),
+            };
+
+
+            try writer.writeStruct(encoded, .little);
+        }
     }
 };
 
@@ -65,6 +92,11 @@ pub const Compress = lz.Compress(yaz);
 pub const Decompress = lz.Decompress(yaz);
 
 // TODO: Tests
+
+comptime {
+    _ = Compress;
+    _ = Decompress;
+}
 
 const testing = std.testing;
 

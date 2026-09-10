@@ -9,10 +9,19 @@ pub const hid = @import("hardware/hid.zig");
 pub const lgy = @import("hardware/lgy.zig");
 pub const i2c = @import("hardware/i2c.zig");
 pub const lcd = @import("hardware/lcd.zig");
+pub const pdn = @import("hardware/pdn.zig");
+pub const spi = @import("hardware/spi.zig");
+pub const mic = @import("hardware/mic.zig");
 pub const config = @import("hardware/config.zig");
 
 /// Represents a register which is triggered by writing a value to it.
 pub const Trigger = enum(u1) { trigger = 1 };
+
+/// Represents a reset by writing 0 to it.
+pub const ResetLow = enum(u1) { reset = 0, enabled = 1 };
+
+/// Represents a reset by writing 1 to it.
+pub const ResetHigh = enum(u1) { enabled = 0, reset = 1 };
 
 /// Represents an `AlignedPhysicalAddress` with no alignment.
 pub const PhysicalAddress = AlignedPhysicalAddress(.@"1", .@"1");
@@ -171,10 +180,17 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
 comptime {
     _ = pica;
     _ = csnd;
+    _ = dsp;
+    _ = hid;
     _ = pxi;
     _ = dsp;
     _ = lgy;
     _ = i2c;
+    _ = lcd;
+    _ = pdn;
+    _ = spi;
+    _ = mic;
+    _ = config;
 }
 
 const testing = std.testing;

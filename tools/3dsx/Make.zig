@@ -119,14 +119,14 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         };
         defer smdh_file.close(io);
 
-        var buf: [@sizeOf(fmt.smdh.Smdh)]u8 = undefined;
+        var buf: [@sizeOf(fmt.ncch.smdh.Smdh)]u8 = undefined;
         var smdh_reader = smdh_file.reader(io, &buf);
-        const smdh_data: fmt.smdh.Smdh = smdh_reader.interface.peekStruct(fmt.smdh.Smdh, .little) catch |err| {
+        const smdh_data: fmt.ncch.smdh.Smdh = smdh_reader.interface.peekStruct(fmt.ncch.smdh.Smdh, .little) catch |err| {
             log.err("error reading SMDH file '{s}': {t}", .{ smdh_path, err });
             return 1;
         };
 
-        if (!std.mem.eql(u8, &smdh_data.magic, fmt.smdh.magic_value)) {
+        if (!std.mem.eql(u8, &smdh_data.magic, fmt.ncch.smdh.magic_value)) {
             log.err("SMDH file '{s}' is invalid/corrupted", .{smdh_path});
             return 1;
         }
@@ -157,7 +157,7 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
             }
         }
 
-        if (smdh_data) |_| log.info("{} SMDH bytes", .{@sizeOf(fmt.smdh.Smdh)});
+        if (smdh_data) |_| log.info("{} SMDH bytes", .{@sizeOf(fmt.ncch.smdh.Smdh)});
         if (romfs_reader) |*romfs| log.info("{} RomFS bytes", .{try romfs.getSize()});
     }
 

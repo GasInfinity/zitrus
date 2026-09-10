@@ -14,4 +14,5 @@ comptime {
     _ = yaz;
     _ = lz10;
     _ = lz11;
+    _ = lz;
 }

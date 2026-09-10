@@ -83,9 +83,9 @@ pub const Header = extern struct {
     _reserved0: [0x10]u8 = @splat(0),
     logo_region_hash: [0x20]u8,
     product_code: [16]u8,
-    /// SHA-256 of the `ExtendedHeader`
+    /// SHA-256 of the `Extended`
     extended_header_hash: [0x20]u8,
-    /// Size of the `ExtendedHeader` in bytes.
+    /// Size of the `Extended` in bytes.
     extended_header_size: u32,
     _reserved1: [4]u8 = @splat(0),
     flags: Flags,
@@ -145,204 +145,206 @@ pub const Header = extern struct {
     comptime {
         std.debug.assert(@sizeOf(Header) == 0x100);
     }
-};
 
-pub const ExtendedHeader = extern struct {
-    pub const SystemControlInfo = extern struct {
-        pub const Flags = packed struct(u8) {
-            compressed_code: bool,
-            allow_sd_usage: bool,
-            _: u6 = 0,
-        };
-
-        pub const CodeSetInfo = extern struct {
-            address: u32,
-            pages: u32,
-            size: u32,
-        };
-
-        pub const SystemInfo = extern struct {
-            save_data_size: u64,
-            jump_id: TitleId,
-            _reserved0: [0x30]u8 = @splat(0),
-        };
-
-        application_title: [8]u8,
-        _reserved0: [5]u8 = @splat(0),
-        flags: Flags,
-        remaster_version: u16,
-        text: CodeSetInfo,
-        stack_size: u32,
-        rodata: CodeSetInfo,
-        _reserved1: [4]u8 = @splat(0),
-        data: CodeSetInfo,
-        bss: u32,
-        dependency_titles: [48]u64,
-        system_info: SystemInfo,
-
-        comptime {
-            std.debug.assert(@sizeOf(SystemControlInfo) == 0x200);
-        }
-    };
-
-    pub const AccessControlInfo = extern struct {
-        pub const UserCapabilities = extern struct {
-            pub const SystemMode = enum(u4) {
-                prod,
-                dev1 = 2,
-                dev2,
-                dev3,
-                dev4,
-                _,
-            };
-
-            pub const NewSystemMode = enum(u4) {
-                legacy,
-                prod,
-                dev1,
-                dev2,
-                _,
-            };
-
-            pub const ResourceLimitCategory = enum(u8) {
-                application,
-                system_applet,
-                library_applet,
-                other,
-                _,
-            };
-
-            pub const ExecutionConfig = packed struct(u8) {
-                ideal_processor: u2,
-                affinity_mask: u2,
-                mode: SystemMode,
-            };
-
-            pub const NewExecutionConfig = packed struct(u8) {
-                mode: NewSystemMode,
-                _unused0: u4 = 0,
-            };
-
-            pub const NewSpeedupConfig = packed struct(u8) {
-                pub const CpuSpeed = enum(u1) { @"268Mhz", @"804Mhz" };
-
-                enable_l2_cache: bool,
-                cpu_speed: CpuSpeed,
+    pub const Extended = extern struct {
+        pub const SystemControlInfo = extern struct {
+            pub const Flags = packed struct(u8) {
+                compressed_code: bool,
+                allow_sd_usage: bool,
                 _: u6 = 0,
             };
 
-            pub const Storage = extern struct {
-                pub const Access = packed struct(u32) {
-                    system_application: bool,
-                    hardware_check: bool,
-                    filesystem_tool: bool,
-                    debug: bool,
-                    twl_card_backup: bool,
-                    twl_nand_data: bool,
-                    boss: bool,
-                    sdmc: bool,
-                    core: bool,
-                    nand_ro: bool,
-                    nand_rw: bool,
-                    nand_ro_rw: bool,
-                    system_settings: bool,
-                    cardboard: bool,
-                    export_import_ivs: bool,
-                    sdmc_wo: bool,
-                    switch_cleanup: bool,
-                    save_data_move: bool,
-                    shop: bool,
-                    shell: bool,
-                    home_menu: bool,
-                    seed_db: bool,
-                    _unused0: u10 = 0,
-                };
-
-                pub const Attributes = packed struct(u8) {
-                    no_romfs: bool,
-                    enable_extended_save_data: bool,
-                    _unused0: u6 = 0,
-                };
-
-                extended_save_data_id: u64,
-                system_save_data_id: u64,
-                storage_accessible_uuid: u64,
-                access: Access,
-                _unused0: [3]u8 = @splat(0),
-                attributes: Attributes,
+            pub const CodeSetInfo = extern struct {
+                address: u32,
+                pages: u32,
+                size: u32,
             };
 
-            title_id: TitleId,
-            core_version: u32,
-            new_speedup: NewSpeedupConfig,
-            new_execution: NewExecutionConfig,
-            execution: ExecutionConfig,
-            priority: u8,
-            resource_limits: [16]u16,
-            storage: Storage,
-            service_access_control: [34][8]u8,
-            _reserved0: [15]u8 = @splat(0),
-            resource_limit_category: ResourceLimitCategory,
-
-            comptime {
-                std.debug.assert(@sizeOf(UserCapabilities) == 0x170);
-            }
-        };
-
-        pub const KernelCapabilities = extern struct {
-            descriptors: [28]horizon.Process.Capability,
-            _reserved0: [0x10]u8 = @splat(0),
-
-            comptime {
-                std.debug.assert(@sizeOf(KernelCapabilities) == 0x80);
-            }
-        };
-
-        pub const Arm9AccessControl = extern struct {
-            pub const StorageAccess = packed struct(u32) {
-                mount_nand: bool,
-                mount_nand_ro: bool,
-                mount_twln: bool,
-                mount_wnand: bool,
-                mount_card_spi: bool,
-                use_sdif3: bool,
-                create_seed: bool,
-                use_card_spi: bool,
-                sd_application: bool,
-                mount_sdmc_write: bool,
-                _: u22 = 0,
+            pub const SystemInfo = extern struct {
+                save_data_size: u64,
+                jump_id: TitleId,
+                _reserved0: [0x30]u8 = @splat(0),
             };
 
-            storage_access: StorageAccess,
-            _reserved: [11]u8 = @splat(0x00),
-            version: u8 = 2,
+            application_title: [8]u8,
+            _reserved0: [5]u8 = @splat(0),
+            flags: SystemControlInfo.Flags,
+            remaster_version: u16,
+            text: CodeSetInfo,
+            stack_size: u32,
+            rodata: CodeSetInfo,
+            _reserved1: [4]u8 = @splat(0),
+            data: CodeSetInfo,
+            bss: u32,
+            dependency_titles: [48]u64,
+            system_info: SystemInfo,
 
             comptime {
-                std.debug.assert(@sizeOf(Arm9AccessControl) == 0x10);
+                std.debug.assert(@sizeOf(SystemControlInfo) == 0x200);
             }
         };
 
-        user_capabilities: UserCapabilities,
-        kernel_capabilities: KernelCapabilities,
-        arm9_access: Arm9AccessControl,
+        pub const AccessControlInfo = extern struct {
+            pub const UserCapabilities = extern struct {
+                pub const SystemMode = enum(u4) {
+                    prod,
+                    dev1 = 2,
+                    dev2,
+                    dev3,
+                    dev4,
+                    _,
+                };
+
+                pub const NewSystemMode = enum(u4) {
+                    legacy,
+                    prod,
+                    dev1,
+                    dev2,
+                    _,
+                };
+
+                pub const ResourceLimitCategory = enum(u8) {
+                    application,
+                    system_applet,
+                    library_applet,
+                    other,
+                    _,
+                };
+
+                pub const ExecutionConfig = packed struct(u8) {
+                    ideal_processor: u2,
+                    affinity_mask: u2,
+                    mode: SystemMode,
+                };
+
+                pub const NewExecutionConfig = packed struct(u8) {
+                    mode: NewSystemMode,
+                    _unused0: u4 = 0,
+                };
+
+                pub const NewSpeedupConfig = packed struct(u8) {
+                    pub const CpuSpeed = enum(u1) { @"268Mhz", @"804Mhz" };
+
+                    enable_l2_cache: bool,
+                    cpu_speed: CpuSpeed,
+                    _: u6 = 0,
+                };
+
+                pub const Storage = extern struct {
+                    pub const Access = packed struct(u32) {
+                        system_application: bool,
+                        hardware_check: bool,
+                        filesystem_tool: bool,
+                        debug: bool,
+                        twl_card_backup: bool,
+                        twl_nand_data: bool,
+                        boss: bool,
+                        sdmc: bool,
+                        core: bool,
+                        nand_ro: bool,
+                        nand_rw: bool,
+                        nand_ro_rw: bool,
+                        system_settings: bool,
+                        cardboard: bool,
+                        export_import_ivs: bool,
+                        sdmc_wo: bool,
+                        switch_cleanup: bool,
+                        save_data_move: bool,
+                        shop: bool,
+                        shell: bool,
+                        home_menu: bool,
+                        seed_db: bool,
+                        _unused0: u10 = 0,
+                    };
+
+                    pub const Attributes = packed struct(u8) {
+                        no_romfs: bool,
+                        enable_extended_save_data: bool,
+                        _unused0: u6 = 0,
+                    };
+
+                    extended_save_data_id: u64,
+                    system_save_data_id: u64,
+                    storage_accessible_uuid: u64,
+                    access: Access,
+                    _unused0: [3]u8 = @splat(0),
+                    attributes: Attributes,
+                };
+
+                title_id: TitleId,
+                core_version: u32,
+                new_speedup: NewSpeedupConfig,
+                new_execution: NewExecutionConfig,
+                execution: ExecutionConfig,
+                priority: u8,
+                resource_limits: [16]u16,
+                storage: Storage,
+                service_access_control: [34][8]u8,
+                _reserved0: [15]u8 = @splat(0),
+                resource_limit_category: ResourceLimitCategory,
+
+                comptime {
+                    std.debug.assert(@sizeOf(UserCapabilities) == 0x170);
+                }
+            };
+
+            pub const KernelCapabilities = extern struct {
+                descriptors: [28]horizon.Process.Capability,
+                _reserved0: [0x10]u8 = @splat(0),
+
+                comptime {
+                    std.debug.assert(@sizeOf(KernelCapabilities) == 0x80);
+                }
+            };
+
+            pub const Arm9AccessControl = extern struct {
+                pub const StorageAccess = packed struct(u32) {
+                    mount_nand: bool,
+                    mount_nand_ro: bool,
+                    mount_twln: bool,
+                    mount_wnand: bool,
+                    mount_card_spi: bool,
+                    use_sdif3: bool,
+                    create_seed: bool,
+                    use_card_spi: bool,
+                    sd_application: bool,
+                    mount_sdmc_write: bool,
+                    _: u22 = 0,
+                };
+
+                storage_access: StorageAccess,
+                _reserved: [11]u8 = @splat(0x00),
+                version: u8 = 2,
+
+                comptime {
+                    std.debug.assert(@sizeOf(Arm9AccessControl) == 0x10);
+                }
+            };
+
+            user_capabilities: UserCapabilities,
+            kernel_capabilities: KernelCapabilities,
+            arm9_access: Arm9AccessControl,
+
+            comptime {
+                std.debug.assert(@sizeOf(AccessControlInfo) == 0x200);
+            }
+        };
+
+        system_control: SystemControlInfo,
+        access_control: AccessControlInfo,
 
         comptime {
-            std.debug.assert(@sizeOf(AccessControlInfo) == 0x200);
+            std.debug.assert(@sizeOf(ExtendedHeader) == 0x400);
         }
     };
-
-    system_control: SystemControlInfo,
-    access_control: AccessControlInfo,
-
-    comptime {
-        std.debug.assert(@sizeOf(ExtendedHeader) == 0x400);
-    }
 };
+
+pub const ExtendedHeader = Header.Extended;
 
 pub const AccessDescriptor = extern struct {
     signature: [0x100]u8,
     header_rsa_modulus: [0x100]u8,
-    access_control: ExtendedHeader.AccessControlInfo,
+    access_control: Header.Extended.AccessControlInfo,
 
     comptime {
         std.debug.assert(@sizeOf(AccessDescriptor) == 0x400);

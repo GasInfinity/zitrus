@@ -139,7 +139,8 @@ pub const Module = enum(u8) {
     pub fn SpecificDescription(comptime module: Module) type {
         return switch (module) {
             .fs => Description.Filesystem,
-            .csnd => Description.Filesystem,
+            .csnd => Description.ChannelSound,
+            .mic => Description.Microphone,
             else => Description,
         };
     }
@@ -148,6 +149,25 @@ pub const Module = enum(u8) {
 // TODO: fill this table by testing each error condition.
 // NOTE: we will have to split this into multiple (one for each module), it looks like different modules reuse the same description.
 pub const Description = enum(u10) {
+    pub const Kernel = enum(u10) {
+        out_of_kernel_memory = 1,
+        out_of_kernel_memory_for_memory_blocks = 2,
+        out_of_client_sessions = 9,
+        out_of_memory_blocks = 11,
+        out_of_mutexes = 13,
+        out_of_semaphores = 14,
+        out_of_events = 15,
+        out_of_timers = 16,
+        out_of_handles = 19,
+        invalid_string = 20,
+        session_closed_by_remote = 26,
+        string_too_big = 30,
+        mutex_not_owned = 31,
+        incompatible_permissions = 46,
+        out_of_address_arbiters = 51,
+        _,
+    };
+
     pub const Filesystem = enum(u10) {
         entry_not_found = 120,
         entry_already_exists = 190,
@@ -155,84 +175,23 @@ pub const Description = enum(u10) {
         entry_not_of_kind = 250,
 
         invalid_path = 720,
-
-        invalid_selection = 1000,
-        too_large,
-        permission_denied,
-        already_done,
-        invalid_size,
-        invalid_enum_value,
-        invalid_combination,
-        no_data,
-        busy,
-        unaligned_address,
-        unaligned_size,
-        out_of_memory,
-        not_implemented,
-        invalid_address,
-        invalid_pointer,
-        invalid_handle,
-        not_initialized,
-        already_initialized,
-        not_found,
-        cancel_requested,
-        already_exists,
-        out_of_range,
-        timeout,
-        invalid_result_value,
         _,
     };
 
     pub const ChannelSound = enum(u10) {
         direct_sound_sleeping = 1,
         direct_sound_priority = 2,
-
-        invalid_selection = 1000,
-        too_large,
-        permission_denied,
-        already_done,
-        invalid_size,
-        invalid_enum_value,
-        invalid_combination,
-        no_data,
-        busy,
-        unaligned_address,
-        unaligned_size,
-        out_of_memory,
-        not_implemented,
-        invalid_address, invalid_pointer,
-        invalid_handle,
-        not_initialized,
-        already_initialized,
-        not_found,
-        cancel_requested,
-        already_exists,
-        out_of_range,
-        timeout,
-        invalid_result_value,
         _,
     };
 
-    success,
-
-    out_of_kernel_memory = 1,
-    out_of_kernel_memory_for_memory_blocks = 2,
-
-    out_of_client_sessions = 9,
-    out_of_memory_blocks = 11,
-    out_of_mutexes = 13,
-    out_of_semaphores = 14,
-    out_of_events = 15,
-    out_of_timers = 16,
-    out_of_handles = 19,
-    invalid_string = 20,
-    session_closed_by_remote = 26,
-    string_too_big = 30,
-    mutex_not_owned = 31,
-    incompatible_permissions = 46,
-    out_of_address_arbiters = 51,
+    pub const Microphone = enum(u10) {
+        shell_closed = 1,
+        _,
+    };
 
     // common
+    success,
+
     invalid_selection = 1000,
     too_large,
     permission_denied,
@@ -258,6 +217,10 @@ pub const Description = enum(u10) {
     timeout,
     invalid_result_value,
     _,
+
+    pub fn desc(value: u10) Description {
+        return @enumFromInt(value);
+    }
 };
 
 pub const Code = packed struct(i32) {
@@ -327,9 +290,30 @@ pub const Code = packed struct(i32) {
     pub const fs_unexpected_open_flags: Code = @bitCast(@as(u32, 0xC92044E6));
     pub const fs_entry_already_exists: Code = @bitCast(@as(u32, 0xC82044BE));
 
-    pub const csnd_not_initialized: Code = @bitCast(@as(u32, 0xc960b7f8)); 
-    pub const csnd_direct_sound_sleeping: Code = @bitCast(@as(u32, 0xc940b401)); 
-    pub const csnd_direct_sound_priority: Code = @bitCast(@as(u32, 0xc940b402)); 
+    pub const spi_out_of_range: Code = .result(.usage, .invalid_arg, .spi, .out_of_range);
+    pub const spi_not_initiaized: Code = .result(.status, .invalid_state, .spi, .not_initialized);
+
+    pub const pdn_invalid_arg: Code = .result(.usage, .invalid_arg, .pdn, .desc(1));
+
+    /// 0xd8208ff9
+    pub const mic_already_initialized: Code = .result(.permanent, .nop, .mic, .already_initialized);
+    /// 0xd8208ff8
+    pub const mic_not_initialized: Code = .result(.permanent, .nop, .pdn, .not_initialized);
+    /// 0xe0e08fec
+    pub const mic_invalid_size: Code = .result(.usage, .invalid_arg, .mic, .invalid_size);
+    /// 0xe0e08ff2
+    pub const mic_unaligned_size: Code = .result(.usage, .invalid_arg, .mic, .unaligned_size);
+    /// 0xe1008ffd
+    pub const mic_out_of_range: Code = .result(.usage, .wrong_arg, .mic, .out_of_range);
+    /// 0xc9408c01
+    pub const mic_shell_closed: Code = .specificResult(.status, .invalid_arg, .mic, .shell_closed);
+
+    /// 0xc960b7f8
+    pub const csnd_not_initialized: Code = .result(.status, .internal, .csnd, .not_initialized);
+    /// 0xc940b401
+    pub const csnd_direct_sound_sleeping: Code = .specificResult(.status, .status_changes, .csnd, .direct_sound_sleeping); 
+    /// 0xc940b402
+    pub const csnd_direct_sound_priority: Code = .specificResult(.status, .status_changes, .csnd, .direct_sound_priority);
 
     description: Description = .success,
     module: Module = .common,
@@ -337,12 +321,27 @@ pub const Code = packed struct(i32) {
     summary: Summary = .success,
     level: Level = .success,
 
-    pub inline fn isSuccess(code: Code) bool {
+    pub fn result(level: Level, summary: Summary, module: Module, description: Description) Code {
+        return .{
+            .level = level,
+            .summary = summary,
+            .module = module,
+            .description = description,
+        };
+    }
+
+    pub fn specificResult(level: Level, summary: Summary, comptime module: Module, description: module.SpecificDescription()) Code {
+        return .result(level, summary, module, @enumFromInt(@intFromEnum(description)));
+    }
+
+    pub fn isSuccess(code: Code) bool {
         return @as(i32, @bitCast(code)) >= 0;
     }
 
     pub fn format(code: Code, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-        const known_description = switch (code.module) {
+        const known_description = if (std.enums.tagName(Description, code.description)) |common|
+            common
+        else switch (code.module) {
             inline else => |mod| std.enums.tagName(mod.SpecificDescription(), @enumFromInt(@intFromEnum(code.description))),
             _ => std.enums.tagName(Description, code.description),
         };
