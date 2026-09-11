@@ -40,7 +40,7 @@ pub fn run(args: Explain, io: std.Io, arena: std.mem.Allocator) !u8 {
             var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
             const stdout = &stdout_writer.interface;
 
-            try stdout.print("{f}", .{code});
+            try stdout.print("0x{x:0>8} -> {f}\n", .{ @as(u32, @bitCast(code)), code });
             try stdout.flush();
             return 0;
         },

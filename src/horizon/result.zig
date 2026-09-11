@@ -138,9 +138,11 @@ pub const Module = enum(u8) {
 
     pub fn SpecificDescription(comptime module: Module) type {
         return switch (module) {
+            .kernel => Description.Kernel,
             .fs => Description.Filesystem,
             .csnd => Description.ChannelSound,
             .mic => Description.Microphone,
+            .pdn => Description.PowerDown,
             else => Description,
         };
     }
@@ -186,6 +188,11 @@ pub const Description = enum(u10) {
 
     pub const Microphone = enum(u10) {
         shell_closed = 1,
+        _,
+    };
+
+    pub const PowerDown = enum(u10) {
+        invalid_reset = 1,
         _,
     };
 
@@ -290,10 +297,13 @@ pub const Code = packed struct(i32) {
     pub const fs_unexpected_open_flags: Code = @bitCast(@as(u32, 0xC92044E6));
     pub const fs_entry_already_exists: Code = @bitCast(@as(u32, 0xC82044BE));
 
+    /// 0xe0e03ffd
     pub const spi_out_of_range: Code = .result(.usage, .invalid_arg, .spi, .out_of_range);
+    /// 0xc8a03ff8
     pub const spi_not_initiaized: Code = .result(.status, .invalid_state, .spi, .not_initialized);
 
-    pub const pdn_invalid_arg: Code = .result(.usage, .invalid_arg, .pdn, .desc(1));
+    /// 0xe0e02401
+    pub const pdn_invalid_arg: Code = .specificResult(.usage, .invalid_arg, .pdn, .invalid_reset);
 
     /// 0xd8208ff9
     pub const mic_already_initialized: Code = .result(.permanent, .nop, .mic, .already_initialized);
@@ -311,9 +321,9 @@ pub const Code = packed struct(i32) {
     /// 0xc960b7f8
     pub const csnd_not_initialized: Code = .result(.status, .internal, .csnd, .not_initialized);
     /// 0xc940b401
-    pub const csnd_direct_sound_sleeping: Code = .specificResult(.status, .status_changes, .csnd, .direct_sound_sleeping);
+    pub const csnd_direct_sound_sleeping: Code = .specificResult(.status, .status_changed, .csnd, .direct_sound_sleeping);
     /// 0xc940b402
-    pub const csnd_direct_sound_priority: Code = .specificResult(.status, .status_changes, .csnd, .direct_sound_priority);
+    pub const csnd_direct_sound_priority: Code = .specificResult(.status, .status_changed, .csnd, .direct_sound_priority);
 
     description: Description = .success,
     module: Module = .common,

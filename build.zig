@@ -34,6 +34,8 @@ pub const target = struct {
 };
 
 pub fn build(b: *Build) void {
+    b.release_mode = .safe;
+
     const optimize = b.standardOptimizeOption(.{});
     const tools_target = b.standardTargetOptions(.{});
 
