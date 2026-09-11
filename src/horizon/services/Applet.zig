@@ -533,8 +533,7 @@ pub fn sendSetSystemProcessorTimeSlice(apt: Applet, service: Service, srv: Servi
 }
 
 pub fn sendGetSystemProcessorTimeSlice(apt: Applet, service: Service, srv: ServiceManager) !SystemProcessorTimeSlice {
-    return switch ((try apt.lockSendCommand(service, srv, command.GetSystemProcessorTimeSlice, .{
-    }, .{})).cases()) {
+    return switch ((try apt.lockSendCommand(service, srv, command.GetSystemProcessorTimeSlice, .{}, .{})).cases()) {
         .success => |s| s.value.slice,
         .failure => |code| horizon.unexpectedResult(code),
     };

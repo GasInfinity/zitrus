@@ -31,7 +31,7 @@ pub fn configureDisplay(pe: *PresentationEngine, display: mango.Display, configu
             if (configure_info.extent.height == 800 and @intFromEnum(configure_info.image_array_layers) > 1) return error.Unsupported;
             if (configure_info.extent.height != 400 and configure_info.extent.height != 800) return error.Unsupported;
         },
-        .bottom => if (configure_info.extent.height != 320 or @intFromEnum(configure_info.image_array_layers) > 1) 
+        .bottom => if (configure_info.extent.height != 320 or @intFromEnum(configure_info.image_array_layers) > 1)
             return error.Unsupported,
     }
 

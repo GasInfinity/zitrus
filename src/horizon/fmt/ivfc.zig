@@ -136,7 +136,7 @@ pub const BlockHashingWriter = struct {
 
     /// `buffer` must have a non-zero length
     pub fn initCapacity(gpa: std.mem.Allocator, block_size: u64, buffer: []u8, out: *Io.Writer, capacity: usize) std.mem.Allocator.Error!BlockHashingWriter {
-        std.debug.assert(buffer.len > 0); 
+        std.debug.assert(buffer.len > 0);
 
         return .{
             .err = null,
@@ -149,7 +149,7 @@ pub const BlockHashingWriter = struct {
             .hashes = try .initCapacity(gpa, capacity),
             .out = out,
             .writer = .{
-                .buffer = buffer, 
+                .buffer = buffer,
                 .end = 0,
                 .vtable = &.{
                     .drain = drain,
@@ -159,20 +159,20 @@ pub const BlockHashingWriter = struct {
     }
 
     pub fn deinit(writer: *BlockHashingWriter) void {
-        writer.hashes.deinit(writer.gpa); 
+        writer.hashes.deinit(writer.gpa);
     }
 
     pub fn end(blk_w: *BlockHashingWriter) !void {
         const buffer = blk_w.writer.buffer;
         if (blk_w.writer.end > 0) try blk_w.writer.flush();
-        if (blk_w.block_written == 0) return; 
+        if (blk_w.block_written == 0) return;
 
         // When finishing, the hasher is weirdly filled with zeroes; not finished directly.
         @memset(buffer, 0x00);
         const hasher = &blk_w.hasher;
-        const hashes =  &blk_w.hashes;
+        const hashes = &blk_w.hashes;
         const final_hash = try hashes.addOne(blk_w.gpa);
-        
+
         var rem = blk_w.block_size - blk_w.block_written;
         while (rem > 0) {
             const hashing = @min(rem, buffer.len);
@@ -190,7 +190,7 @@ pub const BlockHashingWriter = struct {
         w.end = 0;
 
         var drained: usize = 0;
-        for (data[0..data.len - 1]) |buffer| {
+        for (data[0 .. data.len - 1]) |buffer| {
             try blk_w.drainSingle(buffer);
             drained += buffer.len;
         }
@@ -233,7 +233,7 @@ pub const BlockHashingWriter = struct {
     }
 };
 
-test "Writing random bytes as RomFS IVFC, verifying it afterwards"{
+test "Writing random bytes as RomFS IVFC, verifying it afterwards" {
     const io = std.testing.io;
     const gpa = std.testing.allocator;
     var rand: std.Random.DefaultPrng = .init(std.testing.random_seed);

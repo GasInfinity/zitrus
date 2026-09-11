@@ -60,14 +60,13 @@ pub const Match = packed struct(u16) {
             };
 
             try writer.writeStruct(encoded, .little);
-            try writer.writeByte(@intCast(match.len - 18)); 
+            try writer.writeByte(@intCast(match.len - 18));
         } else {
             const encoded: Match = .{
                 .len = @enumFromInt(match.len - 2),
                 .offset_hi = @intCast(encoded_offset >> 8),
                 .offset_lo = @intCast(encoded_offset & 0xFF),
             };
-
 
             try writer.writeStruct(encoded, .little);
         }

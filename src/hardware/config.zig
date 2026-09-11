@@ -1,4 +1,4 @@
-//! Based on the documentation found in GBATEK: 
+//! Based on the documentation found in GBATEK:
 //! - https://problemkaputt.de/gbatek.htm#3dsconfigconfig9registers
 //! - https://problemkaputt.de/gbatek.htm#3dsconfigconfig11registers
 

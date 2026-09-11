@@ -177,7 +177,7 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
                 log.err("invalid RomFS IVFC header: {t}", .{err});
                 return 1;
             };
-            
+
             const master_hashes_start = std.mem.alignForward(usize, @sizeOf(ncch.romfs.Ivfc), 0x20);
             const romfs_start = std.mem.alignForward(u64, master_hashes_start + parsed.l0_size, @as(u64, 1) << @intCast(parsed.levels[2].block_size_shift));
             const romfs_size = parsed.levels[2].size;

@@ -340,15 +340,15 @@ pub fn deviceToHost(dev: *Horizon, ptr: u32) [*]u8 {
     return horizon.memory.toVirtual(ptr, dev.fcram_base_addr_offset).?; // Panic? The pointer 100% didn't come from `hostToDevice`!
 }
 
-pub fn flushCachedMemoryRanges (dev: *Device, ranges: []const []const u8) mango.FlushMemoryError!void {
+pub fn flushCachedMemoryRanges(dev: *Device, ranges: []const []const u8) mango.FlushMemoryError!void {
     _ = dev;
     for (ranges) |range| {
         // TODO: error handling
         _ = horizon.flushProcessDataCache(.current, range);
-    } 
+    }
 }
 
-pub fn invalidateCachedMemoryRanges (dev: *Device, ranges: []const []const u8) mango.InvalidateMemoryError!void {
+pub fn invalidateCachedMemoryRanges(dev: *Device, ranges: []const []const u8) mango.InvalidateMemoryError!void {
     _ = dev;
     for (ranges) |range| {
         // TODO: error handling
@@ -619,7 +619,7 @@ const Driver = struct {
                                     )),
                                 }
                             },
-                            .timestamp, .begin_query, .end_query => unreachable
+                            .timestamp, .begin_query, .end_query => unreachable,
                         }
 
                         drv.submission_buffer_busy.setPresent(queue_type, true);
@@ -910,7 +910,7 @@ comptime {
 const lose_ns_sentinel = 1 * std.time.ns_per_s;
 
 // XXX: This is a workaround, opening the rosalina menu for more than 1s (the timeout)
-// will make the event timeout... 
+// will make the event timeout...
 const lose_irq_timeouts = 2;
 
 const Horizon = @This();

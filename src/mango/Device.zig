@@ -27,7 +27,7 @@ pub const Handle = enum(u32) {
 
     pub fn hostAllocator(device: Handle) std.mem.Allocator {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
-        return b_device.hostAllocator(); 
+        return b_device.hostAllocator();
     }
 
     pub fn allocatePrivate(device: Handle, bank: mango.PrivateMemoryIndex, len: u32) mango.PrivateAllocationError![]const u8 {
@@ -684,20 +684,20 @@ pub fn wakeIdleQueue(device: *Device, reason: Queue.Type) void {
 pub fn copyBuffer(device: *Device, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.CopyBufferInfo) !void {
     const queue = device.queues.getPtr(.transfer);
     var it: Queue.Transfer.Iterator = .initBuffer(info);
-    try pushOperations(Queue.Transfer, queue, wait, signal, &it);    
+    try pushOperations(Queue.Transfer, queue, wait, signal, &it);
 }
 
 // TODO: Provide a software fallback for directly using host memory (akin to VK_EXT_host_image_copy)
 pub fn copyBufferToImage(device: *Device, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.CopyBufferToImageInfo) !void {
     const queue = device.queues.getPtr(.transfer);
     var it: Queue.Transfer.Iterator = .initBufferToImage(info);
-    try pushOperations(Queue.Transfer, queue, wait, signal, &it);    
+    try pushOperations(Queue.Transfer, queue, wait, signal, &it);
 }
 
 pub fn blitImage(device: *Device, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.BlitImageInfo) !void {
     const queue = device.queues.getPtr(.transfer);
     var it: Queue.Transfer.Iterator = .initBlit(info);
-    try pushOperations(Queue.Transfer, queue, wait, signal, &it);    
+    try pushOperations(Queue.Transfer, queue, wait, signal, &it);
 }
 
 pub fn fillBuffer(device: *Device, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.FillBufferInfo) !void {
@@ -720,13 +720,13 @@ pub fn fillBuffer(device: *Device, wait: ?*const mango.SemaphoreOperation, signa
 pub fn clearColorImage(device: *Device, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.ClearColorInfo) !void {
     const queue = device.queues.getPtr(.fill);
     var it: Queue.Fill.Iterator = .initColor(info);
-    try pushOperations(Queue.Fill, queue, wait, signal, &it);    
+    try pushOperations(Queue.Fill, queue, wait, signal, &it);
 }
 
 pub fn clearDepthStencilImage(device: *Device, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.ClearDepthStencilInfo) !void {
     const queue = device.queues.getPtr(.fill);
     var it: Queue.Fill.Iterator = .initDepth(info);
-    try pushOperations(Queue.Fill, queue, wait, signal, &it);    
+    try pushOperations(Queue.Fill, queue, wait, signal, &it);
 }
 
 fn pushOperations(comptime Operation: type, queue: *Queue, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, it: *Operation.Iterator) !void {

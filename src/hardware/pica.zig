@@ -773,11 +773,11 @@ pub const Graphics = extern struct {
             _unused3: u7 = 0,
         };
 
-        /// (z_clip / w_clip) * scale + bias 
+        /// (z_clip / w_clip) * scale + bias
         pub const Depth = extern struct {
             pub const Mode = enum(u1) {
                 /// Precision is evenly distributed.
-                ///   
+                ///
                 /// Multiplies the final depth value by `w`
                 /// resulting in z_clip * scale + bias * w_clip
                 w,
@@ -1050,7 +1050,7 @@ pub const Graphics = extern struct {
     ///
     /// The final output has 3 different modes:
     ///   - `standard` -> no special effects are added
-    ///   - `fog` -> a fog effect is added to the final output; the factor is calculated from 
+    ///   - `fog` -> a fog effect is added to the final output; the factor is calculated from
     ///   a lookup table indexed by remapping the fragment depth from [0.0, 1.0] to [0, 127].
     ///   Final output is mixed with `fog_color` based on the factor stored in the LUT.
     ///   - `gas` -> needs more RE, interacts with the `gas` output merger mode.

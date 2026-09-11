@@ -1,7 +1,7 @@
 //! Definitions for MMIO `MIC` (MICrophone) registers.
 //!
 //! Based on the documentation found in 3dbrew & GBATEK:
-//!   - https://www.3dbrew.org/wiki/MIC_Registers 
+//!   - https://www.3dbrew.org/wiki/MIC_Registers
 //!   - https://problemkaputt.de/gbatek.htm#3dssoundandmicrophone
 
 pub const SampleRate = enum(u2) {
@@ -29,7 +29,7 @@ pub const Interrupt = enum(u2) {
 };
 
 pub const Control = packed struct(u16) {
-    format: Format, 
+    format: Format,
     sample_rate: SampleRate,
     _unused0: u4,
     fifo_empty: bool,

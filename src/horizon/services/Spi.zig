@@ -1,6 +1,6 @@
 //! Driving SPI devices, did you think otherwise?
 //!
-//! Based on GBATEK & the implementation `3ds_spi` by `@luigoalma` under `The Unlicense`: 
+//! Based on GBATEK & the implementation `3ds_spi` by `@luigoalma` under `The Unlicense`:
 //! - https://github.com/luigoalma/3ds_spi
 //! - https://www.problemkaputt.de/gbatek-3ds-spi-devices.htm
 

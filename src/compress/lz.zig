@@ -290,7 +290,7 @@ pub const Lookup = struct {
     chain_pos: u12,
 
     pub fn hash(seq: Seq) Hash {
-        // taken literally from zig's 0.16.0 `std.compress.flate` 
+        // taken literally from zig's 0.16.0 `std.compress.flate`
         return @truncate((@as(u32, seq) *% 0x9E3779B1) >> (32 - hash_bits));
     }
 };
@@ -338,7 +338,7 @@ pub fn Compress(comptime context: type) type {
             blocks: [@bitSizeOf(u8) * context.Match.max_size]u8,
             blocks_len: u32,
         };
-        
+
         const rebase_min_preserved = context.history_len;
         const rebase_reserved_capacity = context.Match.max_len + Lookup.seq_len;
 
@@ -447,7 +447,7 @@ pub fn Compress(comptime context: type) type {
 
                 var match_unadded = match.len - 1;
                 lazy: {
-                    if (match.len >= c.opts.lazy) break :lazy; 
+                    if (match.len >= c.opts.lazy) break :lazy;
                     if (match.len >= c.writer.buffered()[i..].len) {
                         @branchHint(.unlikely); // Only end of stream
                         break :lazy;
@@ -477,7 +477,7 @@ pub fn Compress(comptime context: type) type {
                 std.debug.assert(std.mem.eql(
                     u8,
                     buffered[match_start..][0..match.len],
-                    buffered[match_start - match.offset..][0..match.len],
+                    buffered[match_start - match.offset ..][0..match.len],
                 )); // This assert also seems to help codegen.
 
                 try c.outputBytes(buffered[last_unmatched..match_start]);
@@ -507,9 +507,9 @@ pub fn Compress(comptime context: type) type {
             } else {
                 try c.outputBytes(buffered[last_unmatched..i]);
             }
-            
+
             c.history_len = @min(i, context.history_len);
-            const preserved = buffered[i - c.history_len..];
+            const preserved = buffered[i - c.history_len ..];
             std.debug.assert(preserved.len >= @max(rebase_min_preserved, preserve));
             @memmove(buffered[0..preserved.len], preserved);
             w.end = preserved.len;

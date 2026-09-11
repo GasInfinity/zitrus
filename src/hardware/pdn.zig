@@ -84,7 +84,7 @@ pub const Clock = extern struct {
         enable: bool,
         _: u6 = 0,
     };
-    
+
     /// 0x00
     gpu: Gpu,
     /// 0x04
@@ -170,13 +170,12 @@ pub const Registers = extern struct {
     lgr: Lgr,
 
     comptime {
-        std.debug.assert(@offsetOf(Registers, "sleep") == 0x000); 
-        std.debug.assert(@offsetOf(Registers, "legacy") == 0x100); 
-        std.debug.assert(@offsetOf(Registers, "clock") == 0x200); 
-        std.debug.assert(@offsetOf(Registers, "lgr") == 0x300); 
+        std.debug.assert(@offsetOf(Registers, "sleep") == 0x000);
+        std.debug.assert(@offsetOf(Registers, "legacy") == 0x100);
+        std.debug.assert(@offsetOf(Registers, "clock") == 0x200);
+        std.debug.assert(@offsetOf(Registers, "lgr") == 0x300);
     }
 };
-
 
 comptime {
     _ = Sleep;

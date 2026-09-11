@@ -1,9 +1,9 @@
 //! (Channel)Sound or (Ctr)Sound (?)
 //!
-//! Completely independent from the DSP; 
+//! Completely independent from the DSP;
 //! Primarily used for sound effects but can be used to stream audio.
 //!
-//! Channels 0-7 are allocated to direct sounds; processes will always 
+//! Channels 0-7 are allocated to direct sounds; processes will always
 //! acquire channels 8-32. All processes acquire always the same channels.
 //!
 //! Sounds played directly (on channels 0-7) seem to cut off all DSP output.
@@ -287,7 +287,7 @@ pub const Command = extern struct {
 
             pub fn buffer(capture: Capture.Id, address: hardware.PhysicalAddress, size: u32) SetCaptureBuffer {
                 return .{ .capture = .init(capture), .address = address, .size = size };
-            } 
+            }
         };
 
         pub const SetCapture = extern struct {
@@ -384,7 +384,7 @@ pub const Channel = extern struct {
     pub const Format = csnd.Channel.Format;
     pub const Repeat = csnd.Channel.Repeat;
     pub const WaveDuty = csnd.Channel.WaveDuty;
-    pub const ImaAdPcm= csnd.Channel.ImaAdPcm;
+    pub const ImaAdPcm = csnd.Channel.ImaAdPcm;
     pub const Id = enum(u5) {
         pub const Mask = hardware.BitpackedArray(bool, 32);
 
@@ -459,7 +459,7 @@ pub const DirectSound = extern struct {
     volume: [2]u32,
     linearly_interpolate: bool = true,
     _unused2: [3]u8 = undefined,
-    /// Transition gain of the previous sound; the volume of the previous 
+    /// Transition gain of the previous sound; the volume of the previous
     /// sound will be linearly interpolated from `1.0` to `transition_gain`
     /// for `transition_time` milliseconds and the new sound will play afterwards.
     transition_gain: f32 = 1.0,
@@ -474,7 +474,7 @@ pub const DirectSound = extern struct {
     /// This doesn't mean it *will* be heard as CSND still
     /// fades the master volume on sleep and wakeup.
     ignore_sleep: bool = false,
-    _unused3: [1]u8 = undefined, 
+    _unused3: [1]u8 = undefined,
 
     comptime {
         std.debug.assert(@sizeOf(DirectSound) == 0x3C);
@@ -523,7 +523,7 @@ pub fn sendInitialize(snd: ChannelSound, shared_memory_size: u32, acquired_state
         .acquired_state_offset = acquired_state_offset,
         .channel_state_offset = channel_state_offset,
         .capture_unit_state_offset = capture_unit_state_offset,
-        .direct_sound_state_offset = direct_sound_state_offset, 
+        .direct_sound_state_offset = direct_sound_state_offset,
     }, .{})).cases()) {
         .success => |s| s.value.handles.wrapped,
         .failure => |code| horizon.unexpectedResult(code),

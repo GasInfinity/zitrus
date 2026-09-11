@@ -64,7 +64,7 @@ pub const Match = packed struct(u8) {
             const encoded: Match = .{
                 .extra = @intCast(encoded_len >> 12),
                 .len = .big_extra,
-            }; 
+            };
 
             try writer.writeStruct(encoded, .little);
             try writer.writeByte(@intCast((encoded_len >> 4) & 0xFF));

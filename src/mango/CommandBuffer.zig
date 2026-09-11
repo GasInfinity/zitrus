@@ -1144,12 +1144,12 @@ const Dumper = struct {
 
     pub fn format(dumper: Dumper, writer: *std.Io.Writer) std.Io.Writer.Error!void {
         const cmd = dumper.cmd;
-        try writer.print("CommandBuffer 0x{X:0>8} ({t})\n", .{@intFromPtr(cmd), cmd.state});
+        try writer.print("CommandBuffer 0x{X:0>8} ({t})\n", .{ @intFromPtr(cmd), cmd.state });
 
         var current = cmd.head;
         var i: usize = 1;
         while (current) |node| : (i += 1) {
-            try writer.print("{d}. {t} -> 0x{X:0>8}\n", .{i, node.kind, @intFromPtr(node)});
+            try writer.print("{d}. {t} -> 0x{X:0>8}\n", .{ i, node.kind, @intFromPtr(node) });
 
             switch (node.kind) {
                 .graphics => {
@@ -1157,7 +1157,7 @@ const Dumper = struct {
                     try writer.print(
                         \\  with head 0x{X:0>8} (virtual) and length (in words) {d}
                         \\
-                    , .{@intFromPtr(gfx.head), gfx.len});
+                    , .{ @intFromPtr(gfx.head), gfx.len });
                 },
                 .fill => {
                     const op: *CommandBuffer.operation.Fill = @alignCast(@fieldParentPtr("node", node));
@@ -1166,7 +1166,7 @@ const Dumper = struct {
                     try writer.print(
                         \\  with address 0x{X:0>8} (device/physical), length (in bytes) {d} and pattern 0x{X:0>8} ({t} bits)
                         \\
-                    , .{@intFromEnum(fill.ptr), fill.extra.len, fill.value, fill.extra.size});
+                    , .{ @intFromEnum(fill.ptr), fill.extra.len, fill.value, fill.extra.size });
                 },
                 .transfer => {
                     const op: *CommandBuffer.operation.Transfer = @alignCast(@fieldParentPtr("node", node));
@@ -1176,7 +1176,7 @@ const Dumper = struct {
                         .copy => try writer.print(
                             \\ copy src 0x{X:0>8} (device/physical) to dst 0x{X:0>8} (device/physical), length (in bytes) {d}
                             \\
-                        , .{@intFromEnum(transfer.src), @intFromEnum(transfer.dst), transfer.flags.extra.copy}),
+                        , .{ @intFromEnum(transfer.src), @intFromEnum(transfer.dst), transfer.flags.extra.copy }),
                         .linear_tiled, .tiled_linear, .tiled_tiled => try writer.print(
                             \\ {t} (32x32: {}, downscale: {t}) src 0x{X:0>8} (device/physical) {d}x{d}@{t} to dst 0x{X:0>8} (device/physical) {d}x{d}@{t} 
                             \\
@@ -1200,7 +1200,7 @@ const Dumper = struct {
                     try writer.print(
                         \\  for query {d} and pool 0x{X:0>8}
                         \\
-                    , .{query_op.query, @intFromPtr(query_op.pool)});
+                    , .{ query_op.query, @intFromPtr(query_op.pool) });
                 },
             }
 

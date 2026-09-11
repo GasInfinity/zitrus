@@ -148,7 +148,7 @@ pub fn allocCompress(gpa: std.mem.Allocator, buffer: []u8, data: []u8, opts: Com
     var rr: ReverseReader = .init(&.{}, data);
     var allocating: std.Io.Writer.Allocating = try .initCapacity(gpa, data.len);
     defer allocating.deinit();
-    
+
     var compress: Compress = .init(&allocating.writer, buffer, opts);
     std.debug.assert(try rr.reader.streamRemaining(&compress.writer) == data.len);
     try compress.finish();

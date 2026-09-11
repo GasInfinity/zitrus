@@ -1,6 +1,6 @@
 //! Definitions for MMIO `SPI` registers.
 //!
-//! Based on the documentation found in 3dbrew & GBATEK: 
+//! Based on the documentation found in 3dbrew & GBATEK:
 //!  - https://www.3dbrew.org/wiki/SPI_Registers#SPI_CNT
 //!  - https://www.problemkaputt.de/gbatek-3ds-spi-registers.htm
 

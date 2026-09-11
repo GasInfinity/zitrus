@@ -28,7 +28,6 @@ pub const SemaphoreOperation = struct {
     }
 };
 
-
 pub const Fill = extern struct {
     pub const Size = pica.DisplayController.Framebuffer.Pixel.Size;
     pub const Extra = packed struct(u32) {
@@ -48,9 +47,8 @@ pub const Fill = extern struct {
 
         value: u32,
         size: Size,
-        
-        pub fn init() Iterator {
-        }
+
+        pub fn init() Iterator {}
 
         pub fn initColor(info: *const mango.ClearColorInfo) Iterator {
             const color = info.color;
@@ -67,15 +65,11 @@ pub const Fill = extern struct {
                     }),
                     .@"32",
                 },
-                .b8g8r8_unorm => .{
-                    3,
-                    @as(u24, @bitCast(pica.ColorFormat.Bgr888{
-                        .r = color[0],
-                        .g = color[1],
-                        .b = color[2],
-                    })),
-                    .@"24"
-                },
+                .b8g8r8_unorm => .{ 3, @as(u24, @bitCast(pica.ColorFormat.Bgr888{
+                    .r = color[0],
+                    .g = color[1],
+                    .b = color[2],
+                })), .@"24" },
                 .r5g6b5_unorm_pack16, .r5g5b5a1_unorm_pack16, .r4g4b4a4_unorm_pack16, .g8r8_unorm => .{
                     @sizeOf(u16),
                     @as(u16, switch (b_image.info.format) {

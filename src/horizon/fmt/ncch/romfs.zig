@@ -104,7 +104,7 @@ pub const Ivfc = extern struct {
                 l2_consumed_bytes = 0;
 
                 l0_hasher.update(&l1_hash);
-                l1_consumed_bytes += l1_hash.len; 
+                l1_consumed_bytes += l1_hash.len;
 
                 try writer.interface.writeAll(&l1_hash);
             }

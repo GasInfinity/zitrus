@@ -311,7 +311,7 @@ pub const Code = packed struct(i32) {
     /// 0xc960b7f8
     pub const csnd_not_initialized: Code = .result(.status, .internal, .csnd, .not_initialized);
     /// 0xc940b401
-    pub const csnd_direct_sound_sleeping: Code = .specificResult(.status, .status_changes, .csnd, .direct_sound_sleeping); 
+    pub const csnd_direct_sound_sleeping: Code = .specificResult(.status, .status_changes, .csnd, .direct_sound_sleeping);
     /// 0xc940b402
     pub const csnd_direct_sound_priority: Code = .specificResult(.status, .status_changes, .csnd, .direct_sound_priority);
 

@@ -149,7 +149,7 @@ pub const command = struct {
     }, struct {});
     /// May fail with 0xd8208ff8 (not initialized)
     pub const Deinitialize = ipc.Command(Id, .deinitialize, struct {}, struct {});
-    /// May fail with 0xd8208ff8 (not initialized) 0xc9408c01 (shell closed while not allowing to record with it closed), 0xe1008ffd (offset + size oob), 
+    /// May fail with 0xd8208ff8 (not initialized) 0xc9408c01 (shell closed while not allowing to record with it closed), 0xe1008ffd (offset + size oob),
     pub const Start = ipc.Command(Id, .start, struct {
         encoding: Encoding,
         sample_rate: SampleRate,
@@ -188,7 +188,7 @@ pub const command = struct {
         powered: bool,
     });
     /// Straight wrapper of cdc:MIC, forwards it's result.
-    pub const SetIirFilter= ipc.Command(Id, .set_iir_filter, struct {
+    pub const SetIirFilter = ipc.Command(Id, .set_iir_filter, struct {
         powered: bool,
     }, struct {});
     /// Cannot fail
@@ -234,9 +234,9 @@ pub const command = struct {
         //   sample_buf[cur] = state.last_sample
         //
         //   if (mic.cnt.fifo_overrun) state.was_overrun = true // Simplified, will also clear the fifo and restart sampling
-        // 
+        //
         // flag = true (default), with conditions as above -> same as above but an overrun happening will restart sampling without the mumbo jumbo that happens above.
-        // flag = true (default), without conditions -> much more complex, maintains some state to track elapsed ticks and the current samples written; calculating how many samples 
+        // flag = true (default), without conditions -> much more complex, maintains some state to track elapsed ticks and the current samples written; calculating how many samples
         // should be added to the buffer.
         //
         // Maybe the flag is some sort of "raw mode"? "legacy mode"? idk man

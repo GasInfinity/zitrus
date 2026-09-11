@@ -54,7 +54,7 @@ const root = @import("root");
 
 pub const options: Options = if (@hasDecl(root, "zitrus_options"))
     @field(root, "zitrus_options")
-else 
+else
     .{};
 
 pub const std_os_options: std.Options.OperatingSystem = if (builtin.target.os.tag == .@"3ds")

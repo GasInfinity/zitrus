@@ -85,16 +85,16 @@ pub const Cachable = packed struct(u32) {
     pub inline fn read(comptime kind: Kind) Cachable {
         return asm volatile ("mrc p15, 0, %[cnt], c2, c0, %[kind]"
             : [cnt] "=r" (-> Cachable),
-            : [kind] "i" (@intFromEnum(kind))
-        ); 
+            : [kind] "i" (@intFromEnum(kind)),
+        );
     }
 
     pub inline fn write(cachable: Cachable, comptime kind: Kind) void {
         return asm volatile ("mcr p15, 0, %[cnt], c2, c0, %[kind]"
             :
             : [cnt] "r" (cachable),
-              [kind] "i" (@intFromEnum(kind))
-        ); 
+              [kind] "i" (@intFromEnum(kind)),
+        );
     }
 };
 
@@ -105,14 +105,14 @@ pub const Bufferable = packed struct(u32) {
     pub inline fn read() Bufferable {
         return asm volatile ("mrc p15, 0, %[cnt], c3, c0, 0"
             : [cnt] "=r" (-> Bufferable),
-        ); 
+        );
     }
 
     pub inline fn write(bufferable: Bufferable) void {
-        return asm volatile ("mcr p15, 0, %[cnt], c3, c0, 0" 
+        return asm volatile ("mcr p15, 0, %[cnt], c3, c0, 0"
             :
             : [cnt] "r" (bufferable),
-        ); 
+        );
     }
 };
 
@@ -127,25 +127,24 @@ pub const Access = packed struct(u32) {
             _,
         };
 
-
         area: BitpackedArray(Extended.Permission, 8),
 
         pub inline fn read(comptime kind: Kind) Cachable {
             return asm volatile ("mrc p15, 0, %[cnt], c5, c0, %[kind]"
                 : [cnt] "=r" (-> Access),
-                : [kind] "i" (2 + @intFromEnum(kind))
-            ); 
+                : [kind] "i" (2 + @intFromEnum(kind)),
+            );
         }
 
         pub inline fn write(access: Access, comptime kind: Kind) void {
             return asm volatile ("mcr p15, 0, %[cnt], c5, c0, %[kind]"
                 :
                 : [cnt] "r" (access),
-                  [kind] "i" (2 + @intFromEnum(kind))
-            ); 
+                  [kind] "i" (2 + @intFromEnum(kind)),
+            );
         }
     };
-    
+
     pub const Permission = enum(u2) {
         none,
         p_rw,
@@ -159,19 +158,18 @@ pub const Access = packed struct(u32) {
     pub inline fn read(comptime kind: Kind) Cachable {
         return asm volatile ("mrc p15, 0, %[cnt], c5, c0, %[kind]"
             : [cnt] "=r" (-> Access),
-            : [kind] "i" (@intFromEnum(kind))
-        ); 
+            : [kind] "i" (@intFromEnum(kind)),
+        );
     }
 
     pub inline fn write(access: Access, comptime kind: Kind) void {
         return asm volatile ("mcr p15, 0, %[cnt], c5, c0, %[kind]"
             :
             : [cnt] "r" (access),
-              [kind] "i" (@intFromEnum(kind))
-        ); 
+              [kind] "i" (@intFromEnum(kind)),
+        );
     }
 };
-
 
 pub const Region = packed struct(u32) {
     pub const Size = enum(u5) {
@@ -202,20 +200,20 @@ pub const Region = packed struct(u32) {
     size: Size,
     _unused0: u6 = 0,
     base: u20,
-    
+
     pub inline fn read(comptime unit: u3) Region {
         return asm volatile ("mrc p15, 0, %[cnt], c5, c%[unit:c], 0"
             : [cnt] "=r" (-> Region),
-            : [unit] "i" (@as(u32, unit))
-        ); 
+            : [unit] "i" (@as(u32, unit)),
+        );
     }
 
     pub inline fn write(region: Region, comptime unit: u3) void {
         return asm volatile ("mcr p15, 0, %[cnt], c5, c%[unit:c], 0"
             :
             : [cnt] "r" (region),
-              [unit] "i" (@as(u32, unit))
-        ); 
+              [unit] "i" (@as(u32, unit)),
+        );
     }
 };
 

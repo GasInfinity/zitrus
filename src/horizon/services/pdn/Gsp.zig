@@ -41,9 +41,7 @@ pub const command = struct {
     };
 };
 
-comptime {
-
-}
+comptime {}
 
 const Gsp = @This();
 

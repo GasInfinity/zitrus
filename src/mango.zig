@@ -43,9 +43,9 @@ pub const MemoryRequirements = extern struct {
 
 pub const MemoryBarrierTarget = packed struct(u8) {
     /// Currently bound color and depth attachments
-    render_attachments: bool = false, 
+    render_attachments: bool = false,
     /// Currently bound sampled images
-    sampled_images: bool = false, 
+    sampled_images: bool = false,
     _: u6 = 0,
 };
 
@@ -702,7 +702,9 @@ pub const CullMode = enum(u8) {
     /// Triangles with a clockwise winding order are culled.
     cw,
 
-    comptime { std.debug.assert(std.meta.eql(@typeInfo(CullMode).@"enum".fields, @typeInfo(pica.CullMode).@"enum".fields)); }
+    comptime {
+        std.debug.assert(std.meta.eql(@typeInfo(CullMode).@"enum".fields, @typeInfo(pica.CullMode).@"enum".fields));
+    }
 };
 
 pub const DisplayConfigureInfo = extern struct {
@@ -1184,7 +1186,7 @@ pub const PresentInfo = extern struct {
 
     display: Display,
     image_index: u8,
-    flags: Flags = .{}, 
+    flags: Flags = .{},
 };
 
 pub const SemaphoreOperation = extern struct {

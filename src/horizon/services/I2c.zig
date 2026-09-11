@@ -88,31 +88,31 @@ pub const command = struct {
         devices_len: u32,
         devices: ipc.Static(0),
     }, struct {});
-    pub const ReadRegister8= ipc.Command(Id, .read_register8, struct {
+    pub const ReadRegister8 = ipc.Command(Id, .read_register8, struct {
         device: Device,
         register: u8,
     }, struct {
         value: u8,
     });
-    pub const ReadRegister16= ipc.Command(Id, .read_register16, struct {
+    pub const ReadRegister16 = ipc.Command(Id, .read_register16, struct {
         device: Device,
         register: u16,
     }, struct {
         value: u16,
     });
-    pub const WriteRegisters8= ipc.Command(Id, .write_registers8, struct {
+    pub const WriteRegisters8 = ipc.Command(Id, .write_registers8, struct {
         device: Device,
         register: u8,
         values_len: u32,
         values: ipc.Static(1),
     }, struct {});
-    pub const WriteRegisters16= ipc.Command(Id, .write_registers16, struct {
+    pub const WriteRegisters16 = ipc.Command(Id, .write_registers16, struct {
         device: Device,
         register: u16,
         values_len: u32,
         values: ipc.Static(1),
     }, struct {});
-    pub const ReadRegisters8= ipc.Command(Id, .read_registers8, struct {
+    pub const ReadRegisters8 = ipc.Command(Id, .read_registers8, struct {
         pub const StaticOutput = struct { values: []u8 };
         device: Device,
         register: u8,
@@ -121,7 +121,7 @@ pub const command = struct {
         values: ipc.Static(0),
     });
     // pub const WriteRegisters8_2= ipc.Command(Id, .write_registers8, struct {}, struct {});
-    pub const ReadRegisters8Delayed= ipc.Command(Id, .read_registers8_delayed, struct {
+    pub const ReadRegisters8Delayed = ipc.Command(Id, .read_registers8_delayed, struct {
         pub const StaticOutput = struct { values: []u8 };
 
         device: Device,
@@ -169,9 +169,7 @@ pub const command = struct {
         pub const StaticOutput = struct { values: []u8 };
         device: Device,
         values_len: u32,
-    }, struct {
-        values: ipc.Static(0)
-    });
+    }, struct { values: ipc.Static(0) });
 
     pub const Id = enum(u16) {
         write_register_masked8 = 0x0001,

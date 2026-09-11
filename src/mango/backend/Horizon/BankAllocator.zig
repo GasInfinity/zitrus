@@ -12,7 +12,7 @@ last_allocated_hint: Index,
 
 pub fn init(buffer: *align(4096) [size]u8) BankAllocator {
     return .{
-        .buffer = buffer, 
+        .buffer = buffer,
         .map = .empty,
         .last_allocated_hint = 0,
     };
@@ -62,7 +62,7 @@ pub fn alloc(ba: *BankAllocator, n: usize) error{OutOfMemory}![]align(granularit
     map.setRangeValue(.{ .start = map_start, .end = map_end }, true);
 
     const buffer = ba.buffer[(map_start * granularity)..][0..aligned_len];
-    if (trace) log.debug("alloc 0x{X:0>8} (index {d}-{d}), {d} pages", .{@intFromPtr(buffer.ptr), map_start, found_end, blocks_len});
+    if (trace) log.debug("alloc 0x{X:0>8} (index {d}-{d}), {d} pages", .{ @intFromPtr(buffer.ptr), map_start, found_end, blocks_len });
 
     return @alignCast(buffer);
 }
@@ -76,7 +76,7 @@ pub fn free(bmp: *BankAllocator, buffer: []const u8) void {
     const block_index = @divExact((ptr - @intFromPtr(bmp.buffer.ptr)), granularity);
     const blocks_len = @divExact(aligned_len, granularity);
 
-    if (trace) log.debug("free 0x{X:0>8} (index {d}-{d}), {d} pages", .{ptr, block_index, block_index + blocks_len - 1, blocks_len});
+    if (trace) log.debug("free 0x{X:0>8} (index {d}-{d}), {d} pages", .{ ptr, block_index, block_index + blocks_len - 1, blocks_len });
 
     // Sanity check (double free / corrupted bitmap)
     for (0..blocks_len) |i| std.debug.assert(bmp.map.isSet(block_index + i));

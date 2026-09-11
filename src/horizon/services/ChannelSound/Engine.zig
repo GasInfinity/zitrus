@@ -17,7 +17,7 @@ pub fn initCapacityAddress(csnd: ChannelSound, max_commands: usize, shared_addre
     const shm_size = std.mem.alignForward(usize, state_offset + @sizeOf(ChannelSound.State), horizon.heap.page_size);
 
     const handles = try csnd.sendInitialize(
-        shm_size, 
+        shm_size,
         state_offset + @offsetOf(ChannelSound.State, "acquired"),
         state_offset + @offsetOf(ChannelSound.State, "channels"),
         state_offset + @offsetOf(ChannelSound.State, "captures"),
@@ -29,7 +29,7 @@ pub fn initCapacityAddress(csnd: ChannelSound, max_commands: usize, shared_addre
     errdefer handles.shared_memory.unmap(shared_address);
 
     const commands: [*]align(horizon.heap.page_size) Command = @ptrCast(shared_address);
-    const state: *ChannelSound.State = @alignCast(@ptrCast(shared_address + state_offset));
+    const state: *ChannelSound.State = @ptrCast(@alignCast(shared_address + state_offset));
 
     const available_mask = try csnd.sendAcquireSoundChannels();
     const available_channels = @popCount(@as(u32, @bitCast(available_mask)));
@@ -74,7 +74,7 @@ pub fn stopDirect(engine: *Engine, csnd: ChannelSound, id: DirectSound.Id) !void
         .format = .init(.pcm8),
         .sample_rate = 44100,
         .buffer = @splat(.zero),
-        // We need at least some samples; CSND doesn't update 
+        // We need at least some samples; CSND doesn't update
         // the priority if there's no audio.
         .size = 32,
         .ima_state = undefined,
@@ -93,7 +93,7 @@ pub fn waitCompletionTimeout(engine: *Engine, first: *const Command, timeout: ho
     while (!@atomicLoad(bool, &first.first_finished, .monotonic)) {
         try engine.handles.mutex.wait(timeout);
         defer engine.handles.mutex.release();
-    } 
+    }
 }
 
 const Engine = @This();

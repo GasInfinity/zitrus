@@ -55,17 +55,17 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
     defer img.deinit(arena);
 
     if (!std.math.isPowerOfTwo(img.width) or !std.math.isPowerOfTwo(img.height)) {
-        log.err("image dimensions {d}x{d} are not a power of two (e.g 64x64, 64x128, etc...)", .{img.width, img.height});
+        log.err("image dimensions {d}x{d} are not a power of two (e.g 64x64, 64x128, etc...)", .{ img.width, img.height });
         return 1;
     }
 
     if (img.width < 8 or img.height < 8) {
-        log.err("image dimensions {d}x{d} below minimum of 8x8", .{img.width, img.height});
+        log.err("image dimensions {d}x{d} below minimum of 8x8", .{ img.width, img.height });
         return 1;
     }
 
     if (img.width > 1024 or img.height > 1024) {
-        log.err("image dimensions {d}x{d} exceed maximum of 1024x1024", .{img.width, img.height});
+        log.err("image dimensions {d}x{d} exceed maximum of 1024x1024", .{ img.width, img.height });
         return 1;
     }
 
@@ -96,7 +96,7 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
     switch (args.format) {
         .abgr8888 => {
             const pixels = try arena.alloc(OutputFormat.Abgr8888, @sizeOf(OutputFormat.Abgr8888) * img.width * img.height);
-            defer arena.free(pixels); 
+            defer arena.free(pixels);
             try img.convert(arena, .rgba32);
 
             pica.morton.convert(.tile, 8, @ptrCast(pixels), @ptrCast(img.pixels.rgba32), .full(img.width, img.height, @sizeOf(OutputFormat.Abgr8888)));
@@ -121,7 +121,7 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
             var i: usize = 0;
             for (0..etc_height) |y| {
                 for (0..etc_width) |x| {
-                    encoding.async(io, encodeOneEtc, .{&img, x, y, &blocks[i], args.quality});
+                    encoding.async(io, encodeOneEtc, .{ &img, x, y, &blocks[i], args.quality });
                     i += 1;
                 }
             }
@@ -152,7 +152,7 @@ fn encodeOneEtc(img: *const zigimg.Image, block_x: usize, block_y: usize, result
         for (0..etc.pixels_per_block) |dx| {
             const x = cx + dx;
             const pix = pixels[pix_start + x];
-            etc_pixels[i] = .{pix.r, pix.g, pix.b, 255};
+            etc_pixels[i] = .{ pix.r, pix.g, pix.b, 255 };
             i += 1;
         }
     }

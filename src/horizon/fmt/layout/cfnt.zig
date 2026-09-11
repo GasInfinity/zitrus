@@ -52,7 +52,7 @@ pub const Character = extern struct {
         _unused0: [2]u8 = @splat(0),
         next: u32,
     };
-    
+
     pub const Info = extern struct {
         start: u16,
         /// Inclusive
@@ -62,7 +62,7 @@ pub const Character = extern struct {
 
     left: u8,
     glyph_width: u8,
-    character_width: u8, 
+    character_width: u8,
 };
 
 const zitrus = @import("zitrus");

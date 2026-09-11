@@ -73,7 +73,7 @@ pub fn run(args: LzRev, io: std.Io, arena: std.mem.Allocator) !u8 {
         try output_writer.interface.flush();
         return 0;
     }
-    
+
     var buffer: [lzrev.max_window_len]u8 = undefined;
     const compressed = try lzrev.allocCompress(arena, &buffer, data, .default);
     defer arena.free(compressed);

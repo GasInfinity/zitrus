@@ -55,7 +55,7 @@ pub const graphics_state = struct {
         pub const reference_must_be_set =
             \\[CommandBuffer] alpha test reference must be set
             \\| dynamic state is mandatory, alpha test is enabled
-        ; 
+        ;
     };
 
     pub const depth_test = struct {
@@ -74,7 +74,7 @@ pub const graphics_state = struct {
             \\| dynamic state is mandatory, depth test is enabled
         ;
 
-        pub const op_must_be_set = 
+        pub const op_must_be_set =
             \\[CommandBuffer] depth compare operation must be set
             \\| dynamic state is mandatory, depth test is enabled
         ;
@@ -89,7 +89,7 @@ pub const graphics_state = struct {
         pub const lookup_table_must_be_set =
             \\[CommandBuffer] fog lookup table must be set
             \\| dynamic state is mandatory, fog is enabled
-        ; 
+        ;
     };
 };
 
