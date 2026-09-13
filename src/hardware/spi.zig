@@ -62,12 +62,11 @@ pub const NewBus = extern struct {
         rate: Rate,
         _unused0: u3 = 0,
         select: Device,
-        _unused1: u5 = 0,
+        _unused1: u4 = 0,
         @"4bit": bool,
         direction: Direction,
         _unused2: u1 = 0,
         busy: bool,
-        _unused3: u1 = 0,
     };
 
     pub const AutoPoll = packed struct(u32) {
@@ -76,6 +75,7 @@ pub const NewBus = extern struct {
         timeout: u4,
         _unused1: u4 = 0,
         poll_offset: u3,
+        _unused2: u3 = 0,
         poll_set: bool,
         busy: bool,
     };
@@ -97,6 +97,26 @@ pub const NewBus = extern struct {
     irq_status: Interrupt,
 };
 
+pub const Registers = extern struct {
+    /// 0x000
+    bus: Bus,
+    _unused0: [0x7fc]u8,
+    /// 0x800
+    new_bus: NewBus,
+
+    comptime {
+        std.debug.assert(@offsetOf(Registers, "bus") == 0x000);
+        std.debug.assert(@offsetOf(Registers, "new_bus") == 0x800);
+    }
+};
+
+comptime {
+    _ = Registers;
+    _ = Bus;
+    _ = NewBus;
+}
+
+const std = @import("std");
 const zitrus = @import("zitrus");
 const hardware = zitrus.hardware;
 const LsbRegister = hardware.LsbRegister;

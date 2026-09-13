@@ -109,12 +109,12 @@ pub fn blockEncoding(block: lz.Block) u1 {
 pub const Compress = lz.Compress(lz11);
 pub const Decompress = lz.Decompress(lz11);
 
-// TODO: Tests
-
 comptime {
     _ = Compress;
     _ = Decompress;
 }
+
+// TODO: Fuzzing in 0.17 as it is broken in 0.16
 
 const testing = std.testing;
 

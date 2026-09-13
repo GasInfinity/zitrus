@@ -139,6 +139,8 @@ pub const Module = enum(u8) {
     pub fn SpecificDescription(comptime module: Module) type {
         return switch (module) {
             .kernel => Description.Kernel,
+            .os => Description.OperatingSystem,
+            .srv => Description.ServiceManager,
             .fs => Description.Filesystem,
             .csnd => Description.ChannelSound,
             .mic => Description.Microphone,
@@ -167,6 +169,18 @@ pub const Description = enum(u10) {
         mutex_not_owned = 31,
         incompatible_permissions = 46,
         out_of_address_arbiters = 51,
+        _,
+    };
+
+    pub const OperatingSystem = enum(u10) {
+        session_closed_by_remote = 26,
+        invalid_ipc_header = 47,
+        invalid_ipc_parameters,
+        _, 
+    };
+
+    pub const ServiceManager = enum(u10) {
+        access_denied = 6,
         _,
     };
 
@@ -277,17 +291,24 @@ pub const Code = packed struct(i32) {
     pub const os_out_of_timers: Code = @bitCast(@as(u32, 0xC8601810));
     pub const os_out_of_address_arbiters: Code = @bitCast(@as(u32, 0xC8601833));
     pub const os_timeout: Code = @bitCast(@as(u32, 0x09401BFE));
-    pub const os_session_closed_by_remote: Code = @bitCast(@as(u32, 0xC920181A));
+    /// 0xc920181a
+    pub const os_session_closed_by_remote: Code = .specificResult(.status, .canceled, .os, .session_closed_by_remote);
     pub const os_port_busy: Code = @bitCast(@as(u32, 0xD0401834));
     pub const os_already_exists: Code = @bitCast(@as(u32, 0xD9001BFC));
-    pub const os_not_found: Code = @bitCast(@as(u32, 0xD8801BFA));
+    /// 0xd8801bfa
+    pub const os_not_found: Code = .result(.permanent, .not_found, .os, .not_found);
+    /// 0xd900182f
+    pub const os_invalid_ipc_header: Code = .specificResult(.permanent, .wrong_arg, .os, .invalid_ipc_header);
+    /// 0xd9001830
+    pub const os_invalid_ipc_parameters: Code = .specificResult(.permanent, .wrong_arg, .os, .invalid_ipc_parameters);
 
     pub const out_of_sync_objects: Code = @bitCast(@as(u32, 0xC8601801));
     pub const out_of_sessions: Code = @bitCast(@as(u32, 0xC8601809));
     pub const out_of_memory: Code = @bitCast(@as(u32, 0xC860180A));
 
     pub const srv_name_out_of_bounds: Code = @bitCast(@as(u32, 0xD9006405));
-    pub const srv_access_denied: Code = @bitCast(@as(u32, 0xD8E06406));
+    /// 0xD8E06406
+    pub const srv_access_denied: Code = .specificResult(.permanent, .invalid_arg, .srv, .access_denied);
     pub const srv_name_embedded_null: Code = @bitCast(@as(u32, 0xD9006407));
     pub const srv_out_of_services: Code = @bitCast(@as(u32, 0xD86067F3));
     pub const srv_process_not_registered: Code = @bitCast(@as(u32, 0xD8806404));

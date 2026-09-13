@@ -301,6 +301,11 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
                         i += 1;
                     }
 
+                    for (kernel.mapped_io_pages) |mapped_io| {
+                        capabilities[i] = .mappedIo(@intCast(mapped_io.address >> 12), mapped_io.read_only);
+                        i += 1;
+                    }
+
                     break :blk capabilities;
                 },
             },
@@ -339,7 +344,7 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
     const exefs_header_aligned_hash_size: u64 = std.mem.alignForward(u64, @sizeOf(ncch.exefs.Header), horizon.fmt.media_unit);
 
     var exefs_header_hash: [0x20]u8 = @splat(0);
-    if (exefs.len > 0) std.crypto.hash.sha2.Sha256.hash(@ptrCast(&exefs[0..@intCast(exefs_header_aligned_hash_size)]), &exefs_header_hash, .{});
+    if (exefs.len > 0) Sha256.hash(@ptrCast(exefs[0..@intCast(exefs_header_aligned_hash_size)]), &exefs_header_hash, .{});
 
     const extended_header_offset: u64 = @sizeOf(ncch.Header.WithSignature);
     const exefs_aligned_offset: u64 = std.mem.alignForward(u64, extended_header_offset + @as(u64, if (extended_header) |_| @sizeOf(ncch.ExtendedHeader) + @sizeOf(ncch.AccessDescriptor) else 0), horizon.fmt.media_unit);
@@ -373,7 +378,7 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
 
     try output_writer.seekTo(0);
     var extended_header_hash: [0x20]u8 = @splat(0);
-    if (extended_header) |*ex_hdr| Sha256.hash(@ptrCast(&ex_hdr), &extended_header_hash, .{});
+    if (extended_header) |*ex_hdr| Sha256.hash(@ptrCast(ex_hdr), &extended_header_hash, .{});
 
     const hdr: ncch.Header = .{
         .content_size = 0,

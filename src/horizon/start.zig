@@ -5,28 +5,35 @@ comptime {
 
     if (builtin.target.os.tag == .@"3ds" and !@hasDecl(root, "_start") and @hasDecl(root, "main")) {
         @export(&_start, .{ .name = "_start" });
-
-        // Ensure we export the .prm section
-        _ = environment;
     }
 }
 
-// XXX: We're doing this as literally the program metadata is embedded in the start of the binary
+// NOTE: We're doing this as literally the program metadata is embedded in the start of the binary
 fn _start() linksection(".text.base") callconv(.naked) noreturn {
-    @setRuntimeSafety(false);
-    asm volatile ("b %[startup]"
-        :
-        : [startup] "X" (&startup),
-    );
-}
-
-// XXX: Use kernel-provided stack size...
-const stack_size: u32 = zitrus.options.stack_size;
-var allocated_stack: [stack_size]u8 align(8) linksection(".bss.allocated_stack") = undefined;
-
-fn startup() callconv(.naked) noreturn {
     @disableInstrumentation();
     @setRuntimeSafety(false);
+
+    if (zitrus.options.stack_size) |_| {
+        asm volatile ("b %[switchStacksAndStart]"
+            :
+            : [switchStacksAndStart] "X" (&switchStacksAndStart),
+        );
+    } else {
+        asm volatile ("b %[callMainAndExit]"
+            :
+            : [callMainAndExit] "X" (&callMainAndExit)
+        );
+    }
+}
+
+fn switchStacksAndStart() callconv(.naked) noreturn {
+    @disableInstrumentation();
+    @setRuntimeSafety(false);
+
+    const Stack = struct {
+        var allocated: [zitrus.options.stack_size.?]u8 align(8) linksection(".bss.allocated_stack") = undefined;
+    };
+
     // TODO: Add .cantunwind: https://github.com/llvm/llvm-project/issues/115891
     asm volatile (
         \\ mov sp, %[allocated_stack]
@@ -34,17 +41,14 @@ fn startup() callconv(.naked) noreturn {
         \\ b %[callMainAndExit]
         :
         : [callMainAndExit] "X" (&callMainAndExit),
-          [allocated_stack] "r" (&allocated_stack),
-          [stack_size] "i" (stack_size),
-
-          // Needed as it will be optimized if not.
-          [program_meta] "p" (&environment.program_meta),
+          [allocated_stack] "r" (&Stack.allocated),
+          [stack_size] "i" (Stack.allocated.len),
         : .{ .memory = true });
 }
 
 fn callMainAndExit() callconv(.c) noreturn {
-    @setRuntimeSafety(false);
     @disableInstrumentation();
+    @setRuntimeSafety(false);
 
     if (!builtin.single_threaded) horizon.tls.initStatic();
 
@@ -134,6 +138,9 @@ inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !U
     if (First == Init) return root.main(base);
 
     if (comptime std.mem.findScalar(type, application_juice, First)) |_| {
+        // Needed to export `.prm` as it will be optimized if not.
+        std.mem.doNotOptimizeAway(&environment.program_meta);
+
         const srv = try horizon.ServiceManager.open();
         defer srv.close();
 

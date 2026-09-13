@@ -70,6 +70,7 @@ pub const Match = packed struct(u16) {
 pub const DecompressionError = error{
     InvalidLzrevBounds,
     InvalidMatch,
+    DecompressionOverflow,
 };
 
 pub fn len(compressed: []const u8) usize {
@@ -109,6 +110,9 @@ pub fn bufDecompress(decompressed: []u8, compressed: []const u8) DecompressionEr
         for (0..@bitSizeOf(Control)) |_| {
             defer current_control = current_control.next();
 
+            // We're overwriting compressed bytes!
+            if (current_decompressed_index < current_compressed_index) return error.DecompressionOverflow;
+
             switch (current_control.match) {
                 .uncompressed => {
                     decompressed[current_decompressed_index] = compressed[current_compressed_index];
@@ -145,17 +149,28 @@ pub fn allocCompress(gpa: std.mem.Allocator, buffer: []u8, data: []u8, opts: Com
     // NOTE: This function is basically a HACK but I will not make a separate compressor just for this :wilted_rose:
     std.debug.assert(data.len <= std.math.maxInt(u24));
 
-    var rr: ReverseReader = .init(&.{}, data);
+    // NOTE: We have to leave some bytes uncompressed orelse we'll overwrite already existing data.
+    // The loader decompresses in-place so it'll overwrite data otherwise.
+    // We'll have to fuzz this!
+    const uncompressed_start = @min(0x15, data.len);
+    const uncompressed_data = data[0..uncompressed_start];
+    const compressing_data = data[uncompressed_start..];
+
     var allocating: std.Io.Writer.Allocating = try .initCapacity(gpa, data.len);
     defer allocating.deinit();
 
-    var compress: Compress = .init(&allocating.writer, buffer, opts);
-    std.debug.assert(try rr.reader.streamRemaining(&compress.writer) == data.len);
-    try compress.finish();
+    try allocating.writer.writeAll(uncompressed_data);
 
-    std.mem.reverse(u8, allocating.written());
+    if (compressing_data.len > 0) {
+        var rr: ReverseReader = .init(&.{}, compressing_data);
+        var compress: Compress = .init(&allocating.writer, buffer, opts);
+        std.debug.assert(try rr.reader.streamRemaining(&compress.writer) == compressing_data.len);
+        try compress.finish();
 
-    const compressed_data_len = allocating.written().len;
+        std.mem.reverse(u8, allocating.written()[uncompressed_start..]);
+    }
+
+    const compressed_data_len = allocating.written().len - uncompressed_start;
     const compressed_len = compressed_data_len + @sizeOf(u32) * 2;
     const footer: Footer = .{
         .compressed_len = @intCast(compressed_len),
@@ -163,7 +178,7 @@ pub fn allocCompress(gpa: std.mem.Allocator, buffer: []u8, data: []u8, opts: Com
     };
 
     try allocating.writer.writeStruct(footer, .little);
-    try allocating.writer.writeInt(u32, @intCast(data.len -% compressed_len), .little);
+    try allocating.writer.writeInt(u32, @intCast(compressing_data.len -% compressed_len), .little);
     return try allocating.toOwnedSlice();
 }
 
@@ -226,6 +241,8 @@ test len {
 test bufDecompress {
     _ = bufDecompress;
 }
+
+// TODO: Fuzzing in 0.17 as it is broken in 0.16
 
 const testing = std.testing;
 

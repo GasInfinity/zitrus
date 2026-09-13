@@ -4,15 +4,15 @@ pub const service = "pdn:g";
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !Gsp {
+pub fn open(srv: ServiceManager) !Gpu {
     return .{ .session = try srv.getService(service, .wait) };
 }
 
-pub fn close(pdn: Gsp) void {
+pub fn close(pdn: Gpu) void {
     pdn.session.close();
 }
 
-pub fn sendControl(pdn: Gsp, enable: bool, reset: bool, reset_registers: bool) !void {
+pub fn sendControl(pdn: Gpu, enable: bool, reset: bool, reset_registers: bool) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(pdn.session, command.Control, .{
         .enable = enable,
@@ -43,7 +43,7 @@ pub const command = struct {
 
 comptime {}
 
-const Gsp = @This();
+const Gpu = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");

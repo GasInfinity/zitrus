@@ -18,7 +18,14 @@ pub const config = @import("hardware/config.zig");
 pub const Trigger = enum(u1) { trigger = 1 };
 
 /// Represents a reset by writing 0 to it.
-pub const ResetLow = enum(u1) { reset = 0, enabled = 1 };
+pub const ResetLow = enum(u1) {
+    resetting = 0,
+    enabled = 1,
+
+    pub fn reset(value: bool) ResetLow {
+        return @enumFromInt(@intFromBool(!value));
+    }
+};
 
 /// Represents a reset by writing 1 to it.
 pub const ResetHigh = enum(u1) { enabled = 0, reset = 1 };

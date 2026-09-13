@@ -16,12 +16,15 @@ All notable changes to this project will be documented in this file.
 - Added `build/MakeCxi`, do note that `ncch make` it is still not finished but now supports compressed code.
 - Added more hardware types in `zitrus.hardware`
 - Added `pdn`, `mic:u`, `spi` and `i2c` services under `pdn.Sleep/Gpu/...`, `MicrophoneUser`, `Spi` and `I2c`
+- Added the possibility to not switch stacks and use the kernel-provided stack by Horizon.
+- Added `horizon.debug.simple_errdisp_panic` which doesn't collect any stacktrace and throws directly.
 
 - Changed `horizon.fmt.ncch.ExtendedHeader` to `horizon.fmt.ncch.Header.Extended`
 - Changed `demo/mango/texture_loading` to load the texture from the RomFS instead of embedding it.
 - Moved `zitrus.horizon.fmt.ncch.ExtendedHeader` -> `zitrus.horizon.fmt.ncch.Header.Extended`
 
 - Removed `zitrus.horizon.fmt.smdh` (-> `zitrus.horizon.fmt.ncch.smdh`), it was deprecated a LONG time ago.
+
 ## [2026-08-21] BREAKING
 
 - Added more validation.

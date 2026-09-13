@@ -28,12 +28,24 @@ pub const Sleep = extern struct {
         _unused5: u3 = 0,
         touch_screen_pressed: bool,
         gamecard_status_changed: bool,
+
+        pub fn int(wake: Wake) u32 {
+            return @bitCast(wake);
+        }
     };
 
+    /// 0x00
     control: Control,
     _unused0: [6]u8,
+    /// 0x08
     wake_enable: Wake,
+    /// 0x0C
     wake_reason: Wake,
+
+    comptime {
+        std.debug.assert(@offsetOf(Sleep, "wake_enable") == 0x08);
+        std.debug.assert(@offsetOf(Sleep, "wake_reason") == 0x0C);
+    }
 };
 
 pub const Legacy = extern struct {
@@ -43,16 +55,16 @@ pub const Legacy = extern struct {
 
 pub const Clock = extern struct {
     pub const Gpu = packed struct(u32) {
-        main: bool,
-        psc: bool,
-        geometry_shader: bool,
-        rasterization: bool,
-        ppf: bool,
+        main: hardware.ResetLow,
+        psc: hardware.ResetLow,
+        geometry_shader: hardware.ResetLow,
+        rasterization: hardware.ResetLow,
+        ppf: hardware.ResetLow,
         /// (?)
-        pdc: bool,
-        pdc_related: bool,
+        pdc: hardware.ResetLow,
+        pdc_related: hardware.ResetLow,
         _unused0: u9 = 0,
-        all: bool,
+        enable: bool,
         _unused1: u15 = 0,
     };
 
@@ -85,6 +97,7 @@ pub const Clock = extern struct {
         _: u6 = 0,
     };
 
+    /// ARM11 holds reset for 0x0C cycles.
     /// 0x00
     gpu: Gpu,
     /// 0x04
@@ -102,6 +115,7 @@ pub const Clock = extern struct {
     /// 0x24
     camera: Enable,
     _unused4: [11]u8,
+    /// ARM11 holds reset for 0x30 cycles.
     /// 0x30
     dsp: Dsp,
     _unused5: [15]u8,
@@ -110,7 +124,11 @@ pub const Clock = extern struct {
     _unused6: [3]u8,
 
     comptime {
+        std.debug.assert(@offsetOf(Clock, "gpu") == 0x00);
+        std.debug.assert(@offsetOf(Clock, "vram") == 0x04);
+        std.debug.assert(@offsetOf(Clock, "lcd") == 0x08);
         std.debug.assert(@offsetOf(Clock, "fcram") == 0x10);
+        std.debug.assert(@offsetOf(Clock, "i2s") == 0x20);
         std.debug.assert(@offsetOf(Clock, "camera") == 0x24);
         std.debug.assert(@offsetOf(Clock, "dsp") == 0x30);
         std.debug.assert(@offsetOf(Clock, "mvd") == 0x40);
@@ -161,12 +179,16 @@ pub const Lgr = extern struct {
 };
 
 pub const Registers = extern struct {
+    /// 0x000
     sleep: Sleep,
     _unused0: [0xf0]u8,
+    /// 0x100
     legacy: Legacy,
     _unused1: [0xdc]u8,
+    /// 0x200
     clock: Clock,
     _unused2: [0xbc]u8,
+    /// 0x300
     lgr: Lgr,
 
     comptime {

@@ -140,16 +140,17 @@ pub fn sendRegisterClient(srv: ServiceManager) !void {
 }
 
 pub fn sendEnableNotification(srv: ServiceManager) !Semaphore {
-    const C = horizon.result.Code;
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.EnableNotification, .{}, .{})).cases()) {
         .success => |s| s.value.notification_received,
-        .failure => |code| if (code == C.srv_process_not_registered) error.ProcessNotFound else horizon.unexpectedResult(code),
+        .failure => |code| switch (code) {
+            .srv_process_not_registered => error.ProcessNotFound,
+            else => horizon.unexpectedResult(code),
+        }
     };
 }
 
 pub fn sendRegisterService(srv: ServiceManager, name: []const u8, max_sessions: i16) !ServerPort {
-    const C = horizon.result.Code;
     std.debug.assert(name.len <= 8);
 
     var req: command.RegisterService.Request = .{
@@ -161,13 +162,18 @@ pub fn sendRegisterService(srv: ServiceManager, name: []const u8, max_sessions: 
 
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.RegisterService, req, .{})).cases()) {
-        .success => |s| s.value.server,
-        .failure => |code| if (code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName else if (code == C.os_already_exists) error.PortAlreadyExists else if (code == C.srv_out_of_services) error.SystemResources else horizon.unexpectedResult(code),
+        .success => |s| s.value.server.wrapped,
+        .failure => |code| switch (code) {
+            .srv_name_out_of_bounds => error.BadPortName,
+            .srv_name_embedded_null => error.BadPortName,
+            .os_already_exists => error.PortAlreadyExists,
+            .srv_out_of_services => error.SystemResources,
+            else => horizon.unexpectedResult(code),
+        },
     };
 }
 
 pub fn sendUnregisterService(srv: ServiceManager, name: []const u8) !void {
-    const C = horizon.result.Code;
     std.debug.assert(name.len <= 8);
 
     var req: command.UnregisterService.Request = .{
@@ -179,7 +185,11 @@ pub fn sendUnregisterService(srv: ServiceManager, name: []const u8) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.UnregisterService, req, .{})).cases()) {
         .success => {},
-        .failure => |code| if (C.os_not_found) error.PortNotFound else if (C.srv_access_denied) error.AccessDenied else horizon.unexpectedResult(code),
+        .failure => |code| switch (code) {
+            .os_not_found => error.PortNotFound,
+            .srv_access_denied => error.AccessDenied,
+            else => horizon.unexpectedResult(code),
+        },
     };
 }
 
@@ -249,7 +259,7 @@ pub fn sendGetPort(srv: ServiceManager, name: []const u8, wait_until_found: bool
 
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(srv.session, command.GetPort, req, .{})).cases()) {
-        .success => |s| s.value.service,
+        .success => |s| s.value.service.wrapped,
         .failure => |code| if (code == C.srv_access_denied) error.AccessDenied else if (code == C.srv_name_out_of_bounds or code == C.srv_name_embedded_null) error.BadPortName else if (code == C.os_not_found) error.PortNotFound else horizon.unexpectedResult(code),
     };
 }
@@ -318,7 +328,7 @@ pub const command = struct {
         name: [8]u8,
         name_len: u32,
         max_sessions: i16,
-    }, struct { server: ServerPort });
+    }, struct { server: ipc.MoveHandles(ServerPort) });
     pub const UnregisterService = ipc.Command(Id, .unregister_service, struct {
         name: [8]u8,
         name_len: u32,
@@ -349,7 +359,7 @@ pub const command = struct {
         name: [8]u8,
         name_len: u32,
         wait_until_found: bool,
-    }, struct { port: ClientPort });
+    }, struct { port: ipc.MoveHandles(ClientPort) });
     pub const Subscribe = ipc.Command(Id, .subscribe, struct {
         notification: Notification,
     }, struct {});
@@ -409,6 +419,6 @@ const ipc = horizon.ipc;
 const Event = horizon.Event;
 const Semaphore = horizon.Semaphore;
 const ClientSession = horizon.Session.Client;
-const ServerPort = horizon.ServerPort;
-const ClientPort = horizon.ClientPort;
+const ServerPort = horizon.Port.Server;
+const ClientPort = horizon.Port.Client;
 const ResultCode = horizon.result.Code;

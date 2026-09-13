@@ -1118,6 +1118,7 @@ pub const Session = struct {
     };
 
     pub const Server = packed struct(u32) {
+        pub const none: Server = .{ .sync = .none };
         sync: Synchronization,
 
         pub fn close(session: Session.Server) void {
@@ -1141,59 +1142,59 @@ pub const Session = struct {
     }
 };
 
-pub const ServerPort = packed struct(u32) {
-    sync: Synchronization,
-
-    pub fn accept(port: ServerPort) UnexpectedError!Session.Server {
-        return switch (acceptSession(port)) {
-            .success => |s| s.value,
-            .failure => |code| unexpectedResult(code),
-        };
-    }
-
-    pub fn close(port: ServerPort) void {
-        port.sync.close();
-    }
-};
-
-pub const ClientPort = packed struct(u32) {
-    pub const CreateSessionError = Object.Error || error{
-        /// The port cannot accept more sessions. It may be able to in the future.
-        PortBusy,
-    };
-    pub const WaitError = Synchronization.WaitError;
-    pub const WaitManyError = Synchronization.WaitManyError;
-
-    sync: Synchronization,
-
-    pub fn createSession(port: ClientPort) CreateSessionError!Session.Client {
-        return switch (createSessionToPort(port)) {
-            .success => |s| s.value,
-            .failure => |code| switch (code) {
-                .kernel_invalid_handle => resultBug(code),
-                .os_port_busy => error.PortBusy,
-                .out_of_sessions, .out_of_handles, .out_of_kernel_memory => error.SystemResources,
-                else => unexpectedResult(code),
-            },
-        };
-    }
-
-    pub fn wait(port: Port, timeout: Timeout) WaitError!void {
-        return port.sync.wait(timeout);
-    }
-
-    pub fn waitMany(ports: []const ClientPort, wait_all: bool, timeout: Timeout) WaitManyError!usize {
-        return Synchronization.waitMany(@ptrCast(ports), wait_all, timeout);
-    }
-
-    pub fn close(port: ClientPort) void {
-        port.sync.close();
-    }
-};
-
 pub const Port = struct {
-    server: ServerPort,
-    client: ClientPort,
+    pub const Server = packed struct(u32) {
+        sync: Synchronization,
+
+        pub fn accept(port: ServerPort) UnexpectedError!Session.Server {
+            return switch (acceptSession(port).cases()) {
+                .success => |s| s.value,
+                .failure => |code| unexpectedResult(code),
+            };
+        }
+
+        pub fn close(port: ServerPort) void {
+            port.sync.close();
+        }
+    };
+
+    pub const Client = packed struct(u32) {
+        pub const CreateSessionError = Object.Error || error{
+            /// The port cannot accept more sessions. It may be able to in the future.
+            PortBusy,
+        };
+        pub const WaitError = Synchronization.WaitError;
+        pub const WaitManyError = Synchronization.WaitManyError;
+
+        sync: Synchronization,
+
+        pub fn createSession(port: ClientPort) CreateSessionError!Session.Client {
+            return switch (createSessionToPort(port)) {
+                .success => |s| s.value,
+                .failure => |code| switch (code) {
+                    .kernel_invalid_handle => resultBug(code),
+                    .os_port_busy => error.PortBusy,
+                    .out_of_sessions, .out_of_handles, .out_of_kernel_memory => error.SystemResources,
+                    else => unexpectedResult(code),
+                },
+            };
+        }
+
+        pub fn wait(port: Port, timeout: Timeout) WaitError!void {
+            return port.sync.wait(timeout);
+        }
+
+        pub fn waitMany(ports: []const ClientPort, wait_all: bool, timeout: Timeout) WaitManyError!usize {
+            return Synchronization.waitMany(@ptrCast(ports), wait_all, timeout);
+        }
+
+        pub fn close(port: ClientPort) void {
+            port.sync.close();
+        }
+    };
+
+    server: Server,
+    client: Client,
 
     pub fn create(name: [:0]const u8, max_sessions: i16) UnexpectedError!Port {
         return switch (createPort(name, max_sessions)) {
@@ -1207,6 +1208,12 @@ pub const Port = struct {
         port.client.close();
     }
 };
+
+/// Deprecated: use Port.Server
+pub const ServerPort = Port.Server;
+
+/// Deprecated: use Port.Client
+pub const ClientPort = Port.Client;
 
 /// Raw and lean kernel thread, use `std.Thread` instead unless you *really* need this
 /// as it doesn't depend on any runtime thus TLS is NOT handled.
@@ -1373,9 +1380,10 @@ pub const Process = packed struct(u32) {
 
             page: u20,
             read_only: bool,
-            header: u11 = 0b11111111111,
+            header: u11 = MapIoPage.magic_value,
         };
 
+        int: u32,
         interrupt_info: InterruptInfo,
         system_call_mask: SystemCallMask,
         kernel_version: KernelVersion,
@@ -1399,6 +1407,10 @@ pub const Process = packed struct(u32) {
 
         pub fn syscallMask(index: u3, mask: u24) Capability {
             return .{ .system_call_mask = .{ .index = index, .mask = mask } };
+        }
+
+        pub fn mappedIo(page: u20, read_only: bool) Capability {
+            return .{ .map_io_page = .{ .page = page, .read_only = read_only } };
         }
     };
 
@@ -2144,7 +2156,7 @@ pub fn acceptSession(port: ServerPort) Result(Session.Server) {
 // svc replyAndReceive3() stubbed 0x4D
 // svc replyAndReceive4() stubbed 0x4E
 
-pub fn replyAndReceive(port_sessions: []Object, reply_target: Session.Server) Result(i32) {
+pub fn replyAndReceive(port_sessions: []Synchronization, reply_target: Session.Server) Result(i32) {
     var index: i32 = undefined;
 
     const code = asm volatile ("svc 0x4F"

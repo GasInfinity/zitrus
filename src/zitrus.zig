@@ -17,7 +17,8 @@
 
 // TODO: Remove this somehow, the kernel COULD be able to provide us with a stack of X size if we could ask somehow in the 3dsx to luma/azahar
 pub const Options = struct {
-    stack_size: u32 = 128 * 1024,
+    /// When null, zitrus won't switch stacks and will use the kernel-provided stacksize.
+    stack_size: ?u32 = 128 * 1024,
 };
 
 comptime {

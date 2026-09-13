@@ -174,10 +174,19 @@ pub fn initNcch(hdr: *const ncch.Header, ex_hdr: *const ncch.ExtendedHeader, gpa
                 var capabilities: KernelCapabilities = .{};
                 var i: usize = 0;
 
-                var used_syscalls: std.ArrayListUnmanaged(horizon.SystemCall) = .empty;
+                var used_syscalls: std.ArrayList(horizon.SystemCall) = .empty;
+                errdefer used_syscalls.deinit(gpa);
+
+                var mapped_io: std.ArrayList(KernelCapabilities.MapIoPage) = .empty;
+                errdefer mapped_io.deinit(gpa);
+
+                var mapped_ranges: std.ArrayList(KernelCapabilities.MapAddressRange) = .empty;
+                errdefer mapped_ranges.deinit(gpa);
 
                 while (i < ex_hdr.access_control.kernel_capabilities.descriptors.len) {
                     const descriptor = ex_hdr.access_control.kernel_capabilities.descriptors[i];
+
+                    if (descriptor.int == std.math.maxInt(u32)) break;
 
                     // NOTE: We cannot use a switch as the header is not fixed-size.
                     // XXX: ^ This is ugly as hell still.
@@ -212,18 +221,19 @@ pub fn initNcch(hdr: *const ncch.Header, ex_hdr: *const ncch.ExtendedHeader, gpa
                         }
                     } else if (descriptor.map_range_start.header == Descriptor.MapAddressRangeStart.magic_value) {
                         // TODO:
-                    } else if (descriptor.map_range_start.header == Descriptor.MapAddressRangeStart.magic_value) {
-                        // TODO:
                     } else if (descriptor.map_io_page.header == Descriptor.MapIoPage.magic_value) {
-                        // TODO:
-                    } else {
-                        // XXX: Skip?
+                        try mapped_io.append(gpa, .{ .address = @as(u32, descriptor.map_io_page.page) << 12, .read_only = descriptor.map_io_page.read_only });
                     }
 
                     i += 1;
                 }
 
                 capabilities.system_call_access = try used_syscalls.toOwnedSlice(gpa);
+                errdefer gpa.free(capabilities.system_call_access);
+                capabilities.mapped_io_pages = try mapped_io.toOwnedSlice(gpa);
+                errdefer gpa.free(capabilities.mapped_io_pages);
+                capabilities.mapped_ranges = try mapped_ranges.toOwnedSlice(gpa);
+                errdefer gpa.free(capabilities.mapped_ranges);
                 break :blk capabilities;
             },
             .new_speedup = .{
@@ -309,6 +319,8 @@ pub fn initNcch(hdr: *const ncch.Header, ex_hdr: *const ncch.ExtendedHeader, gpa
 pub fn deinit(settings: Settings, gpa: std.mem.Allocator) void {
     gpa.free(settings.access_control.service_access);
     gpa.free(settings.access_control.kernel.system_call_access);
+    gpa.free(settings.access_control.kernel.mapped_io_pages);
+    gpa.free(settings.access_control.kernel.mapped_ranges);
 }
 
 const Settings = @This();

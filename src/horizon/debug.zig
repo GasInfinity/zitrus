@@ -18,6 +18,7 @@ pub fn print(comptime fmt: []const u8, args: anytype) void {
 
 pub const SelfInfo = @import("debug/SelfInfo.zig");
 pub const breaking_panic = @import("debug/breaking_panic.zig");
+pub const simple_errdisp_panic = @import("debug/simple_errdisp_panic.zig");
 
 pub fn getDebugInfoAllocator() std.mem.Allocator {
     return horizon.Io.global.gpa;
@@ -91,11 +92,12 @@ pub fn defaultPanic(msg: []const u8, first_trace_addr: ?usize) noreturn {
                 .title_id = 0x0,
                 .applet_title_id = 0x0,
                 .data = .{ .failure = .{
-                    .message = if (msg.len > 0x5F) (msg[0..0x5F].* ++ .{0}) else buf: {
+                    .message = blk: {
                         var buffer: [0x60]u8 = undefined;
-                        @memcpy(buffer[0..msg.len], msg);
-                        @memset(buffer[msg.len..], 0x00);
-                        break :buf buffer;
+                        const truncated_len = @min(buffer.len - 1, msg.len); // -1 as we need a NUL-terminator
+                        @memcpy(buffer[0..truncated_len], msg[0..truncated_len]);
+                        buffer[truncated_len] = 0;
+                        break :blk buffer;
                     },
                 } },
             }) catch print("panic: 'err:f' could not throw with message '{s}'", .{msg});
@@ -211,11 +213,12 @@ pub fn defaultHandleSegfault(addr: ?usize, name: []const u8, opt_ctx: ?std.debug
                 .title_id = 0x0,
                 .applet_title_id = 0x0,
                 .data = .{ .failure = .{
-                    .message = if (name.len > 0x5F) (name[0..0x5F].* ++ .{0}) else buf: {
+                    .message = blk: {
                         var buffer: [0x60]u8 = undefined;
-                        @memcpy(buffer[0..name.len], name);
-                        @memset(buffer[name.len..], 0x00);
-                        break :buf buffer;
+                        const truncated_len = @min(buffer.len - 1, name.len); // -1 as we need a NUL-terminator
+                        @memcpy(buffer[0..truncated_len], name[0..truncated_len]);
+                        buffer[truncated_len] = 0;
+                        break :blk buffer;
                     },
                 } },
             }) catch print("panic: 'err:f' could not throw with message '{s}'", .{name});

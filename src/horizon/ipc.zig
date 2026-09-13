@@ -228,8 +228,46 @@ pub const Codec = union(enum) {
         };
     }
 
+    pub fn bufWrite(comptime codec: Codec, comptime T: type, value: *const T, buffer: []u32) void {
+        std.debug.assert((comptime codec.size()) <= buffer.len);
+
+        switch (codec) {
+            .raw => @memcpy(@as(*[@sizeOf(T)]u8, @ptrCast(buffer.ptr)), @as(*const [@sizeOf(T)]u8, @ptrCast(value))),
+            .static_slice => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.StaticBuffer.init(@intCast(value.slice.len), T.index)), @intCast(@intFromPtr(value.slice.ptr)) },
+            .mapped_slice => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.MappedBuffer.init(@intCast(value.slice.len), T.permissions.read, T.permissions.write)), @intCast(@intFromPtr(value.slice.ptr)) },
+            .replace_by_process_id => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.Handle.replace_by_proccess_id), 0x00 },
+            .handles, .move_handles => |amount| {
+                buffer[0] = @bitCast(Buffer.TranslationDescriptor.Handle.init(amount, codec == .move_handles));
+                buffer[1..][0..amount].* = @bitCast(value.*);
+            },
+            .handle_array, .move_handle_array => |flds| {
+                const WrappedType = @TypeOf(value.wrapped);
+
+                const sz = comptime codec.size();
+
+                buffer[0] = @bitCast(Buffer.TranslationDescriptor.Handle.init((sz - 1), codec == .move_handle_array));
+
+                var curr: usize = 1;
+                inline for (flds, @typeInfo(WrappedType).@"struct".fields) |fld, info| {
+                    // NOTE: We don't do a @bitCast to avoid having to check if its an enum and having to do @intFromEnum :p
+                    buffer[curr..][0..fld].* = @as(*const [fld]u32, @ptrCast(&@field(value.wrapped, info.name))).*;
+                    curr += fld;
+                }
+            },
+            .fields => |flds| {
+                var i: usize = 0;
+                inline for (flds, @typeInfo(T).@"struct".fields) |fld, info| {
+                    const sz = comptime fld.size();
+                    defer i += sz;
+
+                    fld.bufWrite(info.type, &@field(value, info.name), buffer[i..]);
+                }
+            },
+        }
+    }
+
     pub const ReadError = error{BadTranslationHeader};
-    pub fn bufRead(comptime codec: Codec, comptime T: type, buffer: []const u32) !T {
+    pub fn bufRead(comptime codec: Codec, comptime T: type, buffer: []const u32) ReadError!T {
         return switch (codec) {
             .raw => @as(*align(@sizeOf(u32)) const T, @ptrCast(buffer)).*,
             .static_slice => blk: {
@@ -597,6 +635,9 @@ pub const Buffer = extern struct {
         };
 
         pub const Header = packed struct(u32) {
+            pub const none: Header = .{ .parameters = .parameters(0, 0), .command_id = 0xFFFF };
+            pub const invalid: Header = .{ .parameters = .parameters(1, 0), .command_id = 0 };
+
             parameters: Parameters,
             _unused: u4 = 0,
             command_id: u16,
@@ -611,20 +652,19 @@ pub const Buffer = extern struct {
 
     pub const SendRequestError = ClientSession.RequestError || ReadError;
     pub fn sendRequest(buffer: *Buffer, session: ClientSession, comptime DefinedCommand: type, request: DefinedCommand.Request, static_output: DefinedCommand.RequestStaticOutput) SendRequestError!Result(DefinedCommand.Response) {
-        buffer.writeRequest(DefinedCommand, request, static_output);
+        buffer.writeRequest(DefinedCommand, &request, static_output);
         try session.sendRequest();
         return try buffer.readResponse(DefinedCommand);
     }
 
-    pub fn writeRequest(buffer: *Buffer, comptime DefinedCommand: type, request: DefinedCommand.Request, static_output: DefinedCommand.RequestStaticOutput) void {
+    pub fn writeRequest(buffer: *Buffer, comptime DefinedCommand: type, request: *const DefinedCommand.Request, static_output: DefinedCommand.RequestStaticOutput) void {
         buffer.packed_command.header = .{
             .command_id = @intFromEnum(DefinedCommand.id),
             .parameters = DefinedCommand.request_parameters,
         };
-        const written = DefinedCommand.request.write(DefinedCommand.Request, request);
-        comptime std.debug.assert(written.len <= buffer.packed_command.parameters.len);
 
-        @memcpy(buffer.packed_command.parameters[0..written.len], &written);
+        comptime std.debug.assert(DefinedCommand.request.size() <= buffer.packed_command.parameters.len);
+        DefinedCommand.request.bufWrite(DefinedCommand.Request, request, &buffer.packed_command.parameters);
 
         inline for (@typeInfo(DefinedCommand.RequestStaticOutput).@"struct".fields, 0..) |f, i| {
             const static_buffer: []u8 = @ptrCast(@field(static_output, f.name));
@@ -650,17 +690,23 @@ pub const Buffer = extern struct {
             .parameters = .parameters(DefinedCommand.response_parameters.normal + 1, DefinedCommand.response_parameters.translate),
         };
 
-        const written = DefinedCommand.response.write(DefinedCommand.Response, result.value);
-        comptime std.debug.assert(written.len <= buffer.packed_command.parameters.len);
-
+        comptime std.debug.assert(DefinedCommand.response.size() <= (buffer.packed_command.parameters.len - 1));
         buffer.packed_command.parameters[0] = @bitCast(result.code);
-        @memcpy(buffer.packed_command.parameters[1..][0..written.len], &written);
+        DefinedCommand.response.bufWrite(DefinedCommand.Response, &result.value, buffer.packed_command.parameters[1..]);
+    }
+
+    pub fn readRequestId(buffer: *Buffer, comptime Id: type) ?Id {
+        if (std.enums.fromInt(Id, buffer.packed_command.header.command_id)) |id| return id; 
+
+        buffer.packed_command.header = .invalid;
+        buffer.packed_command.parameters[0] = @bitCast(Code.os_invalid_ipc_header);
+        return null;
     }
 
     pub const CheckError = error{BadIpcHeader};
     pub const ReadError = CheckError || Codec.ReadError;
 
-    pub fn checkResponse(buffer: *Buffer, comptime DefinedCommand: type) CheckError!ResultCode {
+    pub fn checkResponse(buffer: *Buffer, comptime DefinedCommand: type) CheckError!Code {
         if (buffer.packed_command.header.command_id != @intFromEnum(DefinedCommand.id)) return error.BadIpcHeader;
         return @bitCast(buffer.packed_command.parameters[0]);
     }
@@ -678,10 +724,10 @@ pub const Buffer = extern struct {
     }
 
     pub fn readRequest(buffer: *Buffer, comptime DefinedCommand: type) ReadError!DefinedCommand.Request {
-        if (buffer.packed_command.header.command_id != @intFromEnum(DefinedCommand.id)) return error.BadIpcHeader;
+        std.debug.assert(buffer.packed_command.header.command_id == @intFromEnum(DefinedCommand.id)); // This is user error, as you must have checked the id before.
         if (buffer.packed_command.header.parameters != DefinedCommand.request_parameters) return error.BadIpcHeader;
 
-        return DefinedCommand.request.bufRead(DefinedCommand.Request, &buffer.packed_command.parameters);
+        return try DefinedCommand.request.bufRead(DefinedCommand.Request, &buffer.packed_command.parameters);
     }
 
     fn unexpectedResponseParameters(expected: PackedCommand.Parameters, actual: PackedCommand.Parameters) ReadError {
@@ -717,7 +763,7 @@ test Buffer {
     var buf: Buffer = undefined;
 
     const request: command_testing.Foo.Request = .{ .size = 20 };
-    buf.writeRequest(command_testing.Foo, request, .{});
+    buf.writeRequest(command_testing.Foo, &request, .{});
 
     try testing.expectEqual(@intFromEnum(command_testing.Id.foo), buf.packed_command.header.command_id);
     try testing.expectEqual(command_testing.Foo.request_parameters, buf.packed_command.header.parameters);
@@ -800,5 +846,5 @@ const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
 const ClientSession = horizon.Session.Client;
-const ResultCode = horizon.result.Code;
+const Code = horizon.result.Code;
 const Result = horizon.Result;

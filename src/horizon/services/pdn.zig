@@ -6,5 +6,5 @@
 pub const Sleep = @import("pdn/Sleep.zig");
 pub const Dsp = @import("pdn/Dsp.zig");
 pub const I2s = @import("pdn/I2s.zig");
-pub const Gsp = @import("pdn/Gsp.zig");
+pub const Gpu = @import("pdn/Gpu.zig");
 pub const Camera = @import("pdn/Camera.zig");
