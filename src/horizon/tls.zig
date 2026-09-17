@@ -62,8 +62,6 @@ pub fn initStatic() void {
     @export(&__aeabi_read_tp, .{ .name = "__aeabi_read_tp" });
     @export(&__tls_get_addr, .{ .name = "__tls_get_addr" });
 
-    const data_image = dataImage();
-
     const opt_tls_start: ?[*]u8 = @extern(?[*]u8, .{ .name = "__zitrus_main_tls_start" });
     const opt_tls_end: ?[*]u8 = @extern(?[*]u8, .{ .name = "__zitrus_main_tls_end" });
 
@@ -71,9 +69,17 @@ pub fn initStatic() void {
         const tls_end = opt_tls_end.?;
         const static_tls = tls_start[0..(tls_end - tls_start)];
 
-        @memcpy(static_tls[0..data_image.len], data_image);
-        get().state.tp = @ptrFromInt(@intFromPtr(tls_start) - 8); // NOTE: Yes, the ABI says data starts at $tp + 8
+        initVariables(static_tls);
     }
+}
+
+pub fn initVariables(buffer: []u8) void {
+    std.debug.assert(buffer.len >= size());
+    std.debug.assert(std.mem.isAligned(@intFromPtr(buffer.ptr), alignment()));
+
+    const data_image = dataImage();
+    @memcpy(buffer[0..data_image.len], data_image);
+    get().state.tp = @ptrFromInt(@intFromPtr(buffer.ptr) - 8); // NOTE: Yes, the ABI says data starts at $tp + 8
 }
 
 /// Returns the image of non-bss TLS data, may be empty.

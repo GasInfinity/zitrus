@@ -35,13 +35,11 @@ pub const NewBusRate = hardware.spi.NewBus.Rate;
 
 session: ClientSession,
 
-pub fn open(service: Service, srv: ServiceManager) !Spi {
-    return .{ .session = try srv.getService(service.name(), .wait) };
-}
-
-pub fn close(spi: Spi) void {
-    spi.session.close();
-}
+pub const open = horizon.services.Methods(@This()).openServiceMulti;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceMultiWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 pub fn sendInitDeviceRate(spi: Spi, device: Device, rate: BusRate) !void {
     const data = tls.get();

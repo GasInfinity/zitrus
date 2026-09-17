@@ -17,15 +17,17 @@ pub fn call(message: []const u8, return_address: ?usize) noreturn {
         .process_id = @intFromEnum(horizon.getProcessId(.current).value), // NOTE: cannot fail as current is always valid.
         .title_id = 0x0,
         .applet_title_id = 0x0,
-        .data = .{ .failure = .{
-            .message = blk: {
-                var buffer: [0x60]u8 = undefined;
-                const truncated_len = @min(buffer.len - 1, message.len); // -1 as we need a NUL-terminator
-                @memcpy(buffer[0..truncated_len], message[0..truncated_len]);
-                buffer[truncated_len] = 0;
-                break :blk buffer;
+        .data = .{
+            .failure = .{
+                .message = blk: {
+                    var buffer: [0x60]u8 = undefined;
+                    const truncated_len = @min(buffer.len - 1, message.len); // -1 as we need a NUL-terminator
+                    @memcpy(buffer[0..truncated_len], message[0..truncated_len]);
+                    buffer[truncated_len] = 0;
+                    break :blk buffer;
+                },
             },
-        } },
+        },
     }) catch horizon.breakExecution(.panic);
     while (true) horizon.breakExecution(.panic);
 }

@@ -1,9 +1,6 @@
-//! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/Socket_Services
+//! `soc:U`
 //!
-//! soc:U has a fatal flaw, it blocks completely on a blocking call. For example calling
-//! `recvfrom` with no data available in a blocking socket won't allow the progress of other
-//! threads calling any soc:U IPC. Maybe a workaround for this flaw is using multiple sessions if
-//! allowed or using non-blocking sockets in a busy-loop.
+//! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/Socket_Services
 
 // TODO : Missing methods and check of parameters
 
@@ -262,13 +259,11 @@ pub const Descriptor = enum(u32) {
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !SocketUser {
-    return .{ .session = try srv.getService(service, .wait) };
-}
-
-pub fn close(soc: SocketUser) void {
-    soc.session.close();
-}
+pub const open = horizon.services.Methods(@This()).openService;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 /// The memory block must be created with (this: none, other: rw)
 /// if you don't want `permanent(os): incompatible_permissions (wrong_arg) (0xD900182E)`

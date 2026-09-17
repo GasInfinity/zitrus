@@ -508,13 +508,11 @@ pub const Handles = struct {
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !ChannelSound {
-    return .{ .session = try srv.getService(service, .wait) };
-}
-
-pub fn close(snd: ChannelSound) void {
-    snd.session.close();
-}
+pub const open = horizon.services.Methods(@This()).openService;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 pub fn sendInitialize(snd: ChannelSound, shared_memory_size: u32, acquired_state_offset: u32, channel_state_offset: u32, capture_unit_state_offset: u32, direct_sound_state_offset: u32) !Handles {
     const data = tls.get();

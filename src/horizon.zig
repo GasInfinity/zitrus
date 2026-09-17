@@ -367,6 +367,99 @@ pub const SystemCall = enum(u8) {
     breakpoint,
 };
 
+// TODO: This should be in the hardware namespace, in arm11
+pub const Interrupt = enum(u7) {
+    // zig fmt: off
+    soft_0, soft_1, soft_2, soft_3, soft_4,
+    soft_5, soft_6, soft_7, soft_8, soft_9,
+    soft_10, soft_11, soft_12, soft_13, soft_14,
+    soft_15,
+    p_16, p_17, p_18, p_19, p_20, p_21, p_22,
+    p_23, p_24, p_25, p_26, p_27, p_28,
+    private_timer,
+    private_watchdog,
+    legacy,
+    u_32, u_33, u_34, u_35,
+    spi_2 = 0x24,
+    u_37, u_38, u_39,
+    psc0 = 0x28,
+    psc1 = 0x29,
+    pdc0 = 0x2a,
+    pdc1 = 0x2b,
+    ppf = 0x2c,
+    p3d = 0x2d,
+    u_46, u_47,
+    old_cdma_0, old_cdma_1, old_cdma_2,
+    old_cdma_3, old_cdma_4, old_cdma_5,
+    old_cdma_6, old_cdma_7, old_cdma_8,
+    old_cdma_faulting = 0x39,
+    new_cdma = 0x3a,
+    new_cdma_faulting = 0x3b,
+    u_60, u_61, u_62, u_63,
+    wifi_sdio_0 = 0x40,
+    wifi_sdio_1 = 0x41,
+    debug_wifi_sdio_0 = 0x42,
+    debug_wifi_sdio_1 = 0x43,
+    ntrcard = 0x44,
+    l2b_0 = 0x45,
+    l2b_1 = 0x46,
+    u_70,
+    camera_inner_right = 0x48,
+    camera_left = 0x49,
+    dsp = 0x4a,
+    y2r1 = 0x4b,
+    lgy_fb_0 = 0x4c,
+    lgy_fb_1 = 0x4d,
+    y2r2 = 0x4e,
+    mvd = 0x4f,
+    pxi_sync_0 = 0x50,
+    pxi_sync_1 = 0x51,
+    pxi_send_empty = 0x52,
+    pxi_receive_not_empty = 0x53,
+    i2c_0 = 0x54,
+    i2c_1 = 0x55,
+    spi_0 = 0x56,
+    spi_1 = 0x57,
+    pdn = 0x58,
+    pdn_legacy = 0x59,
+    mic = 0x5a,
+    hid = 0x5b,
+    i2c_2 = 0x5c,
+    u_93, u_94,
+    mp = 0x5f,
+    shell_opened = 0x60,
+    u_97,
+    shell_closed = 0x62,
+    touch_pressed = 0x63,
+    headphones_inserted = 0x64,
+    u_101,
+    twl_depop = 0x66,
+    u_103,
+    c_stick = 0x68,
+    ir = 0x69,
+    gyroscope = 0x6a,
+    c_stick_stop = 0x6b,
+    ir_tx = 0x6c,
+    ir_rx = 0x6d,
+    nfc_0 = 0x6e,
+    nfc_1 = 0x6f,
+    headphones_half_inserted = 0x70,
+    mcu = 0x71,
+    nfc_2 = 0x72,
+    qtm = 0x73,
+    gamecard_related = 0x74,
+    gamecard_inserted = 0x75,
+    l2c = 0x76,
+    u_119,
+    performance_counter_overflow_0 = 0x78,
+    performance_counter_overflow_1 = 0x79,
+    performance_counter_overflow_2 = 0x7a,
+    performance_counter_overflow_3 = 0x7b,
+    u_124, u_125, u_126,
+    none = 0x7f,
+    // zig fmt: on
+};
+
 pub const MemoryPermission = packed struct(u32) {
     pub const none: MemoryPermission = .{};
     pub const r: MemoryPermission = .{ .read = true };
@@ -496,8 +589,6 @@ pub const BreakReason = enum(u32) {
     assert,
     user,
 };
-
-pub const InterruptId = enum(u32) {};
 
 pub const Timeout = enum(i64) {
     none = -1,
@@ -672,6 +763,75 @@ pub const AddressArbiter = packed struct(u32) {
         }
 
         const Mut = @This();
+    };
+
+    pub const Event = extern struct {
+        pub const State = enum(i32) { sticky_cleared = -2, oneshot_cleared = -1, sentinel = 0, oneshot_signaled = 1, sticky_signaled = 2 };
+
+        mut: AddressArbiter.Mutex,
+        state: std.atomic.Value(State),
+
+        /// Asserts `reset_type` is `sticky` or `oneshot`
+        pub fn init(reset_type: ResetType, signaled: bool) AddressArbiter.Event {
+            std.debug.assert(reset_type == .oneshot or reset_type == .sticky); // pulse doesn't make sense for events
+
+            return .{
+                .mut = .init,
+                .state = .init(switch (reset_type) {
+                    .oneshot => if (signaled) .oneshot_signaled else .oneshot_cleared,
+                    .sticky => if (signaled) .sticky_signaled else .sticky_cleared,
+                    else => unreachable,
+                }),
+            };
+        }
+
+        pub fn wait(ev: *AddressArbiter.Event, arbiter: AddressArbiter) void {
+            return sw: switch (ev.state.load(.monotonic)) {
+                .sentinel => unreachable,
+                .sticky_cleared => arbiter.wait(State, &ev.state.raw, .sentinel),
+                .oneshot_cleared => {
+                    arbiter.wait(State, &ev.state.raw, .sentinel);
+                    continue :sw ev.state.load(.monotonic);
+                },
+                .sticky_signaled => if (ev.state.load(.acquire) != .sticky_signaled)
+                    continue :sw .sticky_cleared,
+                .oneshot_signaled => if (ev.state.cmpxchgWeak(.oneshot_signaled, .oneshot_cleared, .acquire, .monotonic)) |unexpected| {
+                    continue :sw unexpected;
+                } else {},
+            };
+        }
+
+        pub fn signal(ev: *AddressArbiter.Event, arbiter: AddressArbiter) void {
+            return switch (ev.state.load(.monotonic)) {
+                .sentinel => unreachable,
+                .sticky_cleared => {
+                    ev.mut.lock(arbiter);
+                    defer ev.mut.unlock(arbiter);
+
+                    ev.state.store(.sticky_signaled, .release);
+                    arbiter.signal(State, &ev.state.raw, null);
+                },
+                .oneshot_cleared => {
+                    ev.state.store(.oneshot_signaled, .release);
+                    arbiter.signal(State, &ev.state.raw, 1);
+                },
+                .oneshot_signaled, .sticky_signaled => _ = @atomicRmw(i32, @as(*i32, @ptrCast(&ev.state.raw)), .Add, 0, .release),
+            };
+        }
+
+        pub fn clear(ev: *AddressArbiter.Event, arbiter: AddressArbiter) void {
+            return switch (ev.state.load(.monotonic)) {
+                .sentinel => unreachable,
+                .sticky_cleared, .oneshot_cleared => {},
+                .oneshot_signaled => ev.state.store(.oneshot_cleared, .monotonic),
+                .sticky_signaled => {
+                    ev.mut.lock(arbiter);
+                    defer ev.mut.unlock(arbiter);
+
+                    ev.state.store(.sticky_cleared, .monotonic);
+                },
+            };
+        }
     };
 
     /// Similar to an auto-reset Event. Each `Thread` must have a separate `Parker` if needed.
@@ -900,6 +1060,20 @@ pub const Synchronization = packed struct(u32) {
 pub const Interruptable = packed struct(u32) {
     sync: Synchronization,
 
+    pub const BindError = error{PermissionDenied} || UnexpectedError;
+    pub fn bind(int: Interruptable, id: Interrupt, priority: i32, level_sensitive: bool) BindError!void {
+        return switch (bindInterrupt(id, int, priority, level_sensitive)) {
+            .kernel_permission_denied => error.PermissionDenied,
+            else => |c| if (!c.isSuccess()) unexpectedResult(c),
+        };
+    }
+
+    pub fn unbind(int: Interruptable, id: Interrupt) void {
+        return switch (unbindInterrupt(id, int)) {
+            else => {},
+        };
+    }
+
     pub fn close(int: Interruptable) void {
         int.sync.close();
     }
@@ -1048,15 +1222,27 @@ pub const Timer = packed struct(u32) {
     }
 
     pub fn set(timer: Timer, initial_ns: i64, interval: i64) void {
-        _ = setTimer(timer, initial_ns, interval);
+        return switch (setTimer(timer, initial_ns, interval)) {
+            .kernel_invalid_handle => unreachable,
+            // truly unreachable
+            else => unreachable,
+        };
     }
 
     pub fn clear(timer: Timer) void {
-        _ = clearTimer(timer);
+        return switch (clearTimer(timer)) {
+            .kernel_invalid_handle => unreachable,
+            // truly unreachable
+            else => unreachable,
+        };
     }
 
     pub fn cancel(timer: Timer) void {
-        _ = cancelTimer(timer);
+        return switch (cancelTimer(timer)) {
+            .kernel_invalid_handle => unreachable,
+            // truly unreachable
+            else => unreachable,
+        };
     }
 
     pub fn dupe(ev: Timer) Object.Error!Timer {
@@ -1223,7 +1409,7 @@ pub const Thread = packed struct(u32) {
     pub const Id = enum(u32) { _ };
     pub const Priority = enum(u6) {
         pub const highest: Priority = .priority(0x00);
-        pub const highest_user: Priority = .priority(0x18);
+        pub const highest_app: Priority = .priority(0x18);
         pub const lowest: Priority = .priority(0x3F);
 
         _,
@@ -1307,17 +1493,14 @@ pub const Process = packed struct(u32) {
     pub const Capability = packed union(u32) {
         pub const none: Capability = @bitCast(@as(u32, 0xFFFFFFFF));
 
-        // I suppose this allows you to use `svcBindInterrupt`?
-        pub const InterruptInfo = packed struct(u32) {
+        pub const InterruptAccess = packed struct(u32) {
             pub const magic_value = 0b1110;
 
-            info: u28,
+            irqs: zitrus.hardware.BitpackedArray(Interrupt, 4),
             header: u4 = magic_value,
         };
 
-        // There's no info about this but I think that index is the 24-bit window of the syscall
-        // table and mask are the syscalls which the app uses?
-        pub const SystemCallMask = packed struct(u32) {
+        pub const SystemCallAccess = packed struct(u32) {
             pub const magic_value = 0b11110;
 
             mask: u24,
@@ -1384,8 +1567,8 @@ pub const Process = packed struct(u32) {
         };
 
         int: u32,
-        interrupt_info: InterruptInfo,
-        system_call_mask: SystemCallMask,
+        interrupt_access: InterruptAccess,
+        system_call_access: SystemCallAccess,
         kernel_version: KernelVersion,
         kernel_flags: KernelFlags,
         handle_table_size: HandleTableSize,
@@ -1405,8 +1588,12 @@ pub const Process = packed struct(u32) {
             return .{ .handle_table_size = .{ .size = size } };
         }
 
-        pub fn syscallMask(index: u3, mask: u24) Capability {
-            return .{ .system_call_mask = .{ .index = index, .mask = mask } };
+        pub fn syscallAccess(index: u3, mask: u24) Capability {
+            return .{ .system_call_access = .{ .index = index, .mask = mask } };
+        }
+
+        pub fn interruptAccess(irqs: zitrus.hardware.BitpackedArray(Interrupt, 4)) Capability {
+            return .{ .interrupt_access = .{ .irqs = irqs } };
         }
 
         pub fn mappedIo(page: u20, read_only: bool) Capability {
@@ -2170,20 +2357,20 @@ pub fn replyAndReceive(port_sessions: []Synchronization, reply_target: Session.S
     return .of(code, index);
 }
 
-pub fn bindInterrupt(id: InterruptId, int: Interruptable, priority: i32, isHighActive: bool) result.Code {
+pub fn bindInterrupt(id: Interrupt, int: Interruptable, priority: i32, level_sensitive: bool) result.Code {
     return asm volatile ("svc 0x50"
         : [code] "={r0}" (-> result.Code),
-        : [id] "{r0}" (id),
+        : [id] "{r0}" (@as(u32, @intFromEnum(id))),
           [int] "{r1}" (int),
           [priority] "{r2}" (priority),
-          [isHighActive] "{r3}" (isHighActive),
+          [level_sensitive] "{r3}" (level_sensitive),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
 
-pub fn unbindInterrupt(id: InterruptId, int: Interruptable) result.Code {
+pub fn unbindInterrupt(id: Interrupt, int: Interruptable) result.Code {
     return asm volatile ("svc 0x51"
         : [code] "={r0}" (-> result.Code),
-        : [id] "{r0}" (id),
+        : [id] "{r0}" (@as(u32, @intFromEnum(id))),
           [int] "{r1}" (int),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }
@@ -2402,3 +2589,4 @@ pub const services = @import("horizon/services.zig");
 
 const is_debug = @import("builtin").mode == .Debug;
 const std = @import("std");
+const zitrus = @import("zitrus");

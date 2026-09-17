@@ -176,10 +176,14 @@ pub const Description = enum(u10) {
         session_closed_by_remote = 26,
         invalid_ipc_header = 47,
         invalid_ipc_parameters,
-        _, 
+        out_of_shared_memory = 55,
+        _,
     };
 
     pub const ServiceManager = enum(u10) {
+        already_subscribed = 3,
+        notifications_not_found = 4,
+        too_many_subscriptions = 5,
         access_denied = 6,
         _,
     };
@@ -256,15 +260,20 @@ pub const Code = packed struct(i32) {
     pub const success: Code = @bitCast(@as(u32, 0));
     pub const not_implemented: Code = @bitCast(@as(u32, 0xE0E01BF4));
 
+    /// 0xe0e003ed
+    pub const common_invalid_enum_value: Code = .result(.usage, .invalid_arg, .common, .invalid_enum_value);
+
     // :wilted_rose:
     pub const fnd_out_of_memory: Code = @bitCast(@as(u32, 0xD86093F3));
-    pub const kernel_invalid_handle: Code = @bitCast(@as(u32, 0xD8E007F7));
+    /// 0xD8E007F7
+    pub const kernel_invalid_handle: Code = .result(.permanent, .invalid_arg, .kernel, .invalid_handle);
     pub const kernel_out_of_memory: Code = @bitCast(@as(u32, 0xD86007F3));
     pub const kernel_out_of_handles: Code = @bitCast(@as(u32, 0xD8600413));
     pub const kernel_out_of_range: Code = @bitCast(@as(u32, 0xD8E007FD));
     pub const kernel_unaligned_address: Code = @bitCast(@as(u32, 0xD8E007F1));
     pub const kernel_unaligned_size: Code = @bitCast(@as(u32, 0xD8E007F2));
-    pub const kernel_permission_denied: Code = @bitCast(@as(u32, 0xD92007EA));
+    /// 0xd92007ea
+    pub const kernel_permission_denied: Code = .result(.permanent, .canceled, .kernel, .permission_denied);
     pub const kernel_invalid_pointer: Code = @bitCast(@as(u32, 0xD8E007F6));
     pub const kernel_invalid_combination: Code = @bitCast(@as(u32, 0xD90007EE));
     pub const kernel_invalid_result_value: Code = @bitCast(@as(u32, 0xD8A007FF));
@@ -276,8 +285,10 @@ pub const Code = packed struct(i32) {
     pub const os_string_too_big: Code = @bitCast(@as(u32, 0xE0E0181E));
     pub const os_out_of_kernel_memory: Code = @bitCast(@as(u32, 0xC8601801));
     pub const os_out_of_kernel_memory_for_memory_blocks: Code = @bitCast(@as(u32, 0xC8601802));
-    pub const os_unaligned_address: Code = @bitCast(@as(u32, 0xE0E01BF1));
-    pub const os_unaligned_size: Code = @bitCast(@as(u32, 0xE0E01BF2));
+    /// 0xe0e01bf1
+    pub const os_unaligned_address: Code = .result(.usage, .invalid_arg, .os, .unaligned_address);
+    /// 0xe0e01bf2
+    pub const os_unaligned_size: Code = .result(.usage, .invalid_arg, .os, .unaligned_size);
     pub const os_invalid_address: Code = @bitCast(@as(u32, 0xE0E01BF5));
     pub const os_invalid_address_state: Code = @bitCast(@as(u32, 0xE0A01BF5));
     pub const os_invalid_combination: Code = @bitCast(@as(u32, 0xE0E01BEE));
@@ -325,6 +336,9 @@ pub const Code = packed struct(i32) {
 
     /// 0xe0e02401
     pub const pdn_invalid_arg: Code = .specificResult(.usage, .invalid_arg, .pdn, .invalid_reset);
+
+    /// 0xc9403800
+    pub const cdc_status_changed: Code = .result(.status, .status_changed, .codec, .success);
 
     /// 0xd8208ff9
     pub const mic_already_initialized: Code = .result(.permanent, .nop, .mic, .already_initialized);
@@ -384,7 +398,9 @@ pub const Code = packed struct(i32) {
         if (std.enums.tagName(Module, code.module)) |tag| {
             try writer.writeAll(tag);
         } else try writer.print("{d}", .{@intFromEnum(code.module)});
-        try writer.writeAll("): ");
+        try writer.writeByte(')');
+        if (!code.isSuccess()) try writer.writeByte('!');
+        try writer.writeAll(": ");
         if (known_description) |tag| {
             try writer.writeAll(tag);
         } else try writer.print("{d}", .{@intFromEnum(code.description)});

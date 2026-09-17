@@ -6,17 +6,14 @@ pub const Wake = hardware.pdn.Sleep.Wake;
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !Sleep {
-    return .{ .session = try srv.getService(service, .wait) };
-}
-
-pub fn close(pdn: Sleep) void {
-    pdn.session.close();
-}
+pub const open = horizon.services.Methods(@This()).openService;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 pub fn sendGetWakeStatus(pdn: Sleep) !command.GetWakeStatus.Response {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(pdn.session, command.GetWakeStatus, .{}, .{})).cases()) {
+    return switch ((try pdn.send(.GetWakeStatus, {}, .{})).cases()) {
         .success => |r| r.value,
         // Literally cannot fail
         .failure => |c| horizon.unexpectedResult(c),
@@ -24,8 +21,7 @@ pub fn sendGetWakeStatus(pdn: Sleep) !command.GetWakeStatus.Response {
 }
 
 pub fn sendConfigureWake(pdn: Sleep, enable: Wake, acknowledge: Wake) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(pdn.session, command.ConfigureWake, .{
+    return switch ((try pdn.send(.ConfigureWake, .{
         .enable = enable,
         .acknowledge = acknowledge,
     }, .{})).cases()) {
@@ -36,8 +32,7 @@ pub fn sendConfigureWake(pdn: Sleep, enable: Wake, acknowledge: Wake) !void {
 }
 
 pub fn sendAcknowledgeWake(pdn: Sleep, acknowledge: Wake) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(pdn.session, command.AcknowledgeWake, .{
+    return switch ((try pdn.send(.AcknowledgeWake, .{
         .acknowledge = acknowledge,
     }, .{})).cases()) {
         .success => {},
@@ -48,7 +43,7 @@ pub fn sendAcknowledgeWake(pdn: Sleep, acknowledge: Wake) !void {
 
 pub const command = struct {
     /// Cannot fail
-    pub const GetWakeStatus = ipc.Command(Id, .get_wake_status, struct {}, struct {
+    pub const GetWakeStatus = ipc.Command(Id, .get_wake_status, void, struct {
         enabled: Wake,
         reason: Wake,
     });
@@ -56,11 +51,11 @@ pub const command = struct {
     pub const ConfigureWake = ipc.Command(Id, .configure_wake, struct {
         enable: Wake,
         acknowledge: Wake,
-    }, struct {});
+    }, void);
     /// Cannot fail
     pub const AcknowledgeWake = ipc.Command(Id, .acknowledge_wake, struct {
         acknowledge: Wake,
-    }, struct {});
+    }, void);
 
     pub const Id = enum(u16) {
         get_wake_status = 0x0001,
@@ -76,7 +71,6 @@ const zitrus = @import("zitrus");
 const hardware = zitrus.hardware;
 
 const horizon = zitrus.horizon;
-const tls = horizon.tls;
 const ipc = horizon.ipc;
 
 const ClientSession = horizon.Session.Client;

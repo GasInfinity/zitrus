@@ -1,3 +1,7 @@
+//! `ptm:u`, `ptm:play`, `ptm:s`, `ptm:sysm`, `ptm:gets`
+//!
+//! PlayTime or PowerTime manager.
+//!
 //! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/PTM_Services
 
 // TODO: missing commands and methods
@@ -62,15 +66,13 @@ pub const BatteryLevel = enum(u8) {
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager, service: Service) !Playtime {
-    return .{ .session = try srv.getService(service.name(), .wait) };
-}
+pub const open = horizon.services.Methods(@This()).openServiceMulti;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceMultiWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
-pub fn close(ptm: Playtime) void {
-    ptm.session.close();
-}
-
-pub fn sendIsAdapterConnected(ptm: Playtime) !bool {
+pub fn sendIsAdapterConnected(ptm: Ptm) !bool {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(ptm.session, command.IsAdapterConnected, .{}, .{})).cases()) {
         .success => |s| s.value.connected,
@@ -78,7 +80,7 @@ pub fn sendIsAdapterConnected(ptm: Playtime) !bool {
     };
 }
 
-pub fn sendIsShellOpened(ptm: Playtime) !bool {
+pub fn sendIsShellOpened(ptm: Ptm) !bool {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(ptm.session, command.IsShellOpened, .{}, .{})).cases()) {
         .success => |s| s.value.open,
@@ -86,7 +88,7 @@ pub fn sendIsShellOpened(ptm: Playtime) !bool {
     };
 }
 
-pub fn sendGetBatteryLevel(ptm: Playtime) !BatteryLevel {
+pub fn sendGetBatteryLevel(ptm: Ptm) !BatteryLevel {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(ptm.session, command.GetBatteryLevel, .{}, .{})).cases()) {
         .success => |s| s.value.level,
@@ -94,7 +96,7 @@ pub fn sendGetBatteryLevel(ptm: Playtime) !BatteryLevel {
     };
 }
 
-pub fn sendIsBatteryCharging(ptm: Playtime) !bool {
+pub fn sendIsBatteryCharging(ptm: Ptm) !bool {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(ptm.session, command.IsBatteryCharging, .{}, .{})).cases()) {
         .success => |s| s.value.charging,
@@ -102,7 +104,7 @@ pub fn sendIsBatteryCharging(ptm: Playtime) !bool {
     };
 }
 
-pub fn sendIsPedometerCounting(ptm: Playtime) !bool {
+pub fn sendIsPedometerCounting(ptm: Ptm) !bool {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(ptm.session, command.IsPedometerCounting, .{}, .{})).cases()) {
         .success => |s| s.value.counting,
@@ -110,7 +112,7 @@ pub fn sendIsPedometerCounting(ptm: Playtime) !bool {
     };
 }
 
-pub fn sendGetTotalStepCount(ptm: Playtime) !u32 {
+pub fn sendGetTotalStepCount(ptm: Ptm) !u32 {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(ptm.session, command.GetTotalStepCount, .{}, .{})).cases()) {
         .success => |s| s.value.steps,
@@ -118,7 +120,7 @@ pub fn sendGetTotalStepCount(ptm: Playtime) !u32 {
     };
 }
 
-pub fn sendIsNew3DS(ptm: Playtime) !bool {
+pub fn sendIsNew3DS(ptm: Ptm) !bool {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(ptm.session, command.IsNew3DS, .{}, .{})).cases()) {
         .success => |s| s.value.is_new_3ds,
@@ -126,9 +128,17 @@ pub fn sendIsNew3DS(ptm: Playtime) !bool {
     };
 }
 
-pub fn sendConfigureCpuCache(ptm: Playtime, config: horizon.ControlSystem.ConfigureCpuCache) !void {
+pub fn sendConfigureCpuCache(ptm: Ptm, config: horizon.ControlSystem.ConfigureCpuCache) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(ptm.session, command.ConfigureCpuCache, .{ .config = config }, .{})).cases()) {
+        .success => {},
+        .failure => |code| horizon.unexpectedResult(code),
+    };
+}
+
+pub fn sendNotifySleepPreparationComplete(ptm: Ptm, ack: u32) !void {
+    const data = tls.get();
+    return switch ((try data.ipc.sendRequest(ptm.session, command.NotifySleepPreparationComplete, .{ .ack = ack }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -160,6 +170,15 @@ pub const command = struct {
         config: horizon.ControlSystem.ConfigureCpuCache,
     }, struct {});
 
+    pub const NotifySleepPreparationComplete = ipc.Command(Id, .notify_sleep_preparation_complete, struct {
+        ack: u32,
+        id: ipc.ReplaceByProcessId = .replace,
+
+        pub fn init(ack: u32) @This() {
+            return .{ .ack = ack };
+        }
+    }, void);
+
     pub const Id = enum(u16) {
         register_alarm_client = 0x0001,
         set_rtc_alarm,
@@ -179,7 +198,7 @@ pub const command = struct {
 
         set_rtc_alarm_ex = 0x0401,
         reply_sleep_query,
-        notify_sleep_wakeup_preparation_complete,
+        notify_sleep_preparation_complete,
         set_wakeup_trigger,
         get_awake_reason,
         request_sleep,
@@ -226,7 +245,7 @@ comptime {
     _ = sendConfigureCpuCache;
 }
 
-const Playtime = @This();
+const Ptm = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");

@@ -24,18 +24,19 @@ pub const Format = enum(u2) {
 pub const Interrupt = enum(u2) {
     none,
     full = 2,
-    half_full,
+    half_full = 3,
     _,
 };
 
 pub const Control = packed struct(u16) {
     format: Format,
     sample_rate: SampleRate,
-    _unused0: u4,
-    fifo_empty: bool,
-    fifo_half_full: bool,
-    fifo_full: bool,
-    fifo_overrun: bool,
+    _unused0: u4 = 0,
+    fifo_empty: bool = false,
+    fifo_half_full: bool = false,
+    fifo_full: bool = false,
+    fifo_overrun: bool = false,
+    /// `enable` must be false to clear the FIFO
     clear_fifo: bool,
     irq: Interrupt,
     enable: bool,

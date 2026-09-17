@@ -135,7 +135,7 @@ pub fn main(init: horizon.Init) !void {
     debug_writer.flush() catch {};
 
     if (log_err_count != 0 or fail_count != 0) {
-        const hid = horizon.services.Hid.open(.user, srv) catch @panic("Error opening connection to hid:USER");
+        const hid = horizon.services.Hid.open(srv, .user) catch @panic("Error opening connection to hid:USER");
         defer hid.close();
 
         var input = horizon.services.Hid.Input.init(hid) catch @panic("Error initializing Hid Input");

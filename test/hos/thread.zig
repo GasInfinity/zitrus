@@ -37,7 +37,7 @@ test "is cooperative" {
     };
 
     var thread_stack: [1024]u8 align(8) = undefined;
-    const thread: Thread = try .create(Data.main, null, (&thread_stack).ptr + thread_stack.len, .highest_user, .default);
+    const thread: Thread = try .create(Data.main, null, (&thread_stack).ptr + thread_stack.len, .highest_app, .default);
     defer thread.close();
 
     // NOTE: If we're truly cooperative, this MUST not timeout.

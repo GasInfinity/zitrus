@@ -21,7 +21,7 @@ fn _start() linksection(".text.base") callconv(.naked) noreturn {
     } else {
         asm volatile ("b %[callMainAndExit]"
             :
-            : [callMainAndExit] "X" (&callMainAndExit)
+            : [callMainAndExit] "X" (&callMainAndExit),
         );
     }
 }
@@ -152,7 +152,7 @@ inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !U
         const gsp: services.GraphicsServerGpu = try .open(srv);
         defer gsp.close();
 
-        const hid: services.Hid = try .open(.user, srv);
+        const hid: services.Hid = try .open(srv, .user);
         defer hid.close();
 
         var notif_man: horizon.ServiceManager.Notification.Manager = try .init(srv);

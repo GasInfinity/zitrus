@@ -59,30 +59,57 @@ pub const FatalError = extern struct {
 
 session: ClientSession,
 
-pub fn open() !ErrDispManager {
-    return .{ .session = try ClientSession.connect(port) };
-}
-
-pub fn close(errdisp: ErrDispManager) void {
-    errdisp.session.close();
-}
+pub const open = horizon.services.Methods(@This()).openPort;
+pub const openWithResult = horizon.services.Methods(@This()).openPortWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = ipc.ServiceSend(@This()).send;
+pub const sendWithResult = ipc.ServiceSend(@This()).sendWithResult;
 
 /// Any string larger than 256 bytes will get truncated.
 pub fn sendSetUserString(errdisp: ErrDispManager, str: []const u8) !void {
-    const data = tls.get();
-    const len = @min(str.len, 256);
-    return switch ((try data.ipc.sendRequest(errdisp.session, command.SetUserString, .{ .str_size = len, .str = .static(str[0..len]) }, .{})).cases()) {
+    return switch ((try errdisp.send(.SetUserString, .init(str[0..@min(str.len, 256)]), .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendThrow(errdisp: ErrDispManager, fatal: FatalError) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(errdisp.session, command.Throw, fatal, .{})).cases()) {
+    return switch (((try errdisp.send(.Throw, fatal, .{})).cases())) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
+}
+
+pub inline fn assertResult(result: anytype) @TypeOf(result.value) {
+    assertCode(result.code);
+    return result.value;
+}
+
+pub noinline fn assertCode(code: ResultCode) void {
+    if (code.isSuccess()) return;
+
+    const errdisp = blk: for (0..10) |_| {
+        if (ErrDispManager.open()) |errdisp| {
+            break :blk errdisp;
+        } else |_| {}
+
+        horizon.sleepThread(std.time.ns_per_s);
+    } else horizon.breakExecution(.panic);
+    defer errdisp.close();
+
+    errdisp.sendThrow(.{
+        .type = .generic,
+        .revision_high = 0,
+        .revision_low = 0,
+        .result_code = code,
+        .pc_address = @returnAddress(),
+        .process_id = @intFromEnum(horizon.getProcessId(.current).value),
+        .title_id = 0,
+        .applet_title_id = 0,
+        .data = undefined,
+    }) catch horizon.breakExecution(.panic);
+
+    while (true) horizon.breakExecution(.panic);
 }
 
 pub const command = struct {
@@ -91,9 +118,17 @@ pub const command = struct {
         set_user_string,
     };
 
-    pub const Throw = ipc.Command(Id, .throw, FatalError, struct {});
+    pub const Throw = ipc.Command(Id, .throw, FatalError, void);
     // NOTE: Not documented on 3dbrew but the max str_size is 256 or we get a kernel panic.
-    pub const SetUserString = ipc.Command(Id, .set_user_string, struct { str_size: usize, str: ipc.Static(0) }, struct {});
+    pub const SetUserString = ipc.Command(Id, .set_user_string, struct {
+        str_size: u32,
+        str: ipc.Static(0),
+
+        pub fn init(str: []const u8) @This() {
+            std.debug.assert(str.len <= 256);
+            return .{ .str_size = @intCast(str.len), .str = .static(str) };
+        }
+    }, void);
 
     comptime {
         std.debug.assert(std.meta.eql(Throw.request_parameters, .parameters(32, 0)));

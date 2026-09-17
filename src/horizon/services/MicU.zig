@@ -11,13 +11,11 @@ pub const Encoding = enum(u2) { pcm8, pcm16, spcm8, spcm16 };
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !MicUser {
-    return .{ .session = try srv.getService(service, .wait) };
-}
-
-pub fn close(mic: MicUser) void {
-    mic.session.close();
-}
+pub const open = horizon.services.Methods(@This()).openService;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 /// `block` should have rw perms for other processes.
 pub fn sendInitialize(mic: MicUser, block: horizon.MemoryBlock, size: u32) !void {
@@ -103,7 +101,7 @@ pub fn sendIsRecording(mic: MicUser) !bool {
 
 pub fn sendGetDataAvailableEvent(mic: MicUser) !horizon.Event {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(mic.session, command.GetDataAvailableEvent, .{}, .{})).cases()) {
+    return switch ((try data.ipc.sendRequest(mic.session, command.GetFinishedRecordingEvent, .{}, .{})).cases()) {
         .success => |r| r.value.data_available,
         // Cannot fail
         .failure => |c| horizon.unexpectedResult(c),
@@ -132,7 +130,7 @@ pub fn sendIsClampingSamples(mic: MicUser) !void {
 
 pub fn sendSetIgnoreShellState(mic: MicUser, ignore: bool) !void {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(mic.session, command.SetIgnoreShellClosed, .{
+    return switch ((try data.ipc.sendRequest(mic.session, command.SetIgnoreShellState, .{
         .ignore = ignore,
     }, .{})).cases()) {
         .success => {},
@@ -142,13 +140,13 @@ pub fn sendSetIgnoreShellState(mic: MicUser, ignore: bool) !void {
 }
 
 pub const command = struct {
-    /// May fail with 0xd8208ff9 (already initialized), 0xe0e08fec (size is 0) or 0xe0e08ff2 (unaligned size, must be aligned to 2 bytes)
+    /// May fail with 0xd8208ff9 (already initialized), 0xe0e08fec (size is 0) or 0xe0e08ff2 (unaligned size, must be aligned to 2 bytes), 0xe0e01bf2 (unaligned size, must be aligned to 4096 bytes), 0xd8601837 (could not allocate shared memory for mapping)
     pub const Initialize = ipc.Command(Id, .initialize, struct {
         size: u32,
         block: horizon.MemoryBlock,
-    }, struct {});
+    }, void);
     /// May fail with 0xd8208ff8 (not initialized)
-    pub const Deinitialize = ipc.Command(Id, .deinitialize, struct {}, struct {});
+    pub const Deinitialize = ipc.Command(Id, .deinitialize, void, void);
     /// May fail with 0xd8208ff8 (not initialized) 0xc9408c01 (shell closed while not allowing to record with it closed), 0xe1008ffd (offset + size oob),
     pub const Start = ipc.Command(Id, .start, struct {
         encoding: Encoding,
@@ -156,53 +154,33 @@ pub const command = struct {
         offset: u32,
         size: u32,
         loop: bool,
-    }, struct {});
+    }, void);
+    /// May fail with 0xd8208ff8 (not initialized) 0xc9408c01 (shell closed while not allowing to record with it closed) or 0xe0e003ed (invalid sample_rate value)
+    pub const AdjustSampleRate = ipc.Command(Id, .adjust_sample_rate, SampleRate, void);
     /// May fail with 0xd8208ff8 (not initialized) 0xc9408c01 (shell closed while not allowing to record with it closed)
-    pub const AdjustSampleRate = ipc.Command(Id, Id, struct {
-        sample_rate: SampleRate,
-    }, struct {});
-    /// May fail with 0xd8208ff8 (not initialized) 0xc9408c01 (shell closed while not allowing to record with it closed)
-    pub const Stop = ipc.Command(Id, .stop, struct {}, struct {});
+    pub const Stop = ipc.Command(Id, .stop, void, void);
     /// Cannot fail
-    pub const IsRecording = ipc.Command(Id, .is_recording, struct {}, struct {
-        recording: bool,
-    });
+    pub const IsRecording = ipc.Command(Id, .is_recording, void, bool);
     /// Cannot fail
-    pub const GetDataAvailableEvent = ipc.Command(Id, .get_data_available_event, struct {}, struct {
-        data_available: horizon.Event,
-    });
+    pub const GetFinishedRecordingEvent = ipc.Command(Id, .get_finished_recording_event, void, horizon.Event);
     /// Straight wrapper of cdc:MIC, forwards it's result.
-    pub const SetGain = ipc.Command(Id, .set_gain, struct {
-        gain: u8,
-    }, struct {});
+    pub const SetGain = ipc.Command(Id, .set_gain, CdcMic.command.SetGain.Request, CdcMic.command.SetGain.Response);
     /// Straight wrapper of cdc:MIC, forwards it's result.
-    pub const GetGain = ipc.Command(Id, .get_gain, struct {}, struct {
-        gain: u8,
-    });
+    pub const GetGain = ipc.Command(Id, .get_gain, CdcMic.command.GetGain.Request, CdcMic.command.GetGain.Response);
+    /// Wrapper of cdc:MIC, forwards it's result. When powering on the microphone, one second will be filled with silence.
+    pub const SetPowered = ipc.Command(Id, .set_powered, CdcMic.command.SetPowered.Request, CdcMic.command.SetPowered.Response);
     /// Straight wrapper of cdc:MIC, forwards it's result.
-    pub const SetPowered = ipc.Command(Id, .set_powered, struct {
-        powered: bool,
-    }, struct {});
+    pub const IsPowered = ipc.Command(Id, .is_powered, CdcMic.command.IsPowered.Request, CdcMic.command.IsPowered.Response);
     /// Straight wrapper of cdc:MIC, forwards it's result.
-    pub const IsPowered = ipc.Command(Id, .is_powered, struct {}, struct {
-        powered: bool,
-    });
-    /// Straight wrapper of cdc:MIC, forwards it's result.
-    pub const SetIirFilter = ipc.Command(Id, .set_iir_filter, struct {
-        powered: bool,
-    }, struct {});
+    pub const SetIirFilter = ipc.Command(Id, .set_iir_filter, CdcMic.command.SetIirFilter.Request, CdcMic.command.SetIirFilter.Response);
     /// Cannot fail
-    pub const SetClampSamples = ipc.Command(Id, .set_clamp_samples, struct {
-        clamp: bool,
-    }, struct {});
+    pub const SetClampSamples = ipc.Command(Id, .set_clamp_samples, bool, void);
     /// Cannot fail
-    pub const IsClampingSamples = ipc.Command(Id, .is_clamping_samples, struct {}, struct {
-        clamp: bool,
-    });
+    pub const IsClampingSamples = ipc.Command(Id, .is_clamping_samples, void, bool);
     /// Cannot fail
-    pub const SetIgnoreShellClosed = ipc.Command(Id, .ignore_shell_state, struct {}, struct {
-        ignore: bool,
-    });
+    pub const SetIgnoreShellState = ipc.Command(Id, .set_ignore_shell_state, bool, void);
+    /// Cannot fail
+    pub const DisableLegacySampling = ipc.Command(Id, .disable_legacy_sampling, bool, void);
 
     pub const Id = enum(u16) {
         initialize = 0x0001,
@@ -211,7 +189,7 @@ pub const command = struct {
         adjust_sample_rate,
         stop,
         is_recording,
-        get_data_available_event,
+        get_finished_recording_event,
         set_gain,
         get_gain,
         set_powered,
@@ -220,29 +198,7 @@ pub const command = struct {
         set_clamp_samples,
         is_clamping_samples,
         set_ignore_shell_state,
-
-        // Some sort of "legacy" (mayyybe?) mode? This being false sets a flag to true (which is already true by default), if that flag is true and sampling with encoding = pcm16s, sample_rate = 1
-        // and size = 0x5ffc (24572) another mode is used.
-        //
-        // flag = false -> drains the MIC fifo statelessly, if it overruns the first sample after clearing the fifo will be the last sample before the overrun. pseudo:
-        //   data = mic.data
-        //   if (state.was_overrun) {
-        //      state.was_overrun = false
-        //      data = state.last_sample
-        //   }
-        //   state.last_sample = data
-        //   sample_buf[cur] = state.last_sample
-        //
-        //   if (mic.cnt.fifo_overrun) state.was_overrun = true // Simplified, will also clear the fifo and restart sampling
-        //
-        // flag = true (default), with conditions as above -> same as above but an overrun happening will restart sampling without the mumbo jumbo that happens above.
-        // flag = true (default), without conditions -> much more complex, maintains some state to track elapsed ticks and the current samples written; calculating how many samples
-        // should be added to the buffer.
-        //
-        // Maybe the flag is some sort of "raw mode"? "legacy mode"? idk man
-        //
-        // Important, cannot fail obv
-        set_different_mode,
+        disable_legacy_sampling,
     };
 };
 
@@ -256,3 +212,5 @@ const ipc = horizon.ipc;
 
 const ClientSession = horizon.Session.Client;
 const ServiceManager = horizon.ServiceManager;
+
+const CdcMic = horizon.services.cdc.Mic;

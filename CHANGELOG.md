@@ -19,9 +19,20 @@ All notable changes to this project will be documented in this file.
 - Added the possibility to not switch stacks and use the kernel-provided stack by Horizon.
 - Added `horizon.debug.simple_errdisp_panic` which doesn't collect any stacktrace and throws directly.
 
+- Added `horizon.ipc.Buffer.sendRequestWithResult` which doesn't map horizon results to zig errors.
+- Added `horizon.services.Methods` for common methods applying to all services/ports. BREAKING: You may need to swap parameters to `.open`
+- Added `horizon.ErrorDisplayManager.assertResult/Code`.
+- Added `horizon.tls.initVariables` for rolling your own Thread wrappers (IMPORTANT! do this when spawning ANY thread not from `horizon.Thread.Impl` and not in -fsingle-threaded!)
+- Added irq access capability reading/writing support to ncch making.
+- `ServiceManager.command.GetServiceHandle` -> `ServiceManager.command.GetService`
+- BREAKING: General ipc improvements, structs are now not mandatory to be toplevel in req/resp; i.e you can now just expect a `bool` return value instead of wrapping it in a struct.
+  This is only BREAKING to those who use services in a low-level way; sorry!
+
 - Changed `horizon.fmt.ncch.ExtendedHeader` to `horizon.fmt.ncch.Header.Extended`
 - Changed `demo/mango/texture_loading` to load the texture from the RomFS instead of embedding it.
 - Moved `zitrus.horizon.fmt.ncch.ExtendedHeader` -> `zitrus.horizon.fmt.ncch.Header.Extended`
+- Begin moving `zitrus.horizon.services.X` to it's service acronyms, deprecating the aliases. For example `services.SocketUser` is now `services.soc.User`;
+  services that only have one service or provide multiple ones with the same requests will still be in its acronym form in `services`, e.g `services.Ptm`.
 
 - Removed `zitrus.horizon.fmt.smdh` (-> `zitrus.horizon.fmt.ncch.smdh`), it was deprecated a LONG time ago.
 

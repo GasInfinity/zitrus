@@ -119,6 +119,7 @@ pub const Codec = union(enum) {
 
     pub fn of(comptime T: type) Codec {
         return switch (@typeInfo(T)) {
+            .void => .{ .raw = 0 },
             .int, .float, .bool => .{ .raw = @sizeOf(T) },
             .@"enum" => if (T == horizon.Object)
                 .{ .handles = 1 }
@@ -519,23 +520,24 @@ pub const Codec = union(enum) {
 };
 
 pub fn Command(comptime CommandId: type, comptime command_id: CommandId, comptime CommandRequest: type, comptime CommandResponse: type) type {
-    std.debug.assert(@typeInfo(CommandRequest) == .@"struct");
-    std.debug.assert(@typeInfo(CommandResponse) == .@"struct");
+    const StaticOutput = if (@typeInfo(CommandRequest) == .@"struct" and @hasDecl(CommandRequest, "StaticOutput")) blk: {
+        const StaticOutput = CommandRequest.StaticOutput;
 
-    const StaticOutput = if (@hasDecl(CommandRequest, "StaticOutput")) @field(CommandRequest, "StaticOutput") else struct {};
+        if (@typeInfo(StaticOutput) != .@"struct") @compileError("StaticOutput must be a struct containing mutable pointers or slices.");
 
-    if (@typeInfo(StaticOutput) != .@"struct") @compileError("StaticOutput must only contain output `[]u8`s for the Command");
+        for (@typeInfo(StaticOutput).@"struct".fields) |f| {
+            const f_ty = @typeInfo(f.type);
 
-    for (@typeInfo(StaticOutput).@"struct".fields) |f| {
-        const f_ty = @typeInfo(f.type);
+            if (f_ty != .pointer) @compileError("StaticOutput field '" ++ f.name ++ "' must be a slice or pointer to one item");
 
-        if (f_ty != .pointer) @compileError("StaticOutput field '" ++ f.name ++ "' must be a slice or pointer to one item");
-
-        switch (f_ty.pointer.size) {
-            .c, .many => @compileError("StaticOutput field '" ++ f.name ++ "' must be a slice or pointer to one item"),
-            .slice, .one => {},
+            switch (f_ty.pointer.size) {
+                .c, .many => @compileError("StaticOutput field '" ++ f.name ++ "' must be a slice or pointer to one item"),
+                .slice, .one => {},
+            }
         }
-    }
+
+        break :blk @field(CommandRequest, "StaticOutput");
+    } else struct {};
 
     return struct {
         pub const Id = CommandId;
@@ -551,6 +553,27 @@ pub fn Command(comptime CommandId: type, comptime command_id: CommandId, comptim
 
         pub const request_parameters: Buffer.PackedCommand.Parameters = request.parameters();
         pub const response_parameters: Buffer.PackedCommand.Parameters = response.parameters();
+    };
+}
+
+pub fn ServiceSend(comptime T: type) type {
+    if (!@hasField(T, "session") or @FieldType(T, "session") != horizon.Session.Client) @compileError("Service must wrap a session");
+    if (!@hasDecl(T, "command") or !@hasDecl(T.command, "Id")) @compileError("Service must have commands");
+
+    const CmdEnum = std.meta.DeclEnum(T.command);
+
+    return struct {
+        pub fn send(service: T, comptime cmd: CmdEnum, req: Cmd(cmd).Request, static_output: Cmd(cmd).RequestStaticOutput) Buffer.SendRequestError!horizon.Result(Cmd(cmd).Response) {
+            return horizon.tls.get().ipc.sendRequest(service.session, Cmd(cmd), req, static_output);
+        }
+
+        pub fn sendWithResult(service: T, comptime cmd: CmdEnum, req: Cmd(cmd).Request, static_output: Cmd(cmd).RequestStaticOutput) horizon.Result(Cmd(cmd).Response) {
+            return horizon.tls.get().ipc.sendRequestWithResult(service.session, Cmd(cmd), req, static_output);
+        }
+
+        fn Cmd(cmd: CmdEnum) type {
+            return @field(T.command, @tagName(cmd));
+        }
     };
 }
 
@@ -657,6 +680,16 @@ pub const Buffer = extern struct {
         return try buffer.readResponse(DefinedCommand);
     }
 
+    pub fn sendRequestWithResult(buffer: *Buffer, session: ClientSession, comptime DefinedCommand: type, request: DefinedCommand.Request, static_output: DefinedCommand.RequestStaticOutput) Result(DefinedCommand.Response) {
+        buffer.writeRequest(DefinedCommand, &request, static_output);
+        const req_res = horizon.sendSyncRequest(session);
+        if (!req_res.isSuccess()) return .of(req_res, undefined);
+        return buffer.readResponse(DefinedCommand) catch |err| switch (err) {
+            error.BadIpcHeader => .of(.os_invalid_ipc_header, undefined),
+            error.BadTranslationHeader => .of(.os_invalid_ipc_parameters, undefined),
+        };
+    }
+
     pub fn writeRequest(buffer: *Buffer, comptime DefinedCommand: type, request: *const DefinedCommand.Request, static_output: DefinedCommand.RequestStaticOutput) void {
         buffer.packed_command.header = .{
             .command_id = @intFromEnum(DefinedCommand.id),
@@ -696,7 +729,7 @@ pub const Buffer = extern struct {
     }
 
     pub fn readRequestId(buffer: *Buffer, comptime Id: type) ?Id {
-        if (std.enums.fromInt(Id, buffer.packed_command.header.command_id)) |id| return id; 
+        if (std.enums.fromInt(Id, buffer.packed_command.header.command_id)) |id| return id;
 
         buffer.packed_command.header = .invalid;
         buffer.packed_command.parameters[0] = @bitCast(Code.os_invalid_ipc_header);
@@ -707,7 +740,7 @@ pub const Buffer = extern struct {
     pub const ReadError = CheckError || Codec.ReadError;
 
     pub fn checkResponse(buffer: *Buffer, comptime DefinedCommand: type) CheckError!Code {
-        if (buffer.packed_command.header.command_id != @intFromEnum(DefinedCommand.id)) return error.BadIpcHeader;
+        if (buffer.packed_command.header.command_id != 0x00 and buffer.packed_command.header.command_id != @intFromEnum(DefinedCommand.id)) return error.BadIpcHeader;
         return @bitCast(buffer.packed_command.parameters[0]);
     }
 

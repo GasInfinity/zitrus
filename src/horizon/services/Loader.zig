@@ -6,13 +6,11 @@ pub const Program = enum(u64) { _ };
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !Loader {
-    return .{ .session = try srv.getService(service, .wait) };
-}
-
-pub fn close(ldr: Loader) void {
-    ldr.session.close();
-}
+pub const open = horizon.services.Methods(@This()).openService;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 pub fn sendLoadProcess(ldr: Loader, program: Program) !horizon.Process {
     const data = tls.get();

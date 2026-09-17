@@ -79,6 +79,7 @@ pub const KernelCapabilities = struct {
     handle_table_size: ?u19 = null,
     // XXX: This could be an EnumFieldStruct or bitset but how would be encode it?
     system_call_access: []const horizon.SystemCall = &.{},
+    interrupt_access: []const horizon.Interrupt = &.{},
     mapped_ranges: []const MapAddressRange = &.{},
     mapped_io_pages: []const MapIoPage = &.{},
 };
@@ -174,8 +175,11 @@ pub fn initNcch(hdr: *const ncch.Header, ex_hdr: *const ncch.ExtendedHeader, gpa
                 var capabilities: KernelCapabilities = .{};
                 var i: usize = 0;
 
-                var used_syscalls: std.ArrayList(horizon.SystemCall) = .empty;
-                errdefer used_syscalls.deinit(gpa);
+                var syscall_access: std.ArrayList(horizon.SystemCall) = .empty;
+                errdefer syscall_access.deinit(gpa);
+
+                var irq_access: std.ArrayList(horizon.Interrupt) = .empty;
+                errdefer irq_access.deinit(gpa);
 
                 var mapped_io: std.ArrayList(KernelCapabilities.MapIoPage) = .empty;
                 errdefer mapped_io.deinit(gpa);
@@ -210,14 +214,18 @@ pub fn initNcch(hdr: *const ncch.Header, ex_hdr: *const ncch.ExtendedHeader, gpa
                         .allow_cpu2 = descriptor.kernel_flags.allow_cpu2,
                     } else if (descriptor.handle_table_size.header == Descriptor.HandleTableSize.magic_value) {
                         capabilities.handle_table_size = descriptor.handle_table_size.size;
-                    } else if (descriptor.interrupt_info.header == Descriptor.InterruptInfo.magic_value) {
-                        // TODO:
-                    } else if (descriptor.system_call_mask.header == Descriptor.SystemCallMask.magic_value) {
-                        const mask = descriptor.system_call_mask.mask;
-                        const start = descriptor.system_call_mask.index * @as(u8, @bitSizeOf(u24));
+                    } else if (descriptor.interrupt_access.header == Descriptor.InterruptAccess.magic_value) {
+                        for (0..4) |irq_idx| {
+                            const irq = descriptor.interrupt_access.irqs.get(irq_idx);
+                            if (irq == .none) continue;
+                            try irq_access.append(gpa, irq);
+                        }
+                    } else if (descriptor.system_call_access.header == Descriptor.SystemCallAccess.magic_value) {
+                        const mask = descriptor.system_call_access.mask;
+                        const start = descriptor.system_call_access.index * @as(u8, @bitSizeOf(u24));
 
                         for (0..@bitSizeOf(u24)) |bit| {
-                            if (((mask >> @intCast(bit)) & 0b1) != 0) try used_syscalls.append(gpa, @enumFromInt(start + bit));
+                            if (((mask >> @intCast(bit)) & 0b1) != 0) try syscall_access.append(gpa, @enumFromInt(start + bit));
                         }
                     } else if (descriptor.map_range_start.header == Descriptor.MapAddressRangeStart.magic_value) {
                         // TODO:
@@ -228,8 +236,10 @@ pub fn initNcch(hdr: *const ncch.Header, ex_hdr: *const ncch.ExtendedHeader, gpa
                     i += 1;
                 }
 
-                capabilities.system_call_access = try used_syscalls.toOwnedSlice(gpa);
+                capabilities.system_call_access = try syscall_access.toOwnedSlice(gpa);
                 errdefer gpa.free(capabilities.system_call_access);
+                capabilities.interrupt_access = try irq_access.toOwnedSlice(gpa);
+                errdefer gpa.free(capabilities.interrupt_access);
                 capabilities.mapped_io_pages = try mapped_io.toOwnedSlice(gpa);
                 errdefer gpa.free(capabilities.mapped_io_pages);
                 capabilities.mapped_ranges = try mapped_ranges.toOwnedSlice(gpa);

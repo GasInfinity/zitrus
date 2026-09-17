@@ -543,7 +543,7 @@ pub fn lockSendCommand(apt: Applet, service: Service, srv: ServiceManager, compt
     try apt.lock.wait(.none);
     defer apt.lock.release();
 
-    const fresh_session = try srv.sendGetServiceHandle(service.name(), .wait);
+    const fresh_session = try srv.sendGetService(service.name(), .wait);
     defer fresh_session.close();
 
     const data = tls.get();

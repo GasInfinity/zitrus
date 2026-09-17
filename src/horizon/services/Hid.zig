@@ -133,13 +133,11 @@ pub const Shared = extern struct {
 
 session: ClientSession,
 
-pub fn open(service: Service, srv: ServiceManager) !Hid {
-    return .{ .session = try srv.getService(service.name(), .wait) };
-}
-
-pub fn close(hid: Hid) void {
-    hid.session.close();
-}
+pub const open = horizon.services.Methods(@This()).openServiceMulti;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceMultiWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 pub const Handles = struct {
     shm: MemoryBlock,

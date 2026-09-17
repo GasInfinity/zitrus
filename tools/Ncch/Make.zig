@@ -297,7 +297,27 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
                     for (syscall_masks, 0..) |mask, mask_index| {
                         if (mask == 0x00) continue;
 
-                        capabilities[i] = .syscallMask(@intCast(mask_index), mask);
+                        capabilities[i] = .syscallAccess(@intCast(mask_index), mask);
+                        i += 1;
+                    }
+
+                    var irq_access: zitrus.hardware.BitpackedArray(horizon.Interrupt, 4) = comptime .splat(.none);
+                    var irq_idx: usize = 0;
+                    for (kernel.interrupt_access) |irq| {
+                        irq_access.set(irq_idx, irq);
+                        irq_idx += 1;
+
+                        if (irq_idx == 4) {
+                            irq_access = comptime .splat(.none);
+                            irq_idx = 0;
+
+                            capabilities[i] = .interruptAccess(irq_access);
+                            i += 1;
+                        }
+                    }
+
+                    if (irq_idx > 0) {
+                        capabilities[i] = .interruptAccess(irq_access);
                         i += 1;
                     }
 

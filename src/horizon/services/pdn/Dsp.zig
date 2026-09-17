@@ -4,17 +4,14 @@ pub const service = "pdn:d";
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !Dsp {
-    return .{ .session = try srv.getService(service, .wait) };
-}
-
-pub fn close(pdn: Dsp) void {
-    pdn.session.close();
-}
+pub const open = horizon.services.Methods(@This()).openService;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 pub fn sendControl(pdn: Dsp, enable: bool, reset: bool, reset_registers: bool) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(pdn.session, command.Control, .{
+    return switch ((try pdn.send(.Control, .{
         .enable = enable,
         .reset = reset,
         .reset_registers = reset_registers,
@@ -34,7 +31,7 @@ pub const command = struct {
         enable: bool,
         reset: bool,
         reset_registers: bool,
-    }, struct {});
+    }, void);
 
     pub const Id = enum(u16) {
         control = 0x0001,
@@ -46,7 +43,6 @@ const Dsp = @This();
 const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
-const tls = horizon.tls;
 const ipc = horizon.ipc;
 
 const ClientSession = horizon.Session.Client;

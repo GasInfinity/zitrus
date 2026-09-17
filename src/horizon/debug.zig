@@ -91,15 +91,17 @@ pub fn defaultPanic(msg: []const u8, first_trace_addr: ?usize) noreturn {
                 .process_id = @intFromEnum(horizon.getProcessId(.current).value), // NOTE: cannot fail as current is always valid.
                 .title_id = 0x0,
                 .applet_title_id = 0x0,
-                .data = .{ .failure = .{
-                    .message = blk: {
-                        var buffer: [0x60]u8 = undefined;
-                        const truncated_len = @min(buffer.len - 1, msg.len); // -1 as we need a NUL-terminator
-                        @memcpy(buffer[0..truncated_len], msg[0..truncated_len]);
-                        buffer[truncated_len] = 0;
-                        break :blk buffer;
+                .data = .{
+                    .failure = .{
+                        .message = blk: {
+                            var buffer: [0x60]u8 = undefined;
+                            const truncated_len = @min(buffer.len - 1, msg.len); // -1 as we need a NUL-terminator
+                            @memcpy(buffer[0..truncated_len], msg[0..truncated_len]);
+                            buffer[truncated_len] = 0;
+                            break :blk buffer;
+                        },
                     },
-                } },
+                },
             }) catch print("panic: 'err:f' could not throw with message '{s}'", .{msg});
         },
         1 => {
@@ -212,15 +214,17 @@ pub fn defaultHandleSegfault(addr: ?usize, name: []const u8, opt_ctx: ?std.debug
                 .process_id = @intFromEnum(horizon.getProcessId(.current).value), // NOTE: cannot fail as current is always valid.
                 .title_id = 0x0,
                 .applet_title_id = 0x0,
-                .data = .{ .failure = .{
-                    .message = blk: {
-                        var buffer: [0x60]u8 = undefined;
-                        const truncated_len = @min(buffer.len - 1, name.len); // -1 as we need a NUL-terminator
-                        @memcpy(buffer[0..truncated_len], name[0..truncated_len]);
-                        buffer[truncated_len] = 0;
-                        break :blk buffer;
+                .data = .{
+                    .failure = .{
+                        .message = blk: {
+                            var buffer: [0x60]u8 = undefined;
+                            const truncated_len = @min(buffer.len - 1, name.len); // -1 as we need a NUL-terminator
+                            @memcpy(buffer[0..truncated_len], name[0..truncated_len]);
+                            buffer[truncated_len] = 0;
+                            break :blk buffer;
+                        },
                     },
-                } },
+                },
             }) catch print("panic: 'err:f' could not throw with message '{s}'", .{name});
         },
         1 => {
