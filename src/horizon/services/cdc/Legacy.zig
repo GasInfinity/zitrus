@@ -1,26 +1,6 @@
-//! `cdc:HID`
+//! `cdc:LGY`
 
-pub const service = "cdc:HID";
-
-pub const Report = extern struct {
-    pub const Touch = packed struct(u32) {
-        x: u12,
-        y: u12,
-        down: bool,
-        /// Set to true if less than 2 touch entries were averaged or `available` is `false`.
-        inaccurate: bool,
-        _unused0: u6 = 0,
-    };
-
-    pub const Circle = packed struct(u32) {
-        x: u12,
-        y: u12,
-        _unused0: u8 = 0,
-    };
-
-    touch: Touch,
-    circle: Circle,
-};
+pub const service = "cdc:LGY";
 
 session: ClientSession,
 
@@ -30,22 +10,24 @@ pub const close = horizon.services.Methods(@This()).close;
 pub const send = horizon.services.Methods(@This()).send;
 pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
+// NOTE: Temporary names, as this has never been named.
+
 pub const command = struct {
-    /// May return 0xc9403800 (sleeping, nothing changed) or 0xd8603bef (report not available)
-    pub const GetReport = ipc.Command(Id, .get_report, void, Report);
     /// May return 0xc9403800 (sleeping, nothing changed)
     pub const Initialize = ipc.Command(Id, .initialize, void, void);
     /// May return 0xc9403800 (sleeping, nothing changed)
-    pub const Deinitialize = ipc.Command(Id, .deinitialize, void, void);
+    pub const SetTouch3ds = ipc.Command(Id, .set_touch_3ds, bool, void);
+    /// May return 0xc9403800 (sleeping, nothing changed)
+    pub const SetMicBias = ipc.Command(Id, .set_mic_bias, bool, void);
 
     pub const Id = enum(u16) {
-        get_report = 0x0001,
-        initialize,
-        deinitialize,
+        initialize = 0x0001,
+        set_touch_3ds,
+        set_mic_bias,
     };
 };
 
-const Hid = @This();
+const Legacy = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");

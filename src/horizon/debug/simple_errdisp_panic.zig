@@ -4,12 +4,18 @@
 pub fn call(message: []const u8, return_address: ?usize) noreturn {
     @branchHint(.cold);
 
-    const errdisp = horizon.ErrorDisplayManager.open() catch horizon.breakExecution(.panic);
+    const errdisp = blk: for (0..20) |_| {
+        const errdisp = horizon.ErrorDisplayManager.open() catch {
+            horizon.sleepThread(1 * std.time.ns_per_ms);
+            continue;
+        };
+        break :blk errdisp;
+    } else horizon.breakExecution(.panic);
     defer errdisp.close();
 
     errdisp.sendSetUserString(message) catch {};
     errdisp.sendThrow(.{
-        .type = .failure,
+        .type = .generic,
         .revision_high = 0x00,
         .revision_low = 0x00,
         .result_code = .failure,
@@ -17,17 +23,7 @@ pub fn call(message: []const u8, return_address: ?usize) noreturn {
         .process_id = @intFromEnum(horizon.getProcessId(.current).value), // NOTE: cannot fail as current is always valid.
         .title_id = 0x0,
         .applet_title_id = 0x0,
-        .data = .{
-            .failure = .{
-                .message = blk: {
-                    var buffer: [0x60]u8 = undefined;
-                    const truncated_len = @min(buffer.len - 1, message.len); // -1 as we need a NUL-terminator
-                    @memcpy(buffer[0..truncated_len], message[0..truncated_len]);
-                    buffer[truncated_len] = 0;
-                    break :blk buffer;
-                },
-            },
-        },
+        .data = undefined,
     }) catch horizon.breakExecution(.panic);
     while (true) horizon.breakExecution(.panic);
 }
@@ -140,5 +136,6 @@ pub fn noreturnReturned() noreturn {
     call("'noreturn' function returned", @returnAddress());
 }
 
+const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;

@@ -73,102 +73,77 @@ pub const send = horizon.services.Methods(@This()).send;
 pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 pub fn sendIsAdapterConnected(ptm: Ptm) !bool {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(ptm.session, command.IsAdapterConnected, .{}, .{})).cases()) {
-        .success => |s| s.value.connected,
+    return switch ((try ptm.send(.IsAdapterConnected, {}, .{})).cases()) {
+        .success => |s| s.value,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendIsShellOpened(ptm: Ptm) !bool {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(ptm.session, command.IsShellOpened, .{}, .{})).cases()) {
-        .success => |s| s.value.open,
+    return switch ((try ptm.send(.IsShellOpened, {}, .{})).cases()) {
+        .success => |s| s.value,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendGetBatteryLevel(ptm: Ptm) !BatteryLevel {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(ptm.session, command.GetBatteryLevel, .{}, .{})).cases()) {
-        .success => |s| s.value.level,
+    return switch ((try ptm.send(.GetBatteryLevel, {}, .{})).cases()) {
+        .success => |s| s.value,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendIsBatteryCharging(ptm: Ptm) !bool {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(ptm.session, command.IsBatteryCharging, .{}, .{})).cases()) {
-        .success => |s| s.value.charging,
+    return switch ((try ptm.send(.IsBatteryCharging, {}, .{})).cases()) {
+        .success => |s| s.value,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendIsPedometerCounting(ptm: Ptm) !bool {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(ptm.session, command.IsPedometerCounting, .{}, .{})).cases()) {
-        .success => |s| s.value.counting,
+    return switch ((try ptm.send(.IsPedometerCounting, {}, .{})).cases()) {
+        .success => |s| s.value,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendGetTotalStepCount(ptm: Ptm) !u32 {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(ptm.session, command.GetTotalStepCount, .{}, .{})).cases()) {
-        .success => |s| s.value.steps,
+    return switch ((try ptm.send(.GetTotalStepCount, {}, .{})).cases()) {
+        .success => |s| s.value,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendIsNew3DS(ptm: Ptm) !bool {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(ptm.session, command.IsNew3DS, .{}, .{})).cases()) {
-        .success => |s| s.value.is_new_3ds,
+pub fn sendIsNew3ds(ptm: Ptm) !bool {
+    return switch ((try ptm.send(.IsNew3ds, {}, .{})).cases()) {
+        .success => |s| s.value,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendConfigureCpuCache(ptm: Ptm, config: horizon.ControlSystem.ConfigureCpuCache) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(ptm.session, command.ConfigureCpuCache, .{ .config = config }, .{})).cases()) {
+    return switch ((try ptm.send(.ConfigureCpuCache, config, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub fn sendNotifySleepPreparationComplete(ptm: Ptm, ack: u32) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(ptm.session, command.NotifySleepPreparationComplete, .{ .ack = ack }, .{})).cases()) {
+    return switch ((try ptm.send(.NotifySleepPreparationComplete, .init(ack), .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub const command = struct {
-    pub const IsAdapterConnected = ipc.Command(Id, .is_adapter_connected, struct {}, struct {
-        connected: bool,
-    });
-    pub const IsShellOpened = ipc.Command(Id, .is_shell_opened, struct {}, struct {
-        open: bool,
-    });
-    pub const GetBatteryLevel = ipc.Command(Id, .get_battery_level, struct {}, struct {
-        level: BatteryLevel,
-    });
-    pub const IsBatteryCharging = ipc.Command(Id, .is_battery_charging, struct {}, struct {
-        charging: bool,
-    });
-    pub const IsPedometerCounting = ipc.Command(Id, .is_pedometer_counting, struct {}, struct {
-        counting: bool,
-    });
-    pub const GetTotalStepCount = ipc.Command(Id, .get_total_step_count, struct {}, struct {
-        steps: u32,
-    });
-    pub const IsNew3DS = ipc.Command(Id, .is_new_3ds, struct {}, struct {
-        is_new_3ds: bool,
-    });
-    pub const ConfigureCpuCache = ipc.Command(Id, .configure_cpu_cache, struct {
-        config: horizon.ControlSystem.ConfigureCpuCache,
-    }, struct {});
+    pub const IsAdapterConnected = ipc.Command(Id, .is_adapter_connected, void, bool);
+    pub const IsShellOpened = ipc.Command(Id, .is_shell_opened, void, bool);
+    pub const GetBatteryLevel = ipc.Command(Id, .get_battery_level, void, BatteryLevel);
+    pub const IsBatteryCharging = ipc.Command(Id, .is_battery_charging, void, bool);
+    pub const IsPedometerCounting = ipc.Command(Id, .is_pedometer_counting, void, bool);
+    pub const GetTotalStepCount = ipc.Command(Id, .get_total_step_count, void, u32);
+    pub const IsNew3ds = ipc.Command(Id, .is_new_3ds, void, bool);
+    pub const ConfigureCpuCache = ipc.Command(Id, .configure_cpu_cache, horizon.ControlSystem.ConfigureCpuCache, void);
 
     pub const NotifySleepPreparationComplete = ipc.Command(Id, .notify_sleep_preparation_complete, struct {
         ack: u32,
@@ -241,7 +216,7 @@ comptime {
     _ = sendIsBatteryCharging;
     _ = sendIsPedometerCounting;
     _ = sendGetTotalStepCount;
-    _ = sendIsNew3DS;
+    _ = sendIsNew3ds;
     _ = sendConfigureCpuCache;
 }
 

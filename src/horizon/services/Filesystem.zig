@@ -184,13 +184,13 @@ pub const File = packed struct(u32) {
     pub fn close(file: File) void {
         defer file.session.close();
 
-        _ = tls.get().ipc.sendRequest(file.session, File.command.Close, .{}, .{}) catch {};
+        _ = tls.get().ipc.sendRequest(file.session, File.command.Close, {}, .{}) catch {};
     }
 
     pub fn sendOpenSubFile(file: File, offset: u64, size: u64) !File {
         const data = tls.get();
         return switch ((try data.ipc.sendRequest(file.session, File.command.OpenSubFile, .{ .offset = offset, .size = size }, .{})).cases()) {
-            .success => |s| s.value.file.wrapped,
+            .success => |s| s.value.wrapped,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
@@ -213,15 +213,15 @@ pub const File = packed struct(u32) {
 
     pub fn sendGetSize(file: File) !u64 {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(file.session, File.command.GetSize, .{}, .{})).cases()) {
-            .success => |s| s.value.size,
+        return switch ((try data.ipc.sendRequest(file.session, File.command.GetSize, {}, .{})).cases()) {
+            .success => |s| s.value,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
 
     pub fn sendSetSize(file: File, size: u64) !void {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(file.session, File.command.SetSize, .{ .size = size }, .{})).cases()) {
+        return switch ((try data.ipc.sendRequest(file.session, File.command.SetSize, size, .{})).cases()) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -229,15 +229,15 @@ pub const File = packed struct(u32) {
 
     pub fn sendGetAttributes(file: File) !Attributes {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(file.session, File.command.GetAttributes, .{}, .{})).cases()) {
-            .success => |s| s.value.attributes,
+        return switch ((try data.ipc.sendRequest(file.session, File.command.GetAttributes, {}, .{})).cases()) {
+            .success => |s| s.value,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
 
     pub fn sendSetAttributes(file: File, attributes: Attributes) !void {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(file.session, File.command.SetAttributes, .{ .attributes = attributes }, .{})).cases()) {
+        return switch ((try data.ipc.sendRequest(file.session, File.command.SetAttributes, attributes, .{})).cases()) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -245,7 +245,7 @@ pub const File = packed struct(u32) {
 
     pub fn sendFlush(file: File) !void {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(file.session, File.command.Flush, .{}, .{})).cases()) {
+        return switch ((try data.ipc.sendRequest(file.session, File.command.Flush, {}, .{})).cases()) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -253,15 +253,15 @@ pub const File = packed struct(u32) {
 
     pub fn sendGetPriority(file: File) !u32 {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(file.session, File.command.GetPriority, .{}, .{})).cases()) {
-            .success => |s| s.value.priority,
+        return switch ((try data.ipc.sendRequest(file.session, File.command.GetPriority, {}, .{})).cases()) {
+            .success => |s| s.value,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
 
     pub fn sendSetPriority(file: File, priority: u32) !void {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(file.session, File.command.SetPriority, .{ .priority = priority }, .{})).cases()) {
+        return switch ((try data.ipc.sendRequest(file.session, File.command.SetPriority, priority, .{})).cases()) {
             .success => {},
             .failure => |code| horizon.unexpectedResult(code),
         };
@@ -269,8 +269,8 @@ pub const File = packed struct(u32) {
 
     pub fn sendOpenLinkFile(file: File) !File {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(file.session, File.command.OpenLinkFile, .{}, .{})).cases()) {
-            .success => |s| s.value.clone,
+        return switch ((try data.ipc.sendRequest(file.session, File.command.OpenLinkFile, {}, .{})).cases()) {
+            .success => |s| s.value.wrapped,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
@@ -278,25 +278,25 @@ pub const File = packed struct(u32) {
     pub fn sendGetAvailable(file: File, offset: u64, size: u64) !u64 {
         const data = tls.get();
         return switch ((try data.ipc.sendRequest(file.session, File.command.GetAvailable, .{ .offset = offset, .size = size }, .{})).cases()) {
-            .success => |s| s.value.available,
+            .success => |s| s.value,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
 
     pub const command = struct {
-        pub const OpenSubFile = ipc.Command(Id, .open_sub_file, struct { offset: u64, size: u64 }, struct { file: ipc.MoveHandles(File) });
-        pub const Read = ipc.Command(Id, .read, struct { offset: u64, size: usize, buffer: ipc.Mapped(.w) }, struct { actual_read: usize, buffer: ipc.Mapped(.w) });
-        pub const Write = ipc.Command(Id, .write, struct { offset: u64, size: usize, options: WriteOptions, buffer: ipc.Mapped(.r) }, struct { actual_written: usize, buffer: ipc.Mapped(.r) });
-        pub const GetSize = ipc.Command(Id, .get_size, struct {}, struct { size: u64 });
-        pub const SetSize = ipc.Command(Id, .set_size, struct { size: u64 }, struct {});
-        pub const GetAttributes = ipc.Command(Id, .get_attributes, struct {}, struct { attributes: Attributes });
-        pub const SetAttributes = ipc.Command(Id, .set_attributes, struct { attributes: Attributes }, struct {});
-        pub const Close = ipc.Command(Id, .close, struct {}, struct {});
-        pub const Flush = ipc.Command(Id, .close, struct {}, struct {});
-        pub const SetPriority = ipc.Command(Id, .set_priority, struct { priority: u32 }, struct {});
-        pub const GetPriority = ipc.Command(Id, .get_priority, struct {}, struct { priority: u32 });
-        pub const OpenLinkFile = ipc.Command(Id, .open_link_file, struct {}, struct { clone: File });
-        pub const GetAvailable = ipc.Command(Id, .get_available, struct { offset: u64, size: u64 }, struct { available: u64 });
+        pub const OpenSubFile = ipc.Command(Id, .open_sub_file, struct { offset: u64, size: u64 }, ipc.MoveHandles(File));
+        pub const Read = ipc.Command(Id, .read, struct { offset: u64, size: usize, buffer: ipc.Mapped(u8, .w) }, struct { actual_read: usize, buffer: ipc.Mapped(u8, .w) });
+        pub const Write = ipc.Command(Id, .write, struct { offset: u64, size: usize, options: WriteOptions, buffer: ipc.Mapped(u8, .r) }, struct { actual_written: usize, buffer: ipc.Mapped(u8, .r) });
+        pub const GetSize = ipc.Command(Id, .get_size, void, u64);
+        pub const SetSize = ipc.Command(Id, .set_size, u64, void);
+        pub const GetAttributes = ipc.Command(Id, .get_attributes, void, Attributes);
+        pub const SetAttributes = ipc.Command(Id, .set_attributes, Attributes, void);
+        pub const Close = ipc.Command(Id, .close, void, void);
+        pub const Flush = ipc.Command(Id, .close, void, void);
+        pub const SetPriority = ipc.Command(Id, .set_priority, u32, void);
+        pub const GetPriority = ipc.Command(Id, .get_priority, void, u32);
+        pub const OpenLinkFile = ipc.Command(Id, .open_link_file, void, ipc.MoveHandles(File));
+        pub const GetAvailable = ipc.Command(Id, .get_available, struct { offset: u64, size: u64 }, u64);
 
         pub const Id = enum(u16) {
             dummy1 = 0x0001,
@@ -335,7 +335,7 @@ pub const Directory = packed struct(u32) {
     pub fn close(dir: Directory) void {
         defer dir.session.close();
 
-        _ = tls.get().ipc.sendRequest(dir.session, Directory.command.Close, .{}, .{}) catch {};
+        _ = tls.get().ipc.sendRequest(dir.session, Directory.command.Close, {}, .{}) catch {};
     }
 
     pub fn sendRead(dir: Directory, entries: []align(1) Entry) !usize {
@@ -348,8 +348,8 @@ pub const Directory = packed struct(u32) {
 
     pub fn sendGetPriority(dir: Directory) !u32 {
         const data = tls.get();
-        return switch ((try data.ipc.sendRequest(dir.session, Directory.command.GetPriority, .{}, .{})).cases()) {
-            .success => |s| s.value.priority,
+        return switch ((try data.ipc.sendRequest(dir.session, Directory.command.GetPriority, {}, .{})).cases()) {
+            .success => |s| s.value,
             .failure => |code| horizon.unexpectedResult(code),
         };
     }
@@ -363,10 +363,10 @@ pub const Directory = packed struct(u32) {
     }
 
     pub const command = struct {
-        pub const Read = ipc.Command(Id, .read, struct { count: usize, entries_bytes: ipc.Mapped(.w) }, struct { actual_entries: usize, entries_bytes: ipc.Mapped(.w) });
-        pub const Close = ipc.Command(Id, .close, struct {}, struct {});
-        pub const SetPriority = ipc.Command(Id, .set_priority, struct { priority: u32 }, struct {});
-        pub const GetPriority = ipc.Command(Id, .get_priority, struct {}, struct { priority: u32 });
+        pub const Read = ipc.Command(Id, .read, struct { count: usize, entries_bytes: ipc.Mapped(u8, .w) }, struct { actual_entries: usize, entries_bytes: ipc.Mapped(u8, .w) });
+        pub const Close = ipc.Command(Id, .close, void, void);
+        pub const SetPriority = ipc.Command(Id, .set_priority, u32, void);
+        pub const GetPriority = ipc.Command(Id, .get_priority, void, u32);
 
         pub const Id = enum(u16) {
             dummy1 = 0x0001,
@@ -381,13 +381,11 @@ pub const Directory = packed struct(u32) {
 
 session: ClientSession,
 
-pub fn open(service: Service, srv: ServiceManager) !Filesystem {
-    return .{ .session = try srv.getService(service.name(), .wait) };
-}
-
-pub fn close(fs: Filesystem) void {
-    fs.session.close();
-}
+pub const open = horizon.services.Methods(@This()).openServiceMulti;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceMultiWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 pub fn sendInitialize(fs: Filesystem) !void {
     const data = tls.get();
@@ -414,7 +412,7 @@ pub fn sendOpenFile(fs: Filesystem, transaction: usize, archive: Archive, path_t
         .attributes = attributes,
         .path = .static(path),
     }, .{})).cases()) {
-        .success => |s| s.value.file.wrapped,
+        .success => |s| s.value.wrapped,
         .failure => |code| switch (code) {
             .fs_entry_not_found => error.FileNotFound,
             .fs_unexpected_entry_kind => error.IsDir,
@@ -438,7 +436,7 @@ pub fn sendOpenFileDirectly(fs: Filesystem, transaction: usize, archive_id: Arch
         .archive_path = .static(archive_path),
         .file_path = .static(file_path),
     }, .{})).cases()) {
-        .success => |s| s.value.file.wrapped,
+        .success => |s| s.value.wrapped,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -623,7 +621,7 @@ pub fn sendOpenArchive(fs: Filesystem, archive_id: ArchiveId, path_type: PathTyp
         .path_size = path.len,
         .path = .static(path),
     }, .{})).cases()) {
-        .success => |s| s.value.archive,
+        .success => |s| s.value,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
@@ -644,11 +642,11 @@ pub fn sendControlArchive(fs: Filesystem, archive: Archive, action: ControlArchi
 }
 
 pub fn sendCloseArchive(fs: Filesystem, archive: Archive) void {
-    _ = tls.get().ipc.sendRequest(fs.session, command.CloseArchive, .{ .archive = archive }, .{}) catch {};
+    _ = tls.get().ipc.sendRequest(fs.session, command.CloseArchive, archive, .{}) catch {};
 }
 
 pub const command = struct {
-    pub const Initialize = ipc.Command(Id, .initialize, struct { process_id: ipc.ReplaceByProcessId }, struct {});
+    pub const Initialize = ipc.Command(Id, .initialize, struct { process_id: ipc.ReplaceByProcessId = .replace }, void);
     pub const OpenFile = ipc.Command(Id, .open_file, struct {
         transaction: usize,
         archive: Archive,
@@ -656,8 +654,8 @@ pub const command = struct {
         path_size: usize,
         flags: OpenFlags,
         attributes: Attributes,
-        path: ipc.Static(0),
-    }, struct { file: ipc.MoveHandles(File) });
+        path: ipc.Static(u8, 0),
+    }, ipc.MoveHandles(File));
     pub const OpenFileDirectly = ipc.Command(Id, .open_file_directly, struct {
         transaction: usize,
         archive_id: ArchiveId,
@@ -667,16 +665,16 @@ pub const command = struct {
         file_path_size: usize,
         flags: OpenFlags,
         attributes: Attributes,
-        archive_path: ipc.Static(2),
-        file_path: ipc.Static(0),
-    }, struct { file: ipc.MoveHandles(File) });
+        archive_path: ipc.Static(u8, 2),
+        file_path: ipc.Static(u8, 0),
+    }, ipc.MoveHandles(File));
     pub const DeleteFile = ipc.Command(Id, .delete_file, struct {
         transaction: usize,
         archive: Archive,
         path_type: PathType,
         path_size: usize,
-        path: ipc.Static(0),
-    }, struct {});
+        path: ipc.Static(u8, 0),
+    }, void);
     pub const RenameFile = ipc.Command(Id, .rename_file, struct {
         transaction: usize,
         source_archive: Archive,
@@ -685,23 +683,23 @@ pub const command = struct {
         destination_archive: Archive,
         destination_path_type: PathType,
         destination_path_size: usize,
-        source_path: ipc.Static(1),
-        destination_path: ipc.Static(2),
-    }, struct {});
+        source_path: ipc.Static(u8, 1),
+        destination_path: ipc.Static(u8, 2),
+    }, void);
     pub const DeleteDirectory = ipc.Command(Id, .delete_directory, struct {
         transaction: usize,
         archive: Archive,
         path_type: PathType,
         path_size: usize,
-        path: ipc.Static(0),
-    }, struct {});
+        path: ipc.Static(u8, 0),
+    }, void);
     pub const DeleteDirectoryRecursively = ipc.Command(Id, .delete_directory_recursively, struct {
         transaction: usize,
         archive: Archive,
         path_type: PathType,
         path_size: usize,
-        path: ipc.Static(0),
-    }, struct {});
+        path: ipc.Static(u8, 0),
+    }, void);
     pub const CreateFile = ipc.Command(Id, .create_file, struct {
         transaction: usize,
         archive: Archive,
@@ -709,16 +707,16 @@ pub const command = struct {
         path_size: usize,
         attributes: Attributes,
         file_size: u64,
-        path: ipc.Static(0),
-    }, struct {});
+        path: ipc.Static(u8, 0),
+    }, void);
     pub const CreateDirectory = ipc.Command(Id, .create_directory, struct {
         transaction: usize,
         archive: Archive,
         path_type: PathType,
         path_size: usize,
         attributes: Attributes,
-        path: ipc.Static(0),
-    }, struct {});
+        path: ipc.Static(u8, 0),
+    }, void);
     pub const RenameDirectory = ipc.Command(Id, .rename_directory, struct {
         transaction: usize,
         source_archive: Archive,
@@ -727,61 +725,59 @@ pub const command = struct {
         destination_archive: Archive,
         destination_path_type: PathType,
         destination_path_size: usize,
-        source_path: ipc.Static(1),
-        destination_path: ipc.Static(2),
-    }, struct {});
+        source_path: ipc.Static(u8, 1),
+        destination_path: ipc.Static(u8, 2),
+    }, void);
     pub const OpenDirectory = ipc.Command(Id, .open_directory, struct {
         archive: Archive,
         path_type: PathType,
         path_size: usize,
-        path: ipc.Static(0),
+        path: ipc.Static(u8, 0),
     }, struct { directory: ipc.MoveHandles(Directory) });
     pub const OpenArchive = ipc.Command(Id, .open_archive, struct {
         archive_id: ArchiveId,
         path_type: PathType,
         path_size: usize,
-        path: ipc.Static(0),
-    }, struct { archive: Archive });
+        path: ipc.Static(u8, 0),
+    }, Archive);
     pub const ControlArchive = ipc.Command(Id, .control_archive, struct {
         archive: Archive,
         action: ControlArchiveAction,
         input_size: usize,
         output_size: usize,
-        input: ipc.Mapped(.r),
-        output: ipc.Mapped(.w),
-    }, struct {});
-    pub const CloseArchive = ipc.Command(Id, .close_archive, struct {
-        archive: Archive,
-    }, struct {});
+        input: ipc.Mapped(u8, .r),
+        output: ipc.Mapped(u8, .w),
+    }, void);
+    pub const CloseArchive = ipc.Command(Id, .close_archive, Archive, void);
 
     // obsolete Obsoleted_2_0_FormatThisUserSaveData
     // obsolete Obsoleted_3_0_CreateSystemSaveData
     // obsolete Obsoleted_3_0_DeleteSystemSaveData
 
-    pub const GetFreeBytes = ipc.Command(Id, .get_free_bytes, struct { archive: Archive }, struct { free_bytes: u64 });
-    pub const GetCardType = ipc.Command(Id, .get_card_type, struct {}, struct { card_type: CardType });
-    pub const GetSdmcArchiveResource = ipc.Command(Id, .get_sdmc_archive_resource, struct {}, struct { archive_resource: ArchiveResource });
-    pub const GetNandArchiveResource = ipc.Command(Id, .get_nand_archive_resource, struct {}, struct { archive_resource: ArchiveResource });
-    pub const GetSdmcFatFsError = ipc.Command(Id, .get_sdmc_fatfs_error, struct {}, struct { fatfs_error: u32 });
-    pub const IsSdmcDetected = ipc.Command(Id, .is_sdmc_detected, struct {}, struct { detected: bool });
-    pub const IsSdmcWritable = ipc.Command(Id, .is_sdmc_writable, struct {}, struct { writable: bool });
-    pub const GetSdmcCid = ipc.Command(Id, .get_sdmc_cid, struct { buffer_size: usize, buffer: ipc.Mapped(.w) }, struct {});
-    pub const GetNandCid = ipc.Command(Id, .get_sdmc_cid, struct { buffer_size: usize, buffer: ipc.Mapped(.w) }, struct {});
-    pub const GetSdmcSpeedInfo = ipc.Command(Id, .get_sdmc_speed_info, struct {}, struct { speed_info: u32 });
-    pub const GetNandSpeedInfo = ipc.Command(Id, .get_nand_speed_info, struct {}, struct { speed_info: u32 });
-    pub const GetSdmcLog = ipc.Command(Id, .get_sdmc_log, struct { buffer_size: usize, buffer: ipc.Mapped(.w) }, struct {});
-    pub const GetNandLog = ipc.Command(Id, .get_nand_log, struct { buffer_size: usize, buffer: ipc.Mapped(.w) }, struct {});
-    pub const ClearSdmcLog = ipc.Command(Id, .clear_sdmc_log, struct {}, struct {});
-    pub const ClearNandLog = ipc.Command(Id, .clear_nand_log, struct {}, struct {});
-    pub const IsCardInserted = ipc.Command(Id, .is_card_inserted, struct {}, struct { inserted: bool });
-    pub const PowerOnCardSlot = ipc.Command(Id, .power_on_card_slot, struct {}, struct { status: u8 });
-    pub const PowerOffCardSlot = ipc.Command(Id, .power_off_card_slot, struct {}, struct { status: u8 });
-    pub const CardSlotGetCardIfPowerStatus = ipc.Command(Id, .card_slot_get_card_if_power_status, struct {}, struct { powered: bool });
+    pub const GetFreeBytes = ipc.Command(Id, .get_free_bytes, Archive, u64);
+    pub const GetCardType = ipc.Command(Id, .get_card_type, void, CardType);
+    pub const GetSdmcArchiveResource = ipc.Command(Id, .get_sdmc_archive_resource, void, ArchiveResource);
+    pub const GetNandArchiveResource = ipc.Command(Id, .get_nand_archive_resource, void, ArchiveResource);
+    pub const GetSdmcFatFsError = ipc.Command(Id, .get_sdmc_fatfs_error, void, u32);
+    pub const IsSdmcDetected = ipc.Command(Id, .is_sdmc_detected, void, bool);
+    pub const IsSdmcWritable = ipc.Command(Id, .is_sdmc_writable, void, bool);
+    pub const GetSdmcCid = ipc.Command(Id, .get_sdmc_cid, struct { buffer_size: usize, buffer: ipc.Mapped(u8, .w) }, void);
+    pub const GetNandCid = ipc.Command(Id, .get_sdmc_cid, struct { buffer_size: usize, buffer: ipc.Mapped(u8, .w) }, void);
+    pub const GetSdmcSpeedInfo = ipc.Command(Id, .get_sdmc_speed_info, void, u32);
+    pub const GetNandSpeedInfo = ipc.Command(Id, .get_nand_speed_info, void, u32);
+    pub const GetSdmcLog = ipc.Command(Id, .get_sdmc_log, struct { buffer_size: usize, buffer: ipc.Mapped(u8, .w) }, void);
+    pub const GetNandLog = ipc.Command(Id, .get_nand_log, struct { buffer_size: usize, buffer: ipc.Mapped(u8, .w) }, void);
+    pub const ClearSdmcLog = ipc.Command(Id, .clear_sdmc_log, void, void);
+    pub const ClearNandLog = ipc.Command(Id, .clear_nand_log, void, void);
+    pub const IsCardInserted = ipc.Command(Id, .is_card_inserted, void, bool);
+    pub const PowerOnCardSlot = ipc.Command(Id, .power_on_card_slot, void, u8);
+    pub const PowerOffCardSlot = ipc.Command(Id, .power_off_card_slot, void, u8);
+    pub const CardSlotGetCardIfPowerStatus = ipc.Command(Id, .card_slot_get_card_if_power_status, void, bool);
 
     // TODO: CardNor commands
 
-    pub const GetProductInfo = ipc.Command(Id, .get_product_info, struct { process_id: u32 }, struct { product_info: ProductInfo });
-    pub const GetProgramLaunchInfo = ipc.Command(Id, .get_program_launch_info, struct { process_id: u32 }, struct { program_info: ProgramInfo });
+    pub const GetProductInfo = ipc.Command(Id, .get_product_info, horizon.Process.Id, ProductInfo);
+    pub const GetProgramLaunchInfo = ipc.Command(Id, .get_program_launch_info, horizon.Process.Id, ProgramInfo);
 
     // obsolete Obsoleted_3_0_CreateExtSaveData
     // obsolete Obsoleted_3_0_CreateSharedExtSaveData

@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+
+## [2026-08-30 -> 2026-09-22]
+
 - Added a lot more docs to `ChannelSound` based on discovered reverse engineered things.
 - Added `ChannelSound.Engine` as an abstraction to manage state.
 - Added initial `demo/mango/flappy`; simple flappy bird clone hw accelerated.
@@ -18,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - Added `pdn`, `mic:u`, `spi` and `i2c` services under `pdn.Sleep/Gpu/...`, `MicrophoneUser`, `Spi` and `I2c`
 - Added the possibility to not switch stacks and use the kernel-provided stack by Horizon.
 - Added `horizon.debug.simple_errdisp_panic` which doesn't collect any stacktrace and throws directly.
+- Added `cdc` and `Gpio` services under `cdc.Hid/CSnd/Dsp/...`
 
 - Added `horizon.ipc.Buffer.sendRequestWithResult` which doesn't map horizon results to zig errors.
 - Added `horizon.services.Methods` for common methods applying to all services/ports. BREAKING: You may need to swap parameters to `.open`
@@ -27,6 +31,8 @@ All notable changes to this project will be documented in this file.
 - `ServiceManager.command.GetServiceHandle` -> `ServiceManager.command.GetService`
 - BREAKING: General ipc improvements, structs are now not mandatory to be toplevel in req/resp; i.e you can now just expect a `bool` return value instead of wrapping it in a struct.
   This is only BREAKING to those who use services in a low-level way; sorry!
+- BREAKING: Now you can set the type in `ipc.Mapped(T, permissions)` and `ipc.Static(T, index)`
+- Added `horizon.ipc.Embedded` and `horizon.ipc.EmbeddedSentinel` for embedded slices in the IPC buffer.
 
 - Changed `horizon.fmt.ncch.ExtendedHeader` to `horizon.fmt.ncch.Header.Extended`
 - Changed `demo/mango/texture_loading` to load the texture from the RomFS instead of embedding it.
@@ -35,6 +41,7 @@ All notable changes to this project will be documented in this file.
   services that only have one service or provide multiple ones with the same requests will still be in its acronym form in `services`, e.g `services.Ptm`.
 
 - Removed `zitrus.horizon.fmt.smdh` (-> `zitrus.horizon.fmt.ncch.smdh`), it was deprecated a LONG time ago.
+- Removed `zitrus.horizon.ipc.Codec.write` (-> `bufWrite`), it's just better.
 
 ## [2026-08-21] BREAKING
 

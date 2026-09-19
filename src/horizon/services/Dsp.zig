@@ -4,13 +4,11 @@ pub const service = "dsp::DSP";
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !Dsp {
-    return .{ .session = try srv.getService(service, .wait) };
-}
-
-pub fn close(dsp: Dsp) void {
-    dsp.session.close();
-}
+pub const open = horizon.services.Methods(@This()).openService;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 pub const command = struct {
     pub const Recv = ipc.Command(Id, .recv, struct { stream: u2 }, struct { data: u16 });
@@ -28,8 +26,8 @@ pub const command = struct {
         size: u32,
         program_mask: u32,
         data_mask: u32,
-        buffer: ipc.Mapped(.r),
-    }, struct { loaded: bool, buffer: ipc.Mapped(.r) });
+        buffer: ipc.Mapped(u8, .r),
+    }, struct { loaded: bool, buffer: ipc.Mapped(u8, .r) });
     pub const UnloadComponent = ipc.Command(Id, .unload_component, struct {}, struct {});
 
     pub const FlushDataCache = ipc.Command(Id, .flush_data_cache, struct { address: u32, size: u32, process: horizon.Process }, struct {});

@@ -2,7 +2,7 @@
 
 pub const service = "gsp::Gpu";
 
-pub const Graphics = @import("GraphicsServerGpu/Graphics.zig");
+pub const Graphics = @import("Gpu/Graphics.zig");
 
 pub const Shared = extern struct {
     interrupt_queue: [4]Interrupt.Queue,
@@ -525,19 +525,17 @@ pub const PerfLogInfo = extern struct {
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !GraphicsServerGpu {
-    return .{ .session = try srv.getService(service, .wait) };
-}
+pub const open = horizon.services.Methods(@This()).openService;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
-pub fn close(gsp: GraphicsServerGpu) void {
-    gsp.session.close();
-}
-
-pub fn writeRegisters(gsp: GraphicsServerGpu, comptime T: type, address: *volatile T, value: T) !void {
+pub fn writeRegisters(gsp: Gpu, comptime T: type, address: *volatile T, value: T) !void {
     return try gsp.writeRegistersBuffer(address, @ptrCast(&value));
 }
 
-pub fn writeRegistersBuffer(gsp: GraphicsServerGpu, address: *volatile anyopaque, buffer: []align(1) const u32) !void {
+pub fn writeRegistersBuffer(gsp: Gpu, address: *volatile anyopaque, buffer: []align(1) const u32) !void {
     const offset = @intFromPtr(address) - 0x1EB00000;
     var buffer_offset: usize = 0;
     while (buffer_offset < buffer.len) : (buffer_offset += 32) {
@@ -547,11 +545,11 @@ pub fn writeRegistersBuffer(gsp: GraphicsServerGpu, address: *volatile anyopaque
     }
 }
 
-pub fn writeRegistersMasked(gsp: GraphicsServerGpu, comptime T: type, address: *volatile T, value: T, mask: *const [@divExact(@sizeOf(T), @sizeOf(u32))]u32) !void {
+pub fn writeRegistersMasked(gsp: Gpu, comptime T: type, address: *volatile T, value: T, mask: *const [@divExact(@sizeOf(T), @sizeOf(u32))]u32) !void {
     return try gsp.writeRegistersMaskedBuffer(address, @ptrCast(&value), mask);
 }
 
-pub fn writeRegistersMaskedBuffer(gsp: GraphicsServerGpu, address: *volatile anyopaque, buffer: []align(1) const u32, mask: []align(1) const u32) !void {
+pub fn writeRegistersMaskedBuffer(gsp: Gpu, address: *volatile anyopaque, buffer: []align(1) const u32, mask: []align(1) const u32) !void {
     std.debug.assert(buffer.len == mask.len);
 
     const offset = @intFromPtr(address) - 0x1EB00000;
@@ -563,13 +561,13 @@ pub fn writeRegistersMaskedBuffer(gsp: GraphicsServerGpu, address: *volatile any
     }
 }
 
-pub fn readRegisters(gsp: GraphicsServerGpu, comptime T: type, address: *volatile T) !T {
+pub fn readRegisters(gsp: Gpu, comptime T: type, address: *volatile T) !T {
     var value: T = undefined;
     try gsp.readRegistersBuffer(address, @ptrCast(&value));
     return value;
 }
 
-pub fn readRegistersBuffer(gsp: GraphicsServerGpu, address: *volatile anyopaque, buffer: []u32) !void {
+pub fn readRegistersBuffer(gsp: Gpu, address: *volatile anyopaque, buffer: []u32) !void {
     const offset = @intFromPtr(address) - 0x1EB00000;
     var buffer_offset: usize = 0;
     while (buffer_offset < buffer.len) : (buffer_offset += 32) {
@@ -585,106 +583,94 @@ const InterruptRelayQueueResult = struct {
     shared_memory: MemoryBlock,
 };
 
-pub fn sendWriteHwRegs(gsp: GraphicsServerGpu, offset: usize, buffer: []align(1) const u32) !void {
+pub fn sendWriteHwRegs(gsp: Gpu, offset: usize, buffer: []align(1) const u32) !void {
     std.debug.assert(buffer.len <= 32);
 
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegs, .{ .offset = offset, .size = buffer.len * @sizeOf(u32), .data = .static(@ptrCast(buffer)) }, .{})).cases()) {
+    return switch ((try gsp.send(.WriteHwRegs, .{ .offset = offset, .size = buffer.len * @sizeOf(u32), .data = .static(@ptrCast(buffer)) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendWriteHwRegsWithMask(gsp: GraphicsServerGpu, offset: usize, buffer: []align(1) const u32, mask: []align(1) const u32) !void {
+pub fn sendWriteHwRegsWithMask(gsp: Gpu, offset: usize, buffer: []align(1) const u32, mask: []align(1) const u32) !void {
     std.debug.assert(buffer.len == mask.len);
     std.debug.assert(buffer.len <= 32);
 
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegsWithMask, .{ .offset = offset, .size = buffer.len * @sizeOf(u32), .data = .static(@ptrCast(buffer)), .mask = .static(@ptrCast(mask)) }, .{})).cases()) {
+    return switch ((try gsp.send(.WriteHwRegsWithMask, .{ .offset = offset, .size = buffer.len * @sizeOf(u32), .data = .static(@ptrCast(buffer)), .mask = .static(@ptrCast(mask)) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendWriteHwRegRepeat(gsp: GraphicsServerGpu, offset: usize, buffer: []align(1) const u32) !void {
+pub fn sendWriteHwRegRepeat(gsp: Gpu, offset: usize, buffer: []align(1) const u32) !void {
     std.debug.assert(buffer.len <= 32);
 
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.WriteHwRegRepeat, .{ .offset = offset, .size = buffer.len * @sizeOf(u32), .data = .static(@ptrCast(buffer)) }, .{})).cases()) {
+    return switch ((try gsp.send(.WriteHwRegRepeat, .{ .offset = offset, .size = buffer.len * @sizeOf(u32), .data = .static(@ptrCast(buffer)) }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendReadHwRegs(gsp: GraphicsServerGpu, offset: usize, buffer: []u32) !void {
+pub fn sendReadHwRegs(gsp: Gpu, offset: usize, buffer: []u32) !void {
     std.debug.assert(buffer.len <= 32);
 
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.ReadHwRegs, .{ .offset = offset, .size = buffer.len * @sizeOf(u32) }, .{ .buffer = buffer })).cases()) {
+    return switch ((try gsp.send(.ReadHwRegs, .{ .offset = offset, .size = buffer.len * @sizeOf(u32) }, .{ .buffer = buffer })).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSetBufferSwap(gsp: GraphicsServerGpu, screen: Screen, info: FramebufferInfo) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.SetBufferSwap, .{ .screen = screen, .info = info }, .{})).cases()) {
+pub fn sendSetBufferSwap(gsp: Gpu, screen: Screen, info: FramebufferInfo) !void {
+    return switch ((try gsp.send(.SetBufferSwap, .{ .screen = screen, .info = info }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendFlushDataCache(gsp: GraphicsServerGpu, buffer: []u8) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.FlushDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})).cases()) {
+pub fn sendFlushDataCache(gsp: Gpu, buffer: []u8) !void {
+    return switch ((try gsp.send(.FlushDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendInvalidateDataCache(gsp: GraphicsServerGpu, buffer: []u8) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.InvalidateDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})).cases()) {
+pub fn sendInvalidateDataCache(gsp: Gpu, buffer: []u8) !void {
+    return switch ((try gsp.send(.InvalidateDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSetLcdForceBlack(gsp: GraphicsServerGpu, fill: bool) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.SetLcdForceBlack, .{ .fill = fill }, .{})).cases()) {
+pub fn sendSetLcdForceBlack(gsp: Gpu, fill: bool) !void {
+    return switch ((try gsp.send(.SetLcdForceBlack, fill, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendTriggerCmdReqQueue(gsp: GraphicsServerGpu) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.TriggerCmdReqQueue, .{}, .{})).cases()) {
+pub fn sendTriggerCmdReqQueue(gsp: Gpu) !void {
+    return switch ((try gsp.send(.TriggerCmdReqQueue, {}, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSetAxiConfigQosMode(gsp: GraphicsServerGpu, qos: u32) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.SetAxiConfigQosMode, .{ .qos = qos }, .{})).cases()) {
+pub fn sendSetAxiConfigQosMode(gsp: Gpu, qos: u32) !void {
+    return switch ((try gsp.send(.SetAxiConfigQosMode, qos, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSetPerfLogMode(gsp: GraphicsServerGpu, enabled: bool) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.SetPerfLogMode, .{ .enabled = enabled }, .{})).cases()) {
+pub fn sendSetPerfLogMode(gsp: Gpu, enabled: bool) !void {
+    return switch ((try gsp.send(.SetPerfLogMode, enabled, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendGetPerfLog(gsp: GraphicsServerGpu) !PerfLogInfo {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.GetPerfLog, .{}, .{})).cases()) {
+pub fn sendGetPerfLog(gsp: Gpu) !PerfLogInfo {
+    return switch ((try gsp.send(.GetPerfLog, {}, .{})).cases()) {
         .success => |s| s.value.info,
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -695,9 +681,8 @@ pub const RegisterInterruptRelayQueueResponse = struct {
     response: command.RegisterInterruptRelayQueue.Response,
 };
 
-pub fn sendRegisterInterruptRelayQueue(gsp: GraphicsServerGpu, unknown_flags: u8, event: Event) !RegisterInterruptRelayQueueResponse {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.RegisterInterruptRelayQueue, .{ .flags = unknown_flags, .ev = event }, .{})).cases()) {
+pub fn sendRegisterInterruptRelayQueue(gsp: Gpu, unknown_flags: u8, event: Event) !RegisterInterruptRelayQueueResponse {
+    return switch ((try gsp.send(.RegisterInterruptRelayQueue, .{ .flags = unknown_flags, .ev = event }, .{})).cases()) {
         .success => |s| .{
             .first_initialization = s.code.description == @as(horizon.result.Description, @enumFromInt(0x207)),
             .response = s.value,
@@ -706,90 +691,78 @@ pub fn sendRegisterInterruptRelayQueue(gsp: GraphicsServerGpu, unknown_flags: u8
     };
 }
 
-pub fn sendUnregisterInterruptRelayQueue(gsp: GraphicsServerGpu) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.UnregisterInterruptRelayQueue, .{}, .{})).cases()) {
+pub fn sendUnregisterInterruptRelayQueue(gsp: Gpu) !void {
+    return switch ((try gsp.send(.UnregisterInterruptRelayQueue, {}, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendTryAcquireRight(gsp: GraphicsServerGpu, init_hw: u8) !bool {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.TryAcquireRight, .{ .init_hw = init_hw, .process = .current }, .{})).cases()) {
+pub fn sendTryAcquireRight(gsp: Gpu, init_hw: u8) !bool {
+    return switch ((try gsp.send(.TryAcquireRight, .{ .init_hw = init_hw, .process = .current }, .{})).cases()) {
         .success => true,
         .failure => |code| if (code == @as(horizon.ResultCode, @bitCast(@as(u32, 0xC8402BF0)))) false else horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendAcquireRight(gsp: GraphicsServerGpu, init_hw: u8) !void {
-    const data = tls.get();
-
-    return switch ((try data.ipc.sendRequest(gsp.session, command.AcquireRight, .{ .init_hw = init_hw, .process = .current }, .{})).cases()) {
+pub fn sendAcquireRight(gsp: Gpu, init_hw: u8) !void {
+    return switch ((try gsp.send(.AcquireRight, .{ .init_hw = init_hw, .process = .current }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendReleaseRight(gsp: GraphicsServerGpu) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.ReleaseRight, .{}, .{})).cases()) {
+pub fn sendReleaseRight(gsp: Gpu) !void {
+    return switch ((try gsp.send(.ReleaseRight, {}, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendImportDisplayCaptureInfo(gsp: GraphicsServerGpu) !ScreenCapture {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.ImportDisplayCaptureInfo, .{}, .{})).cases()) {
-        .success => |s| s.value.capture,
+pub fn sendImportDisplayCaptureInfo(gsp: Gpu) !ScreenCapture {
+    return switch ((try gsp.send(.ImportDisplayCaptureInfo, {}, .{})).cases()) {
+        .success => |s| s.value,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSaveVRAMSysArea(gsp: GraphicsServerGpu) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.SaveVRamSysArea, .{}, .{})).cases()) {
+pub fn sendSaveVRAMSysArea(gsp: Gpu) !void {
+    return switch ((try gsp.send(.SaveVRamSysArea, {}, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendRestoreVRAMSysArea(gsp: GraphicsServerGpu) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.RestoreVRamSysArea, .{}, .{})).cases()) {
+pub fn sendRestoreVRAMSysArea(gsp: Gpu) !void {
+    return switch ((try gsp.send(.RestoreVRamSysArea, {}, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendResetGpuCore(gsp: GraphicsServerGpu) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.ResetGpuCore, .{}, .{})).cases()) {
+pub fn sendResetGpuCore(gsp: Gpu) !void {
+    return switch ((try gsp.send(.ResetGpuCore, {}, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSetLedForceOff(gsp: GraphicsServerGpu, disable: bool) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.SetLedForceOff, .{ .disable = disable }, .{})).cases()) {
+pub fn sendSetLedForceOff(gsp: Gpu, disable: bool) !void {
+    return switch ((try gsp.send(.SetLedForceOff, disable, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendSetInternalPriorities(gsp: GraphicsServerGpu, session_thread: u6, command_queue: u6) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.SetInternalPriorities, .{ .session_thread = session_thread, .command_queue = command_queue }, .{})).cases()) {
+pub fn sendSetInternalPriorities(gsp: Gpu, session_thread: u6, command_queue: u6) !void {
+    return switch ((try gsp.send(.SetInternalPriorities, .{ .session_thread = session_thread, .command_queue = command_queue }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendStoreDataCache(gsp: GraphicsServerGpu, buffer: []u8) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(gsp.session, command.StoreDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})).cases()) {
+pub fn sendStoreDataCache(gsp: Gpu, buffer: []u8) !void {
+    return switch ((try gsp.send(.StoreDataCache, .{ .address = @intFromPtr(buffer.ptr), .size = buffer.len, .process = .current }, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
@@ -797,42 +770,42 @@ pub fn sendStoreDataCache(gsp: GraphicsServerGpu, buffer: []u8) !void {
 
 pub const command = struct {
     pub const WriteHwRegs = ipc.Command(Id, .write_hw_regs, struct {
-        offset: usize,
-        size: usize,
-        data: ipc.Static(0),
-    }, struct {});
+        offset: u32,
+        size: u32,
+        data: ipc.Static(u8, 0),
+    }, void);
     pub const WriteHwRegsWithMask = ipc.Command(Id, .write_hw_regs_with_mask, struct {
-        offset: usize,
-        size: usize,
-        data: ipc.Static(0),
-        mask: ipc.Static(1),
-    }, struct {});
+        offset: u32,
+        size: u32,
+        data: ipc.Static(u8, 0),
+        mask: ipc.Static(u8, 1),
+    }, void);
     pub const WriteHwRegRepeat = ipc.Command(Id, .write_hw_reg_repeat, struct {
-        offset: usize,
-        size: usize,
-        data: ipc.Static(0),
-    }, struct {});
+        offset: u32,
+        size: u32,
+        data: ipc.Static(u8, 0),
+    }, void);
     pub const ReadHwRegs = ipc.Command(Id, .read_hw_regs, struct {
         pub const StaticOutput = struct { buffer: []u32 };
-        offset: usize,
-        size: usize,
+        offset: u32,
+        size: u32,
     }, struct {
-        buffer: ipc.Static(0),
+        buffer: ipc.Static(u8, 0),
     });
-    pub const SetBufferSwap = ipc.Command(Id, .set_buffer_swap, struct { screen: Screen, info: FramebufferInfo }, struct {});
+    pub const SetBufferSwap = ipc.Command(Id, .set_buffer_swap, struct { screen: Screen, info: FramebufferInfo }, void);
     // SetCommandList stubbed
     // RequestDma stubbed
-    pub const FlushDataCache = ipc.Command(Id, .flush_data_cache, struct { address: usize, size: usize, process: horizon.Process }, struct {});
-    pub const InvalidateDataCache = ipc.Command(Id, .invalidate_data_cache, struct { address: usize, size: usize, process: horizon.Process }, struct {});
+    pub const FlushDataCache = ipc.Command(Id, .flush_data_cache, struct { address: u32, size: u32, process: horizon.Process }, void);
+    pub const InvalidateDataCache = ipc.Command(Id, .invalidate_data_cache, struct { address: u32, size: u32, process: horizon.Process }, void);
     // RegisterInterruptEvents stubbed
-    pub const SetLcdForceBlack = ipc.Command(Id, .set_lcd_force_black, struct { fill: bool }, struct {});
-    pub const TriggerCmdReqQueue = ipc.Command(Id, .trigger_cmd_req_queue, struct {}, struct {});
+    pub const SetLcdForceBlack = ipc.Command(Id, .set_lcd_force_black, bool, void);
+    pub const TriggerCmdReqQueue = ipc.Command(Id, .trigger_cmd_req_queue, void, void);
     // SetDisplayTransfer stubbed
     // SetTextureCopy stubbed
     // SetMemoryFill stubbed
-    pub const SetAxiConfigQosMode = ipc.Command(Id, .set_axi_config_qos_mode, struct { qos: u32 }, struct {});
-    pub const SetPerfLogMode = ipc.Command(Id, .set_perf_log_mode, struct { enabled: bool }, struct {});
-    pub const GetPerfLog = ipc.Command(Id, .get_perf_log, struct {}, struct { info: PerfLogInfo });
+    pub const SetAxiConfigQosMode = ipc.Command(Id, .set_axi_config_qos_mode, u32, void);
+    pub const SetPerfLogMode = ipc.Command(Id, .set_perf_log_mode, bool, void);
+    pub const GetPerfLog = ipc.Command(Id, .get_perf_log, void, PerfLogInfo);
     pub const RegisterInterruptRelayQueue = ipc.Command(Id, .register_interrupt_relay_queue, struct {
         flags: u32,
         ev: Event,
@@ -840,18 +813,18 @@ pub const command = struct {
         thread_index: u32,
         gsp_memory: MemoryBlock,
     });
-    pub const UnregisterInterruptRelayQueue = ipc.Command(Id, .unregister_interrupt_relay_queue, struct {}, struct {});
-    pub const TryAcquireRight = ipc.Command(Id, .try_acquire_right, struct { process: horizon.Process }, struct {});
-    pub const AcquireRight = ipc.Command(Id, .acquire_right, struct { init_hw: u32, process: horizon.Process }, struct {});
-    pub const ReleaseRight = ipc.Command(Id, .release_right, struct {}, struct {});
-    pub const ImportDisplayCaptureInfo = ipc.Command(Id, .import_display_capture_info, struct {}, struct { capture: ScreenCapture });
-    pub const SaveVRamSysArea = ipc.Command(Id, .save_vram_sys_area, struct {}, struct {});
-    pub const RestoreVRamSysArea = ipc.Command(Id, .restore_vram_sys_area, struct {}, struct {});
-    pub const ResetGpuCore = ipc.Command(Id, .reset_gpu_core, struct {}, struct {});
-    pub const SetLedForceOff = ipc.Command(Id, .set_led_force_off, struct { disable: bool }, struct {});
+    pub const UnregisterInterruptRelayQueue = ipc.Command(Id, .unregister_interrupt_relay_queue, void, void);
+    pub const TryAcquireRight = ipc.Command(Id, .try_acquire_right, struct { process: horizon.Process }, void);
+    pub const AcquireRight = ipc.Command(Id, .acquire_right, struct { init_hw: u32, process: horizon.Process }, void);
+    pub const ReleaseRight = ipc.Command(Id, .release_right, void, void);
+    pub const ImportDisplayCaptureInfo = ipc.Command(Id, .import_display_capture_info, void, ScreenCapture);
+    pub const SaveVRamSysArea = ipc.Command(Id, .save_vram_sys_area, void, void);
+    pub const RestoreVRamSysArea = ipc.Command(Id, .restore_vram_sys_area, void, void);
+    pub const ResetGpuCore = ipc.Command(Id, .reset_gpu_core, void, void);
+    pub const SetLedForceOff = ipc.Command(Id, .set_led_force_off, bool, void);
     // SetTestCommand stubbed
-    pub const SetInternalPriorities = ipc.Command(Id, .set_internal_priorities, struct { session_thread: u6, command_queue: u6 }, struct {});
-    pub const StoreDataCache = ipc.Command(Id, .store_data_cache, struct { address: usize, size: usize, process: horizon.Process }, struct {});
+    pub const SetInternalPriorities = ipc.Command(Id, .set_internal_priorities, struct { session_thread: u6, command_queue: u6 }, void);
+    pub const StoreDataCache = ipc.Command(Id, .store_data_cache, struct { address: usize, size: usize, process: horizon.Process }, void);
 
     pub const Id = enum(u16) {
         write_hw_regs = 0x0001,
@@ -888,7 +861,7 @@ pub const command = struct {
     };
 };
 
-const GraphicsServerGpu = @This();
+const Gpu = @This();
 
 const builtin = @import("builtin");
 const std = @import("std");

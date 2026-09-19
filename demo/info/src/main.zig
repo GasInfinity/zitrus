@@ -13,7 +13,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     try horizon.Io.global.initStorage(app.srv, .fs, 0);
     try horizon.Io.global.mountSelfRomFs("romfs");
 
-    const cfg = try Config.open(.user, app.srv);
+    const cfg = try Config.open(app.srv, .user);
     defer cfg.close();
 
     // NOTE: The font is available by default but we're also showing how loading it from the RomFS works.
@@ -91,7 +91,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
 
 const horizon = zitrus.horizon;
 const environment = zitrus.horizon.environment;
-const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
+const Gpu = horizon.services.gsp.Gpu;
 
 const Config = horizon.services.Config;
 

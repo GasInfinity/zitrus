@@ -1,16 +1,9 @@
-//! `cdc:DSP`
+//! `cdc:CHK`
 
-pub const service = "cdc:DSP";
+pub const service = "cdc:CHK";
 
-pub const Biquad = zitrus.hardware.codec.Biquad;
-pub const IirBiquad = zitrus.hardware.codec.IirBiquad;
-
-pub const Sink = enum(u8) {
-    headphones_32khz,
-    headphones_47khz,
-    speakers_32khz,
-    speakers_47khz,
-};
+pub const Line = zitrus.hardware.i2s.Line;
+pub const Gain = zitrus.hardware.codec.i2s.Gain;
 
 session: ClientSession,
 
@@ -22,21 +15,12 @@ pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 pub const command = struct {
     /// May return 0xc9403800 (sleeping, nothing changed)
-    pub const SetI2s1IirFilters = ipc.Command(Id, .set_i2s1_iir_filters, struct {
+    pub const ReadDsiTsc = ipc.Command(Id, .read_dsi_tsc, struct {
+        pub const StaticOutput = struct { buffer: []u8 };
+        page: u8,
+        register: u8,
         size: u32,
-        data: ipc.Mapped(IirBiquad, .r),
-    }, ipc.Mapped(IirBiquad, .r));
-    /// May return 0xc9403800 (sleeping, nothing changed)
-    pub const SetI2s2IirFilters = ipc.Command(Id, .set_i2s2_iir_filters, struct {
-        size: u32,
-        data: ipc.Mapped(IirBiquad, .r),
-    }, ipc.Mapped(IirBiquad, .r));
-    /// May return 0xc9403800 (sleeping, nothing changed)
-    pub const SetSinkIirFilters = ipc.Command(Id, .set_sink_iir_filters, struct {
-        sink: Sink,
-        size: u32,
-        data: ipc.Mapped([3]Biquad, .r),
-    }, ipc.Mapped([3]Biquad, .r));
+    }, ipc.Static(u8, 0));
     /// May return 0xc9403800 (sleeping, nothing changed)
     pub const Read3dsTsc = ipc.Command(Id, .read_3ds_tsc, struct {
         pub const StaticOutput = struct { buffer: []u8 };
@@ -45,6 +29,13 @@ pub const command = struct {
         size: u32,
     }, ipc.Static(u8, 0));
     /// May return 0xc9403800 (sleeping, nothing changed)
+    pub const WriteDsiTsc = ipc.Command(Id, .write_dsi_tsc, struct {
+        page: u8,
+        register: u8,
+        size: u32,
+        buffer: ipc.Static(u8, 0),
+    }, void);
+    /// May return 0xc9403800 (sleeping, nothing changed)
     pub const Write3dsTsc = ipc.Command(Id, .write_3ds_tsc, struct {
         page: u8,
         register: u8,
@@ -52,25 +43,32 @@ pub const command = struct {
         buffer: ipc.Static(u8, 0),
     }, void);
     /// May return 0xc9403800 (sleeping, nothing changed)
-    pub const IsHeadphoneConnected = ipc.Command(Id, .is_headphone_connected, void, bool);
+    pub const ReadPowerManagement = ipc.Command(Id, .read_power_management, struct {
+        index: u8,
+    }, u8);
     /// May return 0xc9403800 (sleeping, nothing changed)
-    pub const EnableVolumeOutput = ipc.Command(Id, .enable_volume_output, bool, void);
-    /// Cannot fail
-    pub const ForceHeadphoneOutput = ipc.Command(Id, .force_headphone_output, bool, void);
+    pub const WritePowerManagement = ipc.Command(Id, .read_power_management, struct {
+        index: u8,
+        value: u8,
+    }, void);
+    /// May return 0xc9403800 (sleeping, nothing changed)
+    pub const SetI2sVolume = ipc.Command(Id, .set_i2s_volume, struct {
+        line: Line,
+        gain: Gain,
+    }, void);
 
     pub const Id = enum(u16) {
-        set_i2s1_iir_filters = 0x0001,
-        set_i2s2_iir_filters,
-        set_sink_iir_filters,
+        read_dsi_tsc = 0x0001,
         read_3ds_tsc,
+        write_dsi_tsc,
         write_3ds_tsc,
-        is_headphone_connected,
-        enable_volume_output,
-        force_headphone_output,
+        read_power_management,
+        write_power_management,
+        set_i2s_volume,
     };
 };
 
-const Dsp = @This();
+const Check = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");

@@ -182,7 +182,7 @@ pub const CaptureBuffer = extern struct {
     bottom: Info,
 
     // TODO: Finish this
-    pub inline fn init(capture: GraphicsServerGpu.ScreenCapture) CaptureBuffer {
+    pub inline fn init(capture: Gpu.ScreenCapture) CaptureBuffer {
         const top_framebuffers: usize, const top_scale: usize = if (capture.top.format.interlacing == .none and !capture.top.format.half_rate)
             .{ 1, 2 }
         else if (capture.top.format.interlacing == .enable)
@@ -232,7 +232,7 @@ lock: Mutex,
 ///
 /// All subsequent requests to the returned `Applet` must be done to the same service it was created with.
 pub fn open(service: Service, srv: ServiceManager) !Applet {
-    const apt_session = try srv.getService(service.name(), .wait);
+    const apt_session = try srv.getService(service.name(), false);
     const data = tls.get();
 
     const lock: Mutex = lock: {
@@ -543,7 +543,7 @@ pub fn lockSendCommand(apt: Applet, service: Service, srv: ServiceManager, compt
     try apt.lock.wait(.none);
     defer apt.lock.release();
 
-    const fresh_session = try srv.sendGetService(service.name(), .wait);
+    const fresh_session = try srv.getService(service.name(), false);
     defer fresh_session.close();
 
     const data = tls.get();
@@ -606,7 +606,7 @@ pub const command = struct {
         cmd: Command,
         parameter_size: usize,
         parameter_handle: horizon.Object,
-        parameter: ipc.Static(0),
+        parameter: ipc.Static(u8, 0),
     }, struct {});
     pub const ReceiveParameter = ipc.Command(Id, .receive_parameter, struct {
         pub const StaticOutput = struct { parameter: []u8 };
@@ -617,7 +617,7 @@ pub const command = struct {
         cmd: Command,
         actual_size: usize,
         parameter_handle: ipc.MoveHandles(horizon.Object),
-        actual_parameter: ipc.Static(0),
+        actual_parameter: ipc.Static(u8, 0),
     });
     pub const GlanceParameter = ipc.Command(Id, .glance_parameter, struct {
         pub const StaticOutput = struct { parameter: []u8 };
@@ -628,7 +628,7 @@ pub const command = struct {
         cmd: Command,
         actual_size: usize,
         parameter_handle: horizon.Object,
-        actual_parameter: ipc.Static(0),
+        actual_parameter: ipc.Static(u8, 0),
     });
     pub const CancelParameter = ipc.Command(Id, .cancel_parameter, struct {
         check_sender: bool,
@@ -658,13 +658,13 @@ pub const command = struct {
         app: AppId,
         parameters_size: u32,
         parameter_handle: horizon.Object,
-        parameters: ipc.Static(0),
+        parameters: ipc.Static(u8, 0),
     }, struct {});
     pub const StartSystemApplet = ipc.Command(Id, .start_system_applet, struct {
         app: AppId,
         parameters_size: u32,
         parameter_handle: horizon.Object,
-        parameters: ipc.Static(0),
+        parameters: ipc.Static(u8, 0),
     }, struct {});
     // TODO: StartNewestHomeMenu
     // TODO: OrderToCloseApplcation
@@ -677,7 +677,7 @@ pub const command = struct {
     pub const CloseApplication = ipc.Command(Id, .close_application, struct {
         parameters_size: u32,
         parameter_handle: horizon.Object,
-        parameters: ipc.Static(0),
+        parameters: ipc.Static(u8, 0),
     }, struct {});
     // TODO: ...
     pub const PrepareToJumpToHomeMenu = ipc.Command(Id, .prepare_to_jump_to_home_menu, struct {}, struct {});
@@ -685,7 +685,7 @@ pub const command = struct {
     pub const JumpToHomeMenu = ipc.Command(Id, .jump_to_home_menu, struct {
         parameters_size: u32,
         parameter_handle: horizon.Object,
-        parameters: ipc.Static(0),
+        parameters: ipc.Static(u8, 0),
     }, struct {});
     // TODO: ...
     pub const PrepareToDoApplicationJump = ipc.Command(Id, .prepare_to_do_application_jump, struct {
@@ -702,8 +702,8 @@ pub const command = struct {
     pub const DoApplicationJump = ipc.Command(Id, .do_application_jump, struct {
         parameter_size: u32,
         hmac_size: u32,
-        parameter: ipc.Static(0),
-        hmac: ipc.Static(2),
+        parameter: ipc.Static(u8, 0),
+        hmac: ipc.Static(u8, 2),
     }, struct {});
     // TODO: ...
     pub const SendDspSleep = ipc.Command(Id, .send_dsp_sleep, struct { source: AppId, handle: horizon.Object }, struct {});
@@ -717,7 +717,7 @@ pub const command = struct {
     }, struct {});
     pub const SendCaptureBufferInfo = ipc.Command(Id, .send_capture_buffer_info, struct {
         capture_size: u32,
-        capture: ipc.Static(0),
+        capture: ipc.Static(u8, 0),
     }, struct {});
     // TODO: ...
     pub const NotifyToWait = ipc.Command(Id, .notify_to_wait, struct { id: AppId }, struct {});
@@ -731,8 +731,8 @@ pub const command = struct {
         utility: Utility,
         input_size: usize,
         output_size: usize,
-        input: ipc.Static(1),
-    }, struct { applet_result: ResultCode, output: ipc.Static(0) });
+        input: ipc.Static(u8, 1),
+    }, struct { applet_result: ResultCode, output: ipc.Static(u8, 0) });
     // TODO: ...
     pub const SetSystemProcessorTimeSlice = ipc.Command(Id, .set_system_processor_time_slice, struct {
         _one: u32 = 1,
@@ -843,7 +843,7 @@ pub const command = struct {
 };
 
 const Applet = @This();
-const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
+const Gpu = horizon.services.gsp.Gpu;
 const Filesystem = horizon.services.Filesystem;
 
 const std = @import("std");

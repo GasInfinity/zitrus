@@ -86,7 +86,10 @@ pub inline fn assertResult(result: anytype) @TypeOf(result.value) {
 }
 
 pub noinline fn assertCode(code: ResultCode) void {
-    if (code.isSuccess()) return;
+    if (code.isSuccess()) {
+        @branchHint(.likely);
+        return;
+    }
 
     const errdisp = blk: for (0..10) |_| {
         if (ErrDispManager.open()) |errdisp| {
@@ -112,6 +115,37 @@ pub noinline fn assertCode(code: ResultCode) void {
     while (true) horizon.breakExecution(.panic);
 }
 
+pub inline fn logFmt(code: ResultCode, comptime fmt: []const u8, args: anytype) void {
+    var buf: [512]u8 = undefined;
+    var fixed: std.Io.Writer = .fixed(&buf);
+    fixed.print(fmt, args) catch {};
+    log(code, fixed.buffered());
+}
+
+pub noinline fn log(code: ResultCode, message: []const u8) void {
+    const errdisp: ErrDispManager = blk: for (0..20) |_| {
+        if (ErrDispManager.open()) |errdisp| {
+            break :blk errdisp;
+        } else |_| {}
+
+        horizon.sleepThread(std.time.ns_per_s);
+    } else horizon.breakExecution(.user);
+    defer errdisp.close();
+
+    errdisp.sendSetUserString(message) catch {};
+    errdisp.sendThrow(.{
+        .type = .logged,
+        .revision_high = 0,
+        .revision_low = 0,
+        .result_code = code,
+        .pc_address = @returnAddress(),
+        .process_id = @intFromEnum(horizon.getProcessId(.current).value),
+        .title_id = 0,
+        .applet_title_id = 0,
+        .data = undefined,
+    }) catch {};    
+}
+
 pub const command = struct {
     pub const Id = enum(u16) {
         throw = 0x0001,
@@ -122,7 +156,7 @@ pub const command = struct {
     // NOTE: Not documented on 3dbrew but the max str_size is 256 or we get a kernel panic.
     pub const SetUserString = ipc.Command(Id, .set_user_string, struct {
         str_size: u32,
-        str: ipc.Static(0),
+        str: ipc.Static(u8, 0),
 
         pub fn init(str: []const u8) @This() {
             std.debug.assert(str.len <= 256);

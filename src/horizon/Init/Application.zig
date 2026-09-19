@@ -34,7 +34,7 @@ pub const Event = enum {
 base: horizon.Init,
 srv: ServiceManager,
 apt: Applet,
-gsp: GraphicsServerGpu,
+gsp: Gpu,
 hid: Hid,
 
 notification_manager: *ServiceManager.Notification.Manager,
@@ -80,6 +80,6 @@ const horizon = zitrus.horizon;
 
 const ServiceManager = horizon.ServiceManager;
 const services = horizon.services;
-const GraphicsServerGpu = services.GraphicsServerGpu;
+const Gpu = services.gsp.Gpu;
 const Applet = services.Applet;
 const Hid = services.Hid;

@@ -5,16 +5,23 @@ pub const ProcessManagerDebug = @import("services/ProcessManagerDebug.zig");
 pub const NUserShell = @import("services/NUserShell.zig");
 pub const NUserShellPower = @import("services/NUserShellPower.zig");
 pub const Applet = @import("services/Applet.zig");
-pub const GraphicsServerGpu = @import("services/GraphicsServerGpu.zig");
-pub const GraphicsServerLcd = @import("services/GraphicsServerLcd.zig");
+/// Deprecated: use `gsp.Gpu`
+pub const GraphicsServerGpu = gsp.Gpu;
+/// Deprecated: use `gsp.Lcd`
+pub const GraphicsServerLcd = gsp.Lcd;
 pub const Hid = @import("services/Hid.zig");
-pub const Config = @import("services/Config.zig");
+pub const Cfg = @import("services/Cfg.zig");
+/// Deprecated: use `Cfg`
+pub const Config = Cfg;
 pub const Filesystem = @import("services/Filesystem.zig");
-pub const ChannelSound = @import("services/ChannelSound.zig");
+pub const CSnd = @import("services/CSnd.zig");
+/// Deprecated: use `CSnd`
+pub const ChannelSound = CSnd;
 pub const Dsp = @import("services/Dsp.zig");
-pub const IrRst = @import("services/IrRst.zig");
+/// Deprecated: use `ir.Rst`
+pub const IrRst = ir.Rst;
 pub const MicU = @import("services/MicU.zig");
-/// Deprecated: Use Ptm
+/// Deprecated: Use MicU
 pub const MicrophoneUser = MicU;
 
 pub const Ptm = @import("services/Ptm.zig");
@@ -32,11 +39,15 @@ pub const NetworkDaemon = @import("services/NetworkDaemon.zig");
 pub const NetworkManagerInfrastructure = @import("services/NetworkManagerInfrastructure.zig");
 pub const NetworkManagerSocket = @import("services/NetworkManagerSocket.zig");
 
+pub const gsp = @import("services/gsp.zig");
+pub const ir = @import("services/ir.zig");
 pub const soc = @import("services/soc.zig");
 pub const cdc = @import("services/cdc.zig");
 pub const pdn = @import("services/pdn.zig");
+pub const mcu = @import("services/mcu.zig");
 pub const I2c = @import("services/I2c.zig");
 pub const Spi = @import("services/Spi.zig");
+pub const Gpio = @import("services/Gpio.zig");
 
 pub fn Methods(comptime T: type) type {
     if (!@hasField(T, "session") or @FieldType(T, "session") != horizon.Session.Client) @compileError("Service must wrap a session");
@@ -59,12 +70,12 @@ pub fn Methods(comptime T: type) type {
 
         pub fn openService(srv: horizon.ServiceManager) !T {
             if (horizon.environment.findService(T.service)) |session| return .{ .session = session };
-            return .{ .session = try srv.sendGetService(T.service, .wait) };
+            return .{ .session = try srv.sendGetService(T.service, false) };
         }
 
         pub fn openServiceWithResult(srv: horizon.ServiceManager) horizon.Result(T) {
             if (horizon.environment.findService(T.service)) |session| return .of(.success, .{ .session = session });
-            return switch (srv.sendWithResult(.GetService, .init(T.service, .wait), .{}).cases()) {
+            return switch (srv.sendWithResult(.GetService, .init(T.service, false), .{}).cases()) {
                 .success => |r| .of(r.code, .{ .session = r.value.wrapped }),
                 .failure => |c| .of(c, undefined),
             };
@@ -73,12 +84,12 @@ pub fn Methods(comptime T: type) type {
         // When multiple services can use more than one command
         pub fn openServiceMulti(srv: horizon.ServiceManager, service: T.Service) !T {
             if (horizon.environment.findService(service.name())) |session| return .{ .session = session };
-            return .{ .session = try srv.sendGetService(service.name(), .wait) };
+            return .{ .session = try srv.sendGetService(service.name(), false) };
         }
 
         pub fn openServiceMultiWithResult(srv: horizon.ServiceManager, service: T.Service) horizon.Result(T) {
             if (horizon.environment.findService(service.name())) |session| return .of(.success, .{ .session = session });
-            return switch ((srv.sendWithResult(.GetService, .init(service.name(), .wait), .{})).cases()) {
+            return switch ((srv.sendWithResult(.GetService, .init(service.name(), false), .{})).cases()) {
                 .success => |r| .of(r.code, .{ .session = r.value.wrapped }),
                 .failure => |c| .of(c, undefined),
             };
@@ -108,8 +119,7 @@ comptime {
     _ = NUserShell;
     _ = NUserShellPower;
     _ = Applet;
-    _ = GraphicsServerGpu;
-    _ = GraphicsServerLcd;
+    _ = gsp;
     _ = Hid;
     _ = Config;
     _ = Filesystem;
@@ -119,14 +129,17 @@ comptime {
     _ = Playtime;
     _ = Process;
     _ = PxiProcess9;
-    _ = SocketUser;
+    _ = soc;
     _ = Loader;
     _ = NetworkDaemon;
     _ = NetworkManagerInfrastructure;
     _ = NetworkManagerSocket;
 
+    _ = ir;
     _ = I2c;
     _ = Spi;
+    _ = cdc;
+    _ = pdn;
 }
 
 const std = @import("std");

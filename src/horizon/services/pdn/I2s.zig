@@ -2,7 +2,7 @@
 
 pub const service = "pdn:i";
 
-session: ClientSession,
+session: horizon.Session.Client,
 
 pub const open = horizon.services.Methods(@This()).openService;
 pub const openWithResult = horizon.services.Methods(@This()).openServiceWithResult;
@@ -42,6 +42,3 @@ const std = @import("std");
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
 const ipc = horizon.ipc;
-
-const ClientSession = horizon.Session.Client;
-const ServiceManager = horizon.ServiceManager;

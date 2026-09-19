@@ -332,13 +332,16 @@ pub const Code = packed struct(i32) {
     /// 0xe0e03ffd
     pub const spi_out_of_range: Code = .result(.usage, .invalid_arg, .spi, .out_of_range);
     /// 0xc8a03ff8
-    pub const spi_not_initiaized: Code = .result(.status, .invalid_state, .spi, .not_initialized);
+    pub const spi_not_initialized: Code = .result(.status, .invalid_state, .spi, .not_initialized);
 
     /// 0xe0e02401
     pub const pdn_invalid_arg: Code = .specificResult(.usage, .invalid_arg, .pdn, .invalid_reset);
 
     /// 0xc9403800
-    pub const cdc_status_changed: Code = .result(.status, .status_changed, .codec, .success);
+    pub const codec_status_changed: Code = .result(.status, .status_changed, .codec, .success);
+    /// 0xd8603bef
+    pub const codec_no_data: Code = .result(.status, .out_of_resource, .codec, .no_data);
+    pub const codec_invalid_size: Code = .result(.status, .invalid_arg, .codec, .invalid_size);
 
     /// 0xd8208ff9
     pub const mic_already_initialized: Code = .result(.permanent, .nop, .mic, .already_initialized);

@@ -1,6 +1,6 @@
 //! Based on the documentation found in 3dbrew: https://www.3dbrew.org/wiki/IR_Services#IR_Service_%22ir:rst%22
 
-pub const Input = @import("IrRst/Input.zig");
+pub const Input = @import("Rst/Input.zig");
 
 pub const service = "ir:rst";
 
@@ -33,13 +33,11 @@ pub const Shared = extern struct {
 
 session: ClientSession,
 
-pub fn open(srv: ServiceManager) !IrRst {
-    return .{ .session = try srv.getService(service, .wait) };
-}
-
-pub fn close(rst: IrRst) void {
-    rst.session.close();
-}
+pub const open = horizon.services.Methods(@This()).openService;
+pub const openWithResult = horizon.services.Methods(@This()).openServiceWithResult;
+pub const close = horizon.services.Methods(@This()).close;
+pub const send = horizon.services.Methods(@This()).send;
+pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 pub const Handles = struct {
     shm: horizon.MemoryBlock,
@@ -51,15 +49,15 @@ pub const Handles = struct {
     }
 };
 
-pub fn sendGetHandles(rst: IrRst) !Handles {
+pub fn sendGetHandles(rst: Rst) !Handles {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(rst.session, command.GetHandles, .{}, .{})).cases()) {
-        .success => |s| s.value.handles.wrapped,
+    return switch ((try data.ipc.sendRequest(rst.session, command.GetHandles, {}, .{})).cases()) {
+        .success => |s| s.value.wrapped,
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
-pub fn sendInitialize(rst: IrRst, ms_update_period: u32, use_raw_c_stick: bool) !void {
+pub fn sendInitialize(rst: Rst, ms_update_period: u32, use_raw_c_stick: bool) !void {
     const data = tls.get();
     return switch ((try data.ipc.sendRequest(rst.session, command.Initialize, .{ .ms_update_period = ms_update_period, .use_raw_c_stick = use_raw_c_stick }, .{})).cases()) {
         .success => {},
@@ -67,20 +65,21 @@ pub fn sendInitialize(rst: IrRst, ms_update_period: u32, use_raw_c_stick: bool) 
     };
 }
 
-pub fn sendShutdown(rst: IrRst) !void {
+pub fn sendShutdown(rst: Rst) !void {
     const data = tls.get();
-    return switch ((try data.ipc.sendRequest(rst.session, command.Shutdown, .{}, .{})).cases()) {
+    return switch ((try data.ipc.sendRequest(rst.session, command.Shutdown, {}, .{})).cases()) {
         .success => {},
         .failure => |code| horizon.unexpectedResult(code),
     };
 }
 
 pub const command = struct {
-    pub const GetHandles = ipc.Command(Id, .get_handles, struct {}, struct {
-        handles: ipc.HandleArray(Handles),
-    });
-    pub const Initialize = ipc.Command(Id, .initialize, struct { ms_update_period: u32, use_raw_c_stick: bool }, struct {});
-    pub const Shutdown = ipc.Command(Id, .shutdown, struct {}, struct {});
+    pub const GetHandles = ipc.Command(Id, .get_handles, void, ipc.HandleArray(Handles));
+    pub const Initialize = ipc.Command(Id, .initialize, struct {
+        ms_update_period: u32,
+        use_raw_c_stick: bool,
+    }, void);
+    pub const Shutdown = ipc.Command(Id, .shutdown, void, void);
 
     pub const Id = enum(u16) {
         get_handles = 0x0001,
@@ -89,7 +88,7 @@ pub const command = struct {
     };
 };
 
-const IrRst = @This();
+const Rst = @This();
 
 const std = @import("std");
 const zitrus = @import("zitrus");

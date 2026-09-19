@@ -90,7 +90,10 @@ pub fn Result(T: type) type {
 
         /// Returns the result as a tagged union to be used in a switch.
         pub fn cases(res: SelfResult) Cases {
-            return if (res.code.isSuccess()) .{ .success = res } else .{ .failure = res.code };
+            return if (res.code.isSuccess()) .{ .success = res } else blk: {
+                @branchHint(.unlikely);
+                break :blk .{ .failure = res.code };
+            };
         }
 
         const SelfResult = @This();
@@ -1225,7 +1228,7 @@ pub const Timer = packed struct(u32) {
         return switch (setTimer(timer, initial_ns, interval)) {
             .kernel_invalid_handle => unreachable,
             // truly unreachable
-            else => unreachable,
+            else => |c| if (!c.isSuccess()) unreachable,
         };
     }
 
@@ -1233,7 +1236,7 @@ pub const Timer = packed struct(u32) {
         return switch (clearTimer(timer)) {
             .kernel_invalid_handle => unreachable,
             // truly unreachable
-            else => unreachable,
+            else => |c| if (!c.isSuccess()) unreachable,
         };
     }
 
@@ -1241,7 +1244,7 @@ pub const Timer = packed struct(u32) {
         return switch (cancelTimer(timer)) {
             .kernel_invalid_handle => unreachable,
             // truly unreachable
-            else => unreachable,
+            else => |c| if (!c.isSuccess()) unreachable,
         };
     }
 
@@ -2343,7 +2346,7 @@ pub fn acceptSession(port: ServerPort) Result(Session.Server) {
 // svc replyAndReceive3() stubbed 0x4D
 // svc replyAndReceive4() stubbed 0x4E
 
-pub fn replyAndReceive(port_sessions: []Synchronization, reply_target: Session.Server) Result(i32) {
+pub fn replyAndReceive(port_sessions: []const Synchronization, reply_target: Session.Server) Result(i32) {
     var index: i32 = undefined;
 
     const code = asm volatile ("svc 0x4F"

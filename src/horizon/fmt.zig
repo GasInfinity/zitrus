@@ -56,6 +56,8 @@ pub const layout = @import("fmt/layout.zig");
 pub const audio = @import("fmt/audio.zig");
 pub const cro0 = @import("fmt/cro0.zig");
 
+pub const hwcal = @import("fmt/hwcal.zig");
+
 comptime {
     _ = title;
 

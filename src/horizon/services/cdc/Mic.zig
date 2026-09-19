@@ -2,6 +2,8 @@
 
 pub const service = "cdc:MIC";
 
+pub const Biquad = zitrus.hardware.codec.Biquad;
+
 session: ClientSession,
 
 pub const open = horizon.services.Methods(@This()).openService;
@@ -18,7 +20,7 @@ pub fn sendSetGain(mic: Mic, gain: u7) !bool {
     }, .{})).cases()) {
         .success => true,
         .failure => |c| switch (c) {
-            .cdc_status_changed => false,
+            .codec_status_changed => false,
             else => horizon.unexpectedResult(c),
         },
     };
@@ -32,7 +34,7 @@ pub fn sendSetPowered(mic: Mic, powered: bool) !bool {
     }, .{})).cases()) {
         .success => true,
         .failure => |c| switch (c) {
-            .cdc_status_changed => false,
+            .codec_status_changed => false,
             else => horizon.unexpectedResult(c),
         },
     };
@@ -48,19 +50,17 @@ pub const command = struct {
     /// May return 0xc9403800 (sleeping, nothing changed)
     pub const IsPowered = ipc.Command(Id, .is_powered, void, bool);
     /// May return 0xc9403800 (sleeping, nothing changed)
-    pub const SetIirFilter = ipc.Command(Id, .set_iir_filter, struct {
+    pub const SetIirFilters = ipc.Command(Id, .set_iir_filters, struct {
         size: u32,
-        data: ipc.Mapped(.r),
-    }, struct {
-        data: ipc.Mapped(.r),
-    });
+        data: ipc.Mapped([5]Biquad, .r),
+    }, ipc.Mapped([5]Biquad, .r));
 
     pub const Id = enum(u16) {
         set_gain = 0x0001,
         get_gain,
         set_powered,
         is_powered,
-        set_iir_filter,
+        set_iir_filters,
     };
 };
 

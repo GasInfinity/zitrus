@@ -84,7 +84,7 @@ pub fn configureDisplay(pe: *PresentationEngine, display: mango.Display, configu
     pe.display_configured.getPtr(screen).store(true, .monotonic);
 }
 
-pub fn resetDisplay(pe: *PresentationEngine, gsp: GraphicsServerGpu, gsp_owned: bool, display: mango.Display) void {
+pub fn resetDisplay(pe: *PresentationEngine, gsp: Gpu, gsp_owned: bool, display: mango.Display) void {
     const screen: pica.Screen = @enumFromInt(@intFromEnum(display));
 
     if (!pe.display_configured.getPtr(screen).load(.monotonic)) return;
@@ -97,7 +97,7 @@ pub fn resetDisplay(pe: *PresentationEngine, gsp: GraphicsServerGpu, gsp_owned: 
     pe.display_configured.getPtr(screen).store(false, .release);
 }
 
-pub fn reacquire(pe: *PresentationEngine, gsp: GraphicsServerGpu) mango.ReacquireDeviceError!void {
+pub fn reacquire(pe: *PresentationEngine, gsp: Gpu) mango.ReacquireDeviceError!void {
     for (std.enums.values(pica.Screen)) |screen| {
         if (!pe.display_configured.get(screen).load(.acquire)) return;
         if (!pe.displays.get(screen).misc.contents_available) return;
@@ -128,7 +128,7 @@ pub fn acquireNextImage(pe: *PresentationEngine, arbiter: horizon.AddressArbiter
     return display_data.acquireNextIndex(timeout, arbiter);
 }
 
-pub fn present(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp_framebuffers: *[2]GraphicsServerGpu.FramebufferInfo, item: Queue.Presentation) void {
+pub fn present(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp_framebuffers: *[2]Gpu.FramebufferInfo, item: Queue.Presentation) void {
     const screen = item.misc.screen;
 
     std.debug.assert(pe.display_configured.getPtr(screen).load(.monotonic));
@@ -152,7 +152,7 @@ pub fn present(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp_fra
     }
 }
 
-pub fn refresh(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp: GraphicsServerGpu, gsp_framebuffers: *[2]GraphicsServerGpu.FramebufferInfo, screen: pica.Screen) void {
+pub fn refresh(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp: Gpu, gsp_framebuffers: *[2]Gpu.FramebufferInfo, screen: pica.Screen) void {
     const presents = pe.chain_presents.getPtr(screen);
 
     if (presents.load(.monotonic) == 0) {
@@ -189,7 +189,7 @@ pub fn refresh(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp: Gr
     }
 }
 
-fn updateNextPresent(gsp_framebuffer: *GraphicsServerGpu.FramebufferInfo, screen: pica.Screen, chain: *Display, slot: Display.PresentSlot) void {
+fn updateNextPresent(gsp_framebuffer: *Gpu.FramebufferInfo, screen: pica.Screen, chain: *Display, slot: Display.PresentSlot) void {
     const b_image: *backend.Image = &chain.images[slot.index];
     const b_image_virt = chain.image_virt[slot.index];
     std.debug.assert(b_image.address != .zero);
@@ -403,7 +403,7 @@ const std = @import("std");
 const zitrus = @import("zitrus");
 
 const horizon = zitrus.horizon;
-const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
+const Gpu = horizon.services.gsp.Gpu;
 
 const mango = zitrus.mango;
 const pica = zitrus.hardware.pica;

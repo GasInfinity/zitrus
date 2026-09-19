@@ -87,7 +87,7 @@ const pica = zitrus.hardware.pica;
 const horizon = zitrus.horizon;
 
 const Allocator = std.mem.Allocator;
-const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
-const Graphics = horizon.services.GraphicsServerGpu.Graphics;
+const Gpu = horizon.services.gsp.Gpu;
+const Graphics = Gpu.Graphics;
 
 const DisplayController = pica.DisplayController;

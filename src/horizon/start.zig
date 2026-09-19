@@ -149,7 +149,7 @@ inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !U
         const apt: services.Applet = try .open(.app, srv);
         defer apt.close();
 
-        const gsp: services.GraphicsServerGpu = try .open(srv);
+        const gsp: services.gsp.Gpu = try .open(srv);
         defer gsp.close();
 
         const hid: services.Hid = try .open(srv, .user);
@@ -179,12 +179,12 @@ inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !U
         return switch (First) {
             Init.Application => root.main(app_init),
             Init.Application.Software => blk: {
-                const config: services.GraphicsServerGpu.Graphics.Software.Config = if (@hasDecl(root, "init_options"))
+                const config: services.gsp.Gpu.Graphics.Software.Config = if (@hasDecl(root, "init_options"))
                     @field(root, "init_options")
                 else
                     .{};
 
-                var soft: services.GraphicsServerGpu.Graphics.Software = try .init(config, gsp, horizon.heap.linear_page_allocator);
+                var soft: services.gsp.Gpu.Graphics.Software = try .init(config, gsp, horizon.heap.linear_page_allocator);
                 defer soft.deinit(gsp, horizon.heap.linear_page_allocator, app.flags.must_close);
 
                 break :blk root.main(.{

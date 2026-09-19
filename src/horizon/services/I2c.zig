@@ -64,7 +64,7 @@ pub const command = struct {
         value: u16,
         mask: u16,
         devices_len: u32,
-        devices: ipc.Static(0),
+        devices: ipc.Static(u8, 0),
     }, struct {});
     pub const WriteRegister8 = ipc.Command(Id, .write_register8, struct {
         device: Device,
@@ -84,7 +84,7 @@ pub const command = struct {
         register: u16,
         value: u16,
         devices_len: u32,
-        devices: ipc.Static(0),
+        devices: ipc.Static(u8, 0),
     }, struct {});
     pub const ReadRegister8 = ipc.Command(Id, .read_register8, struct {
         device: Device,
@@ -102,13 +102,13 @@ pub const command = struct {
         device: Device,
         register: u8,
         values_len: u32,
-        values: ipc.Static(1),
+        values: ipc.Static(u8, 1),
     }, struct {});
     pub const WriteRegisters16 = ipc.Command(Id, .write_registers16, struct {
         device: Device,
         register: u16,
         values_len: u32,
-        values: ipc.Static(1),
+        values: ipc.Static(u8, 1),
     }, struct {});
     pub const ReadRegisters8 = ipc.Command(Id, .read_registers8, struct {
         pub const StaticOutput = struct { values: []u8 };
@@ -116,7 +116,7 @@ pub const command = struct {
         register: u8,
         values_len: u32,
     }, struct {
-        values: ipc.Static(0),
+        values: ipc.Static(u8, 0),
     });
     // pub const WriteRegisters8_2= ipc.Command(Id, .write_registers8, struct {}, struct {});
     pub const ReadRegisters8Delayed = ipc.Command(Id, .read_registers8_delayed, struct {
@@ -126,7 +126,7 @@ pub const command = struct {
         register: u8,
         values_len: u32,
     }, struct {
-        values: ipc.Static(0),
+        values: ipc.Static(u8, 0),
     });
     pub const ReadRegisters16 = ipc.Command(Id, .read_registers16, struct {
         pub const StaticOutput = struct { values: []u16 };
@@ -135,23 +135,23 @@ pub const command = struct {
         register: u8,
         values_len: u32,
     }, struct {
-        values: ipc.Static(0),
+        values: ipc.Static(u8, 0),
     });
     pub const WriteRegistersMapped = ipc.Command(Id, .write_registers_mapped, struct {
         device: Device,
         register: u8,
         values_len: u32,
-        values: ipc.Mapped(.r),
+        values: ipc.Mapped(u8, .r),
     }, struct {
-        values: ipc.Mapped(.r),
+        values: ipc.Mapped(u8, .r),
     });
     pub const ReadRegistersMapped = ipc.Command(Id, .read_registers_mapped, struct {
         device: Device,
         register: u8,
         values_len: u32,
-        values: ipc.Mapped(.w),
+        values: ipc.Mapped(u8, .w),
     }, struct {
-        values: ipc.Mapped(.w),
+        values: ipc.Mapped(u8, .w),
     });
     pub const ReadDevice8 = ipc.Command(Id, .read_device8, struct {
         device: Device,
@@ -161,13 +161,13 @@ pub const command = struct {
     pub const MultiWriteDevice8 = ipc.Command(Id, .multi_write_device8, struct {
         device: Device,
         values_len: u32,
-        values: ipc.Static(1),
+        values: ipc.Static(u8, 1),
     }, struct {});
     pub const MultiReadDevice8 = ipc.Command(Id, .multi_read_device8, struct {
         pub const StaticOutput = struct { values: []u8 };
         device: Device,
         values_len: u32,
-    }, struct { values: ipc.Static(0) });
+    }, struct { values: ipc.Static(u8, 0) });
 
     pub const Id = enum(u16) {
         write_register_masked8 = 0x0001,

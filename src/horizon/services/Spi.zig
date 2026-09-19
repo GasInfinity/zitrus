@@ -22,7 +22,7 @@ pub const Service = enum {
     }
 };
 
-pub const Device = enum(u4) {
+pub const Device = enum(u8) {
     power_management,
     wifi_flash,
     dsi_tsc,
@@ -41,12 +41,16 @@ pub const close = horizon.services.Methods(@This()).close;
 pub const send = horizon.services.Methods(@This()).send;
 pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
-pub fn sendInitDeviceRate(spi: Spi, device: Device, rate: BusRate) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(spi.session, command.InitDeviceRate, .{
-        .device = device,
-        .rate = rate,
-    }, .{})).cases()) {
+pub fn sendInitDeviceWithRate(spi: Spi, device: Device, rate: BusRate) !void {
+    return switch ((try spi.send(.InitDeviceWithRate, .init(device, rate), .{})).cases()) {
+        .success => {},
+        // Literally cannot fail
+        .failure => |c| horizon.unexpectedResult(c),
+    };
+}
+
+pub fn sendDeinitDevice(spi: Spi, device: Device) !void {
+    return switch ((try spi.send(.DeinitDevice, device, .{})).cases()) {
         .success => {},
         // Literally cannot fail
         .failure => |c| horizon.unexpectedResult(c),
@@ -54,112 +58,42 @@ pub fn sendInitDeviceRate(spi: Spi, device: Device, rate: BusRate) !void {
 }
 
 pub fn sendSendCommandRead(spi: Spi, device: Device, cmd: []const u8, buffer: []u8) !void {
-    std.debug.assert(cmd.len <= 4);
-    std.debug.assert(buffer.len <= 64);
-
-    const data = tls.get();
-    var req: command.SendCommandRead.Request = .{
-        .device = device,
-        .command = undefined,
-        .command_len = 4,
-        .buffer_len = buffer.len,
+    return switch ((try spi.send(.SendCommandRead, .init(device, cmd, buffer.len), .{})).cases()) {
+        .success => |r| @memcpy(buffer, r.value.slice[0..buffer.len]),
+        .failure => |c| mapFailedResult(c),
     };
-    @memcpy(&req.command, cmd);
-
-    data.ipc.writeRequest(command.SendCommandRead, req, .{});
-    try spi.session.sendRequest();
-    const code = try data.ipc.checkResponse(command.SendCommandRead);
-    const response_bytes: []u8 = @ptrCast(&data.ipc.packed_command.parameters[1..]);
-
-    if (!code.isSuccess()) return mapFailedResult(code);
-    @memcpy(buffer, response_bytes[0..buffer.len]);
 }
 
 pub fn sendSendCommandWrite(spi: Spi, device: Device, cmd: []const u8, buffer: []const u8) !void {
-    std.debug.assert(cmd.len <= 4);
-    std.debug.assert(buffer.len <= 64);
-
-    const data = tls.get();
-    var req: command.SendCommandWrite.Request = .{
-        .device = device,
-        .command = undefined,
-        .command_len = 4,
-        .buffer = undefined,
-        .buffer_len = buffer.len,
-    };
-    @memcpy(&req.command, cmd);
-    @memcpy(&req.buffer, buffer);
-
-    return switch ((try data.ipc.sendRequest(spi.session, command.SendCommandWrite, req, .{})).cases()) {
+    return switch ((try spi.send(.SendCommandWrite, .init(device, cmd, buffer), .{})).cases()) {
         .success => {},
         .failure => |c| mapFailedResult(c),
     };
 }
 
 pub fn sendSendCommand(spi: Spi, device: Device, cmd: []const u8) !void {
-    std.debug.assert(cmd.len <= 4);
-
-    const data = tls.get();
-    var req: command.SendCommandWrite.Request = .{
-        .device = device,
-        .command = undefined,
-        .command_len = 4,
-    };
-    @memcpy(&req.command, cmd);
-
-    return switch ((try data.ipc.sendRequest(spi.session, command.SendCommand, req, .{})).cases()) {
+    return switch ((try spi.send(.SendCommand, .init(device, cmd), .{})).cases()) {
         .success => {},
         .failure => |c| mapFailedResult(c),
     };
 }
 
 pub fn sendSendCommandReadMapped(spi: Spi, device: Device, cmd: []const u8, buffer: []u8) !void {
-    std.debug.assert(cmd.len <= 4);
-    std.debug.assert(buffer.len <= 64);
-
-    const data = tls.get();
-    var req: command.SendCommandReadMapped.Request = .{
-        .device = device,
-        .command = undefined,
-        .command_len = 4,
-        .buffer_len = buffer.len,
-        .buffer = .mapped(buffer),
-    };
-    @memcpy(&req.command, cmd);
-
-    return switch ((try data.ipc.sendRequest(spi.session, command.SendCommandReadMapped, req, .{})).cases()) {
+    return switch ((try spi.send(.SendCommandReadMapped, .init(device, cmd, buffer), .{})).cases()) {
         .success => {},
         .failure => |c| mapFailedResult(c),
     };
 }
 
 pub fn sendSendCommandWriteMapped(spi: Spi, device: Device, cmd: []const u8, buffer: []u8) !void {
-    std.debug.assert(cmd.len <= 4);
-    std.debug.assert(buffer.len <= 64);
-
-    const data = tls.get();
-    var req: command.SendCommandWriteMapped.Request = .{
-        .device = device,
-        .command = undefined,
-        .command_len = 4,
-        .buffer_len = buffer.len,
-        .buffer = .mapped(buffer),
-    };
-    @memcpy(&req.command, cmd);
-
-    return switch ((try data.ipc.sendRequest(spi.session, command.SendCommandWriteMapped, req, .{})).cases()) {
+    return switch ((try spi.send(.SendCommandWriteMapped, .init(device, cmd, buffer), .{})).cases()) {
         .success => {},
         .failure => |c| mapFailedResult(c),
     };
 }
 
-pub fn sendEnableNewBusRate(spi: Spi, device: Device, enable: bool, rate: NewBusRate) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(spi.session, command.EnableNewBusWithRate, .{
-        .device = device,
-        .enable = enable,
-        .rate = rate,
-    }, .{})).cases()) {
+pub fn sendEnableNewBusWithRate(spi: Spi, device: Device, enable: bool, rate: NewBusRate) !void {
+    return switch ((try spi.send(.EnableNewBusWithRate, .init(device, enable, rate), .{})).cases()) {
         .success => {},
         // Literally cannot fail
         .failure => |c| horizon.unexpectedResult(c),
@@ -167,8 +101,7 @@ pub fn sendEnableNewBusRate(spi: Spi, device: Device, enable: bool, rate: NewBus
 }
 
 pub fn sendEnableNewBus2(spi: Spi, enable: bool) !void {
-    const data = tls.get();
-    return switch ((try data.ipc.sendRequest(spi.session, command.EnableNewBus2, .{ .enable = enable }, .{})).cases()) {
+    return switch ((try spi.send(.EnableNewBus2, enable, .{})).cases()) {
         .success => {},
         // Literally cannot fail
         .failure => |c| horizon.unexpectedResult(c),
@@ -184,67 +117,84 @@ pub fn mapFailedResult(c: horizon.result.Code) error{Unexpected}!void {
 
 pub const command = struct {
     /// Cannot fail
-    pub const InitDeviceRate = ipc.Command(Id, .init_device_rate, struct {
+    pub const InitDeviceWithRate = ipc.Command(Id, .init_device_with_rate, struct {
         device: Device,
         rate: BusRate,
-    }, struct {});
+
+        pub fn init(dev: Device, rate: BusRate) @This() {
+            return .{ .device = dev, .rate = rate };
+        }
+    }, void);
+    // Literally does nothing, but it's 100% deinit device as it's called when tearing down things
+    pub const DeinitDevice = ipc.Command(Id, .deinit_device, Device, void);
     /// May fail with 0xc8a03ff8 (spi_not_initialized) or 0xe0e03ffd (spi_out_of_range)
     pub const SendCommandRead = ipc.Command(Id, .send_command_read, struct {
         device: Device,
-        command: [4]u8,
-        command_len: u32,
+        command: ipc.Embedded(4, u8, .post),
         buffer_len: u32,
-    }, struct {
-        data: [64]u8,
-    });
+
+        pub fn init(dev: Device, cmd: []const u8, len: u32) @This() {
+            return .{ .device = dev, .command = .embedded(cmd), .buffer_len = len };
+        }
+    }, ipc.Embedded(64, u8, .none));
     /// May fail with 0xc8a03ff8 (spi_not_initialized) or 0xe0e03ffd (spi_out_of_range)
     pub const SendCommandWrite = ipc.Command(Id, .send_command_write, struct {
         device: Device,
-        command: [4]u8,
-        command_len: u32,
-        buffer: [64]u8,
-        buffer_len: u32,
-    }, struct {});
+        command: ipc.Embedded(4, u8, .post),
+        buffer: ipc.Embedded(64, u8, .post),
+
+        pub fn init(dev: Device, cmd: []const u8, buffer: []const u8) @This() {
+            return .{ .device = dev, .command = .embedded(cmd), .buffer = .embedded(buffer) };
+        }
+    }, void);
     /// May fail with 0xc8a03ff8 (spi_not_initialized) or 0xe0e03ffd (spi_out_of_range)
     pub const SendCommand = ipc.Command(Id, .send_command, struct {
         device: Device,
-        command: [4]u8,
-        command_len: u32,
-    }, struct {});
+        command: ipc.Embedded(4, u8, .post),
+
+        pub fn init(dev: Device, cmd: []const u8) @This() {
+            return .{ .device = dev, .command = .embedded(cmd) };
+        }
+    }, void);
     /// May fail with 0xc8a03ff8 (spi_not_initialized) or 0xe0e03ffd (spi_out_of_range)
     pub const SendCommandReadMapped = ipc.Command(Id, .send_command_read_mapped, struct {
         device: Device,
-        command: [4]u8,
-        command_len: u32,
+        command: ipc.Embedded(4, u8, .post),
         buffer_len: u32,
-        buffer: ipc.Mapped(.w),
-    }, struct {
-        buffer: ipc.Mapped(.w),
-    });
+        buffer: ipc.Mapped(u8, .w),
+
+        pub fn init(dev: Device, cmd: []const u8, buffer: []u8) @This() {
+            return .{ .device = dev, .command = .embedded(cmd), .buffer_len = buffer.len, .buffer = .mapped(buffer) };
+        }
+    }, ipc.Mapped(u8, .w));
     /// May fail with 0xc8a03ff8 (spi_not_initialized) or 0xe0e03ffd (spi_out_of_range)
     pub const SendCommandWriteMapped = ipc.Command(Id, .send_command_write_mapped, struct {
         device: Device,
-        command: [4]u8,
-        command_len: u32,
+        command: ipc.Embedded(4, u8, .post),
         buffer_len: u32,
-        buffer: ipc.Mapped(.r),
-    }, struct {
-        buffer: ipc.Mapped(.r),
-    });
+        buffer: ipc.Mapped(u8, .r),
+
+        pub fn init(dev: Device, cmd: []const u8, buffer: []const u8) @This() {
+            return .{ .device = dev, .command = .embedded(cmd), .buffer_len = buffer.len, .buffer = .mapped(buffer) };
+        }
+    }, ipc.Mapped(u8, .r));
     /// Cannot fail
     pub const EnableNewBusWithRate = ipc.Command(Id, .enable_new_bus_with_rate, struct {
         device: Device,
         enable: bool,
         rate: NewBusRate,
-    }, struct {});
+
+        pub fn init(dev: Device, enable: bool, rate: NewBusRate) @This() {
+            return .{ .device = dev, .enable = enable, .rate = rate };
+        }
+    }, void);
     /// Cannot fail
-    pub const EnableNewBus2 = ipc.Command(Id, .enable_new_bus2, struct {
-        enable: bool,
-    }, struct {});
+    pub const EnableNewBus2 = ipc.Command(Id, .enable_new_bus2, bool, void);
 
     pub const Id = enum(u16) {
-        init_device_rate = 0x0001,
-        send_command_read = 0x0003,
+        init_device_with_rate = 0x0001,
+        deinit_device,
+        send_command_read,
         send_command_write,
         send_command,
         send_command_read_mapped,

@@ -125,12 +125,12 @@ pub const close = horizon.services.Methods(@This()).close;
 pub const send = ipc.ServiceSend(@This()).send;
 pub const sendWithResult = ipc.ServiceSend(@This()).sendWithResult;
 
-pub fn getService(srv: ServiceManager, name: []const u8, flags: command.GetService.Request.Flags) !ClientSession {
+pub fn getService(srv: ServiceManager, name: []const u8, error_if_full: bool) !ClientSession {
     if (environment.findService(name)) |service| {
         return service;
     }
 
-    return srv.sendGetService(name, flags);
+    return srv.sendGetService(name, error_if_full);
 }
 
 pub fn sendRegisterClient(srv: ServiceManager) !void {
@@ -174,8 +174,8 @@ pub fn sendUnregisterService(srv: ServiceManager, name: []const u8) !void {
     };
 }
 
-pub fn sendGetService(srv: ServiceManager, name: []const u8, flags: command.GetService.Request.Flags) !ClientSession {
-    return switch ((try srv.send(.GetService, .init(name, flags), .{})).cases()) {
+pub fn sendGetService(srv: ServiceManager, name: []const u8, error_if_full: bool) !ClientSession {
+    return switch ((try srv.send(.GetService, .init(name, error_if_full), .{})).cases()) {
         .success => |s| s.value.wrapped,
         .failure => |code| switch (code) {
             .kernel_invalid_handle => unreachable,
@@ -295,72 +295,31 @@ pub const command = struct {
     pub const RegisterClient = ipc.Command(Id, .register_client, struct { pid: ipc.ReplaceByProcessId = .replace }, void);
     pub const EnableNotification = ipc.Command(Id, .enable_notification, void, Semaphore);
     pub const RegisterService = ipc.Command(Id, .register_service, struct {
-        /// Must be NUL-terminated
-        name: [8]u8,
-        name_len: u32,
+        name: ipc.EmbeddedSentinel(8, u8, .post, 0),
         max_sessions: i16,
 
         pub fn init(name: []const u8, max_sessions: i16) @This() {
             std.debug.assert(name.len <= 8);
-            return .{
-                .name = zitrus.fmt.fixedArrayFromSlice(u8, 8, name),
-                .name_len = @intCast(name.len),
-                .max_sessions = max_sessions,
-            };
+            return .{ .name = .embedded(name), .max_sessions = max_sessions };
         }
     }, ipc.MoveHandles(ServerPort));
-    pub const UnregisterService = ipc.Command(Id, .unregister_service, struct {
-        /// Must be NUL-terminated
-        name: [8]u8,
-        name_len: u32,
-
-        pub fn init(name: []const u8) @This() {
-            std.debug.assert(name.len <= 8);
-            return .{
-                .name = zitrus.fmt.fixedArrayFromSlice(u8, 8, name),
-                .name_len = @intCast(name.len),
-            };
-        }
-    }, void);
+    pub const UnregisterService = ipc.Command(Id, .unregister_service, ipc.EmbeddedSentinel(8, u8, .post, 0), void);
     pub const GetService = ipc.Command(Id, .get_service, struct {
-        pub const Flags = packed struct(u32) {
-            pub const wait: Flags = .{};
-            pub const poll: Flags = .{ .error_if_full = true };
+        name: ipc.EmbeddedSentinel(8, u8, .post, 0),
+        error_if_full: bool,
 
-            error_if_full: bool = false,
-            _: u31 = 0,
-        };
-        /// Must be NUL-terminated
-        name: [8]u8,
-        name_len: u32,
-        flags: Flags,
-
-        pub fn init(name: []const u8, flags: Flags) @This() {
-            std.debug.assert(name.len <= 8);
-            return .{
-                .name = zitrus.fmt.fixedArrayFromSlice(u8, 8, name),
-                .name_len = @intCast(name.len),
-                .flags = flags,
-            };
+        pub fn init(name: []const u8, error_if_full: bool) @This() {
+            return .{ .name = .embedded(name), .error_if_full = error_if_full };
         }
     }, ipc.MoveHandles(ClientSession));
     pub const RegisterPort = ipc.Command(Id, .register_port, struct {
-        /// Must be NUL-terminated
-        name: [8]u8,
-        name_len: u32,
+        name: ipc.EmbeddedSentinel(8, u8, .post, 0),
         port: ClientPort,
     }, void);
-    pub const UnregisterPort = ipc.Command(Id, .unregister_port, struct {
-        /// Must be NUL-terminated
-        name: [8]u8,
-        name_len: u32,
-    }, void);
-    // XXX: What kind of port does this retrieve? I suppose a client port, also check if its moved from~
+    pub const UnregisterPort = ipc.Command(Id, .unregister_port, ipc.EmbeddedSentinel(8, u8, .post, 0), void);
     pub const GetPort = ipc.Command(Id, .get_port, struct {
-        /// Must be NUL-terminated
-        name: [8]u8,
-        name_len: u32,
-        wait_until_found: bool,
+        name: ipc.EmbeddedSentinel(8, u8, .post, 0),
+        error_if_full: bool,
     }, ipc.MoveHandles(ClientPort));
     pub const Subscribe = ipc.Command(Id, .subscribe, Notification, void);
     pub const Unsubscribe = ipc.Command(Id, .unsubscribe, Notification, void);
@@ -375,23 +334,8 @@ pub const command = struct {
         notification: Notification,
         flags: Flags,
     }, void);
-    pub const PublishAndGetSubscriber = ipc.Command(Id, .publish_and_get_subscriber, Notification, struct {
-        pid_count: u6,
-        pids: [61]u32,
-    });
-    pub const IsServiceRegistered = ipc.Command(Id, .is_service_registered, struct {
-        /// Must be NUL-terminated
-        name: [8]u8,
-        name_len: u32,
-
-        pub fn init(name: []const u8) @This() {
-            std.debug.assert(name.len <= 8);
-            return .{
-                .name = zitrus.fmt.fixedArrayFromSlice(u8, 8, name),
-                .name_len = @intCast(name.len),
-            };
-        }
-    }, bool);
+    pub const PublishAndGetSubscriber = ipc.Command(Id, .publish_and_get_subscriber, Notification, ipc.Embedded(61, horizon.Process.Id, .pre));
+    pub const IsServiceRegistered = ipc.Command(Id, .is_service_registered, ipc.EmbeddedSentinel(8, u8, .post, 0), bool);
 
     pub const Id = enum(u16) {
         register_client = 0x0001,

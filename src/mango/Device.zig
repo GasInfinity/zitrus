@@ -20,7 +20,7 @@ pub const Handle = enum(u32) {
         return try b_device.reacquire();
     }
 
-    pub fn release(device: Handle) !GraphicsServerGpu.ScreenCapture {
+    pub fn release(device: Handle) !Gpu.ScreenCapture {
         const b_device: *Device = @ptrFromInt(@intFromEnum(device));
         return try b_device.release();
     }
@@ -295,7 +295,7 @@ pub const Handle = enum(u32) {
 pub const VTable = struct {
     destroy: *const fn (dev: *Device) void,
 
-    release: *const fn (dev: *Device) mango.ReleaseDeviceError!GraphicsServerGpu.ScreenCapture,
+    release: *const fn (dev: *Device) mango.ReleaseDeviceError!Gpu.ScreenCapture,
     reacquire: *const fn (dev: *Device) mango.ReacquireDeviceError!void,
 
     waitIdleQueue: *const fn (dev: *Device, queue: Queue.Type) void,
@@ -340,7 +340,7 @@ pub fn reacquire(device: *Device) !void {
     return try device.vtable.reacquire(device);
 }
 
-pub fn release(device: *Device) !GraphicsServerGpu.ScreenCapture {
+pub fn release(device: *Device) !Gpu.ScreenCapture {
     return try device.vtable.release(device);
 }
 
@@ -786,7 +786,7 @@ const std = @import("std");
 const zitrus = @import("zitrus");
 
 const horizon = zitrus.horizon;
-const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
+const Gpu = horizon.services.gsp.Gpu;
 
 const mango = zitrus.mango;
 const pica = zitrus.hardware.pica;

@@ -49,8 +49,85 @@ pub const Sleep = extern struct {
 };
 
 pub const Legacy = extern struct {
-    /// TODO
-    _: [0x21]u8,
+    pub const Mode = packed struct(u16) {
+        legacy_mode: u2,
+        _unused: u13 = 0,
+        enable: bool,
+    };
+
+    pub const Sleep = packed struct(u16) {
+        wake_gpa: bool,
+        sleep_ack: bool,
+        _unk0: u1,
+        _unused0: u12 = 0,
+        irq_enable: bool,
+    };
+
+    pub const Pad = packed struct(u16) {
+        a: bool,
+        b: bool,
+        select: bool,
+        start: bool,
+        right: bool,
+        left: bool,
+        up: bool,
+        down: bool,
+        r: bool,
+        l: bool,
+        x: bool,
+        y: bool, 
+        _unk0: bool,
+        _unused0: u3 = 0,
+    };
+
+    pub const Gpio = packed struct(u16) {
+        debug: bool,
+        touch_released: bool,
+        hinge: bool,
+        _unused0: u4 = 0,
+        headphones_connected: bool,
+        power_button: bool,
+        sound_enable: bool,
+        _unused1: u6 = 0,
+    };
+
+    pub const Card = packed struct(u8) {
+        ejected: bool,
+        _unused0: u7 = 0,
+    };
+
+    /// 0x00
+    mode: Mode,
+    _unused0: [2]u8,
+    /// 0x04
+    sleep: Legacy.Sleep,
+    _unused1: [2]u8,
+    /// 0x08
+    irq_enable: u16,
+    /// 0x0A
+    pad: u16,
+    _unused2: [4]u8,
+    /// 0x010
+    emulated_pad_mask: Legacy.Pad,
+    /// 0x012
+    emulated_pad: Legacy.Pad,
+    /// 0x014
+    emulated_gpio_mask: Legacy.Gpio,
+    /// 0x016
+    emulated_gpio: Legacy.Gpio,
+    /// 0x018
+    emulated_card_mask: Legacy.Card,
+    /// 0x019
+    emulated_card: Legacy.Card,
+    _unused3: [6]u8,
+    /// 0x020
+    _unk0: u8,
+
+    comptime {
+        std.debug.assert(@offsetOf(Legacy, "pad") == 0x0A);
+        std.debug.assert(@offsetOf(Legacy, "emulated_pad_mask") == 0x10);
+        std.debug.assert(@offsetOf(Legacy, "_unk0") == 0x20);
+    }
 };
 
 pub const Clock = extern struct {

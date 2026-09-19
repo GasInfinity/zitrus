@@ -172,7 +172,7 @@ pub const command = struct {
     /// Straight wrapper of cdc:MIC, forwards it's result.
     pub const IsPowered = ipc.Command(Id, .is_powered, CdcMic.command.IsPowered.Request, CdcMic.command.IsPowered.Response);
     /// Straight wrapper of cdc:MIC, forwards it's result.
-    pub const SetIirFilter = ipc.Command(Id, .set_iir_filter, CdcMic.command.SetIirFilter.Request, CdcMic.command.SetIirFilter.Response);
+    pub const SetIirFilters = ipc.Command(Id, .set_iir_filters, CdcMic.command.SetIirFilters.Request, CdcMic.command.SetIirFilters.Response);
     /// Cannot fail
     pub const SetClampSamples = ipc.Command(Id, .set_clamp_samples, bool, void);
     /// Cannot fail
@@ -194,7 +194,7 @@ pub const command = struct {
         get_gain,
         set_powered,
         is_powered,
-        set_iir_filter,
+        set_iir_filters,
         set_clamp_samples,
         is_clamping_samples,
         set_ignore_shell_state,

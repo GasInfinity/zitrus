@@ -9,6 +9,7 @@ pub const old_linear_heap_begin: u32 = shared_memory_end;
 pub const old_linear_heap_end: u32 = 0x1E800000;
 pub const io_begin: u32 = 0x1EC00000;
 pub const pdn_begin: u32 = 0x1EC41000;
+pub const i2s_begin: u32 = 0x1EC45000;
 pub const mic_begin: u32 = 0x1EC62000;
 pub const lcd_begin: u32 = 0x1ED02000;
 pub const gpu_begin: u32 = 0x1EF00000;
@@ -26,6 +27,7 @@ pub const configuration_memory_begin = 0x1FF80000;
 pub const shared_page_memory_begin = 0x1FF81000;
 
 pub const pdn_registers: *volatile hardware.pdn.Registers = @ptrFromInt(pdn_begin);
+pub const i2s_registers: *volatile hardware.i2s.Registers = @ptrFromInt(i2s_begin);
 pub const mic_registers: *volatile hardware.mic.Registers = @ptrFromInt(mic_begin);
 pub const lcd_registers: *volatile hardware.lcd.Registers = @ptrFromInt(lcd_begin);
 pub const gpu_registers: *volatile hardware.pica.Registers = @ptrFromInt(gpu_begin);

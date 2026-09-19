@@ -78,6 +78,11 @@ Currently there are multiple examples in the `demo/` directory. To build them, y
 - [bitmap](demo/bitmap/) is a port of the bitmap example in libctru's 3ds-examples.
 - [flappy](demo/flappy) is a simple fully functional flappy bird clone written entirely with software blitting.
 
+### Lower level (and somewhat experimental/REALLY unstable)
+
+- [ztr-pdn](https://codeberg.org/GasInfinity/ztr-pdn) is literally what it says, a reimplementation of the `pdn` sysmodule using zitrus.
+- [ztr-mic](https://codeberg.org/GasInfinity/ztr-mic) is a reimplementation of the `mic` sysmodule using zitrus.
+
 --- 
 
 You can (and are encouraged) to look at the `tools` directory as it is a good example of how to use the API's `zitrus` provides outside (and inside!) of a 3DS environment. Almost all tools are self-contained and span 50-300 LOC.

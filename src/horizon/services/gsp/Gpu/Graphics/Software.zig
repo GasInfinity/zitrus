@@ -22,7 +22,7 @@ gfx: Graphics,
 top: Framebuffer,
 bottom: Framebuffer,
 
-pub fn init(config: Config, gsp: GraphicsServerGpu, physical_linear_allocator: std.mem.Allocator) !Software {
+pub fn init(config: Config, gsp: Gpu, physical_linear_allocator: std.mem.Allocator) !Software {
     var gfx = try Graphics.init(gsp);
     errdefer gfx.deinit(gsp);
 
@@ -64,7 +64,7 @@ pub fn init(config: Config, gsp: GraphicsServerGpu, physical_linear_allocator: s
     return soft;
 }
 
-pub fn deinit(soft: *Software, gsp: GraphicsServerGpu, physical_linear_allocator: std.mem.Allocator, must_close: bool) void {
+pub fn deinit(soft: *Software, gsp: Gpu, physical_linear_allocator: std.mem.Allocator, must_close: bool) void {
     if (!must_close) {
         soft.waitVBlank() catch {};
         gsp.sendSetLcdForceBlack(true) catch {};
@@ -76,12 +76,12 @@ pub fn deinit(soft: *Software, gsp: GraphicsServerGpu, physical_linear_allocator
     soft.* = undefined;
 }
 
-pub fn reacquire(soft: *Software, gsp: GraphicsServerGpu) !void {
+pub fn reacquire(soft: *Software, gsp: Gpu) !void {
     try soft.gfx.reacquire(gsp);
     try gsp.sendSetLcdForceBlack(false);
 }
 
-pub fn release(soft: *Software, gsp: GraphicsServerGpu) !GraphicsServerGpu.ScreenCapture {
+pub fn release(soft: *Software, gsp: Gpu) !Gpu.ScreenCapture {
     return soft.gfx.release(gsp);
 }
 
@@ -122,8 +122,8 @@ pub fn waitVBlank(soft: *Software) !void {
 }
 
 const Software = @This();
-const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
-const Graphics = GraphicsServerGpu.Graphics;
+const Gpu = horizon.services.gsp.Gpu;
+const Graphics = Gpu.Graphics;
 const Framebuffer = Graphics.Framebuffer;
 
 const std = @import("std");

@@ -11,7 +11,7 @@
 //! Based on reverse enginering & the documentation found in 3dbrew: https://www.3dbrew.org/wiki/CSND_Services
 
 pub const service = "csnd:SND";
-pub const Engine = @import("ChannelSound/Engine.zig");
+pub const Engine = @import("CSnd/Engine.zig");
 
 pub const Command = extern struct {
     pub const Offset = enum(u16) {
@@ -641,6 +641,9 @@ pub const command = struct {
     /// Any command containing a non-allocated channel or capture unit will be ignored.
     pub const ExecuteCommands = ipc.Command(Id, .execute_commands, struct { shm_offset: u32 }, struct {});
     /// May fail with 0xc960b7f8 (not initialized), 0xc940b401 (sleeping and direct sound is not ignoring sleep) or 0xc940b402 (not enough priority)
+    ///
+    /// Direct sound maintain exclusivity other all sound output, i.e all other sound output 
+    /// will be muted until it finishes.
     ///
     /// Maximum of 4 direct sounds; since CSND doesn't check the index you can write OOB anywhere so be careful.
     /// Maximum priority of 0, minimum of 32; if priority is lower or equal than current it will replace it, if not it fails with 0xc940b402.

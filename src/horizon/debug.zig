@@ -199,10 +199,13 @@ pub fn defaultHandleSegfault(addr: ?usize, name: []const u8, opt_ctx: ?std.debug
                 }
             }
 
-            var errdisp = horizon.ErrorDisplayManager.open() catch {
-                print("panic: could not open err:f connection\n", .{});
-                while (true) horizon.breakExecution(.panic);
-            };
+            const errdisp = blk: for (0..10) |_| {
+                if (horizon.ErrorDisplayManager.open()) |errdisp| {
+                    break :blk errdisp;
+                } else |_| {}
+
+                horizon.sleepThread(std.time.ns_per_s);
+            } else horizon.breakExecution(.panic);
             defer errdisp.close();
             errdisp.sendSetUserString(fixed.buffered()) catch print("panic: 'err:f' could not set user string", .{});
             errdisp.sendThrow(.{

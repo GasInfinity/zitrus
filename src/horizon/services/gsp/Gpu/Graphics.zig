@@ -9,10 +9,10 @@ pub const Framebuffer = @import("Graphics/Framebuffer.zig");
 thread_index: u32,
 interrupt_event: Event,
 shared_memory_block: MemoryBlock,
-shared_memory: *align(horizon.heap.page_size) GraphicsServerGpu.Shared,
+shared_memory: *align(horizon.heap.page_size) Gpu.Shared,
 gsp_owned: bool,
 
-pub fn init(gsp: GraphicsServerGpu) !Graphics {
+pub fn init(gsp: Gpu) !Graphics {
     try gsp.sendAcquireRight(0x0);
 
     const interrupt_event = try Event.create(.oneshot);
@@ -30,7 +30,7 @@ pub fn init(gsp: GraphicsServerGpu) !Graphics {
     const shared_memory_block = queue_result.response.gsp_memory;
     errdefer shared_memory_block.close();
 
-    const shared_memory = std.mem.bytesAsValue(GraphicsServerGpu.Shared, horizon.heap.allocShared(@sizeOf(GraphicsServerGpu.Shared)));
+    const shared_memory = std.mem.bytesAsValue(Gpu.Shared, horizon.heap.allocShared(@sizeOf(Gpu.Shared)));
 
     try queue_result.response.gsp_memory.map(@ptrCast(shared_memory), .rw, .dont_care);
 
@@ -43,7 +43,7 @@ pub fn init(gsp: GraphicsServerGpu) !Graphics {
     };
 }
 
-pub fn deinit(gfx: *Graphics, gsp: GraphicsServerGpu) void {
+pub fn deinit(gfx: *Graphics, gsp: Gpu) void {
     gfx.shared_memory_block.unmap(@ptrCast(@alignCast(gfx.shared_memory)));
     gfx.shared_memory_block.close();
 
@@ -55,13 +55,13 @@ pub fn deinit(gfx: *Graphics, gsp: GraphicsServerGpu) void {
     gfx.* = undefined;
 }
 
-pub fn reacquire(gfx: *Graphics, gsp: GraphicsServerGpu) !void {
+pub fn reacquire(gfx: *Graphics, gsp: Gpu) !void {
     try gsp.sendAcquireRight(0x0);
     try gsp.sendRestoreVRAMSysArea();
     gfx.gsp_owned = false;
 }
 
-pub fn release(gfx: *Graphics, gsp: GraphicsServerGpu) !GraphicsServerGpu.ScreenCapture {
+pub fn release(gfx: *Graphics, gsp: Gpu) !Gpu.ScreenCapture {
     try gsp.sendSaveVRAMSysArea();
     const capture = try gsp.sendImportDisplayCaptureInfo();
     try gsp.sendReleaseRight();
@@ -69,15 +69,15 @@ pub fn release(gfx: *Graphics, gsp: GraphicsServerGpu) !GraphicsServerGpu.Screen
     return capture;
 }
 
-pub fn waitInterrupts(gfx: *Graphics) !GraphicsServerGpu.Interrupt.Set {
+pub fn waitInterrupts(gfx: *Graphics) !Gpu.Interrupt.Set {
     return (try gfx.waitInterruptsTimeout(.none)).?;
 }
 
-pub fn pollInterrupts(gfx: *Graphics) !?GraphicsServerGpu.Interrupt.Set {
+pub fn pollInterrupts(gfx: *Graphics) !?Gpu.Interrupt.Set {
     return try gfx.waitInterruptsTimeout(.fromNanoseconds(0));
 }
 
-pub fn waitInterruptsTimeout(gfx: *Graphics, timeout: horizon.Timeout) !?GraphicsServerGpu.Interrupt.Set {
+pub fn waitInterruptsTimeout(gfx: *Graphics, timeout: horizon.Timeout) !?Gpu.Interrupt.Set {
     const int_ev = gfx.interrupt_event;
 
     int_ev.wait(timeout) catch |err| switch (err) {
@@ -92,7 +92,7 @@ pub fn discardInterrupts(gfx: *Graphics) void {
     gfx.shared_memory.interrupt_queue[gfx.thread_index].clear();
 }
 
-pub fn initializeHardware(gsp: GraphicsServerGpu) !void {
+pub fn initializeHardware(gsp: Gpu) !void {
     const DisplayController = pica.DisplayController;
     const gpu: *volatile pica.Registers = memory.gpu_registers;
 
@@ -165,7 +165,7 @@ pub fn initializeHardware(gsp: GraphicsServerGpu) !void {
 }
 
 const Graphics = @This();
-const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
+const Gpu = horizon.services.gsp.Gpu;
 
 const std = @import("std");
 const zitrus = @import("zitrus");

@@ -239,7 +239,7 @@ const WaveFile = struct {
 
 const horizon = zitrus.horizon;
 const environment = zitrus.horizon.environment;
-const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
+const Gpu = horizon.services.gsp.Gpu;
 const ChannelSound = horizon.services.ChannelSound;
 
 const zdebug = zitrus.debug;

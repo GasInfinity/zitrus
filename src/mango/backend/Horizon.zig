@@ -1,7 +1,7 @@
 pub const CreateInfo = struct {
     /// The GSP session the device will use to communicate with the
     /// process.
-    gsp: horizon.services.GraphicsServerGpu,
+    gsp: horizon.services.gsp.Gpu,
 
     /// The address arbiter the device will use when it needs to wait
     /// and signal threads.
@@ -117,11 +117,11 @@ const CodeCache = struct {
 
 device: Device,
 arbiter: AddressArbiter,
-gsp: GraphicsServerGpu,
+gsp: Gpu,
 gsp_owned: bool,
 gsp_thread_index: u8,
 gsp_shm_memory_block: MemoryBlock,
-gsp_shm: *GraphicsServerGpu.Shared,
+gsp_shm: *Gpu.Shared,
 interrupt_event: Event,
 
 driver: horizon.Thread.Impl,
@@ -150,10 +150,10 @@ pub fn create(create_info: CreateInfo, gpa: std.mem.Allocator) !*Horizon {
     const queue_result = try gsp.sendRegisterInterruptRelayQueue(0x1, interrupt_event);
 
     if (queue_result.first_initialization) {
-        try GraphicsServerGpu.Graphics.initializeHardware(gsp);
+        try Gpu.Graphics.initializeHardware(gsp);
     }
 
-    const shared_memory = horizon.heap.allocShared(@sizeOf(GraphicsServerGpu.Shared));
+    const shared_memory = horizon.heap.allocShared(@sizeOf(Gpu.Shared));
     try queue_result.response.gsp_memory.map(shared_memory, .rw, .dont_care);
     errdefer queue_result.response.gsp_memory.unmap(shared_memory);
 
@@ -207,8 +207,8 @@ pub fn create(create_info: CreateInfo, gpa: std.mem.Allocator) !*Horizon {
         .code_cache = .empty,
     };
 
-    h_device.gsp_shm.framebuffers[h_device.gsp_thread_index][0].header = std.mem.zeroes(GraphicsServerGpu.FramebufferInfo.Header);
-    h_device.gsp_shm.framebuffers[h_device.gsp_thread_index][1].header = std.mem.zeroes(GraphicsServerGpu.FramebufferInfo.Header);
+    h_device.gsp_shm.framebuffers[h_device.gsp_thread_index][0].header = std.mem.zeroes(Gpu.FramebufferInfo.Header);
+    h_device.gsp_shm.framebuffers[h_device.gsp_thread_index][1].header = std.mem.zeroes(Gpu.FramebufferInfo.Header);
 
     h_device.driver = try .spawnOptions(.{
         .allocator = gpa,
@@ -256,7 +256,7 @@ fn reacquire(dev: *Device) !void {
     try pe.reacquire(gsp);
 }
 
-fn release(dev: *Device) mango.ReleaseDeviceError!GraphicsServerGpu.ScreenCapture {
+fn release(dev: *Device) mango.ReleaseDeviceError!Gpu.ScreenCapture {
     const h_dev: *Horizon = @alignCast(@fieldParentPtr("device", dev));
 
     std.debug.assert(h_dev.gsp_owned);
@@ -581,7 +581,7 @@ const Driver = struct {
                                 const data: []align(8) u8 = @alignCast(h_dev.deviceToHost(@intFromEnum(fill.ptr))[0..fill.extra.len]);
 
                                 gx.pushFrontAssumeCapacity(.initMemoryFill(.{ .init(data, switch (fill.extra.size) {
-                                    inline .@"16", .@"24", .@"32" => |t| @unionInit(GraphicsServerGpu.GxCommand.MemoryFill.Unit.Value, @tagName(t), @truncate(fill.value)),
+                                    inline .@"16", .@"24", .@"32" => |t| @unionInit(Gpu.GxCommand.MemoryFill.Unit.Value, @tagName(t), @truncate(fill.value)),
                                     else => .fill24(@truncate(fill.value)),
                                 }), null }, .none));
                             },
@@ -752,7 +752,7 @@ const Driver = struct {
                                 const data: []align(8) u8 = @alignCast(h_dev.deviceToHost(@intFromEnum(fill.ptr))[0..fill.extra.len]);
 
                                 gx.pushFrontAssumeCapacity(.initMemoryFill(.{ .init(data, switch (fill.extra.size) {
-                                    inline .@"16", .@"24", .@"32" => |t| @unionInit(GraphicsServerGpu.GxCommand.MemoryFill.Unit.Value, @tagName(t), @truncate(fill.value)),
+                                    inline .@"16", .@"24", .@"32" => |t| @unionInit(Gpu.GxCommand.MemoryFill.Unit.Value, @tagName(t), @truncate(fill.value)),
                                     else => .fill24(@truncate(fill.value)),
                                 }), null }, .none));
                                 break :signal signal;
@@ -835,7 +835,7 @@ const Driver = struct {
         }
     }
 
-    fn clearState(int_que: *GraphicsServerGpu.Interrupt.Queue, gx: *GraphicsServerGpu.GxCommand.Queue, fbs: *[2]GraphicsServerGpu.FramebufferInfo) void {
+    fn clearState(int_que: *Gpu.Interrupt.Queue, gx: *Gpu.GxCommand.Queue, fbs: *[2]Gpu.FramebufferInfo) void {
         int_que.clear();
         gx.clear();
         // NOTE: we previously set the framebuffers to point to physical address 0
@@ -851,7 +851,7 @@ const Driver = struct {
         const gsp = h_dev.gsp;
 
         gsp.sendResetGpuCore() catch {};
-        GraphicsServerGpu.Graphics.initializeHardware(gsp) catch {};
+        Gpu.Graphics.initializeHardware(gsp) catch {};
 
         h_dev.running.store(false, .monotonic);
 
@@ -933,7 +933,7 @@ const horizon = zitrus.horizon;
 const AddressArbiter = horizon.AddressArbiter;
 const Event = horizon.Event;
 const MemoryBlock = horizon.MemoryBlock;
-const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
+const Gpu = horizon.services.gsp.Gpu;
 
 const mango = zitrus.mango;
 const pica = zitrus.hardware.pica;

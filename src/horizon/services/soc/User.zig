@@ -556,18 +556,18 @@ pub const command = struct {
         socket: Descriptor,
         address_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-    }, struct { errno: E.Maybe, address: ipc.Static(0) });
+    }, struct { errno: E.Maybe, address: ipc.Static(u8, 0) });
     pub const Bind = ipc.Command(Id, .bind, struct {
         socket: Descriptor,
         address_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        address: ipc.Static(0),
+        address: ipc.Static(u8, 0),
     }, struct { errno: E.Maybe });
     pub const Connect = ipc.Command(Id, .connect, struct {
         socket: Descriptor,
         address_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        address: ipc.Static(0),
+        address: ipc.Static(u8, 0),
     }, struct { errno: E.Maybe });
     pub const ReceiveFromMapped = ipc.Command(Id, .recvfrom_mapped, struct {
         pub const StaticOutput = struct { src_address: []u8 };
@@ -577,8 +577,8 @@ pub const command = struct {
         flags: DatagramFlags,
         src_address_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        output: ipc.Mapped(.w),
-    }, struct { errno: E.Maybe, src_address: ipc.Static(0), output: ipc.Mapped(.w) });
+        output: ipc.Mapped(u8, .w),
+    }, struct { errno: E.Maybe, src_address: ipc.Static(u8, 0), output: ipc.Mapped(u8, .w) });
     pub const ReceiveFrom = ipc.Command(Id, .recvfrom, struct {
         pub const StaticOutput = struct {
             output: []u8,
@@ -590,24 +590,24 @@ pub const command = struct {
         flags: DatagramFlags,
         src_address_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-    }, struct { errno: E.Maybe, total_received: u32, output: ipc.Static(0), src_address: ipc.Static(1) });
+    }, struct { errno: E.Maybe, total_received: u32, output: ipc.Static(u8, 0), src_address: ipc.Static(u8, 1) });
     pub const SendToMapped = ipc.Command(Id, .sendto_mapped, struct {
         socket: Descriptor,
         input_len: u32,
         flags: DatagramFlags,
         dest_address_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        dest_address: ipc.Static(1),
-        input: ipc.Mapped(.r),
-    }, struct { errno: E.Maybe, input: ipc.Mapped(.r) });
+        dest_address: ipc.Static(u8, 1),
+        input: ipc.Mapped(u8, .r),
+    }, struct { errno: E.Maybe, input: ipc.Mapped(u8, .r) });
     pub const SendTo = ipc.Command(Id, .sendto, struct {
         socket: Descriptor,
         input_len: u32,
         flags: DatagramFlags,
         dest_address_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        input: ipc.Static(2),
-        dest_address: ipc.Static(1),
+        input: ipc.Static(u8, 2),
+        dest_address: ipc.Static(u8, 1),
     }, struct { errno: E.Maybe });
     pub const Close = ipc.Command(Id, .close, struct {
         socket: Descriptor,
@@ -623,15 +623,15 @@ pub const command = struct {
 
         hostname_len: u32,
         entry_len: u32,
-        hostname: ipc.Static(3),
-    }, struct { errno: E, entry: ipc.Static(0) });
+        hostname: ipc.Static(u8, 3),
+    }, struct { errno: E, entry: ipc.Static(u8, 0) });
     pub const GetHostByAddr = ipc.Command(Id, .gethostbyaddr, struct {
         pub const StaticOutput = struct { entry: *HostEntry };
 
         address_len: u32,
         type: Family,
         entry_len: u32,
-        address: ipc.Static(4),
+        address: ipc.Static(u8, 4),
     }, struct { errno: E.Maybe });
     pub const GetAddrInfo = ipc.Command(Id, .getaddrinfo, struct {
         pub const StaticOutput = struct { results: []AddressInfo };
@@ -640,10 +640,10 @@ pub const command = struct {
         service_len: u32,
         hints_len: u32,
         results_len: u32,
-        node: ipc.Static(5),
-        service: ipc.Static(6),
-        hints: ipc.Static(7),
-    }, struct { errno: E.Maybe, count: u32, results: ipc.Static(0) });
+        node: ipc.Static(u8, 5),
+        service: ipc.Static(u8, 6),
+        hints: ipc.Static(u8, 7),
+    }, struct { errno: E.Maybe, count: u32, results: ipc.Static(u8, 0) });
     pub const GetNameInfo = ipc.Command(Id, .getnameinfo, struct {
         pub const StaticOutput = struct {};
 
@@ -651,7 +651,7 @@ pub const command = struct {
         host_len: u32,
         serv_len: u32,
         flags: u32,
-        sockaddr: ipc.Static(8),
+        sockaddr: ipc.Static(u8, 8),
     }, struct { errno: E.Maybe });
     pub const GetSockOpt = ipc.Command(Id, .getsockopt, struct {
         pub const StaticOutput = struct { opt: []u8 };
@@ -661,14 +661,14 @@ pub const command = struct {
         name: SocketOption,
         opt_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-    }, struct { errno: E.Maybe, opt_len: u32, opt: ipc.Static(0) });
+    }, struct { errno: E.Maybe, opt_len: u32, opt: ipc.Static(u8, 0) });
     pub const SetSockOpt = ipc.Command(Id, .setsockopt, struct {
         socket: Descriptor,
         level: SocketLevel,
         name: SocketOption,
         opt_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        opt: ipc.Static(9),
+        opt: ipc.Static(u8, 9),
     }, struct { errno: E.Maybe });
     pub const Fcntl = ipc.Command(Id, .fcntl, struct {
         socket: Descriptor,
@@ -682,8 +682,8 @@ pub const command = struct {
         nfds: u32,
         timeout: i32,
         process_id: ipc.ReplaceByProcessId = .replace,
-        poll: ipc.Static(10),
-    }, struct { errno: E.Maybe, polls: ipc.Static(0) });
+        poll: ipc.Static(u8, 10),
+    }, struct { errno: E.Maybe, polls: ipc.Static(u8, 0) });
     pub const SockAtMark = ipc.Command(Id, .sockatmark, struct {
         socket: Descriptor,
         process_id: ipc.ReplaceByProcessId = .replace,
@@ -695,7 +695,7 @@ pub const command = struct {
         socket: Descriptor,
         address_len: u32,
         process_id: ipc.ReplaceByProcessId = .replace,
-    }, struct { errno: E.Maybe, address: ipc.Static(0) });
+    }, struct { errno: E.Maybe, address: ipc.Static(u8, 0) });
     pub const GetPeerName = ipc.Command(Id, .getpeername, struct {
         pub const static_buffers = 1;
         socket: Descriptor,

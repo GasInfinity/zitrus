@@ -296,7 +296,7 @@ pub fn init(
 /// Will be closed on `deinit`.
 pub fn initStorage(hio: *HIo, srv: horizon.ServiceManager, backends: enum { fs, soc, both }, soc_buffer_len: usize) !void {
     if (backends != .soc) {
-        const fs = try Filesystem.open(.user, srv);
+        const fs = try Filesystem.open(srv, .user);
         errdefer fs.close();
 
         try fs.sendInitialize();

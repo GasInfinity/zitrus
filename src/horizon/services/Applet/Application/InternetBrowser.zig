@@ -8,7 +8,7 @@ pub fn initUrl(url: [:0]const u8) InternetBrowser {
     return .{ .url = url };
 }
 
-pub fn start(internet: *InternetBrowser, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: GraphicsServerGpu.ScreenCapture) !Application.ExecutionResult {
+pub fn start(internet: *InternetBrowser, app: *Application, apt: Applet, service: Applet.Service, srv: ServiceManager, capture: Gpu.ScreenCapture) !Application.ExecutionResult {
     return app.launchSystemApplet(apt, srv, service, capture, .internet_browser, .none, internet.url);
 }
 
@@ -16,7 +16,7 @@ const InternetBrowser = @This();
 const Applet = horizon.services.Applet;
 const Application = Applet.Application;
 
-const GraphicsServerGpu = horizon.services.GraphicsServerGpu;
+const Gpu = horizon.services.gsp.Gpu;
 
 const std = @import("std");
 const zitrus = @import("zitrus");

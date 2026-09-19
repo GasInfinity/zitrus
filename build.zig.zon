@@ -5,16 +5,16 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .zsflt = .{
-            .url = "git+https://codeberg.org/GasInfinity/zsflt#5039da6d8c45b0e02ac5135c380caa43103412ce",
-            .hash = "zsflt-0.0.1-_pCibX05AAA4X6bmhb-6ob4MOgGCstpQLEiiksIm_Xhy",
+            .url = "git+https://codeberg.org/GasInfinity/zsflt#c56aaff640b93a7eab9024e37ea35c3549512bd9",
+            .hash = "zsflt-0.0.1-_pCibYQ5AACrcZqdbOuwZndPywPWurg1v8PH4nuSHPU0",
         },
         .zigimg = .{
             .url = "git+https://github.com/zigimg/zigimg.git#c7e81a13bff1cf4c5b7f085a8360f9d551143d40",
             .hash = "zigimg-0.1.0-8_eo2uScFwCnpzB1Y2n_jf3euDfMEeCLxJE_E5_W5BNe",
         },
         .plz = .{
-            .url = "git+https://codeberg.org/GasInfinity/plz.git#3571fe7fe16e6f70c5438b8b3fea4ea4096f18c6",
-            .hash = "plz-0.0.1-_2WTq1_oAADnS6u2AEfUgVzbaGT9v9Q_MqFKQq5etEBK",
+            .url = "git+https://codeberg.org/GasInfinity/plz.git#80ae56fce4a7ed72201457a023496308b0186aff",
+            .hash = "plz-0.0.1-_2WTq-zrAAAXt77b_rHrJqTleqWhBxZoFsxv-oljGKoz",
         },
         .etz = .{
             .url = "git+https://codeberg.org/GasInfinity/etz#fadbb7a1c5f410a0ebc087f4db7813e32ec8d51e",

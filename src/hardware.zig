@@ -8,11 +8,14 @@ pub const dsp = @import("hardware/dsp.zig");
 pub const hid = @import("hardware/hid.zig");
 pub const lgy = @import("hardware/lgy.zig");
 pub const i2c = @import("hardware/i2c.zig");
+pub const i2s = @import("hardware/i2s.zig");
 pub const lcd = @import("hardware/lcd.zig");
 pub const pdn = @import("hardware/pdn.zig");
 pub const spi = @import("hardware/spi.zig");
 pub const mic = @import("hardware/mic.zig");
 pub const config = @import("hardware/config.zig");
+pub const codec = @import("hardware/codec.zig");
+pub const gpio = @import("hardware/gpio.zig");
 
 /// Represents a register which is triggered by writing a value to it.
 pub const Trigger = enum(u1) { trigger = 1 };
@@ -193,11 +196,13 @@ comptime {
     _ = dsp;
     _ = lgy;
     _ = i2c;
+    _ = i2s;
     _ = lcd;
     _ = pdn;
     _ = spi;
     _ = mic;
     _ = config;
+    _ = gpio;
 }
 
 const testing = std.testing;

@@ -16,11 +16,9 @@ pub fn MoveHandles(comptime T: type) type {
 
         wrapped: T,
 
-        pub fn move(value: T) MoveHandlesSelf {
+        pub fn move(value: T) @This() {
             return .{ .wrapped = value };
         }
-
-        const MoveHandlesSelf = @This();
     };
 }
 
@@ -32,25 +30,22 @@ pub fn HandleArray(comptime T: type) type {
 
         wrapped: T,
 
-        pub fn array(value: T) HandleArraySelf {
+        pub fn array(value: T) @This() {
             return .{ .wrapped = value };
         }
-
-        const HandleArraySelf = @This();
     };
 }
 
-pub fn Static(comptime buffer_index: u4) type {
+pub fn Static(comptime T: type, comptime buffer_index: u4) type {
     return struct {
+        pub const Elem = T;
         pub const index = buffer_index;
 
-        slice: []const u8,
+        slice: []const T,
 
-        pub fn static(slice: []const u8) StaticSliceSelf {
+        pub fn static(slice: []const T) @This() {
             return .{ .slice = slice };
         }
-
-        const StaticSliceSelf = @This();
     };
 }
 
@@ -63,19 +58,57 @@ pub const Permissions = packed struct(u2) {
     write: bool = false,
 };
 
-pub fn Mapped(comptime mapping_permissions: Permissions) type {
+pub fn Mapped(comptime T: type, comptime mapping_permissions: Permissions) type {
     return struct {
         pub const permissions = mapping_permissions;
-        pub const Slice = if (permissions.write) []u8 else []const u8;
+        pub const Elem = T;
+        pub const Slice = if (permissions.write) []T else []const T;
 
         slice: Slice,
 
-        pub fn mapped(slice: Slice) MappedSliceSelf {
+        pub fn mapped(slice: Slice) @This() {
             return .{ .slice = slice };
         }
-
-        const MappedSliceSelf = @This();
     };
+}
+
+pub const LengthPosition = enum {
+    /// No length prefix or postfix will be added, it is assumed from the context.
+    /// Reading a slice will always return the slice from start to max len.
+    none,
+    /// The length will be added before the data.
+    pre,
+    /// The length will be added after the max len of the data.
+    post,
+};
+
+pub fn EmbeddedSentinel(
+    comptime max: u32,
+    comptime T: type,
+    comptime length_pos: LengthPosition,
+
+    /// Will be placed at the end if there's enough space
+    comptime sentinel: ?T,
+) type {
+    if (@sizeOf(T) > 4) @compileError("Embedded slices cannot have elements bigger than 4 bytes");
+
+    return struct {
+        pub const Elem = T;
+        pub const max_len = max;
+        pub const length_position = length_pos;
+        pub const length_sentinel = sentinel;
+
+        slice: []const T,
+
+        pub fn embedded(slice: []const T) @This() {
+            std.debug.assert(slice.len <= max_len);
+            return .{ .slice = slice };
+        }
+    };
+}
+
+pub fn Embedded(comptime max: u32, comptime T: type, comptime length_pos: LengthPosition) type {
+    return EmbeddedSentinel(max, T, length_pos, null);
 }
 
 /// IPC Serializer / Deserializer for a type.
@@ -85,9 +118,12 @@ pub const Codec = union(enum) {
     ///
     /// It is forbidden to serialize a `raw` Codec after beginning to write translate slots.
     raw: u32,
-    /// Represents a `StaticSlice`, always takes 2 translate slots.
+    /// Represents an `Embedded` slice, taking `@divExact(std.mem.alignForward(u32, @sizeOf(T)*max, 4), 4)` + 1 (if length is included) normal slots.
+    /// Stores the number of `u32`s it takes to store its data and length if included.
+    embedded_slice: u6,
+    /// Represents a `Static`, always takes 2 translate slots.
     static_slice,
-    /// Represents a `MappedSlice`, always takes 2 translate slots.
+    /// Represents a `Mapped`, always takes 2 translate slots.
     mapped_slice,
     /// Represents a `ReplaceByProcessId` handle, theres literally no reason to have arrays of this, always takes 2 translate slots.
     replace_by_process_id,
@@ -145,6 +181,7 @@ pub const Codec = union(enum) {
                 .auto => blk: {
                     if (comptime isStatic(T)) break :blk .static_slice;
                     if (comptime isMapped(T)) break :blk .mapped_slice;
+                    if (comptime isEmbedded(T)) break :blk .{ .embedded_slice = @intCast(@divExact(std.mem.alignForward(u32, @sizeOf(T.Elem) * T.max_len, 4), 4) + @intFromBool(T.length_position != .none)) };
                     if (comptime isMoveHandles(T)) {
                         if (comptime !isValidMoveHandlesType(T.Wrapped)) @compileError("a `MoveHandles` must be wrapping a handle, an array of them or a `HandleArray`");
 
@@ -191,49 +228,33 @@ pub const Codec = union(enum) {
         };
     }
 
-    pub fn write(comptime codec: Codec, comptime T: type, value: T) [codec.size()]u32 {
-        return switch (codec) {
-            .raw => |sz| @bitCast(@as(*const [sz]u8, @ptrCast(&value)).* ++ @as([std.mem.alignForward(u32, sz, @sizeOf(u32)) - sz]u8, @splat(0))),
-            .static_slice => [2]u32{ @bitCast(Buffer.TranslationDescriptor.StaticBuffer.init(@intCast(value.slice.len), T.index)), @intCast(@intFromPtr(value.slice.ptr)) },
-            .mapped_slice => [2]u32{ @bitCast(Buffer.TranslationDescriptor.MappedBuffer.init(@intCast(value.slice.len), T.permissions.read, T.permissions.write)), @intCast(@intFromPtr(value.slice.ptr)) },
-            .replace_by_process_id => [2]u32{ @bitCast(Buffer.TranslationDescriptor.Handle.replace_by_proccess_id), 0x00 },
-            .handles, .move_handles => |amount| [1]u32{@bitCast(Buffer.TranslationDescriptor.Handle.init(amount, codec == .move_handles))} ++ @as(*const [amount]u32, @ptrCast(&value)).*,
-            .handle_array, .move_handle_array => |flds| blk: {
-                const WrappedType = @TypeOf(value.wrapped);
-
-                const sz = comptime codec.size();
-                var raw: [sz]u32 = [1]u32{@bitCast(Buffer.TranslationDescriptor.Handle.init((sz - 1), codec == .move_handle_array))} ++ @as([sz - 1]u32, @splat(0));
-
-                var curr: usize = 1;
-                inline for (flds, @typeInfo(WrappedType).@"struct".fields) |fld, info| {
-                    // NOTE: We don't do a @bitCast to avoid having to check if its an enum and having to do @intFromEnum :p
-                    raw[curr..][0..fld].* = @as(*const [fld]u32, @ptrCast(&@field(value.wrapped, info.name))).*;
-                    curr += fld;
-                }
-
-                break :blk raw;
-            },
-            .fields => |flds| blk: {
-                var current: [codec.size()]u32 = undefined;
-
-                var i: usize = 0;
-                inline for (flds, @typeInfo(T).@"struct".fields) |fld, info| {
-                    const sz = comptime fld.size();
-                    defer i += sz;
-
-                    current[i..][0..sz].* = fld.write(info.type, @field(value, info.name));
-                }
-
-                break :blk current;
-            },
-        };
-    }
-
     pub fn bufWrite(comptime codec: Codec, comptime T: type, value: *const T, buffer: []u32) void {
         std.debug.assert((comptime codec.size()) <= buffer.len);
 
+        const buffer_bytes: []align(4) u8 = @ptrCast(buffer);
+
+        // XXX: This is devious, we can obviously avoid 99% of casts here
         switch (codec) {
-            .raw => @memcpy(@as(*[@sizeOf(T)]u8, @ptrCast(buffer.ptr)), @as(*const [@sizeOf(T)]u8, @ptrCast(value))),
+            .raw => {
+                @as(*align(4) T, @ptrCast(buffer.ptr)).* = value.*;
+                @memset(buffer_bytes[@sizeOf(T)..][0..(std.mem.alignForward(u32, @sizeOf(T), 4) - @sizeOf(T))], 0x00);
+            },
+            .embedded_slice => |sz| {
+                const bytes: []const u8 = @ptrCast(value.slice);
+                std.debug.assert(value.slice.len <= T.max_len);
+
+                const data_offset, const len_idx = switch (T.length_position) {
+                    .none, .post => .{0, (sz - 1)},
+                    .pre => .{4, 0},
+                };
+
+                if (T.length_position != .none) buffer[len_idx] = @intCast(value.slice.len);
+                @memcpy(buffer_bytes[data_offset..][0..bytes.len], bytes);
+
+                if (T.length_sentinel) |sentinel| if (bytes.len < T.max_len) {
+                    @as(*T.Elem, @alignCast(@ptrCast(buffer_bytes[data_offset + bytes.len..][0..@sizeOf(T.Elem)]))).* = sentinel;
+                };
+            },
             .static_slice => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.StaticBuffer.init(@intCast(value.slice.len), T.index)), @intCast(@intFromPtr(value.slice.ptr)) },
             .mapped_slice => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.MappedBuffer.init(@intCast(value.slice.len), T.permissions.read, T.permissions.write)), @intCast(@intFromPtr(value.slice.ptr)) },
             .replace_by_process_id => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.Handle.replace_by_proccess_id), 0x00 },
@@ -271,40 +292,47 @@ pub const Codec = union(enum) {
     pub fn bufRead(comptime codec: Codec, comptime T: type, buffer: []const u32) ReadError!T {
         return switch (codec) {
             .raw => @as(*align(@sizeOf(u32)) const T, @ptrCast(buffer)).*,
+            .embedded_slice => |sz| {
+                const len, const data_start = switch (T.length_position) {
+                    .none => .{T.max_len, 0},
+                    .pre => .{buffer[0], 1},
+                    .post => .{buffer[sz - 1], 0},
+                };
+
+                return .embedded(@as([]const T.Elem, @ptrCast(buffer[data_start..]))[0..len]);
+            },
             .static_slice => blk: {
                 const header: Buffer.TranslationDescriptor.StaticBuffer = @bitCast(buffer[0]);
 
-                if (header.type != .static_buffer) return error.BadTranslationHeader;
-                if (header.index != T.index) return error.BadTranslationHeader;
+                if (header.type != .static_buffer or header.index != T.index) return error.BadTranslationHeader;
 
                 if (header.size == 0) return .static(&.{});
-                break :blk .static(@as([*]u8, @ptrFromInt(buffer[1]))[0..header.size]);
+                break :blk .static(@as([*]const T.Elem, @ptrFromInt(buffer[1]))[0..(header.size / @sizeOf(T.Elem))]);
             },
             .mapped_slice => blk: {
                 const header: Buffer.TranslationDescriptor.MappedBuffer = @bitCast(buffer[0]);
 
-                if (header.type != 1) return error.BadTranslationHeader;
-                if (header.read != T.permissions.read) return error.BadTranslationHeader;
-                if (header.write != T.permissions.write) return error.BadTranslationHeader;
+                if ((header.type != 1) or (header.read != T.permissions.read) or (header.write != T.permissions.write)) return error.BadTranslationHeader;
 
                 if (header.size == 0) return .mapped(&.{});
-                break :blk .mapped(@as([*]u8, @ptrFromInt(buffer[1]))[0..header.size]);
+                break :blk .mapped(@as([*]T.Elem, @ptrFromInt(buffer[1]))[0..(header.size / @sizeOf(T.Elem))]);
             },
             .replace_by_process_id => blk: {
                 const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
+                const expected: Buffer.TranslationDescriptor.Handle = .{ .replace_by_process_id = true };
 
-                if (header.type != .handle) return error.BadTranslationHeader;
-                if (header.extra_handles > 0) return error.BadTranslationHeader;
-                if (!header.replace_by_process_id) return error.BadTranslationHeader;
+                if (header != expected) return error.BadTranslationHeader;
 
                 break :blk @enumFromInt(buffer[1]);
             },
             .handles, .move_handles => |amount| blk: {
                 const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
+                const expected: Buffer.TranslationDescriptor.Handle = .{
+                    .extra_handles = (amount - 1),
+                    .move_handles = codec == .move_handles,
+                };
 
-                if (header.type != .handle) return error.BadTranslationHeader;
-                if (header.extra_handles != amount - 1) return error.BadTranslationHeader;
-                if (header.move_handles != (codec == .move_handles)) return error.BadTranslationHeader;
+                if (header != expected) return error.BadTranslationHeader;
 
                 var result: T = undefined;
                 @as(*[amount]u32, @ptrCast(&result)).* = buffer[1..][0..amount].*;
@@ -313,10 +341,13 @@ pub const Codec = union(enum) {
             .handle_array, .move_handle_array => |flds| blk: {
                 const sz = comptime codec.size();
                 const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
+                const expected: Buffer.TranslationDescriptor.Handle = .{
+                    .type = .handle,
+                    .extra_handles = (sz - 2),
+                    .move_handles = codec == .move_handle_array,
+                };
 
-                if (header.type != .handle) return error.BadTranslationHeader;
-                if (header.extra_handles != (sz - 2)) return error.BadTranslationHeader;
-                if (header.move_handles != (codec == .move_handle_array)) return error.BadTranslationHeader;
+                if (header != expected) return error.BadTranslationHeader;
 
                 const WrappedType = T.Wrapped;
                 var result: WrappedType = undefined;
@@ -354,6 +385,7 @@ pub const Codec = union(enum) {
     pub fn parameters(codec: Codec) Buffer.PackedCommand.Parameters {
         return switch (codec) {
             .raw => |sz| .parameters(@intCast(@divExact(std.mem.alignForward(u32, sz, 4), @sizeOf(u32))), 0),
+            .embedded_slice => |max| .parameters(max, 0),
             .static_slice, .mapped_slice, .replace_by_process_id => .parameters(0, 2),
             .move_handles, .handles => |amount| .parameters(0, amount + 1),
             .move_handle_array, .handle_array => |flds| blk: {
@@ -399,10 +431,13 @@ pub const Codec = union(enum) {
         try testExpect(.{ .move_handles = 1 }, .of(MoveHandles(horizon.Object)));
         try testExpect(.{ .move_handles = 4 }, .of(MoveHandles([4]horizon.Object)));
         try testExpect(.{ .move_handles = 2 }, .of(MoveHandles([2]horizon.Process)));
-        try testExpect(.static_slice, .of(Static(0)));
-        try testExpect(.static_slice, .of(Static(10)));
-        try testExpect(.mapped_slice, .of(Mapped(.r)));
-        try testExpect(.mapped_slice, .of(Mapped(.w)));
+        try testExpect(.static_slice, .of(Static(u8, 0)));
+        try testExpect(.static_slice, .of(Static(u8, 10)));
+        try testExpect(.mapped_slice, .of(Mapped(u8, .r)));
+        try testExpect(.mapped_slice, .of(Mapped(u8, .w)));
+        try testExpect(.{ .embedded_slice = 2 }, .of(Embedded(4, u8, .pre)));
+        try testExpect(.{ .embedded_slice = 3 }, .of(Embedded(4, u16, .pre)));
+        try testExpect(.{ .embedded_slice = 5 }, .of(Embedded(4, u32, .pre)));
 
         try testExpect(.{ .handle_array = &.{ 2, 1, 1 } }, .of(HandleArray(struct {
             pads: [2]horizon.Event,
@@ -444,8 +479,11 @@ pub const Codec = union(enum) {
         try testExpectParameters(.parameters(1, 0), .of(extern struct { a: u8, b: u8 }));
         try testExpectParameters(.parameters(4, 0), .of(extern struct { a: [12]u8, b: u8 }));
 
-        try testExpectParameters(.parameters(0, 2), .of(Static(0)));
-        try testExpectParameters(.parameters(0, 2), .of(Mapped(.r)));
+        try testExpectParameters(.parameters(0, 2), .of(Static(u8, 0)));
+        try testExpectParameters(.parameters(0, 2), .of(Mapped(u8, .r)));
+        try testExpectParameters(.parameters(2, 0), .of(Embedded(4, u8, .pre)));
+        try testExpectParameters(.parameters(3, 0), .of(Embedded(6, u8, .pre)));
+        try testExpectParameters(.parameters(4, 0), .of(Embedded(6, u16, .pre)));
 
         try testExpectParameters(.parameters(0, 2), .of(ReplaceByProcessId));
         try testExpectParameters(.parameters(0, 2), .of(horizon.Object));
@@ -480,10 +518,14 @@ pub const Codec = union(enum) {
 
     fn testExpectWritten(written: []const u32, comptime T: type, value: T) !void {
         const codec: Codec = comptime .of(T);
-        try testing.expectEqualSlices(u32, written, &codec.write(T, value));
+        var buffer: [codec.size()]u32 = @splat(0);
+        codec.bufWrite(T, &value, &buffer);
+        try testing.expectEqualSlices(u32, written, &buffer);
     }
 
-    test write {
+    test bufWrite {
+        if (builtin.target.cpu.arch.endian() != .little) return error.SkipZigTest;
+
         const Foo = struct {
             u8: u8 = 42,
             u16: u16 = 69,
@@ -500,9 +542,21 @@ pub const Codec = union(enum) {
             u16: u16 = 69,
         };
 
-        try testExpectWritten(&.{ 42, 69, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(2)), 200, 500 }, Foo, .{});
+        try testExpectWritten(&@as([1]u32, @bitCast([_]u8{ 42, 42, 69, 0 })), Bar, .{});
 
-        if (builtin.target.cpu.arch.endian() == .little) try testExpectWritten(&@as([1]u32, @bitCast([_]u8{ 42, 42, 69, 0 })), Bar, .{});
+        const Baz = struct {
+            u16: u16,
+            embedded: Embedded(4, u8, .post),
+            u32: u32,
+            other_embedded: Embedded(2, u32, .pre),
+        };
+
+        try testExpectWritten(&.{20, 69, 1, 300, 1, 80, 0}, Baz, .{
+            .u16 = 20,
+            .embedded = .embedded(&.{69}),
+            .u32 = 300,
+            .other_embedded = .embedded(&.{80}),
+        });
 
         // NOTE: We cannot test `MappedSlice`s and `StaticSlice`s on >64-bit platforms as we do an `@intFromPtr`
     }
@@ -513,9 +567,20 @@ pub const Codec = union(enum) {
     }
 
     test bufRead {
+        if (builtin.target.cpu.arch.endian() != .little) return error.SkipZigTest;
         const Foo = struct { u8: u8, u16: u16, obj: horizon.Object };
+        const Bar = struct { emb0: EmbeddedSentinel(8, u8, .pre, 255), emb1: EmbeddedSentinel(4, u32, .post, 0xaa) };
 
-        try testExpectRead(Foo, .{ .u8 = 42, .u16 = 69, .obj = @bitCast(@as(u32, 0x200)) }, &.{ 42, 69, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(1)), 0x200 });
+        try testExpectRead(Foo, .{
+            .u8 = 42,
+            .u16 = 69,
+            .obj = @bitCast(@as(u32, 0x200)),
+        }, &.{ 42, 69, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(1)), 0x200 });
+
+        try testExpectRead(Bar, .{
+            .emb0 = .embedded(&.{67, 67, 42}),
+            .emb1 = .embedded(&.{20, 20, 79}),
+        }, &.{ 3, 0xff2a4343, 20, 20, 20, 79, 0xaa, 3 });
     }
 };
 
@@ -670,8 +735,25 @@ pub const Buffer = extern struct {
         parameters: [63]u32,
     };
 
+    pub const StaticInput = extern struct {
+        pub const Buffer = extern struct {
+            header: TranslationDescriptor.StaticBuffer,
+            ptr: u32,
+
+            pub fn init(comptime T: type, slice: []T, id: u4) StaticInput.Buffer {
+                const bytes: []u8 = @ptrCast(slice);
+                return .{
+                    .header = .init(@intCast(bytes.len), id),
+                    .ptr = @intCast(@intFromPtr(bytes.ptr)),
+                };
+            }
+        };
+
+        buffers: [16]StaticInput.Buffer,
+    };
+
     packed_command: PackedCommand,
-    static_buffers: [32]u32,
+    static: StaticInput,
 
     pub const SendRequestError = ClientSession.RequestError || ReadError;
     pub fn sendRequest(buffer: *Buffer, session: ClientSession, comptime DefinedCommand: type, request: DefinedCommand.Request, static_output: DefinedCommand.RequestStaticOutput) SendRequestError!Result(DefinedCommand.Response) {
@@ -683,7 +765,12 @@ pub const Buffer = extern struct {
     pub fn sendRequestWithResult(buffer: *Buffer, session: ClientSession, comptime DefinedCommand: type, request: DefinedCommand.Request, static_output: DefinedCommand.RequestStaticOutput) Result(DefinedCommand.Response) {
         buffer.writeRequest(DefinedCommand, &request, static_output);
         const req_res = horizon.sendSyncRequest(session);
-        if (!req_res.isSuccess()) return .of(req_res, undefined);
+
+        if (!req_res.isSuccess()) {
+            @branchHint(.unlikely);
+            return .of(req_res, undefined);
+        }
+
         return buffer.readResponse(DefinedCommand) catch |err| switch (err) {
             error.BadIpcHeader => .of(.os_invalid_ipc_header, undefined),
             error.BadTranslationHeader => .of(.os_invalid_ipc_parameters, undefined),
@@ -702,22 +789,14 @@ pub const Buffer = extern struct {
         inline for (@typeInfo(DefinedCommand.RequestStaticOutput).@"struct".fields, 0..) |f, i| {
             const static_buffer: []u8 = @ptrCast(@field(static_output, f.name));
 
-            buffer.static_buffers[i << 1] = @bitCast(TranslationDescriptor.StaticBuffer.init(@intCast(static_buffer.len), @intCast(i)));
-            buffer.static_buffers[(i << 1) + 1] = @intCast(@intFromPtr(static_buffer.ptr));
+            buffer.static.buffers[i] = .{
+                .header = .init(@intCast(static_buffer.len), @intCast(i)),
+                .ptr = @intCast(@intFromPtr(static_buffer.ptr)),
+            };
         }
     }
 
     pub fn writeResponse(buffer: *Buffer, comptime DefinedCommand: type, result: Result(DefinedCommand.Response)) void {
-        if (!result.code.isSuccess()) {
-            buffer.packed_command.header = .{
-                .command_id = @intFromEnum(DefinedCommand.id),
-                .parameters = .parameters(1, 0),
-            };
-
-            buffer.packed_command.parameters[0] = @bitCast(result.code);
-            return;
-        }
-
         buffer.packed_command.header = .{
             .command_id = @intFromEnum(DefinedCommand.id),
             .parameters = .parameters(DefinedCommand.response_parameters.normal + 1, DefinedCommand.response_parameters.translate),
@@ -728,19 +807,19 @@ pub const Buffer = extern struct {
         DefinedCommand.response.bufWrite(DefinedCommand.Response, &result.value, buffer.packed_command.parameters[1..]);
     }
 
-    pub fn readRequestId(buffer: *Buffer, comptime Id: type) ?Id {
-        if (std.enums.fromInt(Id, buffer.packed_command.header.command_id)) |id| return id;
-
-        buffer.packed_command.header = .invalid;
-        buffer.packed_command.parameters[0] = @bitCast(Code.os_invalid_ipc_header);
-        return null;
-    }
-
     pub const CheckError = error{BadIpcHeader};
     pub const ReadError = CheckError || Codec.ReadError;
 
     pub fn checkResponse(buffer: *Buffer, comptime DefinedCommand: type) CheckError!Code {
-        if (buffer.packed_command.header.command_id != 0x00 and buffer.packed_command.header.command_id != @intFromEnum(DefinedCommand.id)) return error.BadIpcHeader;
+        const expected_header: PackedCommand.Header = .{
+            .command_id = @intFromEnum(DefinedCommand.id),
+            .parameters = .parameters(DefinedCommand.response_parameters.normal + 1, DefinedCommand.response_parameters.translate), 
+        };
+
+        if (buffer.packed_command.header != expected_header and buffer.packed_command.header != PackedCommand.Header.invalid) {
+            return unexpectedResponse(expected_header, buffer.packed_command.header);
+        }
+
         return @bitCast(buffer.packed_command.parameters[0]);
     }
 
@@ -749,23 +828,60 @@ pub const Buffer = extern struct {
 
         if (!code.isSuccess()) return .of(code, undefined);
 
-        if (buffer.packed_command.header.parameters.normal != DefinedCommand.response_parameters.normal + 1 or buffer.packed_command.header.parameters.translate != DefinedCommand.response_parameters.translate) {
-            return unexpectedResponseParameters(DefinedCommand.response_parameters, buffer.packed_command.header.parameters);
-        }
-
         return .of(code, try DefinedCommand.response.bufRead(DefinedCommand.Response, buffer.packed_command.parameters[1..]));
     }
 
-    pub fn readRequest(buffer: *Buffer, comptime DefinedCommand: type) ReadError!DefinedCommand.Request {
-        std.debug.assert(buffer.packed_command.header.command_id == @intFromEnum(DefinedCommand.id)); // This is user error, as you must have checked the id before.
-        if (buffer.packed_command.header.parameters != DefinedCommand.request_parameters) return error.BadIpcHeader;
+    /// Tries to read the current request id, returning null if
+    /// the request is not defined.
+    ///
+    /// Automatically sets the header and `horizon.result.Code` when returning null to
+    /// the respective `.invalid` (id 0 and 1 normal parameter) and `os_invalid_ipc_header`
+    pub fn readRequestId(buffer: *Buffer, comptime Id: type) ?Id {
+        if (std.enums.fromInt(Id, buffer.packed_command.header.command_id)) |id| return id;
 
-        return try DefinedCommand.request.bufRead(DefinedCommand.Request, &buffer.packed_command.parameters);
+        buffer.packed_command.header = .invalid;
+        buffer.packed_command.parameters[0] = @bitCast(Code.os_invalid_ipc_header);
+        return null;
     }
 
-    fn unexpectedResponseParameters(expected: PackedCommand.Parameters, actual: PackedCommand.Parameters) ReadError {
+    /// Tries to read the request, returning null if either parameters don't match 
+    /// or an unexpected translation parameter has been issued by checking their headers.
+    ///
+    /// Automatically sets the `horizon.result.Code` when returning null to the respective
+    /// `os_invalid_ipc_header` or `os_invalid_ipc_parameters`.
+    ///
+    /// Asserts the command being read has it's expected `id`
+    pub fn readRequest(buffer: *Buffer, comptime DefinedCommand: type) ?DefinedCommand.Request {
+        std.debug.assert(buffer.packed_command.header.command_id == @intFromEnum(DefinedCommand.id)); // This is user error, as you must have checked the id before.
+
+        const expected_header: PackedCommand.Header = .{
+            .command_id = @intFromEnum(DefinedCommand.id),
+            .parameters = DefinedCommand.request_parameters,
+        };
+
+        if (buffer.packed_command.header != expected_header) {
+            buffer.packed_command.parameters[0] = @bitCast(Code.os_invalid_ipc_header);
+            return null;
+        }
+
+        return DefinedCommand.request.bufRead(DefinedCommand.Request, &buffer.packed_command.parameters) catch |err| switch (err) {
+            error.BadTranslationHeader => {
+                buffer.packed_command.parameters[0] = @bitCast(Code.os_invalid_ipc_parameters);
+                return null;
+            },
+        };
+    }
+
+    fn unexpectedResponse(expected: PackedCommand.Header, actual: PackedCommand.Header) CheckError {
         if (is_debug) {
-            std.debug.print("bad IPC response params, expected [n: {d}, t: {d}], got [n: {d}, t: {d}]", .{ expected.normal + 1, expected.translate, actual.normal, actual.translate });
+            std.debug.print("bad IPC response, expected [id: {d}, n: {d}, t: {d}], got [id: {d}, n: {d}, t: {d}]", .{
+                expected.command_id,
+                expected.parameters.normal,
+                expected.parameters.translate,
+                actual.command_id,
+                actual.parameters.normal,
+                actual.parameters.translate,
+            });
         }
 
         return error.BadIpcHeader;
@@ -802,7 +918,8 @@ test Buffer {
     try testing.expectEqual(command_testing.Foo.request_parameters, buf.packed_command.header.parameters);
 
     try testing.expectEqualSlices(u32, &.{20}, buf.packed_command.parameters[0..1]);
-    try testing.expectEqual(request, try buf.readRequest(command_testing.Foo));
+    try testing.expectEqual(command_testing.Id.foo, buf.readRequestId(command_testing.Foo.Id));
+    try testing.expectEqual(request, buf.readRequest(command_testing.Foo));
 
     const response: command_testing.Foo.Response = .{
         .newly_standard = 0x4269,
@@ -852,11 +969,34 @@ fn isValidHandleArrayType(comptime T: type) bool {
 }
 
 fn isStatic(comptime T: type) bool {
-    return @hasDecl(T, "index") and @TypeOf(@field(T, "index")) == u4 and T == Static(@field(T, "index"));
+    // zig fmt: off
+    return @hasDecl(T, "Elem")
+       and @hasDecl(T, "index")
+       and @TypeOf(@field(T, "Elem")) == type
+       and @TypeOf(@field(T, "index")) == u4
+       and T == Static(@field(T, "Elem"), @field(T, "index"));
+    // zig fmt: on
 }
 
 fn isMapped(comptime T: type) bool {
-    return @hasDecl(T, "permissions") and @TypeOf(@field(T, "permissions")) == Permissions and T == Mapped(@field(T, "permissions"));
+    // zig fmt: off
+    return @hasDecl(T, "Elem")
+       and @hasDecl(T, "permissions")
+       and @TypeOf(@field(T, "Elem")) == type
+       and @TypeOf(@field(T, "permissions")) == Permissions
+       and T == Mapped(@field(T, "Elem"), @field(T, "permissions"));
+    // zig fmt: on
+}
+
+fn isEmbedded(comptime T: type) bool {
+    // zig fmt: off
+    return @hasDecl(T, "Elem")
+       and @hasDecl(T, "max_len")
+       and @hasDecl(T, "length_position")
+       and @hasDecl(T, "length_sentinel")
+       and @TypeOf(@field(T, "Elem")) == type
+       and T == EmbeddedSentinel(@field(T, "max_len"), @field(T, "Elem"), @field(T, "length_position"), @field(T, "length_sentinel"));
+    // zig fmt: on
 }
 
 fn isWrappedHandle(comptime T: type) bool {

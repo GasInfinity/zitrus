@@ -17,7 +17,7 @@ pub const State = packed struct(u16) {
     l: bool,
     x: bool,
     y: bool,
-    _unused0: u3 = 0,
+    _unused0: u4 = 0,
 };
 
 pub const Interrupt = packed struct(u16) {
