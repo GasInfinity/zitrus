@@ -143,7 +143,7 @@ pub noinline fn log(code: ResultCode, message: []const u8) void {
         .title_id = 0,
         .applet_title_id = 0,
         .data = undefined,
-    }) catch {};    
+    }) catch {};
 }
 
 pub const command = struct {

@@ -16,7 +16,7 @@ pub const Codec = extern struct {
     microphone_bias: u8,
     quick_charge: u8,
     microphone_pga_gain: u8,
-    _reserved0: [3]u8  = @splat(0),
+    _reserved0: [3]u8 = @splat(0),
     headphones_filter_32: [3]Biquad,
     headphones_filter_47: [3]Biquad,
     speakers_filter_32: [3]Biquad,

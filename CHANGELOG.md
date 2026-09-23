@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- `horizon.memory.*_registers` -> `horizon.memory.*`
 
 ## [2026-08-30 -> 2026-09-22]
 

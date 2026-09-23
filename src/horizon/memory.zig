@@ -8,8 +8,10 @@ pub const shared_memory_end: u32 = 0x14000000;
 pub const old_linear_heap_begin: u32 = shared_memory_end;
 pub const old_linear_heap_end: u32 = 0x1E800000;
 pub const io_begin: u32 = 0x1EC00000;
+pub const config11_begin: u32 = 0x1EC40000;
 pub const pdn_begin: u32 = 0x1EC41000;
 pub const i2s_begin: u32 = 0x1EC45000;
+pub const gpio_begin: u32 = 0x1EC47000;
 pub const mic_begin: u32 = 0x1EC62000;
 pub const lcd_begin: u32 = 0x1ED02000;
 pub const gpu_begin: u32 = 0x1EF00000;
@@ -26,14 +28,16 @@ pub const linear_heap_end: u32 = linear_heap_begin + 0x10000000;
 pub const configuration_memory_begin = 0x1FF80000;
 pub const shared_page_memory_begin = 0x1FF81000;
 
-pub const pdn_registers: *volatile hardware.pdn.Registers = @ptrFromInt(pdn_begin);
-pub const i2s_registers: *volatile hardware.i2s.Registers = @ptrFromInt(i2s_begin);
-pub const mic_registers: *volatile hardware.mic.Registers = @ptrFromInt(mic_begin);
-pub const lcd_registers: *volatile hardware.lcd.Registers = @ptrFromInt(lcd_begin);
-pub const gpu_registers: *volatile hardware.pica.Registers = @ptrFromInt(gpu_begin);
+pub const config11: *volatile hardware.config.@"11" = @ptrFromInt(config11_begin);
+pub const pdn: *volatile hardware.pdn.Registers = @ptrFromInt(pdn_begin);
+pub const i2s: *volatile hardware.i2s.Registers = @ptrFromInt(i2s_begin);
+pub const gpio: *volatile hardware.gpio.Registers = @ptrFromInt(gpio_begin);
+pub const mic: *volatile hardware.mic.Registers = @ptrFromInt(mic_begin);
+pub const lcd: *volatile hardware.lcd.Registers = @ptrFromInt(lcd_begin);
+pub const gpu: *volatile hardware.pica.Registers = @ptrFromInt(gpu_begin);
 
-pub const kernel_config: *const config.Kernel = @ptrFromInt(configuration_memory_begin);
-pub const shared_config: *config.Shared = @ptrFromInt(shared_page_memory_begin);
+pub const kernel_config: *const horizon.config.Kernel = @ptrFromInt(configuration_memory_begin);
+pub const shared_config: *horizon.config.Shared = @ptrFromInt(shared_page_memory_begin);
 
 pub fn toPhysical(ptr: u32) zitrus.hardware.PhysicalAddress {
     return @enumFromInt(switch (ptr) {
@@ -54,7 +58,6 @@ pub fn toVirtual(ptr: u32, fcram_base_offset: u32) ?[*]u8 {
 
 const zitrus = @import("zitrus");
 const horizon = zitrus.horizon;
-const config = horizon.config;
 
 const memory = zitrus.memory;
 const hardware = zitrus.hardware;

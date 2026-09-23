@@ -86,7 +86,6 @@ pub fn EmbeddedSentinel(
     comptime max: u32,
     comptime T: type,
     comptime length_pos: LengthPosition,
-
     /// Will be placed at the end if there's enough space
     comptime sentinel: ?T,
 ) type {
@@ -244,15 +243,15 @@ pub const Codec = union(enum) {
                 std.debug.assert(value.slice.len <= T.max_len);
 
                 const data_offset, const len_idx = switch (T.length_position) {
-                    .none, .post => .{0, (sz - 1)},
-                    .pre => .{4, 0},
+                    .none, .post => .{ 0, (sz - 1) },
+                    .pre => .{ 4, 0 },
                 };
 
                 if (T.length_position != .none) buffer[len_idx] = @intCast(value.slice.len);
                 @memcpy(buffer_bytes[data_offset..][0..bytes.len], bytes);
 
                 if (T.length_sentinel) |sentinel| if (bytes.len < T.max_len) {
-                    @as(*T.Elem, @alignCast(@ptrCast(buffer_bytes[data_offset + bytes.len..][0..@sizeOf(T.Elem)]))).* = sentinel;
+                    @as(*T.Elem, @ptrCast(@alignCast(buffer_bytes[data_offset + bytes.len ..][0..@sizeOf(T.Elem)]))).* = sentinel;
                 };
             },
             .static_slice => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.StaticBuffer.init(@intCast(value.slice.len), T.index)), @intCast(@intFromPtr(value.slice.ptr)) },
@@ -294,9 +293,9 @@ pub const Codec = union(enum) {
             .raw => @as(*align(@sizeOf(u32)) const T, @ptrCast(buffer)).*,
             .embedded_slice => |sz| {
                 const len, const data_start = switch (T.length_position) {
-                    .none => .{T.max_len, 0},
-                    .pre => .{buffer[0], 1},
-                    .post => .{buffer[sz - 1], 0},
+                    .none => .{ T.max_len, 0 },
+                    .pre => .{ buffer[0], 1 },
+                    .post => .{ buffer[sz - 1], 0 },
                 };
 
                 return .embedded(@as([]const T.Elem, @ptrCast(buffer[data_start..]))[0..len]);
@@ -551,7 +550,7 @@ pub const Codec = union(enum) {
             other_embedded: Embedded(2, u32, .pre),
         };
 
-        try testExpectWritten(&.{20, 69, 1, 300, 1, 80, 0}, Baz, .{
+        try testExpectWritten(&.{ 20, 69, 1, 300, 1, 80, 0 }, Baz, .{
             .u16 = 20,
             .embedded = .embedded(&.{69}),
             .u32 = 300,
@@ -578,8 +577,8 @@ pub const Codec = union(enum) {
         }, &.{ 42, 69, @bitCast(Buffer.TranslationDescriptor.Handle.initCopy(1)), 0x200 });
 
         try testExpectRead(Bar, .{
-            .emb0 = .embedded(&.{67, 67, 42}),
-            .emb1 = .embedded(&.{20, 20, 79}),
+            .emb0 = .embedded(&.{ 67, 67, 42 }),
+            .emb1 = .embedded(&.{ 20, 20, 79 }),
         }, &.{ 3, 0xff2a4343, 20, 20, 20, 79, 0xaa, 3 });
     }
 };
@@ -813,7 +812,7 @@ pub const Buffer = extern struct {
     pub fn checkResponse(buffer: *Buffer, comptime DefinedCommand: type) CheckError!Code {
         const expected_header: PackedCommand.Header = .{
             .command_id = @intFromEnum(DefinedCommand.id),
-            .parameters = .parameters(DefinedCommand.response_parameters.normal + 1, DefinedCommand.response_parameters.translate), 
+            .parameters = .parameters(DefinedCommand.response_parameters.normal + 1, DefinedCommand.response_parameters.translate),
         };
 
         if (buffer.packed_command.header != expected_header and buffer.packed_command.header != PackedCommand.Header.invalid) {
@@ -844,7 +843,7 @@ pub const Buffer = extern struct {
         return null;
     }
 
-    /// Tries to read the request, returning null if either parameters don't match 
+    /// Tries to read the request, returning null if either parameters don't match
     /// or an unexpected translation parameter has been issued by checking their headers.
     ///
     /// Automatically sets the `horizon.result.Code` when returning null to the respective

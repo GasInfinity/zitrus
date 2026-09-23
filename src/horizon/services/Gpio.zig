@@ -4,12 +4,19 @@
 //! - https://www.3dbrew.org/wiki/GPIO_Services
 
 pub const Service = enum {
+    /// Has access to pins `headphones_inserted` and `ctr_depop/new_hid`
     cdc,
+    /// Has access to pins `wifi_mode`, `mcu` and `wifi_enable`
     mcu,
+    /// Has access to pins `debug_pad`, `gyroscope`, `new_hid_stop` and `headphones_button`
     hid,
+    /// Has access to pins `wifi_mode` and `wifi_enable`
     nwm,
+    /// Has access to pins `ctr_depop/new_hid`, `ir`, `new_hid_stop`, `ir_tx` and `ir_rx`
     ir,
+    /// Has access to pins `nfc_0`, `nfc_1` and `nfc_2`
     nfc,
+    /// Has access to pins `qtm`
     qtm,
 
     pub fn name(service: Service) [:0]const u8 {
@@ -25,27 +32,7 @@ pub const Service = enum {
     }
 };
 
-pub const Interrupt = packed struct(u32) {
-    _unused0: u1 = 0,
-    touch_pressed: bool = false,
-    shell_opened: bool = false,
-    headphones_inserted: bool = false,
-    twl_depop: bool = false,
-    _unused1: u1 = 0,
-    c_stick: bool = false,
-    ir: bool = false,
-    gyroscope: bool = false,
-    c_stick_stop: bool = false,
-    ir_tx: bool = false,
-    ir_rx: bool = false,
-    nfc_0: bool = false,
-    nfc_1: bool = false,
-    headphones_half_inserted: bool = false,
-    mcu: bool = false,
-    nfc_2: bool = false,
-    qtm: bool = false,
-    _unused3: u14 = 0,
-};
+pub const Pin = zitrus.hardware.gpio.Pin;
 
 session: horizon.Session.Client,
 
@@ -56,67 +43,67 @@ pub const send = horizon.services.Methods(@This()).send;
 pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
 pub const command = struct {
-    pub const GetRegPart1 = ipc.Command(Id, .get_reg_part1, u32, u32);
-    pub const SetRegPart1 = ipc.Command(Id, .set_reg_part1, struct {
-        value: u32,
-        mask: u32,
+    pub const GetDirection = ipc.Command(Id, .get_direction, Pin.Mask, Pin.DirectionMask);
+    pub const SetDirection = ipc.Command(Id, .set_direction, struct {
+        value: Pin.DirectionMask,
+        mask: Pin.Mask,
 
-        pub fn init(value: u32, mask: u32) @This() {
+        pub fn init(value: Pin.DirectionMask, mask: Pin.Mask) @This() {
             return .{ .value = value, .mask = mask };
         }
     }, void);
-    pub const GetRegPart2 = ipc.Command(Id, .get_reg_part2, u32, u32);
-    pub const SetRegPart2 = ipc.Command(Id, .set_reg_part2, struct {
-        value: u32,
-        mask: u32,
+    pub const GetInterruptConfiguration = ipc.Command(Id, .get_interrupt_configuration, Pin.Mask, Pin.EdgeMask);
+    pub const SetInterruptConfiguration = ipc.Command(Id, .set_interrupt_configuration, struct {
+        value: Pin.EdgeMask,
+        mask: Pin.Mask,
 
-        pub fn init(value: u32, mask: u32) @This() {
+        pub fn init(value: Pin.EdgeMask, mask: Pin.Mask) @This() {
             return .{ .value = value, .mask = mask };
         }
     }, void);
-    pub const GetInterruptMask = ipc.Command(Id, .get_interrupt_mask, u32, u32);
-    pub const SetInterruptMask = ipc.Command(Id, .set_interrupt_mask, struct {
-        value: u32,
-        mask: u32,
+    pub const IsInterruptEnabled = ipc.Command(Id, .is_interrupt_enabled, Pin.Mask, Pin.Mask);
+    pub const SetInterruptEnabled = ipc.Command(Id, .set_interrupt_enabled, struct {
+        value: Pin.Mask,
+        mask: Pin.Mask,
 
-        pub fn init(value: u32, mask: u32) @This() {
+        pub fn init(value: Pin.Mask, mask: Pin.Mask) @This() {
             return .{ .value = value, .mask = mask };
         }
     }, void);
-    pub const GetData= ipc.Command(Id, .get_data, u32, u32);
+    pub const GetData = ipc.Command(Id, .get_data, Pin.Mask, Pin.Mask);
     pub const SetData = ipc.Command(Id, .set_data, struct {
-        value: u32,
-        mask: u32,
+        value: Pin.Mask,
+        mask: Pin.Mask,
 
-        pub fn init(value: u32, mask: u32) @This() {
+        pub fn init(value: Pin.Mask, mask: Pin.Mask) @This() {
             return .{ .value = value, .mask = mask };
         }
     }, void);
     pub const BindInterrupt = ipc.Command(Id, .bind_interrupt, struct {
-        mask: Interrupt,
+        mask: Pin.Mask,
         priority: i32,
         int: horizon.Interruptable,
 
-        pub fn init(mask: Interrupt, priority: i32, int: horizon.Interruptable) @This() {
+        pub fn init(mask: Pin.Mask, priority: i32, int: horizon.Interruptable) @This() {
             return .{ .mask = mask, .priority = priority, .int = int };
         }
     }, void);
     pub const UnbindInterrupt = ipc.Command(Id, .unbind_interrupt, struct {
-        mask: Interrupt,
+        mask: Pin.Mask,
         int: horizon.Interruptable,
 
-        pub fn init(mask: Interrupt, int: horizon.Interruptable) @This() {
+        pub fn init(mask: Pin.Mask, int: horizon.Interruptable) @This() {
             return .{ .mask = mask, .int = int };
         }
     }, void);
 
     pub const Id = enum(u16) {
-        get_reg_part1 = 0x0001,
-        set_reg_part1,
-        get_reg_part2,
-        set_reg_part2,
-        get_interrupt_mask,
-        set_interrupt_mask,
+        get_direction = 0x0001,
+        set_direction,
+        get_interrupt_configuration,
+        set_interrupt_configuration,
+        is_interrupt_enabled,
+        set_interrupt_enabled,
         get_data,
         set_data,
         bind_interrupt,
@@ -124,7 +111,9 @@ pub const command = struct {
     };
 };
 
-const I2s = @This();
+const Gpio = @This();
+
+const hw = zitrus.hardware.gpio;
 
 const std = @import("std");
 const zitrus = @import("zitrus");

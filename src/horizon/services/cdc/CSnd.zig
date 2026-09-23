@@ -18,8 +18,8 @@ pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 pub const command = struct {
     /// May return 0xc9403800 (sleeping, nothing changed)
     pub const IgnoreVolumeSliderForceSpeakerOutput = ipc.Command(Id, .ignore_volume_slider_forcing_speaker_output, void, void);
-    pub const StopIgnoreVolumeSliderForceSpeakerOutput= ipc.Command(Id, .stop_ignore_volume_slider_force_speaker_output, void, void);
-    pub const SetI2sVolume= ipc.Command(Id, .set_i2s_volume, struct {
+    pub const StopIgnoreVolumeSliderForceSpeakerOutput = ipc.Command(Id, .stop_ignore_volume_slider_force_speaker_output, void, void);
+    pub const SetI2sVolume = ipc.Command(Id, .set_i2s_volume, struct {
         line: Line,
         gain: Gain,
     }, void);

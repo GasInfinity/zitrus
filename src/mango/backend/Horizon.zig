@@ -687,14 +687,14 @@ const Driver = struct {
         const h_dev: *Horizon = @alignCast(@fieldParentPtr("driver_state", drv));
         const gsp = h_dev.gsp;
 
-        return gsp.readRegisters(pica.Registers.TrafficStatistics, &horizon.memory.gpu_registers.traffic_statistics) catch unreachable;
+        return gsp.readRegisters(pica.Registers.TrafficStatistics, &horizon.memory.gpu.traffic_statistics) catch unreachable;
     }
 
     fn readRasterizerStatistics(drv: *Driver) pica.Graphics.Rasterizer.Statistics {
         const h_dev: *Horizon = @alignCast(@fieldParentPtr("driver_state", drv));
         const gsp = h_dev.gsp;
 
-        return gsp.readRegisters(pica.Graphics.Rasterizer.Statistics, &horizon.memory.gpu_registers.p3d.rasterizer.statistics) catch unreachable;
+        return gsp.readRegisters(pica.Graphics.Rasterizer.Statistics, &horizon.memory.gpu.p3d.rasterizer.statistics) catch unreachable;
     }
 
     fn drainQueues(drv: *Driver) void {

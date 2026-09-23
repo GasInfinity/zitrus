@@ -187,11 +187,11 @@ pub const i2s = struct {
     pub const Status = packed struct(u8) {
         // Left/Right or Right/Left?
         _unk0: u2 = 0,
-        i2s1_right_muted: bool,  
+        i2s1_right_muted: bool,
         i2s2_right_muted: bool,
         _unk1: u2 = 0,
-        i2s1_left_muted: bool, 
-        i2s2_left_muted: bool, 
+        i2s1_left_muted: bool,
+        i2s2_left_muted: bool,
     };
 };
 

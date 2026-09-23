@@ -329,13 +329,20 @@ pub const Code = packed struct(i32) {
     pub const fs_unexpected_open_flags: Code = @bitCast(@as(u32, 0xC92044E6));
     pub const fs_entry_already_exists: Code = @bitCast(@as(u32, 0xC82044BE));
 
+    /// 0xe0e02401
+    pub const pdn_invalid_arg: Code = .specificResult(.usage, .invalid_arg, .pdn, .invalid_reset);
+
     /// 0xe0e03ffd
     pub const spi_out_of_range: Code = .result(.usage, .invalid_arg, .spi, .out_of_range);
     /// 0xc8a03ff8
     pub const spi_not_initialized: Code = .result(.status, .invalid_state, .spi, .not_initialized);
 
-    /// 0xe0e02401
-    pub const pdn_invalid_arg: Code = .specificResult(.usage, .invalid_arg, .pdn, .invalid_reset);
+    /// 0xe0e033ea
+    pub const gpio_permission_denied: Code = .result(.usage, .invalid_arg, .gpio, .permission_denied);
+    /// 0xe0e033fa
+    pub const gpio_not_found: Code = .result(.usage, .invalid_arg, .gpio, .not_found);
+    /// 0xe0e033f0
+    pub const gpio_busy: Code = .result(.usage, .invalid_arg, .gpio, .busy);
 
     /// 0xc9403800
     pub const codec_status_changed: Code = .result(.status, .status_changed, .codec, .success);

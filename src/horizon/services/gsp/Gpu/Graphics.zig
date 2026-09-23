@@ -94,7 +94,7 @@ pub fn discardInterrupts(gfx: *Graphics) void {
 
 pub fn initializeHardware(gsp: Gpu) !void {
     const DisplayController = pica.DisplayController;
-    const gpu: *volatile pica.Registers = memory.gpu_registers;
+    const gpu: *volatile pica.Registers = memory.gpu;
 
     try gsp.writeRegisters([4]u8, gpu.p3d.irq.ack[0..4], @splat(0));
     try gsp.writeRegisters([4]u8, gpu.p3d.irq.cmp[0..4], .{ 0x78, 0x56, 0x34, 0x12 });

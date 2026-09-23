@@ -642,7 +642,7 @@ pub const command = struct {
     pub const ExecuteCommands = ipc.Command(Id, .execute_commands, struct { shm_offset: u32 }, struct {});
     /// May fail with 0xc960b7f8 (not initialized), 0xc940b401 (sleeping and direct sound is not ignoring sleep) or 0xc940b402 (not enough priority)
     ///
-    /// Direct sound maintain exclusivity other all sound output, i.e all other sound output 
+    /// Direct sound maintain exclusivity other all sound output, i.e all other sound output
     /// will be muted until it finishes.
     ///
     /// Maximum of 4 direct sounds; since CSND doesn't check the index you can write OOB anywhere so be careful.

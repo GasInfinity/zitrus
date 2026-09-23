@@ -75,7 +75,7 @@ pub const Legacy = extern struct {
         r: bool,
         l: bool,
         x: bool,
-        y: bool, 
+        y: bool,
         _unk0: bool,
         _unused0: u3 = 0,
     };

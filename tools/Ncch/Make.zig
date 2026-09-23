@@ -91,6 +91,13 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
     } else null;
     defer if (settings) |set| std.zon.parse.free(gpa, set);
 
+    if (settings) |set| {
+        if (set.title.len > 8) {
+            log.err("Application title '{s}' must be 8 characters at most", .{set.title});
+            return 1;
+        }
+    }
+
     const exefs: []u8, const code_sets: Settings.Code = if (args.exefs) |exefs| blk: {
         const code_sets = settings.?.code orelse {
             log.err("Codesets must be set in settings when building an NCCH with a raw ExeFS", .{});
@@ -308,11 +315,11 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
                         irq_idx += 1;
 
                         if (irq_idx == 4) {
-                            irq_access = comptime .splat(.none);
-                            irq_idx = 0;
-
                             capabilities[i] = .interruptAccess(irq_access);
                             i += 1;
+
+                            irq_access = comptime .splat(.none);
+                            irq_idx = 0;
                         }
                     }
 
