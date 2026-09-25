@@ -126,8 +126,15 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         defer gpa.free(code_data);
 
         if (settings.?.flags.compress) {
-            var buffer: [lzrev.max_window_len]u8 = undefined;
-            const compressed_code_data = try lzrev.allocCompress(gpa, &buffer, code_data, .best);
+            const compression_buffer: []u8 = try gpa.alloc(u8, lzrev.max_window_len);
+            defer gpa.free(compression_buffer);
+
+            const compressed_code_data = try lzrev.allocCompress(gpa, compression_buffer, code_data, .best);
+            lzrev.bufDecompress(code_data, compressed_code_data) catch |err| {
+                gpa.free(compressed_code_data);
+                log.err("{}: bug in compressor, i really need want the fuzzer 🫩", .{err});
+                return 1;
+            };
             gpa.free(code_data);
             code_data = compressed_code_data;
         }
@@ -369,8 +376,10 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         .{ std.Io.File.stdout(), false };
     defer if (output_should_close) output_file.close(io);
 
-    var output_buffer: [4096]u8 = undefined;
-    var output_writer = output_file.writerStreaming(io, &output_buffer);
+    const output_buffer = try gpa.alloc(u8, 4096);
+    defer gpa.free(output_buffer);
+
+    var output_writer = output_file.writerStreaming(io, output_buffer);
     const out = &output_writer.interface;
 
     const exefs_aligned_size: u64 = std.mem.alignForward(u64, exefs.len, horizon.fmt.media_unit);
@@ -401,6 +410,7 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
         const written = try ncch.romfs.Ivfc.write(&output_writer, &romfs_writer_buffer, &romfs_reader.interface, 12, gpa, romfs_size);
         break :blk written.size;
     } else 0;
+
     const romfs_aligned_size: u64 = std.mem.alignForward(u64, romfs_size, horizon.fmt.media_unit);
     const romfs_header_aligned_hash_size: u64 = std.mem.alignForward(u64, @sizeOf(ncch.romfs.Ivfc), horizon.fmt.media_unit);
     const ncch_end = romfs_aligned_offset + romfs_aligned_size;

@@ -177,8 +177,10 @@ pub fn allocCompress(gpa: std.mem.Allocator, buffer: []u8, data: []u8, opts: Com
         .footer_len = @sizeOf(Footer) + @sizeOf(u32),
     };
 
+    if (compressed_len >= compressing_data.len) return error.Incompressible;
+
     try allocating.writer.writeStruct(footer, .little);
-    try allocating.writer.writeInt(u32, @intCast(compressing_data.len -% compressed_len), .little);
+    try allocating.writer.writeInt(u32, @intCast(compressing_data.len - compressed_len), .little);
     return try allocating.toOwnedSlice();
 }
 

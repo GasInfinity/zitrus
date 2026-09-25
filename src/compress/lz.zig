@@ -455,7 +455,7 @@ pub fn Compress(comptime context: type) type {
 
                     var chain = c.opts.chain;
                     var good = c.opts.good;
-                    if (match.len >= good) {
+                    if (match.offset >= context.Match.min_offset and match.len >= good) {
                         chain >>= 2;
                         good = std.math.maxInt(u8); // Reduce only once
                     }
@@ -466,12 +466,14 @@ pub fn Compress(comptime context: type) type {
                     match_unadded -= 1;
                     i += 1;
 
-                    if (match.offset <= context.Match.min_offset or (lazy.offset >= context.Match.min_offset and lazy.len > match.len)) {
+                    if (lazy.offset >= context.Match.min_offset and lazy.len > match.len) {
                         match_start += 1;
                         match = lazy;
                         match_unadded = match.len - 1;
                     }
                 }
+
+                if (match.offset < context.Match.min_offset) continue;
 
                 std.debug.assert(i + match_unadded == match_start + match.len);
                 std.debug.assert(std.mem.eql(
