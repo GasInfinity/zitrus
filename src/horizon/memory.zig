@@ -10,8 +10,11 @@ pub const old_linear_heap_end: u32 = 0x1E800000;
 pub const io_begin: u32 = 0x1EC00000;
 pub const config11_begin: u32 = 0x1EC40000;
 pub const pdn_begin: u32 = 0x1EC41000;
+pub const spi_1_begin: u32 = 0x1EC42000;
+pub const spi_2_begin: u32 = 0x1EC43000;
 pub const i2s_begin: u32 = 0x1EC45000;
 pub const gpio_begin: u32 = 0x1EC47000;
+pub const spi_0_begin: u32 = 0x1EC60000;
 pub const mic_begin: u32 = 0x1EC62000;
 pub const lcd_begin: u32 = 0x1ED02000;
 pub const gpu_begin: u32 = 0x1EF00000;
@@ -30,9 +33,12 @@ pub const shared_page_memory_begin = 0x1FF81000;
 
 pub const config11: *volatile hardware.config.@"11" = @ptrFromInt(config11_begin);
 pub const pdn: *volatile hardware.pdn.Registers = @ptrFromInt(pdn_begin);
+pub const spi_1: *volatile hardware.spi.Registers = @ptrFromInt(spi_1_begin);
+pub const spi_2: *volatile hardware.spi.Registers = @ptrFromInt(spi_2_begin);
 pub const i2s: *volatile hardware.i2s.Registers = @ptrFromInt(i2s_begin);
 pub const gpio: *volatile hardware.gpio.Registers = @ptrFromInt(gpio_begin);
 pub const mic: *volatile hardware.mic.Registers = @ptrFromInt(mic_begin);
+pub const spi_0: *volatile hardware.spi.Registers = @ptrFromInt(spi_0_begin);
 pub const lcd: *volatile hardware.lcd.Registers = @ptrFromInt(lcd_begin);
 pub const gpu: *volatile hardware.pica.Registers = @ptrFromInt(gpu_begin);
 

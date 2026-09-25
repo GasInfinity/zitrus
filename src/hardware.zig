@@ -126,6 +126,7 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
 
     return packed struct(ArrayInt) {
         pub const Int = ArrayInt;
+        pub const elem_mask: ArrayInt = std.math.maxInt(ElementInt);
 
         raw: ArrayInt,
 
@@ -161,17 +162,24 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
             };
         }
 
-        pub inline fn copyWith(bt: Self, comptime index: usize, value: T) Self {
-            var new_bt: Self = bt;
-            new_bt.set(index, value);
-            return new_bt;
-        }
-
-        pub inline fn set(bt: *Self, index: usize, value: T) void {
-            std.mem.writePackedInt(ElementInt, @ptrCast(&bt.raw), index * @bitSizeOf(ElementInt), switch (@typeInfo(T)) {
+        pub fn copyWith(bt: Self, index: usize, value: T) Self {
+            std.debug.assert(index < n);
+            // TODO: @fromBackingInt 0.17.0
+            const int: ElementInt = switch (@typeInfo(T)) {
                 .@"enum" => @intFromEnum(value),
                 else => @bitCast(value),
-            }, .native);
+            };
+
+            return @bitCast((@as(ArrayInt, @bitCast(bt)) & ~(elem_mask << @intCast(index * @bitSizeOf(T)))) | (@as(ArrayInt, int) << @intCast(index * @bitSizeOf(T))));
+        }
+
+        pub fn set(bt: anytype, index: usize, value: T) void {
+            comptime std.debug.assert(@typeInfo(@TypeOf(bt)) == .pointer);
+            comptime std.debug.assert(!@typeInfo(@TypeOf(bt)).pointer.is_const);
+            comptime std.debug.assert(@typeInfo(@TypeOf(bt)).pointer.child == Self);
+            std.debug.assert(index < n);
+
+            bt.* = bt.copyWith(index, value);
         }
 
         pub fn format(bt: Self, w: *std.Io.Writer) std.Io.Writer.Error!void {

@@ -30,8 +30,8 @@ pub const Device = enum(u8) {
     _,
 };
 
-pub const BusRate = hardware.spi.Bus.Rate;
-pub const NewBusRate = hardware.spi.NewBus.Rate;
+pub const Rate = hardware.spi.Bus.Rate;
+pub const NewRate = hardware.spi.NewBus.Rate;
 
 session: ClientSession,
 
@@ -41,7 +41,7 @@ pub const close = horizon.services.Methods(@This()).close;
 pub const send = horizon.services.Methods(@This()).send;
 pub const sendWithResult = horizon.services.Methods(@This()).sendWithResult;
 
-pub fn sendInitDeviceWithRate(spi: Spi, device: Device, rate: BusRate) !void {
+pub fn sendInitDeviceWithRate(spi: Spi, device: Device, rate: Rate) !void {
     return switch ((try spi.send(.InitDeviceWithRate, .init(device, rate), .{})).cases()) {
         .success => {},
         // Literally cannot fail
@@ -92,7 +92,7 @@ pub fn sendSendCommandWriteMapped(spi: Spi, device: Device, cmd: []const u8, buf
     };
 }
 
-pub fn sendEnableNewBusWithRate(spi: Spi, device: Device, enable: bool, rate: NewBusRate) !void {
+pub fn sendEnableNewBusWithRate(spi: Spi, device: Device, enable: bool, rate: NewRate) !void {
     return switch ((try spi.send(.EnableNewBusWithRate, .init(device, enable, rate), .{})).cases()) {
         .success => {},
         // Literally cannot fail
@@ -119,9 +119,9 @@ pub const command = struct {
     /// Cannot fail
     pub const InitDeviceWithRate = ipc.Command(Id, .init_device_with_rate, struct {
         device: Device,
-        rate: BusRate,
+        rate: Rate,
 
-        pub fn init(dev: Device, rate: BusRate) @This() {
+        pub fn init(dev: Device, rate: Rate) @This() {
             return .{ .device = dev, .rate = rate };
         }
     }, void);
@@ -182,9 +182,9 @@ pub const command = struct {
     pub const EnableNewBusWithRate = ipc.Command(Id, .enable_new_bus_with_rate, struct {
         device: Device,
         enable: bool,
-        rate: NewBusRate,
+        rate: NewRate,
 
-        pub fn init(dev: Device, enable: bool, rate: NewBusRate) @This() {
+        pub fn init(dev: Device, enable: bool, rate: NewRate) @This() {
             return .{ .device = dev, .enable = enable, .rate = rate };
         }
     }, void);

@@ -3,9 +3,12 @@
 pub const Options = struct {
     name: ?[]const u8 = null,
     exe: *Build.Step.Compile,
+
     settings: Build.LazyPath,
     smdh: ?Build.LazyPath = null,
     romfs: ?Build.LazyPath = null,
+    /// Overrides the unique and variation part of the title id
+    title_id: ?u32 = null,
 };
 
 pub const Config = struct {
@@ -61,6 +64,10 @@ pub fn initInner(b: *Build, config: Config, options: Options) MakeCxi {
     if (options.romfs) |romfs| {
         make.addArg("--romfs");
         make.addFileArg(romfs);
+    }
+
+    if (options.title_id) |title_id| {
+        make.addArgs(&.{"--title-id", b.fmt("0x{X:0>8}", .{title_id})});
     }
 
     make.addArg("--output");

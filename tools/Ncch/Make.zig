@@ -333,6 +333,12 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
                         i += 1;
                     }
 
+                    for (kernel.mapped_ranges) |mapped_range| {
+                        capabilities[i] = .mappedRangeStart(@intCast(mapped_range.start >> 12), mapped_range.read_only);
+                        capabilities[i + 1] = .mappedRangeEnd(@intCast(mapped_range.end >> 12), mapped_range.cached);
+                        i += 2;
+                    }
+
                     break :blk capabilities;
                 },
             },

@@ -5,7 +5,10 @@
 //!  - https://www.problemkaputt.de/gbatek-3ds-spi-registers.htm
 
 pub const Device = enum(u2) {
-    _,
+    @"0",
+    @"1",
+    @"2",
+    @"3",
 
     pub fn device(dev: u2) Device {
         return @enumFromInt(dev);
@@ -25,14 +28,14 @@ pub const Bus = extern struct {
     pub const Control = packed struct(u16) {
         rate: Rate,
         _unk0: u4 = 0,
-        busy: bool,
+        busy: bool = false,
         select: Device,
         /// Supposedly bugged
-        @"16bit": bool,
-        hold_select: bool,
+        @"16bit": bool = false,
+        hold_selected: bool = false,
         _unused0: u2 = 0,
-        irq_enable: bool,
-        enable: bool,
+        irq_enable: bool = false,
+        enable: bool = false,
     };
 
     pub const Data = extern union {
@@ -47,10 +50,10 @@ pub const Bus = extern struct {
 
 pub const NewBus = extern struct {
     pub const Rate = enum(u3) {
-        @"4Mhz",
-        @"2Mhz",
-        @"1Mhz",
         @"512Khz",
+        @"1Mhz",
+        @"2Mhz",
+        @"4Mhz",
         @"8Mhz",
         @"16Mhz",
         _,
@@ -63,10 +66,10 @@ pub const NewBus = extern struct {
         _unused0: u3 = 0,
         select: Device,
         _unused1: u4 = 0,
-        @"4bit": bool,
+        @"4bit": bool = false,
         direction: Direction,
         _unused2: u1 = 0,
-        busy: bool,
+        busy: bool = false,
     };
 
     pub const AutoPoll = packed struct(u32) {
@@ -88,10 +91,12 @@ pub const NewBus = extern struct {
     };
 
     control: LsbRegister(Control),
-    done: LsbRegister(bool),
+    selected: LsbRegister(bool),
     len: LsbRegister(u21),
     fifo: u32,
-    fifo_full: LsbRegister(bool),
+    /// Looks like that when reading, this is true if the FIFO is empty.
+    /// Otherwise this is true when it is full.
+    fifo_status: LsbRegister(bool),
     auto_poll: AutoPoll,
     irq_disable_mask: Interrupt,
     irq_status: Interrupt,

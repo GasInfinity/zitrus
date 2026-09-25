@@ -187,7 +187,8 @@ pub fn initNcch(hdr: *const ncch.Header, ex_hdr: *const ncch.ExtendedHeader, gpa
                 var mapped_ranges: std.ArrayList(KernelCapabilities.MapAddressRange) = .empty;
                 errdefer mapped_ranges.deinit(gpa);
 
-                while (i < ex_hdr.access_control.kernel_capabilities.descriptors.len) {
+                const descriptors = &ex_hdr.access_control.kernel_capabilities.descriptors;
+                while (i < descriptors.len) {
                     const descriptor = ex_hdr.access_control.kernel_capabilities.descriptors[i];
 
                     if (descriptor.int == std.math.maxInt(u32)) break;
@@ -228,7 +229,18 @@ pub fn initNcch(hdr: *const ncch.Header, ex_hdr: *const ncch.ExtendedHeader, gpa
                             if (((mask >> @intCast(bit)) & 0b1) != 0) try syscall_access.append(gpa, @enumFromInt(start + bit));
                         }
                     } else if (descriptor.map_range_start.header == Descriptor.MapAddressRangeStart.magic_value) {
-                        // TODO:
+                        if (i + 1 == descriptors.len or descriptors[i + 1].map_range_end.header != Descriptor.MapAddressRangeEnd.magic_value) {
+                            return error.InvalidDescriptor;
+                        }
+
+                        const end_descriptor = descriptors[i + 1];
+                        try mapped_ranges.append(gpa, .{
+                            .start = @as(u32, descriptor.map_range_start.page) << 12,
+                            .end = @as(u32, end_descriptor.map_range_end.page) << 12,
+                            .read_only = descriptor.map_range_start.read_only,
+                            .cached = end_descriptor.map_range_end.cacheable,
+                        });
+                        i += 2;
                     } else if (descriptor.map_io_page.header == Descriptor.MapIoPage.magic_value) {
                         try mapped_io.append(gpa, .{ .address = @as(u32, descriptor.map_io_page.page) << 12, .read_only = descriptor.map_io_page.read_only });
                     }

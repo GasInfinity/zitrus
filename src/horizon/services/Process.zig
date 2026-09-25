@@ -22,28 +22,27 @@ pub const command = struct {
         size: u32,
         rsa_context: ipc.Static(u8, 0),
         signature: ipc.Mapped(u8, .w),
-    }, struct {
-        signature: ipc.Mapped(u8, .w),
-    });
+    }, ipc.Mapped(u8, .w));
     pub const VerifyRsaSha256 = ipc.Command(Id, .verify_rsa_sha256, struct {
         sha256: [32]u8,
         size: u32,
         rsa_context: ipc.Static(u8, 0),
         signature: ipc.Mapped(u8, .r),
-    }, struct {
-        signature: ipc.Mapped(u8, .r),
-    });
+    }, ipc.Mapped(u8, .r));
     pub const AesOperation = ipc.Command(Id, .aes_operation, aes.Input, aes.Output);
-    pub const AesCcmOperation = ipc.Command(Id, .aes_ccm_operation, aes.CcmInput, struct {});
+    pub const AesCcmOperation = ipc.Command(Id, .aes_ccm_operation, aes.CcmInput, void);
     // XXX: Check the real parameters of these!
-    pub const GetGamecardUuid = ipc.Command(Id, .get_gamecard_uuid, struct {}, struct { uuid: [16]u8 });
-    pub const GetGamecardMakerEncryptedUuid = ipc.Command(Id, .get_gamecard_maker_encrypted_uuid, struct {}, struct { maker_uuid: [17]u8 });
-    pub const GetGamecardAutostartup = ipc.Command(Id, .get_gamecard_autostartup, struct {}, struct { autostartup: bool });
-    pub const GetGamecardMaker = ipc.Command(Id, .get_gamecard_maker, struct {}, struct { maker: u8 });
-    pub const GetLocalFriendSeed = ipc.Command(Id, .get_local_friend_seed, struct {}, struct { seed: u64 });
-    pub const GetDeviceId = ipc.Command(Id, .get_device_id, struct {}, struct { id: u32 });
-    pub const SeedRandom = ipc.Command(Id, .seed_random, struct {}, struct {});
-    pub const NextRandomBytes = ipc.Command(Id, .next_random_bytes, struct { size: u32, output: ipc.Mapped(u8, .w) }, struct { output: ipc.Mapped(u8, .w) });
+    pub const GetGamecardUuid = ipc.Command(Id, .get_gamecard_uuid, void, [16]u8);
+    pub const GetGamecardMakerEncryptedUuid = ipc.Command(Id, .get_gamecard_maker_encrypted_uuid, void, [17]u8);
+    pub const GetGamecardAutostartup = ipc.Command(Id, .get_gamecard_autostartup, void, bool);
+    pub const GetGamecardMaker = ipc.Command(Id, .get_gamecard_maker, void, u8);
+    pub const GetLocalFriendSeed = ipc.Command(Id, .get_local_friend_seed, void, u64);
+    pub const GetDeviceId = ipc.Command(Id, .get_device_id, void, u64);
+    pub const SeedRandom = ipc.Command(Id, .seed_random, struct {}, void);
+    pub const NextRandomBytes = ipc.Command(Id, .next_random_bytes, struct {
+        size: u32,
+        output: ipc.Mapped(u8, .w),
+    }, ipc.Mapped(u8, .w));
 
     pub const Id = enum(u16) {
         sign_rsa_sha256 = 0x0001,

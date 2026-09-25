@@ -1467,9 +1467,11 @@ pub const Process = packed struct(u32) {
         };
 
         pub const MapAddressRangeEnd = packed struct(u32) {
+            pub const magic_value = MapAddressRangeStart.magic_value;
+
             page: u20,
             cacheable: bool,
-            header: u11 = MapAddressRangeStart.magic_value,
+            header: u11 = magic_value,
         };
 
         pub const MapIoPage = packed struct(u32) {
@@ -1512,6 +1514,14 @@ pub const Process = packed struct(u32) {
 
         pub fn mappedIo(page: u20, read_only: bool) Capability {
             return .{ .map_io_page = .{ .page = page, .read_only = read_only } };
+        }
+
+        pub fn mappedRangeStart(page: u20, read_only: bool) Capability {
+            return .{ .map_range_start = .{ .page = page, .read_only = read_only } };
+        }
+
+        pub fn mappedRangeEnd(page: u20, cacheable: bool) Capability {
+            return .{ .map_range_end = .{ .page = page, .cacheable = cacheable } };
         }
     };
 

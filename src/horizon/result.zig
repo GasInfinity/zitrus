@@ -5,10 +5,10 @@
 //!
 //! Positive `Code`s are not considered `errors`.
 
-pub const Level = enum(u5) {
+pub const Level = enum(i5) {
     success,
     info,
-    status = 25,
+    status = -7,
     temporary,
     permanent,
     usage,
@@ -195,6 +195,7 @@ pub const Description = enum(u10) {
         entry_not_of_kind = 250,
 
         invalid_path = 720,
+        not_initialized = 731,
         _,
     };
 
@@ -336,6 +337,8 @@ pub const Code = packed struct(i32) {
     pub const spi_out_of_range: Code = .result(.usage, .invalid_arg, .spi, .out_of_range);
     /// 0xc8a03ff8
     pub const spi_not_initialized: Code = .result(.status, .invalid_state, .spi, .not_initialized);
+    /// 0x00203fef
+    pub const spi_nop: Code = .result(.success, .nop, .spi, .no_data);
 
     /// 0xe0e033ea
     pub const gpio_permission_denied: Code = .result(.usage, .invalid_arg, .gpio, .permission_denied);

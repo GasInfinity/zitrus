@@ -186,24 +186,34 @@ pub const @"11" = extern struct {
         _unused0: u13 = 0,
     };
 
+    /// 0x000
     shared: Shared,
     _unused0: [0xf0]u8,
+    /// 0x100
     null_page: NullPage,
+    /// 0x104
     fiq: FastInterrupt,
+    /// 0x105
     debug: Debug,
     _unused1: [6]u8,
+    /// 0x10c
     cdma: Cdma,
     _unused2: [0x32]u8,
+    /// 0x140
     gpu_protection: GpuProtection,
     _unused3: [0x3c]u8,
+    /// 0x180
     wifi: Wifi,
     _unused4: [0x3f]u8,
+    /// 0x1c0
     spi: Spi,
     _unused5: [0x3e]u8,
     _unk0: u32,
     _unused6: [0x1fc]u8,
+    /// 0x400
     new: New,
     _unused7: [0xbcc]u8,
+    /// 0xffc
     soc_info: SocInfo,
 
     comptime {

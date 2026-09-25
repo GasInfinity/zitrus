@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added `hardware.config.@"11"` for config registers available from both arm11/arm9 cpus
+- Added support for mapping address ranges in the ncch maker/dumper (and now we can encode/decode all descriptors!)
+
 - `horizon.memory.*_registers` -> `horizon.memory.*`
 
 ## [2026-08-30 -> 2026-09-22]
