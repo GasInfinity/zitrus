@@ -10,6 +10,7 @@ pub const aes = struct {
         decrypt_ctr,
         encrypt_ccm,
         decrypt_ccm,
+        _,
     };
 
     pub const Key = enum(u8) {
@@ -22,19 +23,7 @@ pub const aes = struct {
         streetpass,
         friend = 8,
         nfc,
-    };
-
-    pub const CcmInput = struct {
-        input_size: u32,
-        output_size: u32,
-        cbc_mac_size: u32,
-        data_size: u32,
-        mac_size: u32,
-        nonce: [12]u8,
-        algorithm: Algorithm,
-        key: Key,
-        source: ipc.Mapped(u8, .r),
-        destination: ipc.Mapped(u8, .w),
+        _,
     };
 };
 
@@ -107,6 +96,7 @@ pub const command = struct {
 
         pub fn init(iv_ctr: [16]u8, algorithm: aes.Algorithm, key: aes.Key, input: []const u8, output: []u8) @This() {
             std.debug.assert(input.len == output.len);
+
             return .{
                 .size = input.len,
                 .iv_ctr = iv_ctr,
@@ -130,7 +120,6 @@ pub const command = struct {
         output: ipc.Pxi(u8, 1, true),
 
         pub fn init(cbc_mac_data_size: u32, data_size: u32, mac_size: u32, nonce: [12]u8, algorithm: aes.Algorithm, key: aes.Key, input: []const u8, output: []u8) @This() {
-            std.debug.assert(input.len == output.len);
             return .{
                 .input_size = input.len,
                 .output_size = output.len,

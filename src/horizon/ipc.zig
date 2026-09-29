@@ -295,7 +295,9 @@ pub const Codec = union(enum) {
                     .pre => .{ 4, 0 },
                 };
 
-                if (T.length_position != .none) buffer[len_idx] = @intCast(value.slice.len * @sizeOf(T.Elem));
+                // NOTE: This doesn't really need multiplication/division as the kernel doesn't 
+                // have to do anything
+                if (T.length_position != .none) buffer[len_idx] = @intCast(value.slice.len);
                 @memcpy(buffer_bytes[data_offset..][0..bytes.len], bytes);
 
                 if (T.length_sentinel) |sentinel| if (bytes.len < T.max_len) {
@@ -348,7 +350,7 @@ pub const Codec = union(enum) {
                     .post => .{ buffer[sz - 1], 0 },
                 };
 
-                return .embedded(@as([]const T.Elem, @ptrCast(buffer[data_start..]))[0..(len / @sizeOf(T.Elem))]);
+                return .embedded(@as([]const T.Elem, @ptrCast(buffer[data_start..]))[0..len]);
             },
             .static_slice => blk: {
                 const header: Buffer.TranslationDescriptor.StaticBuffer = @bitCast(buffer[0]);
