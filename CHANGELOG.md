@@ -6,8 +6,15 @@ All notable changes to this project will be documented in this file.
 
 - Added `hardware.config.@"11"` for config registers available from both arm11/arm9 cpus
 - Added support for mapping address ranges in the ncch maker/dumper (and now we can encode/decode all descriptors!)
+- Added `lzrev.DecompressionState` for diagnostics when the compressed data is invalid in `lzrev.bufDecompress`.
+- Added support for PXI buffers in `horizon.ipc`
+- Added `horizon.services.mcu.Platform`
+- Added `horizon.module.State` as a simple sysmodule service/port loop abstraction 
 
 - `horizon.memory.*_registers` -> `horizon.memory.*`
+- `horizon.services.Filesystem` -> `horizon.services.fs.User`
+- `horizon.services.Process` -> `horizon.services.Ps`
+- `horizon.services.PxiProcess9` -> `horizon.services.pxi.Process9`
 
 ## [2026-08-30 -> 2026-09-22]
 

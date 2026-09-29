@@ -2509,6 +2509,7 @@ pub const testing = @import("horizon/testing.zig");
 pub const ServiceManager = @import("horizon/ServiceManager.zig");
 pub const ErrorDisplayManager = @import("horizon/ErrorDisplayManager.zig");
 
+pub const module = @import("horizon/module.zig");
 pub const services = @import("horizon/services.zig");
 
 const is_debug = @import("builtin").mode == .Debug;

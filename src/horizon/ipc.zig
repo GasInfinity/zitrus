@@ -5,7 +5,14 @@
 //! * https://www.3dbrew.org/wiki/Services_API
 //! * https://www.3dbrew.org/wiki/Services
 
-pub const ReplaceByProcessId = enum(u32) { replace, _ };
+pub const ReplaceByProcessId = enum(u32) {
+    replace,
+    _,
+
+    pub fn id(replace: ReplaceByProcessId) horizon.Process.Id {
+        return @enumFromInt(@intFromEnum(replace));
+    }
+};
 
 /// The handle(s) will be closed after the IPC call.
 ///
@@ -72,6 +79,24 @@ pub fn Mapped(comptime T: type, comptime mapping_permissions: Permissions) type 
     };
 }
 
+pub const PxiInvalidate = enum(u0) { invalidate };
+
+pub fn Pxi(comptime T: type, comptime buffer_index: u4, comptime write: bool) type {
+    return struct {
+        pub const Elem = T;
+        pub const index = buffer_index;
+        pub const read_only = !write;
+
+        pub const Slice = if (write) []T else []const T;
+
+        slice: Slice,
+
+        pub fn pxi(slice: Slice) @This() {
+            return .{ .slice = slice };
+        }
+    };
+}
+
 pub const LengthPosition = enum {
     /// No length prefix or postfix will be added, it is assumed from the context.
     /// Reading a slice will always return the slice from start to max len.
@@ -115,36 +140,56 @@ pub const Codec = union(enum) {
     /// Represents a raw type, written as-is.
     /// Takes `@divExact(std.mem.alignForward(u32, size, 4), 4)` normal slots.
     ///
-    /// It is forbidden to serialize a `raw` Codec after beginning to write translate slots.
+    /// It is forbidden to serialize a `raw` Codec after beginning to encode translate slots.
     raw: u32,
     /// Represents an `Embedded` slice, taking `@divExact(std.mem.alignForward(u32, @sizeOf(T)*max, 4), 4)` + 1 (if length is included) normal slots.
     /// Stores the number of `u32`s it takes to store its data and length if included.
     embedded_slice: u6,
     /// Represents a `Static`, always takes 2 translate slots.
+    ///
+    /// Encoded as `(len << 14) | (index << 10) | 0x02`, `ptr`.
     static_slice,
     /// Represents a `Mapped`, always takes 2 translate slots.
     mapped_slice,
+    /// Represents a `Pxi`, always takes 2 translate slots.
+    ///
+    /// Encoded as `(len << 8) | (index << 4) | 0x04`, `ptr` (rw); `(len << 8) | (index << 4) | 0x06` (ro).
+    pxi_slice,
+    /// Represents a `PxiInvalidate`, always takes 1 translate slot.
+    ///
+    /// Encoded as `0x04`
+    pxi_invalidate,
     /// Represents a `ReplaceByProcessId` handle, theres literally no reason to have arrays of this, always takes 2 translate slots.
+    ///
+    /// Encoded as `0x20`, `<anything>`
     replace_by_process_id,
     /// Represents an arbitrary amount of handles, can either be a single handle or an array of them.
     ///
     /// Either way all handles have the same type and can be copied with a single `@bitCast`.
+    ///
+    /// Encoded as `((amount - 1) << 26)`, ... (handle values)
     handles: u6,
     /// Represents an arbitrary amount of handles, can either be a single handle or an array of them.
     ///
     /// Either way all handles have the same type and can be copied with a single `@bitCast`.
     ///
     /// Unlike `handles`, the handles will be closed and transferred to the other process.
+    ///
+    /// Encoded as `((amount - 1) << 26) | 0x10`, ... (handle values)
     move_handles: u6,
     /// Represents a typed and possibly named array of handles, allowing them to have differently-typed handles as an array.
     ///
     /// They're allowed to have both single handles and arrays of them.
+    ///
+    /// Encoded as `((total_amount - 1) << 26)`, ... (handle values)
     handle_array: []const u6,
     /// Represents a typed and possibly named array of handles, allowing them to have differently-typed handles as an array.
     ///
     /// They're allowed to have both single handles and arrays of them.
     ///
     /// Unlike `handle_array`, the handles will be closed and transferred to the other process.
+    ///
+    /// Encoded as `((total_amount - 1) << 26) | 0x10`, ... (handle values)
     move_handle_array: []const u6,
     /// Represents a collection of `Codec`s for `auto` struct serialization.
     /// Each field maps 1:1 to the index of the `std.builtin.Type.StructField` it represents.
@@ -160,6 +205,8 @@ pub const Codec = union(enum) {
                 .{ .handles = 1 }
             else if (T == ReplaceByProcessId)
                 .replace_by_process_id
+            else if (T == PxiInvalidate)
+                .pxi_invalidate
             else
                 .{ .raw = @sizeOf(T) },
             .@"union" => |un| if (un.layout == .auto)
@@ -180,6 +227,7 @@ pub const Codec = union(enum) {
                 .auto => blk: {
                     if (comptime isStatic(T)) break :blk .static_slice;
                     if (comptime isMapped(T)) break :blk .mapped_slice;
+                    if (comptime isPxi(T)) break :blk .pxi_slice;
                     if (comptime isEmbedded(T)) break :blk .{ .embedded_slice = @intCast(@divExact(std.mem.alignForward(u32, @sizeOf(T.Elem) * T.max_len, 4), 4) + @intFromBool(T.length_position != .none)) };
                     if (comptime isMoveHandles(T)) {
                         if (comptime !isValidMoveHandlesType(T.Wrapped)) @compileError("a `MoveHandles` must be wrapping a handle, an array of them or a `HandleArray`");
@@ -247,16 +295,18 @@ pub const Codec = union(enum) {
                     .pre => .{ 4, 0 },
                 };
 
-                if (T.length_position != .none) buffer[len_idx] = @intCast(value.slice.len);
+                if (T.length_position != .none) buffer[len_idx] = @intCast(value.slice.len * @sizeOf(T.Elem));
                 @memcpy(buffer_bytes[data_offset..][0..bytes.len], bytes);
 
                 if (T.length_sentinel) |sentinel| if (bytes.len < T.max_len) {
                     @as(*T.Elem, @ptrCast(@alignCast(buffer_bytes[data_offset + bytes.len ..][0..@sizeOf(T.Elem)]))).* = sentinel;
                 };
             },
-            .static_slice => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.StaticBuffer.init(@intCast(value.slice.len), T.index)), @intCast(@intFromPtr(value.slice.ptr)) },
-            .mapped_slice => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.MappedBuffer.init(@intCast(value.slice.len), T.permissions.read, T.permissions.write)), @intCast(@intFromPtr(value.slice.ptr)) },
-            .replace_by_process_id => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.Handle.replace_by_proccess_id), 0x00 },
+            .static_slice => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.StaticBuffer.init(@intCast(value.slice.len * @sizeOf(T.Elem)), T.index)), @intCast(@intFromPtr(value.slice.ptr)) },
+            .mapped_slice => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.MappedBuffer.init(@intCast(value.slice.len * @sizeOf(T.Elem)), T.permissions.read, T.permissions.write)), @intCast(@intFromPtr(value.slice.ptr)) },
+            .pxi_slice => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.PxiBuffer.init(@intCast(value.slice.len * @sizeOf(T.Elem)), T.index, !T.read_only)), @intCast(@intFromPtr(value.slice.ptr)) },
+            .pxi_invalidate => buffer[0] = @bitCast(Buffer.TranslationDescriptor.PxiBuffer.init(0, 0, true)),
+            .replace_by_process_id => buffer[0..2].* = .{ @bitCast(Buffer.TranslationDescriptor.Handle.replace_by_pid), 0x00 },
             .handles, .move_handles => |amount| {
                 buffer[0] = @bitCast(Buffer.TranslationDescriptor.Handle.init(amount, codec == .move_handles));
                 buffer[1..][0..amount].* = @bitCast(value.*);
@@ -298,23 +348,41 @@ pub const Codec = union(enum) {
                     .post => .{ buffer[sz - 1], 0 },
                 };
 
-                return .embedded(@as([]const T.Elem, @ptrCast(buffer[data_start..]))[0..len]);
+                return .embedded(@as([]const T.Elem, @ptrCast(buffer[data_start..]))[0..(len / @sizeOf(T.Elem))]);
             },
             .static_slice => blk: {
                 const header: Buffer.TranslationDescriptor.StaticBuffer = @bitCast(buffer[0]);
+                const expected: Buffer.TranslationDescriptor.StaticBuffer = .init(header.size, T.index);
 
-                if (header.type != .static_buffer or header.index != T.index) return error.BadTranslationHeader;
-
+                if (header != expected) return error.BadTranslationHeader;
                 if (header.size == 0) return .static(&.{});
+
                 break :blk .static(@as([*]const T.Elem, @ptrFromInt(buffer[1]))[0..(header.size / @sizeOf(T.Elem))]);
             },
             .mapped_slice => blk: {
                 const header: Buffer.TranslationDescriptor.MappedBuffer = @bitCast(buffer[0]);
+                const expected: Buffer.TranslationDescriptor.MappedBuffer = .init(header.size, T.permissions.read, T.permissions.write);
 
-                if ((header.type != 1) or (header.read != T.permissions.read) or (header.write != T.permissions.write)) return error.BadTranslationHeader;
-
+                if (header != expected) return error.BadTranslationHeader;
                 if (header.size == 0) return .mapped(&.{});
+
                 break :blk .mapped(@as([*]T.Elem, @ptrFromInt(buffer[1]))[0..(header.size / @sizeOf(T.Elem))]);
+            },
+            .pxi_slice => blk: {
+                const header: Buffer.TranslationDescriptor.PxiBuffer = @bitCast(buffer[0]);
+                const expected: Buffer.TranslationDescriptor.PxiBuffer = .init(header.size, T.index, !T.read_only);
+
+                if (header != expected) return error.BadTranslationHeader;
+                if (header.size == 0) return .pxi(&.{});
+
+                break :blk .mapped(@as([*]T.Elem, @ptrFromInt(buffer[1]))[0..(header.size / @sizeOf(T.Elem))]);
+            },
+            .pxi_invalidate => blk: {
+                const header: Buffer.TranslationDescriptor.PxiBuffer = @bitCast(buffer[0]);
+
+                if (header.type != .read_write_pxi_buffer) return error.BadTranslationHeader;
+
+                break :blk .invalidate;
             },
             .replace_by_process_id => blk: {
                 const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
@@ -385,7 +453,8 @@ pub const Codec = union(enum) {
         return switch (codec) {
             .raw => |sz| .parameters(@intCast(@divExact(std.mem.alignForward(u32, sz, 4), @sizeOf(u32))), 0),
             .embedded_slice => |max| .parameters(max, 0),
-            .static_slice, .mapped_slice, .replace_by_process_id => .parameters(0, 2),
+            .static_slice, .mapped_slice, .pxi_slice, .replace_by_process_id => .parameters(0, 2),
+            .pxi_invalidate => .parameters(0, 1), // is this the only parameter taking 1 translate slot? lmao
             .move_handles, .handles => |amount| .parameters(0, amount + 1),
             .move_handle_array, .handle_array => |flds| blk: {
                 var sum: u6 = 1;
@@ -396,7 +465,6 @@ pub const Codec = union(enum) {
 
                 break :blk .parameters(0, sum);
             },
-
             .fields => |flds| blk: {
                 var params: Buffer.PackedCommand.Parameters = .parameters(0, 0);
 
@@ -430,10 +498,14 @@ pub const Codec = union(enum) {
         try testExpect(.{ .move_handles = 1 }, .of(MoveHandles(horizon.Object)));
         try testExpect(.{ .move_handles = 4 }, .of(MoveHandles([4]horizon.Object)));
         try testExpect(.{ .move_handles = 2 }, .of(MoveHandles([2]horizon.Process)));
+        try testExpect(.replace_by_process_id, .of(ReplaceByProcessId));
         try testExpect(.static_slice, .of(Static(u8, 0)));
         try testExpect(.static_slice, .of(Static(u8, 10)));
         try testExpect(.mapped_slice, .of(Mapped(u8, .r)));
         try testExpect(.mapped_slice, .of(Mapped(u8, .w)));
+        try testExpect(.pxi_slice, .of(Pxi(u8, 0, false)));
+        try testExpect(.pxi_slice, .of(Pxi(u8, 0, true)));
+        try testExpect(.pxi_invalidate, .of(PxiInvalidate));
         try testExpect(.{ .embedded_slice = 2 }, .of(Embedded(4, u8, .pre)));
         try testExpect(.{ .embedded_slice = 3 }, .of(Embedded(4, u16, .pre)));
         try testExpect(.{ .embedded_slice = 5 }, .of(Embedded(4, u32, .pre)));
@@ -484,6 +556,8 @@ pub const Codec = union(enum) {
         try testExpectParameters(.parameters(3, 0), .of(Embedded(6, u8, .pre)));
         try testExpectParameters(.parameters(4, 0), .of(Embedded(6, u16, .pre)));
 
+        try testExpectParameters(.parameters(0, 2), .of(Pxi(u8, 0, false)));
+        try testExpectParameters(.parameters(0, 1), .of(PxiInvalidate));
         try testExpectParameters(.parameters(0, 2), .of(ReplaceByProcessId));
         try testExpectParameters(.parameters(0, 2), .of(horizon.Object));
 
@@ -492,7 +566,7 @@ pub const Codec = union(enum) {
             proc: horizon.Process,
         }));
 
-        try testExpectParameters(.parameters(4, 3), Codec.of(struct {
+        try testExpectParameters(.parameters(4, 3), .of(struct {
             u16: u16,
             u32: u32,
             u64: u64,
@@ -646,11 +720,22 @@ pub const Buffer = extern struct {
         pub const Type = enum(u3) {
             handle,
             static_buffer,
-            _,
+            read_write_pxi_buffer,
+            read_only_pxi_buffer,
+            invalid_mapped_buffer,
+            read_only_mapped_buffer,
+            write_only_mapped_buffer,
+            read_write_mapped_buffer,
+        };
+
+        pub const Bare = packed struct(u32) {
+            _reserved0: u1,
+            type: Type,
+            _reserved1: u28,
         };
 
         pub const Handle = packed struct(u32) {
-            pub const replace_by_proccess_id: Handle = .{ .replace_by_process_id = true };
+            pub const replace_by_pid: Handle = .{ .replace_by_process_id = true };
 
             _reserved0: u1 = 0,
             type: Type = .handle,
@@ -682,9 +767,9 @@ pub const Buffer = extern struct {
             index: u4,
             size: u18,
 
-            pub fn init(size: u18, buffer_id: u4) StaticBuffer {
+            pub fn init(size: u18, index: u4) StaticBuffer {
                 return .{
-                    .index = buffer_id,
+                    .index = index,
                     .size = size,
                 };
             }
@@ -692,23 +777,37 @@ pub const Buffer = extern struct {
 
         pub const MappedBuffer = packed struct(u32) {
             _reserved0: u1 = 0,
-            read: bool,
-            write: bool,
-            type: u1 = 1,
+            type: Type,
             size: u28,
 
             pub fn init(size: u28, read: bool, write: bool) MappedBuffer {
                 return .{
-                    .read = read,
-                    .write = write,
+                    .type = if (read and write) .read_write_mapped_buffer else if (write) .write_only_mapped_buffer else .read_only_mapped_buffer,
                     .size = size,
                 };
             }
         };
 
+        pub const PxiBuffer = packed struct(u32) {
+            _reserved0: u1 = 0,
+            type: Type,
+            index: u4,
+            size: u24,
+
+            pub fn init(size: u24, index: u4, write: bool) PxiBuffer {
+                return .{
+                    .type = if (write) .read_write_pxi_buffer else .read_only_pxi_buffer,
+                    .index = index,
+                    .size = size,
+                };
+            }
+        };
+
+        bare: Bare,
         handle: Handle,
         static_buffer: StaticBuffer,
-        buffer_mapping: MappedBuffer,
+        mapped_buffer: MappedBuffer,
+        pxi_buffer: PxiBuffer,
     };
 
     pub const PackedCommand = extern struct {
@@ -728,6 +827,10 @@ pub const Buffer = extern struct {
             parameters: Parameters,
             _unused: u4 = 0,
             command_id: u16,
+
+            pub fn header(comptime Id: type, id: Id, parameters: Parameters) Header {
+                return .{ .command_id = @intFromEnum(id), .parameters = parameters };
+            }
         };
 
         header: Header,
@@ -771,8 +874,8 @@ pub const Buffer = extern struct {
         }
 
         return buffer.readResponse(DefinedCommand) catch |err| switch (err) {
-            error.BadIpcHeader => .of(.os_invalid_ipc_header, undefined),
-            error.BadTranslationHeader => .of(.os_invalid_ipc_parameters, undefined),
+            error.BadIpcHeader => .of(.ztr_invalid_response_ipc_header, undefined),
+            error.BadTranslationHeader => .of(.ztr_invalid_response_ipc_parameters, undefined),
         };
     }
 
@@ -984,6 +1087,18 @@ fn isMapped(comptime T: type) bool {
        and @TypeOf(@field(T, "Elem")) == type
        and @TypeOf(@field(T, "permissions")) == Permissions
        and T == Mapped(@field(T, "Elem"), @field(T, "permissions"));
+    // zig fmt: on
+}
+
+fn isPxi(comptime T: type) bool {
+    // zig fmt: off
+    return @hasDecl(T, "Elem")
+       and @hasDecl(T, "index")
+       and @hasDecl(T, "read_only")
+       and @TypeOf(@field(T, "Elem")) == type
+       and @TypeOf(@field(T, "index")) == u4
+       and @TypeOf(@field(T, "read_only")) == bool
+       and T == Pxi(@field(T, "Elem"), @field(T, "index"), !@field(T, "read_only"));
     // zig fmt: on
 }
 

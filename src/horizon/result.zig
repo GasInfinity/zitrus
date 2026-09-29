@@ -132,6 +132,8 @@ pub const Module = enum(u8) {
     spm,
     qtm,
     nfp,
+
+    ztr = 253,
     application = 254,
     invalid_result_value,
     _,
@@ -145,6 +147,7 @@ pub const Module = enum(u8) {
             .csnd => Description.ChannelSound,
             .mic => Description.Microphone,
             .pdn => Description.PowerDown,
+            .ztr => Description.Zitrus,
             else => Description,
         };
     }
@@ -215,6 +218,13 @@ pub const Description = enum(u10) {
         _,
     };
 
+    pub const Zitrus = enum(u10) {
+        panic = 1,
+        invalid_response_ipc_header,
+        invalid_response_ipc_parameters,
+        _,
+    };
+
     // common
     success,
 
@@ -250,16 +260,19 @@ pub const Description = enum(u10) {
 };
 
 pub const Code = packed struct(i32) {
-    /// Not a real code, it's used to say that a generic failure occurred.
-    pub const failure: Code = .{
-        .description = .no_data,
-        .module = .common,
-        .level = .fatal,
-        .summary = .status_changed,
-    };
+    /// Deprecated: use `ztr_panic`
+    pub const failure = ztr_panic;
+
+    // Custom codes, not real (obviously)
+    /// 0xf943f401
+    pub const ztr_panic: Code = .specificResult(.fatal, .status_changed, .ztr, .panic);
+
+    /// 0xd8a3f402
+    pub const ztr_invalid_response_ipc_header: Code = .specificResult(.permanent, .invalid_state, .ztr, .invalid_response_ipc_header);
+    /// 0xd8a3f403
+    pub const ztr_invalid_response_ipc_parameters: Code = .specificResult(.permanent, .invalid_state, .ztr, .invalid_response_ipc_parameters);
 
     pub const success: Code = @bitCast(@as(u32, 0));
-    pub const not_implemented: Code = @bitCast(@as(u32, 0xE0E01BF4));
 
     /// 0xe0e003ed
     pub const common_invalid_enum_value: Code = .result(.usage, .invalid_arg, .common, .invalid_enum_value);
@@ -290,6 +303,8 @@ pub const Code = packed struct(i32) {
     pub const os_unaligned_address: Code = .result(.usage, .invalid_arg, .os, .unaligned_address);
     /// 0xe0e01bf2
     pub const os_unaligned_size: Code = .result(.usage, .invalid_arg, .os, .unaligned_size);
+    /// 0xe0e01be4
+    pub const os_not_implemented: Code = .result(.usage, .invalid_arg, .os, .not_implemented);
     pub const os_invalid_address: Code = @bitCast(@as(u32, 0xE0E01BF5));
     pub const os_invalid_address_state: Code = @bitCast(@as(u32, 0xE0A01BF5));
     pub const os_invalid_combination: Code = @bitCast(@as(u32, 0xE0E01BEE));
@@ -346,6 +361,15 @@ pub const Code = packed struct(i32) {
     pub const gpio_not_found: Code = .result(.usage, .invalid_arg, .gpio, .not_found);
     /// 0xe0e033f0
     pub const gpio_busy: Code = .result(.usage, .invalid_arg, .gpio, .busy);
+
+    /// 0xd8c107f4
+    pub const ps_not_implemented: Code = .result(.permanent, .not_supported, .ps, .not_implemented);
+    /// 0xc90107fa
+    pub const ps_not_found: Code = .result(.status, .wrong_arg, .ps, .not_found);
+    /// 0xc90107e8
+    pub const ps_invalid_selection: Code = .result(.status, .wrong_arg, .ps, .invalid_selection);
+    /// 0xc90107ec
+    pub const ps_invalid_size: Code = .result(.status, .wrong_arg, .ps, .invalid_size);
 
     /// 0xc9403800
     pub const codec_status_changed: Code = .result(.status, .status_changed, .codec, .success);

@@ -18,7 +18,7 @@ pub fn call(message: []const u8, return_address: ?usize) noreturn {
         .type = .generic,
         .revision_high = 0x00,
         .revision_low = 0x00,
-        .result_code = .failure,
+        .result_code = .ztr_panic,
         .pc_address = return_address orelse @returnAddress(),
         .process_id = @intFromEnum(horizon.getProcessId(.current).value), // NOTE: cannot fail as current is always valid.
         .title_id = 0x0,

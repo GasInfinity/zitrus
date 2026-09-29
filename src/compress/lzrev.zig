@@ -17,6 +17,7 @@
 
 pub const history_len = 4096;
 pub const max_window_len = 2 * history_len + Match.max_len;
+pub const partially_compressed = true;
 
 const min_match_len = 3;
 
@@ -73,6 +74,13 @@ pub const DecompressionError = error{
     DecompressionOverflow,
 };
 
+pub const DecompressionState = extern struct {
+    pub const init: DecompressionState = .{ .decompressed_index = 0, .compressed_index = 0 };
+
+    decompressed_index: usize,
+    compressed_index: usize,
+};
+
 pub fn len(compressed: []const u8) usize {
     // XXX: whether the delta is signed or unsigned is not specified.
     const delta = std.mem.readInt(u32, compressed[(compressed.len - @sizeOf(u32))..][0..4], .little);
@@ -82,17 +90,17 @@ pub fn len(compressed: []const u8) usize {
 
 /// Decompresses LZrev-compressed data.
 ///
+/// `diagnostic` is filled when returning `error.DecompressionOverflow` or `error.InvalidMatch`
+///
 /// Asserts that decompressed is at least `len(compressed)`.
-pub fn bufDecompress(decompressed: []u8, compressed: []const u8) DecompressionError!void {
+pub fn bufDecompress(decompressed: []u8, compressed: []const u8, diagnostic: ?*DecompressionState) DecompressionError!void {
     const delta = std.mem.readInt(u32, compressed[(compressed.len - @sizeOf(u32))..][0..4], .little);
     const delta_bounds: Footer = @bitCast(std.mem.readInt(u32, compressed[(compressed.len - (2 * @sizeOf(u32)))..][0..4], .little));
     const real_decompressed_len = compressed.len +% delta;
 
     std.debug.assert(decompressed.len >= real_decompressed_len);
 
-    if (delta_bounds.compressed_len > compressed.len or delta_bounds.footer_len > compressed.len) {
-        return error.InvalidLzrevBounds;
-    }
+    if (delta_bounds.compressed_len > compressed.len or delta_bounds.footer_len > compressed.len) return error.InvalidLzrevBounds;
 
     const compressed_end = compressed.len - delta_bounds.compressed_len;
     const compressed_start = compressed.len - delta_bounds.footer_len;
@@ -100,8 +108,16 @@ pub fn bufDecompress(decompressed: []u8, compressed: []const u8) DecompressionEr
     var current_decompressed_index = real_decompressed_len - 1;
     var current_compressed_index = compressed_start - 1;
 
+    errdefer {
+        if (diagnostic) |diag| diag.* = .{
+            .compressed_index = current_compressed_index,
+            .decompressed_index = current_decompressed_index,
+        };
+    }
+
     // Copy the data we already know is not compressed.
-    @memcpy(decompressed[0..(compressed_end + 1)], compressed[0..(compressed_end + 1)]);
+    // NOTE: We use memmove to support decompressing in-place
+    @memmove(decompressed[0..(compressed_end + 1)], compressed[0..(compressed_end + 1)]);
 
     decompression: while (current_compressed_index > compressed_end) {
         var current_control: Control = @bitCast(compressed[current_compressed_index]);
@@ -122,12 +138,11 @@ pub fn bufDecompress(decompressed: []u8, compressed: []const u8) DecompressionEr
                 .dictionary => {
                     const range: Match = @bitCast(std.mem.readInt(u16, compressed[(current_compressed_index - 1)..][0..2], .little));
                     const offset = range.offset();
+                    const range_len = range.len();
 
-                    if ((current_decompressed_index + offset) >= real_decompressed_len or range.len() > (current_decompressed_index + 1)) {
-                        return error.InvalidMatch;
-                    }
+                    if ((current_decompressed_index + offset) >= real_decompressed_len or range_len > (current_decompressed_index + 1)) return error.InvalidMatch;
 
-                    for (0..range.len()) |_| {
+                    for (0..range_len) |_| {
                         decompressed[current_decompressed_index] = decompressed[current_decompressed_index + offset];
                         current_decompressed_index -|= 1;
                     }
@@ -150,38 +165,58 @@ pub fn allocCompress(gpa: std.mem.Allocator, buffer: []u8, data: []u8, opts: Com
     std.debug.assert(data.len <= std.math.maxInt(u24));
 
     // NOTE: We have to leave some bytes uncompressed orelse we'll overwrite already existing data.
-    // The loader decompresses in-place so it'll overwrite data otherwise.
-    // We'll have to fuzz this!
-    const uncompressed_start = @min(0x15, data.len);
-    const uncompressed_data = data[0..uncompressed_start];
-    const compressing_data = data[uncompressed_start..];
+    // The compressor already keeps track of the best compressed/uncompressed ratio
 
-    var allocating: std.Io.Writer.Allocating = try .initCapacity(gpa, data.len);
+    var allocating: std.Io.Writer.Allocating = try .initCapacity(gpa, data.len + (data.len + 7) / 8 + @sizeOf(u32) * 2);
     defer allocating.deinit();
 
-    try allocating.writer.writeAll(uncompressed_data);
-
-    if (compressing_data.len > 0) {
-        var rr: ReverseReader = .init(&.{}, compressing_data);
+    const best_consumed, const best_written = blk: {
+        var rr: ReverseReader = .init(&.{}, data);
         var compress: Compress = .init(&allocating.writer, buffer, opts);
-        std.debug.assert(try rr.reader.streamRemaining(&compress.writer) == compressing_data.len);
+        std.debug.assert(try rr.reader.streamRemaining(&compress.writer) == data.len);
         try compress.finish();
 
-        std.mem.reverse(u8, allocating.written()[uncompressed_start..]);
-    }
-
-    const compressed_data_len = allocating.written().len - uncompressed_start;
-    const compressed_len = compressed_data_len + @sizeOf(u32) * 2;
-    const footer: Footer = .{
-        .compressed_len = @intCast(compressed_len),
-        .footer_len = @sizeOf(Footer) + @sizeOf(u32),
+        break :blk .{ compress.threshold.s.best_consumed, compress.threshold.s.best_written };
     };
 
-    if (compressed_len >= compressing_data.len) return error.Incompressible;
+    std.mem.reverse(u8, allocating.written());
 
-    try allocating.writer.writeStruct(footer, .little);
-    try allocating.writer.writeInt(u32, @intCast(compressing_data.len - compressed_len), .little);
-    return try allocating.toOwnedSlice();
+    const compressed_with_footer_len = best_written + @sizeOf(u32) * 2;
+    const compressed = if (best_written == allocating.written().len) blk: {
+        // Cool if we managed to compress everything
+        const footer: Footer = .{
+            .compressed_len = @intCast(compressed_with_footer_len),
+            .footer_len = @sizeOf(Footer) + @sizeOf(u32),
+        };
+
+        try allocating.writer.writeStruct(footer, .little);
+        try allocating.writer.writeInt(u32, @intCast(best_consumed -| compressed_with_footer_len), .little);
+        break :blk try allocating.toOwnedSlice();
+    } else blk: {
+        const uncompressed_len = (data.len - best_consumed);
+        const compressed = try gpa.alloc(u8, uncompressed_len + best_written + @sizeOf(u32) * 2);
+        errdefer gpa.free(compressed);
+
+        const uncompressed = data[0..uncompressed_len];
+        const written = allocating.written();
+        const compressed_data = written[written.len - best_written ..][0..best_written];
+        const end = uncompressed_len + compressed_data.len;
+
+        @memcpy(compressed[0..uncompressed.len], uncompressed);
+        @memcpy(compressed[uncompressed.len..][0..compressed_data.len], compressed_data);
+
+        const footer: Footer = .{
+            .compressed_len = @intCast(compressed_with_footer_len),
+            .footer_len = @sizeOf(Footer) + @sizeOf(u32),
+        };
+
+        std.mem.writeInt(u32, compressed[end..][0..4], @bitCast(footer), .little);
+        std.mem.writeInt(u32, compressed[(end + 4)..][0..4], @intCast(best_consumed -| compressed_with_footer_len), .little);
+        break :blk compressed;
+    };
+    errdefer gpa.free(compressed);
+
+    return compressed;
 }
 
 const ReverseReader = struct {

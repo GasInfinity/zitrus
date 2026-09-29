@@ -16,7 +16,7 @@ pub const Address = enum(u16) {
 };
 
 pub const Configuration = packed struct(u16) {
-    pub const Region = enum(u2) { data, mmio, code, ahbm };
+    pub const Region = enum(u4) { data, mmio, code = 5 };
     pub const Length = enum(u2) { @"1", @"8", @"16", free };
 
     reset: bool,
@@ -41,8 +41,8 @@ pub const Status = packed struct(u16) {
     write_fifo_full: bool,
     write_fifo_empty: bool,
     semaphore_irq: bool,
-    pipe_recv_register_unwritten: BitpackedArray(bool, 3),
-    pipe_send_register_unread: BitpackedArray(bool, 3),
+    pipe_recv_register_not_empty: BitpackedArray(bool, 3),
+    pipe_send_register_empty: BitpackedArray(bool, 3),
 };
 
 pub const Semaphore = extern struct {

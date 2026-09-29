@@ -295,35 +295,33 @@ pub const Lookup = struct {
     }
 };
 
-const CompressOptions = struct {
-    /// Perform less lookups when a match of at least this length has been found.
-    good: u16,
-    /// Stop when a match of at least this length has been found.
-    nice: u16,
-    /// Don't attempt a lazy match find when a match of at least this length has been found.
-    lazy: u16,
-    /// Check this many previous locations with the same hash for longer matches.
-    chain: u16,
-
-    // zig fmt: off
-    pub const level_1: CompressOptions = .{ .good =  4, .nice =   8, .lazy =   0, .chain =    4 };
-    pub const level_2: CompressOptions = .{ .good =  4, .nice =  16, .lazy =   0, .chain =    8 };
-    pub const level_3: CompressOptions = .{ .good =  4, .nice =  32, .lazy =   0, .chain =   32 };
-    pub const level_4: CompressOptions = .{ .good =  4, .nice =  16, .lazy =   4, .chain =   16 };
-    pub const level_5: CompressOptions = .{ .good =  8, .nice =  32, .lazy =  16, .chain =   32 };
-    pub const level_6: CompressOptions = .{ .good =  8, .nice = 128, .lazy =  16, .chain =  128 };
-    pub const level_7: CompressOptions = .{ .good =  8, .nice = 128, .lazy =  32, .chain =  256 };
-    pub const level_8: CompressOptions = .{ .good = 32, .nice = 258, .lazy = 128, .chain = 1024 };
-    pub const level_9: CompressOptions = .{ .good = 32, .nice = 258, .lazy = 258, .chain = 4096 };
-    // zig fmt: on
-    pub const fastest = level_1;
-    pub const default = level_6;
-    pub const best = level_9;
-};
-
 pub fn Compress(comptime context: type) type {
     return struct {
-        pub const Options = CompressOptions;
+        pub const Options = struct {
+            /// Perform less lookups when a match of at least this length has been found.
+            good: u16,
+            /// Stop when a match of at least this length has been found.
+            nice: u16,
+            /// Don't attempt a lazy match find when a match of at least this length has been found.
+            lazy: u16,
+            /// Check this many previous locations with the same hash for longer matches.
+            chain: u16,
+
+            // zig fmt: off
+            pub const level_1: Options = .{ .good =  2, .nice = 4, .lazy = 0, .chain =    4 };
+            pub const level_2: Options = .{ .good =  2, .nice = 4, .lazy = 0, .chain =    8 };
+            pub const level_3: Options = .{ .good = (max_match_len / 8), .nice = (max_match_len / 4), .lazy =   0, .chain =   32 };
+            pub const level_4: Options = .{ .good = (max_match_len / 4), .nice = (max_match_len / 4), .lazy =   (max_match_len / 8), .chain =   16 };
+            pub const level_5: Options = .{ .good = (max_match_len / 2), .nice = (max_match_len / 2), .lazy =  (max_match_len / 4), .chain =   32 };
+            pub const level_6: Options = .{ .good = (max_match_len / 2), .nice = (max_match_len / 2), .lazy =  (max_match_len / 2), .chain =  128 };
+            pub const level_7: Options = .{ .good = (max_match_len / 2), .nice = max_match_len, .lazy =  (max_match_len / 2), .chain =  256 };
+            pub const level_8: Options = .{ .good = max_match_len, .nice = max_match_len, .lazy = max_match_len, .chain = 1024 };
+            pub const level_9: Options = .{ .good = max_match_len, .nice = max_match_len, .lazy = max_match_len, .chain = 4096 };
+            // zig fmt: on
+            pub const fastest = level_1;
+            pub const default = level_6;
+            pub const best = level_9;
+        };
 
         const Buffered = struct {
             pub const init: Buffered = .{
@@ -339,8 +337,43 @@ pub fn Compress(comptime context: type) type {
             blocks_len: u32,
         };
 
+        // i.e we support partially compressing the data (so we keep track of the best compressed/uncompressed ratio)
+        const partially_compressed = if (@hasDecl(context, "partially_compressed")) context.partially_compressed else false;
+        const max_match_len = context.Match.max_len;
         const rebase_min_preserved = context.history_len;
-        const rebase_reserved_capacity = context.Match.max_len + Lookup.seq_len;
+        const rebase_reserved_capacity = max_match_len + Lookup.seq_len;
+
+        const Threshold = struct {
+            const Storage = if (partially_compressed) struct {
+                consumed: usize = 0,
+                written: usize = 0,
+                best_consumed: usize = 0,
+                best_written: usize = 0,
+            } else void;
+
+            s: Storage = if (partially_compressed) .{} else {},
+
+            pub fn addConsumed(t: *Threshold, added: usize) void {
+                if (!partially_compressed) return;
+
+                t.s.consumed += added;
+            }
+
+            pub fn addWritten(t: *Threshold, added: usize) void {
+                if (!partially_compressed) return;
+
+                t.s.written += added;
+            }
+
+            pub fn finishBlocks(t: *Threshold) void {
+                if (!partially_compressed) return;
+
+                if (t.s.consumed -| t.s.written > t.s.best_consumed -| t.s.best_written) {
+                    t.s.best_consumed = t.s.consumed;
+                    t.s.best_written = t.s.written;
+                }
+            }
+        };
 
         output: *Writer,
         writer: Writer,
@@ -350,10 +383,12 @@ pub fn Compress(comptime context: type) type {
         buffered: Buffered,
         lookup: Lookup,
         history_len: u16,
+        threshold: Threshold,
 
         /// It is asserted that `buffer` is at least `max_window_len` bytes.
         pub fn init(output: *Writer, buffer: []u8, opts: Options) Comp {
             std.debug.assert(buffer.len >= context.max_window_len);
+            std.debug.assert(opts.nice <= max_match_len);
 
             return .{
                 .output = output,
@@ -372,6 +407,7 @@ pub fn Compress(comptime context: type) type {
                 .buffered = .init,
                 .lookup = .init,
                 .history_len = 0,
+                .threshold = .{},
             };
         }
 
@@ -466,7 +502,7 @@ pub fn Compress(comptime context: type) type {
                     match_unadded -= 1;
                     i += 1;
 
-                    if (lazy.offset >= context.Match.min_offset and lazy.len > match.len) {
+                    if (lazy.len > match.len) {
                         match_start += 1;
                         match = lazy;
                         match_unadded = match.len - 1;
@@ -540,7 +576,7 @@ pub fn Compress(comptime context: type) type {
         }
 
         fn betterMatchLen(old: u17, prev: []const u8, bytes: []const u8) u17 {
-            std.debug.assert(old < @min(bytes.len, context.Match.max_len));
+            std.debug.assert(old < @min(bytes.len, max_match_len));
             std.debug.assert(prev.len >= bytes.len);
             std.debug.assert(bytes.len >= 3);
 
@@ -549,9 +585,9 @@ pub fn Compress(comptime context: type) type {
                 comptime_int,
                 std.math.ceilPowerOfTwoAssert(usize, @bitSizeOf(usize)),
                 8,
-            ) catch unreachable, context.Match.max_len - 2) * 8);
+            ) catch unreachable, max_match_len - 2) * 8);
 
-            if (bytes.len < context.Match.max_len) {
+            if (bytes.len < max_match_len) {
                 @branchHint(.unlikely); // Only end of stream
 
                 while (bytes[i..].len >= @sizeOf(Blk)) {
@@ -569,7 +605,7 @@ pub fn Compress(comptime context: type) type {
                 while (i != bytes.len and prev[i] == bytes[i]) {
                     i += 1;
                 }
-                std.debug.assert(i <= context.Match.max_len);
+                std.debug.assert(i <= max_match_len);
                 return i;
             }
 
@@ -577,7 +613,7 @@ pub fn Compress(comptime context: type) type {
                 // Check that a longer end is present, otherwise the match is always worse
                 const a = std.mem.readInt(Blk, prev[old + 1 - @sizeOf(Blk) ..][0..@sizeOf(Blk)], .little);
                 const b = std.mem.readInt(Blk, bytes[old + 1 - @sizeOf(Blk) ..][0..@sizeOf(Blk)], .little);
-                std.debug.assert(i < context.Match.max_len);
+                std.debug.assert(i < max_match_len);
                 if (a != b) return i;
             }
 
@@ -590,14 +626,14 @@ pub fn Compress(comptime context: type) type {
                     return i;
                 }
                 i += @sizeOf(Blk);
-                if (i == @sizeOf(Blk)) break;
+                if (i == (max_match_len - 2)) break;
             }
 
             const a = std.mem.readInt(u16, prev[i..][0..2], .little);
             const b = std.mem.readInt(u16, bytes[i..][0..2], .little);
             const diff = a ^ b;
             i += @ctz(diff) / 8;
-            std.debug.assert(i <= context.Match.max_len);
+            std.debug.assert(i <= max_match_len);
             return i;
         }
 
@@ -606,9 +642,9 @@ pub fn Compress(comptime context: type) type {
             const buffered = c.writer.buffered();
 
             var chain_limit = max_chain;
-            var best_dist: u12 = undefined;
+            var best_dist: u12 = 0;
             var best_len = gt;
-            const nice = @min(context.Match.max_len, c.opts.nice, buffered[i..].len);
+            const nice = @min(c.opts.nice, buffered[i..].len);
             var good = good_;
 
             search: {
@@ -617,15 +653,18 @@ pub fn Compress(comptime context: type) type {
                 while (true) {
                     chain_limit -= 1;
 
-                    const match_len = betterMatchLen(best_len, buffered[i - 1 - dist ..], buffered[i..]);
-                    std.debug.assert(match_len <= context.Match.max_len);
-                    if (best_dist < context.Match.min_offset or (match_len > best_len and dist >= context.Match.min_offset)) {
-                        best_dist = dist;
-                        best_len = match_len;
-                        if (best_len >= nice) break;
-                        if (best_len >= good) {
-                            chain_limit >>= 2;
-                            good = std.math.maxInt(u8); // Reduce only once
+                    if (dist >= (context.Match.min_offset - 1)) {
+                        const match_len = betterMatchLen(best_len, buffered[i - 1 - dist ..], buffered[i..]);
+                        std.debug.assert(match_len <= context.Match.max_len);
+
+                        if (match_len > best_len) {
+                            best_dist = dist;
+                            best_len = match_len;
+                            if (best_len >= nice) break;
+                            if (best_len >= good) {
+                                chain_limit >>= 2;
+                                good = std.math.maxInt(u8); // Reduce only once
+                            }
                         }
                     }
 
@@ -651,6 +690,7 @@ pub fn Compress(comptime context: type) type {
                 const outputting_len: u4 = @intCast(@min(c.buffered.control_rem, rem.len));
                 const outputting = rem[0..outputting_len];
                 std.debug.assert(c.buffered.blocks_len + outputting.len <= c.buffered.blocks.len);
+                c.threshold.addConsumed(outputting_len);
 
                 @memcpy(c.buffered.blocks[c.buffered.blocks_len..][0..outputting_len], outputting);
                 c.buffered.blocks_len += outputting_len;
@@ -667,11 +707,13 @@ pub fn Compress(comptime context: type) type {
         fn outputMatch(c: *Comp, match: Match) Writer.Error!void {
             std.debug.assert(c.buffered.control_rem > 0); // It must have been written before then
             std.debug.assert(c.buffered.blocks_len + context.Match.max_size <= c.buffered.blocks.len);
+            c.threshold.addConsumed(match.len);
 
             var writer: Writer = .fixed(&c.buffered.blocks);
             writer.end = c.buffered.blocks_len;
 
             try context.Match.write(&writer, match);
+
             c.buffered.blocks_len = @intCast(writer.end);
             c.buffered.control <<= 1;
             c.buffered.control |= context.blockEncoding(.match);
@@ -683,10 +725,12 @@ pub fn Compress(comptime context: type) type {
         fn finishBlocks(c: *Comp) Writer.Error!void {
             try c.output.writeByte(c.buffered.control);
             try c.output.writeAll(c.buffered.blocks[0..c.buffered.blocks_len]);
+            c.threshold.addWritten(1 + c.buffered.blocks_len);
 
             c.buffered.control = 0;
             c.buffered.control_rem = @bitSizeOf(u8);
             c.buffered.blocks_len = 0;
+            c.threshold.finishBlocks();
         }
 
         const Comp = @This();

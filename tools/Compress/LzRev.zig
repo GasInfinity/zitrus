@@ -64,8 +64,9 @@ pub fn run(args: LzRev, io: std.Io, arena: std.mem.Allocator) !u8 {
         const decompressed = try arena.alloc(u8, decompressed_len);
         defer arena.free(decompressed);
 
-        lzrev.bufDecompress(decompressed, data) catch |err| {
-            log.err("decompression error: {t}", .{err});
+        var state: lzrev.DecompressionState = .init;
+        lzrev.bufDecompress(decompressed, data, &state) catch |err| {
+            log.err("decompression error {t} at compressed index {} / decompressed index {}", .{err, state.compressed_index, state.decompressed_index});
             return 1;
         };
 

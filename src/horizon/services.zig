@@ -13,7 +13,8 @@ pub const Hid = @import("services/Hid.zig");
 pub const Cfg = @import("services/Cfg.zig");
 /// Deprecated: use `Cfg`
 pub const Config = Cfg;
-pub const Filesystem = @import("services/Filesystem.zig");
+/// Deprecated: use fs.User
+pub const Filesystem = fs.User;
 pub const CSnd = @import("services/CSnd.zig");
 /// Deprecated: use `CSnd`
 pub const ChannelSound = CSnd;
@@ -28,8 +29,11 @@ pub const Ptm = @import("services/Ptm.zig");
 /// Deprecated: Use Ptm
 pub const Playtime = Ptm;
 
-pub const Process = @import("services/Process.zig");
-pub const PxiProcess9 = @import("services/PxiProcess9.zig");
+pub const Ps = @import("services/Ps.zig");
+/// Deprecated: use Ps
+pub const Process = Ps;
+/// Deprecated: use `pxi.Process9`
+pub const PxiProcess9 = pxi.Process9;
 ///! Deprecated: Use `soc.User`
 pub const SocketUser = soc.User;
 
@@ -39,6 +43,8 @@ pub const NetworkDaemon = @import("services/NetworkDaemon.zig");
 pub const NetworkManagerInfrastructure = @import("services/NetworkManagerInfrastructure.zig");
 pub const NetworkManagerSocket = @import("services/NetworkManagerSocket.zig");
 
+pub const pxi = @import("services/pxi.zig");
+pub const fs = @import("services/fs.zig");
 pub const gsp = @import("services/gsp.zig");
 pub const ir = @import("services/ir.zig");
 pub const soc = @import("services/soc.zig");
@@ -135,6 +141,7 @@ comptime {
     _ = NetworkManagerInfrastructure;
     _ = NetworkManagerSocket;
 
+    _ = fs;
     _ = ir;
     _ = I2c;
     _ = Spi;

@@ -13,6 +13,9 @@ pub const arm11 = struct {
 pub const arm9 = struct {
     pub const itcm_begin: u32 = 0x00000000;
     pub const wram_begin: u32 = 0x08000000;
+
+    pub const pxi_begin: u32 = io_begin + 0x8000;
+    pub const pxi: *volatile zitrus.hardware.pxi.@"9" = @ptrFromInt(arm9.pxi_begin);
 };
 
 pub const vram_size: u32 = 0x00600000;
@@ -49,8 +52,8 @@ pub const i2c_bus_0_begin: u32 = io_begin + 0x161000;
 pub const i2c_bus_0: *volatile zitrus.hardware.i2c.Bus = @ptrFromInt(i2c_bus_0_begin);
 pub const mic_begin: u32 = io_begin + 0x162000;
 pub const mic: *volatile zitrus.hardware.mic.Registers = @ptrFromInt(mic_begin);
-pub const pxi_begin: u32 = io_begin + 0x163000;
-pub const pxi: *volatile zitrus.hardware.pxi.Registers = @ptrFromInt(pxi_begin);
+pub const pxi11_begin: u32 = io_begin + 0x163000;
+pub const pxi11: *volatile zitrus.hardware.pxi.@"11" = @ptrFromInt(pxi11_begin);
 pub const dsp_begin: u32 = 0x1FF00000;
 pub const axiwram_begin: u32 = 0x1FF80000;
 

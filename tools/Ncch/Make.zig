@@ -130,9 +130,11 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
             defer gpa.free(compression_buffer);
 
             const compressed_code_data = try lzrev.allocCompress(gpa, compression_buffer, code_data, .best);
-            lzrev.bufDecompress(code_data, compressed_code_data) catch |err| {
+
+            var state: lzrev.DecompressionState = .init;
+            lzrev.bufDecompress(code_data, compressed_code_data, &state) catch |err| {
                 gpa.free(compressed_code_data);
-                log.err("{}: bug in compressor, i really need want the fuzzer 🫩", .{err});
+                log.err("{}: bug in compressor (C: {}, D: {}), i really need want the fuzzer 🫩", .{err, state.compressed_index, state.decompressed_index});
                 return 1;
             };
             gpa.free(code_data);
