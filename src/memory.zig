@@ -6,8 +6,12 @@
 pub const VRamBank = enum(u1) { a, b };
 
 pub const arm11 = struct {
-    pub const lcd: *volatile hardware.lcd.Registers = @ptrFromInt(io_begin + 0x202000);
-    pub const pica: *volatile hardware.pica.Registers = @ptrFromInt(io_begin + 0x400000);
+    pub const lcd_begin: u32 = io_begin + 0x202000;
+    pub const lcd: *volatile hardware.lcd.Registers = @ptrFromInt(lcd_begin);
+    pub const dsp_begin: u32 = io_begin + 0x203000;
+    pub const dsp: *volatile hardware.dsp.Registers = @ptrFromInt(dsp_begin);
+    pub const pica_begin: u32 = io_begin + 0x400000;
+    pub const pica: *volatile hardware.pica.Registers = @ptrFromInt(pica_begin);
 };
 
 pub const arm9 = struct {
@@ -54,7 +58,9 @@ pub const mic_begin: u32 = io_begin + 0x162000;
 pub const mic: *volatile zitrus.hardware.mic.Registers = @ptrFromInt(mic_begin);
 pub const pxi11_begin: u32 = io_begin + 0x163000;
 pub const pxi11: *volatile zitrus.hardware.pxi.@"11" = @ptrFromInt(pxi11_begin);
-pub const dsp_begin: u32 = 0x1FF00000;
+/// Shared WRAM with the DSP
+pub const shared_wram_begin: u32 = 0x1FF00000;
+pub const shared_wram_size: u32 = 0x80000;
 pub const axiwram_begin: u32 = 0x1FF80000;
 
 pub const fcram_begin: u32 = 0x20000000;

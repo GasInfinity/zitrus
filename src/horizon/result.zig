@@ -147,6 +147,7 @@ pub const Module = enum(u8) {
             .csnd => Description.ChannelSound,
             .mic => Description.Microphone,
             .pdn => Description.PowerDown,
+            .dsp => Description.Dsp,
             .ztr => Description.Zitrus,
             else => Description,
         };
@@ -215,6 +216,11 @@ pub const Description = enum(u10) {
 
     pub const PowerDown = enum(u10) {
         invalid_reset = 1,
+        _,
+    };
+
+    pub const Dsp = enum(u10) {
+        not_active = 1,
         _,
     };
 
@@ -396,6 +402,15 @@ pub const Code = packed struct(i32) {
     pub const csnd_direct_sound_sleeping: Code = .specificResult(.status, .status_changed, .csnd, .direct_sound_sleeping);
     /// 0xc940b402
     pub const csnd_direct_sound_priority: Code = .specificResult(.status, .status_changed, .csnd, .direct_sound_priority);
+
+    /// 0xc8a0a401
+    pub const dsp_not_active: Code = .specificResult(.status, .invalid_state, .dsp, .not_active);
+    // NOTE: `invalid_result_value` for module... wtf
+    /// 0xe0e3fff6
+    pub const dsp_invalid_pointer: Code = .result(.usage, .invalid_arg, .invalid_result_value, .invalid_pointer);
+    // NOTE: `invalid_result_value` for description... wtf pt.2
+    /// 0xc860a7ff
+    pub const dsp_invalid_interrupt: Code = .result(.status, .out_of_resource, .dsp, .invalid_result_value);
 
     description: Description = .success,
     module: Module = .common,

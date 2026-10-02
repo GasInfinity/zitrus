@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 - Added `horizon.services.mcu.Platform`
 - Added `horizon.module.State` as a simple sysmodule service/port loop abstraction 
 
+- Fix a really dumb mistake when reading mapped ranges in ncchs (only happens when dumping the settings)
+
 - `horizon.memory.*_registers` -> `horizon.memory.*`
 - `horizon.services.Filesystem` -> `horizon.services.fs.User`
 - `horizon.services.Process` -> `horizon.services.Ps`

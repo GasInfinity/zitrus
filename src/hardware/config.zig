@@ -84,12 +84,12 @@ pub const @"9" = extern struct {
 };
 
 pub const @"11" = extern struct {
-    pub const Shared = extern struct {
-        pub const Master = enum(u2) { arm9, arm11, dsp };
+    pub const SharedWRam = extern struct {
         pub const Mapping = packed struct(u8) {
-            master: Master,
-            offset: u3,
-            _unused0: u2 = 0,
+            allow_dsp_access: bool,
+            _unused0: u1 = 0,
+            map_offset: u3,
+            _unused1: u2 = 0,
             enable: bool,
         };
 
@@ -187,7 +187,7 @@ pub const @"11" = extern struct {
     };
 
     /// 0x000
-    shared: Shared,
+    shared_wram: SharedWRam,
     _unused0: [0xf0]u8,
     /// 0x100
     null_page: NullPage,

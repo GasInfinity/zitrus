@@ -130,21 +130,21 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
 
         raw: ArrayInt,
 
-        pub inline fn init(value: [n]T) Self {
+        pub fn init(value: [n]T) Self {
             // NOTE: Cannot be `undefined`, any `undefined` bits make the entire value `undefined`.
             var bt: Self = std.mem.zeroes(Self);
             inline for (0..n) |i| bt.set(i, value[i]);
             return bt;
         }
 
-        pub inline fn splat(value: T) Self {
+        pub fn splat(value: T) Self {
             // NOTE: Cannot be `undefined`, any `undefined` bits make the entire value `undefined`.
             var bt: Self = std.mem.zeroes(Self);
             inline for (0..n) |i| bt.set(i, value);
             return bt;
         }
 
-        pub inline fn slice(bt: Self, index: usize, comptime len: usize) BitpackedArray(T, len) {
+        pub fn slice(bt: Self, index: usize, comptime len: usize) BitpackedArray(T, len) {
             std.debug.assert(index + len <= n);
 
             const NewBitpacked = BitpackedArray(T, len);
@@ -153,8 +153,10 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
             return @bitCast(new_bt_int);
         }
 
-        pub inline fn get(bt: Self, index: usize) T {
-            const value = std.mem.readPackedInt(ElementInt, @ptrCast(&bt.raw), index * @bitSizeOf(ElementInt), .native);
+        pub fn get(bt: Self, index: usize) T {
+            std.debug.assert(index < n);
+            // TODO: @fromBackingInt 0.17.0
+            const value: ElementInt = @truncate((@as(ArrayInt, @bitCast(bt)) >> @intCast(index * @bitSizeOf(T))) & elem_mask);
 
             return switch (@typeInfo(T)) {
                 .@"enum" => @enumFromInt(value),

@@ -240,11 +240,11 @@ pub fn initNcch(hdr: *const ncch.Header, ex_hdr: *const ncch.ExtendedHeader, gpa
                             .read_only = descriptor.map_range_start.read_only,
                             .cached = end_descriptor.map_range_end.cacheable,
                         });
-                        i += 2;
+
+                        i += 1;
                     } else if (descriptor.map_io_page.header == Descriptor.MapIoPage.magic_value) {
                         try mapped_io.append(gpa, .{ .address = @as(u32, descriptor.map_io_page.page) << 12, .read_only = descriptor.map_io_page.read_only });
                     }
-
                     i += 1;
                 }
 

@@ -295,7 +295,7 @@ pub const Codec = union(enum) {
                     .pre => .{ 4, 0 },
                 };
 
-                // NOTE: This doesn't really need multiplication/division as the kernel doesn't 
+                // NOTE: This doesn't really need multiplication/division as the kernel doesn't
                 // have to do anything
                 if (T.length_position != .none) buffer[len_idx] = @intCast(value.slice.len);
                 @memcpy(buffer_bytes[data_offset..][0..bytes.len], bytes);
