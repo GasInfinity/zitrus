@@ -77,9 +77,9 @@ fn callMainAndExit() callconv(.c) noreturn {
 
 inline fn callMain(args: std.process.Args.Vector, environ: std.process.Environ.Block) u8 {
     const fn_info = @typeInfo(@TypeOf(root.main)).@"fn";
-    if (fn_info.params.len == 0) return wrapMain(root.main());
+    if (fn_info.param_types.len == 0) return wrapMain(root.main());
 
-    const First = fn_info.params[0].type.?;
+    const First = fn_info.param_types[0].?;
 
     if (First == std.process.Init.Minimal) return wrapMain(root.main(.{
         .args = .{ .vector = args },
@@ -113,7 +113,7 @@ fn UnwrapError(comptime T: type) type {
 }
 
 inline fn juiceMain(_: std.process.Args.Vector, _: std.process.Environ.Block) !UnwrapError(@typeInfo(@TypeOf(root.main)).@"fn".return_type.?) {
-    const First = @typeInfo(@TypeOf(root.main)).@"fn".params[0].type.?; // NOTE: We already know we have 1 parameter.
+    const First = @typeInfo(@TypeOf(root.main)).@"fn".param_types[0].?; // NOTE: We already know we have 1 parameter.
     const Init = horizon.Init;
     const services = horizon.services;
 

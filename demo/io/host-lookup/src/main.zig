@@ -104,7 +104,7 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     soft.swap(.none);
     try soft.waitVBlank();
 
-    var canonical_buffer: [255]u8 = undefined;
+    var canonical_buffer: [254]u8 = undefined;
     var utf8_buffer: [512]u8 = undefined;
     main_loop: while (true) {
         while (try init.pollEvent()) |ev| switch (ev) {

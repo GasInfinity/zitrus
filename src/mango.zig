@@ -703,7 +703,7 @@ pub const CullMode = enum(u8) {
     cw,
 
     comptime {
-        std.debug.assert(std.meta.eql(@typeInfo(CullMode).@"enum".fields, @typeInfo(pica.CullMode).@"enum".fields));
+        std.debug.assert(std.meta.eql(@typeInfo(CullMode).@"enum".field_values, @typeInfo(pica.CullMode).@"enum".field_values));
     }
 };
 

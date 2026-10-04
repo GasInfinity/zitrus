@@ -73,7 +73,7 @@ pub const UniformState = struct {
     /// All other constants have been copied into their respective arrays.
     shader_dirty: std.EnumArray(mango.ShaderStage, ?*backend.Shader),
 
-    floating_dirty: std.EnumArray(mango.ShaderStage, std.EnumSet(pica.shader.register.Source.Constant)) = .initFill(.initEmpty()),
+    floating_dirty: std.EnumArray(mango.ShaderStage, std.EnumSet(pica.shader.register.Source.Constant)) = .initFill(.empty),
 
     // Stored as XYZW
     floating_constants: std.EnumArray(mango.ShaderStage, std.EnumArray(pica.shader.register.Source.Constant, [4]f32)),
@@ -763,7 +763,7 @@ fn emitFloatUniforms(flt_dirty: *std.EnumSet(pica.shader.register.Source.Constan
         queue.addConsecutive(p3d, &p3d_shader.float_uniform_data[0], @ptrCast(flt_constants.values[@intFromEnum(initial)..][0..seq_constants]));
     }
 
-    flt_dirty.* = .initEmpty();
+    flt_dirty.* = .empty;
 }
 
 const RenderingState = @This();

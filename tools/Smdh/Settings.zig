@@ -282,7 +282,7 @@ pub fn toSmdh(settings: Settings, icons: smdh.Icons) !smdh.Smdh {
             portuguese,
             russian,
             traditional_chinese,
-        } ++ (.{std.mem.zeroes(smdh.Title)} ** 4),
+        } ++ @as([4]smdh.Title, @splat(std.mem.zeroes(smdh.Title))),
         .settings = smdh.Settings{
             .region_ratings = settings.ratings.toSmdh(),
             .region_lockout = if (settings.region_lockout) |lockout| lockout.toSmdh() else .free,

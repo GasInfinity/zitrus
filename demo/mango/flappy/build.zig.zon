@@ -2,7 +2,7 @@
     .name = .flappy_gpu,
     .version = "0.0.0",
     .fingerprint = 0x5b4baf94456ccea8, // Changing this has security and trust implications.
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .zitrus = .{ .path = "../../../" },
         .common = .{ .path = "../common" },

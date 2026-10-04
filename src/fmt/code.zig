@@ -14,12 +14,12 @@ pub const Segment = struct {
         rodata,
         data,
 
-        pub fn fromElfFlags(flags: u32) Kind {
+        pub fn fromElfFlags(flags: elf.PF) Kind {
             return switch (flags) {
-                elf.PF_R | elf.PF_W | elf.PF_X => .any,
-                elf.PF_R | elf.PF_X => .text,
-                elf.PF_R => .rodata,
-                elf.PF_R | elf.PF_W => .data,
+                .{ .R = true, .W = true, .X = true } => .any,
+                .{ .R = true, .X = true } => .text,
+                .{ .R = true } => .rodata,
+                .{ .R = true, .W = true } => .data,
                 else => .unknown,
             };
         }
@@ -75,20 +75,20 @@ pub const Info = struct {
 
         try reader.seekTo(hdr.e_phoff);
         for (0..hdr.e_phnum) |_| {
-            const phdr = try reader.interface.takeStruct(elf.Elf32_Phdr, .little);
+            const phdr = try reader.interface.takeStruct(elf.Elf32.Phdr, .little);
 
-            if (phdr.p_type == elf.PT_INTERP) return error.DynamicallyLinked;
-            if (phdr.p_type != elf.PT_LOAD or phdr.p_memsz == 0) continue;
+            if (phdr.type == elf.PT.INTERP) return error.DynamicallyLinked;
+            if (phdr.type != elf.PT.LOAD or phdr.memsz == 0) continue;
 
-            const kind: Segment.Kind = .fromElfFlags(phdr.p_flags);
+            const kind: Segment.Kind = .fromElfFlags(phdr.flags);
 
             try segments.append(gpa, .{
                 .kind = kind,
-                .physical_address = phdr.p_paddr,
-                .virtual_address = phdr.p_vaddr,
-                .file_offset = phdr.p_offset,
-                .file_size = phdr.p_filesz,
-                .memory_size = phdr.p_memsz,
+                .physical_address = phdr.paddr,
+                .virtual_address = phdr.vaddr,
+                .file_offset = phdr.offset,
+                .file_size = phdr.filesz,
+                .memory_size = phdr.memsz,
             });
         }
 

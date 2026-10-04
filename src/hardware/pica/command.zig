@@ -219,7 +219,7 @@ pub const Queue = struct {
 
         const id: Id = .fromRegister(base, register);
 
-        switch (comptime std.math.order(@bitSizeOf(Child), @bitSizeOf(u32))) {
+        switch (comptime std.math.order(@sizeOf(Child), @sizeOf(u32))) {
             .eq => queue.addMaskedBuffer(id, &.{switch (child_info) {
                 .@"enum" => @intFromEnum(value),
                 else => @bitCast(value),
@@ -229,11 +229,11 @@ pub const Queue = struct {
                     .array => |a| if (@bitSizeOf(a.child) != @bitSizeOf(u32))
                         @compileError("only arrays of 32-bit types are supported for incremental writes")
                     else
-                        @as([a.len]u32, @bitCast(value)),
-                    .@"struct" => |s| if (s.layout == .auto or (@bitSizeOf(Child) % @bitSizeOf(u32)) != 0)
+                        @as(*align(@alignOf(Child)) const [a.len]u32, @ptrCast(&value)).*,
+                    .@"struct" => |s| if (s.layout == .auto or (@sizeOf(Child) % @sizeOf(u32)) != 0)
                         @compileError("only non-auto structs with a bitSize multiple of 32 are supported")
                     else
-                        @as([@divExact(@bitSizeOf(Child), @bitSizeOf(u32))]u32, @bitCast(value)),
+                        @as(*align(@alignOf(Child)) const [@divExact(@sizeOf(Child), @sizeOf(u32))]u32, @ptrCast(&value)).*,
                     else => @compileError("unsupported type for incremental write"),
                 };
 
@@ -251,13 +251,13 @@ pub const Queue = struct {
 
         comptime std.debug.assert(st_ty.is_tuple);
 
-        var needed_field_types: [st_ty.fields.len]type = undefined;
+        var needed_field_types: [st_ty.field_types.len]type = undefined;
 
-        @setEvalBranchQuota(st_ty.fields.len * 2000);
-        for (st_ty.fields, 0..) |field, i| {
-            std.debug.assert(@typeInfo(field.type) == .pointer);
+        @setEvalBranchQuota(st_ty.field_types.len * 2000);
+        for (st_ty.field_types, 0..) |Type, i| {
+            std.debug.assert(@typeInfo(Type) == .pointer);
 
-            const f_ty = @typeInfo(field.type).pointer;
+            const f_ty = @typeInfo(Type).pointer;
             const current = registers[i];
             const current_id: Id = .fromRegister(base, current);
 

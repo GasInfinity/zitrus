@@ -17,6 +17,7 @@ pub const separator = '/';
 // has been arbitrarily chosen.
 // NOTE: We choose this instead of multiple sessions because cancellation needs it.
 // You can't cancel an IPC call! (AFAIK)
+// TODO: maybe have a pool of socket sessions
 const socket_busy_loop_workaround_ns = 100000;
 
 pub const Ownage = enum(u1) { unowned, owned };
@@ -404,9 +405,33 @@ pub fn operate(storage: *Storage, io: std.Io, operation: Io.Operation) Io.Cancel
         .net_receive => |op| .{
             .net_receive = nr: {
                 const stored, const flags = storage.getDescriptionStoredFlags(io, op.socket_handle);
-                std.debug.assert(flags.kind == .socket);
+                if (flags.kind != .socket) break :nr .{ error.Unexpected, 0 };
 
                 break :nr storage.netReceive(stored.socket, op.message_buffer, op.data_buffer, op.flags);
+            },
+        },
+        .net_send => |op| .{
+            .net_send = nr: {
+                const stored, const flags = storage.getDescriptionStoredFlags(io, op.socket_handle);
+                if (flags.kind != .socket) break :nr .{ error.Unexpected, 0 };
+
+                break :nr storage.netSend(stored.socket, op.messages, op.flags);
+            },
+        },
+        .net_read => |op| .{
+            .net_read = nr: {
+                const stored, const flags = storage.getDescriptionStoredFlags(io, op.socket_handle);
+                if (flags.kind != .socket) break :nr error.Unexpected;
+
+                break :nr storage.netRead(stored.socket, op.data[0]);
+            },
+        },
+        .net_write => |op| .{
+            .net_write = nr: {
+                const stored, const flags = storage.getDescriptionStoredFlags(io, op.socket_handle);
+                if (flags.kind != .socket) break :nr error.Unexpected;
+
+                break :nr storage.netWrite(stored.socket, op.data[0]);
             },
         },
         .device_io_control => unreachable,
@@ -475,6 +500,34 @@ fn batchAwait(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, b: *Io.Batc
                 const result: Io.Operation.Result = switch (submission.operation) {
                     .device_io_control => unreachable,
                     .file_read_streaming, .file_write_streaming => try storage.operate(io, submission.operation),
+                    .net_read => |op| {
+                        const stored, const flags = storage.getDescriptionStoredFlags(io, op.socket_handle);
+                        std.debug.assert(flags.kind == .socket);
+
+                        polls.add(gpa, b, stored.socket, .{
+                            .in = true,
+                        }) catch |e| switch (e) {
+                            error.OutOfMemory => {
+                                if (concurrency) return error.ConcurrencyUnavailable;
+                                break :grab_poll;
+                            },
+                        };
+                        break :nb;
+                    },
+                    .net_write => |op| {
+                        const stored, const flags = storage.getDescriptionStoredFlags(io, op.socket_handle);
+                        std.debug.assert(flags.kind == .socket);
+
+                        polls.add(gpa, b, stored.socket, .{
+                            .out = true,
+                        }) catch |e| switch (e) {
+                            error.OutOfMemory => {
+                                if (concurrency) return error.ConcurrencyUnavailable;
+                                break :grab_poll;
+                            },
+                        };
+                        break :nb;
+                    },
                     .net_receive => |recv| .{
                         .net_receive = nr: {
                             const stored, const flags = storage.getDescriptionStoredFlags(io, recv.socket_handle);
@@ -506,6 +559,35 @@ fn batchAwait(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, b: *Io.Batc
                             }
 
                             break :nr .{ null, recv.message_buffer.len };
+                        },
+                    },
+                    .net_send => |op| .{
+                        .net_send = nr: {
+                            const stored, const flags = storage.getDescriptionStoredFlags(io, op.socket_handle);
+                            std.debug.assert(flags.kind == .socket);
+
+                            const sock = stored.socket;
+
+                            for (op.messages, 0..) |*msg, i| {
+                                storage.netSendOne(sock, msg, op.flags) catch |err| switch (err) {
+                                    error.WouldBlock => {
+                                        if (i > 0) break :nr .{ null, i };
+
+                                        polls.add(gpa, b, sock, .{
+                                            .in = true,
+                                        }) catch |e| switch (e) {
+                                            error.OutOfMemory => {
+                                                if (concurrency) return error.ConcurrencyUnavailable;
+                                                break :grab_poll;
+                                            },
+                                        };
+                                        break :nb;
+                                    },
+                                    else => |e| break :nr .{ e, i },
+                                };
+                            }
+
+                            break :nr .{ null, op.messages.len };
                         },
                     },
                 };
@@ -625,7 +707,7 @@ pub const OpenFlags = struct {
         exclusive,
     };
 
-    mode: Io.File.OpenMode,
+    mode: Io.Dir.OpenFileOptions.Mode,
     create: Create = .none,
     allow: Allow = .any,
 };
@@ -1178,7 +1260,7 @@ pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: *const 
 
 pub fn netBind(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io.net.IpAddress, opts: Io.net.IpAddress.BindOptions) Io.net.IpAddress.BindError!Io.net.Socket {
     if (storage.net.soc.session == horizon.Session.Client.none) return error.NetworkDown;
-    if (opts.ip6_only or address.* != .ip4) return error.AddressFamilyUnsupported;
+    if (opts.ip6_only == true or address.* != .ip4) return error.AddressFamilyUnsupported;
 
     const proto = opts.protocol orelse .udp;
 
@@ -1924,13 +2006,8 @@ pub fn writeStreaming(storage: *Storage, io: std.Io, handle: Descriptor, buffer:
     };
 }
 
-pub fn netRead(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []u8) Io.net.Stream.Reader.Error!usize {
-    const stored, const flags = storage.getDescriptionStoredFlags(io, handle);
-
-    if (flags.kind != .socket) return error.Unexpected;
-
+pub fn netRead(storage: *Storage, sock: SocketUser.Descriptor, buffer: []u8) Io.Operation.NetRead.Result {
     const soc = storage.net.soc;
-    const sock = stored.socket;
 
     while (true) {
         const maybe_received = soc.sendReceiveFromMapped(sock, .{}, buffer, null) catch |err| switch (err) {
@@ -1938,7 +2015,7 @@ pub fn netRead(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []u8) 
         };
 
         switch (maybe_received.errno()) {
-            .SUCCESS => return @intCast(@intFromEnum(maybe_received)),
+            .SUCCESS => return .{ .data_len = @bitCast(maybe_received) },
             .AGAIN => horizon.sleepThread(socket_busy_loop_workaround_ns),
             .NOMEM => return error.SystemResources,
             .CONNRESET => return error.ConnectionResetByPeer,
@@ -2020,13 +2097,8 @@ fn netReceiveOne(storage: *Storage, sock: SocketUser.Descriptor, msg: *Io.net.In
     }
 }
 
-pub fn netWrite(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []const u8) Io.net.Stream.Writer.Error!usize {
-    const stored, const flags = storage.getDescriptionStoredFlags(io, handle);
-
-    if (flags.kind != .socket) return error.Unexpected;
-
+pub fn netWrite(storage: *Storage, sock: SocketUser.Descriptor, buffer: []const u8) Io.Operation.NetWrite.Result {
     const soc = storage.net.soc;
-    const sock = stored.socket;
 
     while (true) {
         const maybe_sent = soc.sendSendToMapped(sock, .{}, buffer, null) catch |err| switch (err) {
@@ -2043,35 +2115,52 @@ pub fn netWrite(storage: *Storage, io: std.Io, handle: Descriptor, buffer: []con
     }
 }
 
-pub fn netSend(storage: *Storage, io: std.Io, handle: Descriptor, messages: []Io.net.OutgoingMessage, flags: Io.net.SendFlags) struct { ?Io.net.Socket.SendError, usize } {
-    const stored, const desc_flags = storage.getDescriptionStoredFlags(io, handle);
+pub fn netSend(storage: *Storage, sock: SocketUser.Descriptor, messages: []Io.net.OutgoingMessage, flags: Io.net.SendFlags) Io.Operation.NetSend.Result {
+    for (messages, 0..) |*mes, i| {
+        sent: while (true) {
+            storage.netSendOne(sock, mes, flags) catch |err| switch (err) {
+                error.WouldBlock => {
+                    if (i > 0) return .{ null, i };
 
-    if (desc_flags.kind != .socket) return .{ error.Unexpected, 0 };
+                    horizon.sleepThread(socket_busy_loop_workaround_ns);
+                    continue :sent;
+                },
+                else => |e| return .{ e, i },
+            }; 
 
-    const soc = storage.net.soc;
-    const sock = stored.socket;
-
-    for (messages, 0..) |mes, i| {
-        if (mes.address.* != .ip4) return .{ error.AddressFamilyUnsupported, i };
-
-        const addr: SocketUser.IpAddress = .{ .ip4 = address4ToSoc(mes.address.ip4) };
-
-        msg_sent: while (true) {
-            const maybe_sent = soc.sendSendToMapped(sock, .{
-                .out_of_band = flags.oob,
-            }, mes.data_ptr[0..mes.data_len], &addr) catch |err| switch (err) {
-                else => return .{ error.Unexpected, i },
-            };
-
-            switch (maybe_sent.errno()) {
-                .SUCCESS => break :msg_sent,
-                .AGAIN => horizon.sleepThread(socket_busy_loop_workaround_ns),
-                else => |e| return .{ unexpectedSocErrno(e), i },
-            }
+            break;
         }
     }
 
     return .{ null, messages.len };
+}
+
+const NetSendOneError = Io.UnexpectedError || error{
+    SystemResources,
+    AddressFamilyUnsupported,
+    WouldBlock,
+};
+
+fn netSendOne(storage: *Storage, sock: SocketUser.Descriptor, msg: *const Io.net.OutgoingMessage, flags: Io.net.SendFlags) NetSendOneError!void {
+    const soc = storage.net.soc;
+    if (msg.address.* != .ip4) return error.AddressFamilyUnsupported;
+
+    const addr: SocketUser.IpAddress = .{ .ip4 = address4ToSoc(msg.address.ip4) };
+
+    msg_sent: while (true) {
+        const maybe_sent = soc.sendSendToMapped(sock, .{
+            .out_of_band = flags.oob,
+        }, msg.data_ptr[0..msg.data_len], &addr) catch |err| switch (err) {
+            else => return error.Unexpected,
+        };
+
+        switch (maybe_sent.errno()) {
+            .SUCCESS => break :msg_sent,
+            .AGAIN => return error.WouldBlock,
+            .NOMEM => return error.SystemResources,
+            else => |e| return unexpectedSocErrno(e),
+        }
+    }
 }
 
 pub fn seekBy(storage: *Storage, io: std.Io, handle: Descriptor, offset: i64) Io.File.SeekError!void {
@@ -2455,7 +2544,7 @@ fn unexpectedSocErrno(errno: SocketUser.E) Io.UnexpectedError {
 
 const testing = std.testing;
 
-const is_debug = builtin.mode == .Debug;
+const is_debug = builtin.mode == .debug;
 const Storage = @This();
 const log = std.log.scoped(.io_storage);
 

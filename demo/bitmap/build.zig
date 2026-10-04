@@ -51,5 +51,5 @@ pub fn build(b: *std.Build) void {
     const link_step = b.step("link", "Link (send and execute) the 3dsx to a 3ds");
     link_step.dependOn(&link.run.step);
 
-    if (b.args) |args| link.run.addArgs(args);
+    link.run.addPassthruArgs();
 }

@@ -56,7 +56,10 @@ pub fn run(args: Dump, io: std.Io, arena: std.mem.Allocator) !u8 {
 
             pica.morton.convert(.untile, 8, @ptrCast(img.pixels.rgba32), tiled_pixels, .full(width, height, @sizeOf(zptx.Header.Metadata.Format.Abgr8888)));
 
-            for (img.pixels.rgba32) |*pixel| pixel.* = @bitCast(@byteSwap(@as(u32, @bitCast(pixel.*))));
+            for (img.pixels.rgba32) |*pixel| {
+                const px_u32: *align(1) u32 = @ptrCast(pixel);
+                px_u32.* = @byteSwap(px_u32.*);
+            }
         },
         else => @panic("TODO"),
     }

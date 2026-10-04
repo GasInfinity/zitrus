@@ -33,7 +33,7 @@ pub const target = struct {
     };
 };
 
-pub fn build(b: *Build) void {
+pub fn build(b: *Build) !void {
     const optimize = b.standardOptimizeOption(.{});
     const tools_target = b.standardTargetOptions(.{});
 
@@ -56,7 +56,7 @@ pub fn build(b: *Build) void {
     const zigimg = zigimg_dep.module("zigimg");
 
     const config = b.addOptions();
-    const version_slice = queryBuildVersion(b);
+    const version_slice = try queryBuildVersion(b);
 
     config.addOption([]const u8, "version", version_slice);
 
@@ -129,10 +129,7 @@ pub fn build(b: *Build) void {
     b.installArtifact(tools_exe);
 
     const run_tool = b.addRunArtifact(tools_exe);
-
-    if (b.args) |args| {
-        run_tool.addArgs(args);
-    }
+    run_tool.addPassthruArgs();
 
     const run_step = b.step("run", "Run zitrus tools");
     run_step.dependOn(&run_tool.step);
@@ -141,7 +138,7 @@ pub fn build(b: *Build) void {
 }
 
 // NOTE: This literally what zig does, almost 1:1 but we have prereleases so we have to work with that.
-fn queryBuildVersion(b: *Build) []const u8 {
+fn queryBuildVersion(b: *Build) ![]const u8 {
     const maybe_version = b.option([]const u8, "version-string", "Override zitrus version");
 
     if (maybe_version) |ver| return ver;
@@ -151,13 +148,39 @@ fn queryBuildVersion(b: *Build) []const u8 {
         std.process.exit(1);
     }
 
+    git: {
+        const io = b.graph.io;
+        const arena = b.graph.arena;
+        const git_file = b.root.openFile(io, ".git", .{ .allow_directory = false }) catch |err| switch (err) {
+            error.IsDir => {
+                b.dependOnFileMetadata(b.path(".git/logs/HEAD"));
+                break :git;
+            },
+            else => |e| return e,
+        };
+        defer git_file.close(io);
+        b.dependOnFileContents(b.path(".git"));
+        var line_buffer: ["gitdir: ".len + std.Io.Dir.max_path_bytes + 1]u8 = undefined;
+        var git_file_reader = git_file.reader(io, &line_buffer);
+        if (std.mem.cutPrefix(u8, std.mem.trimEnd(u8, try git_file_reader.interface.allocRemaining(
+            arena,
+            .limited("gitdir: ".len + std.Io.Dir.max_path_bytes + "\r\n".len),
+        ), "\r\n"), "gitdir: ")) |git_dir| {
+            const head_file = b.pathJoin(&.{ git_dir, "logs", "HEAD" });
+            b.dependOnFileMetadata(if (std.Io.Dir.path.isAbsolute(head_file))
+                b.graph.cwdRelativePath(head_file)
+            else
+                b.path(head_file));
+        }
+    }
+
     const version_string = b.fmt("{f}", .{version});
 
     var code: u8 = undefined;
     const git_describe_untrimmed = b.runAllowFail(&.{
         "git",
         "-C",
-        b.build_root.path orelse ".",
+        b.fmt("{f}", .{b.root}),
         "--git-dir",
         ".git",
         "describe",
@@ -273,8 +296,6 @@ fn createToolsExecutable(b: *Build, config: *Build.Step.Options, optimize: std.b
     return .{ tools, b.addExecutable(.{
         .name = "zitrus",
         .root_module = tools,
-        // XXX: self-hosted backend crashes when bitcasting a packed struct with a 0-bit field.
-        .use_llvm = true,
     }) };
 }
 
@@ -301,11 +322,7 @@ fn makeScriptSteps(b: *Build, zitrus: *Build.Module, plz: *Build.Module) void {
 
         const run_script_step = b.step("run-" ++ script.name, "Run " ++ script.name);
         const run_script = b.addRunArtifact(script_exe);
-
-        if (b.args) |args| {
-            run_script.addArgs(args);
-        }
-
+        run_script.addPassthruArgs();
         run_script_step.dependOn(&run_script.step);
     }
 }

@@ -7,7 +7,7 @@ type: mango.QueryType,
 statistics: mango.QueryStatistics,
 /// Size of a single query in `storage`
 query_size: u32,
-available: std.bit_set.DynamicBitSetUnmanaged,
+available: std.bit_set.Dynamic,
 query_storage: []u8,
 
 pub fn init(gpa: std.mem.Allocator, create_info: mango.QueryPoolCreateInfo) !QueryPool {
@@ -19,7 +19,7 @@ pub fn init(gpa: std.mem.Allocator, create_info: mango.QueryPoolCreateInfo) !Que
 
     const alignment: std.mem.Alignment = .max(.of(u32), query_alignment);
     const query_storage_size = query_size * create_info.count;
-    const available_start = std.mem.alignForward(u32, query_storage_size, @alignOf(std.bit_set.DynamicBitSetUnmanaged.MaskInt));
+    const available_start = std.mem.alignForward(u32, query_storage_size, @alignOf(std.bit_set.Dynamic.MaskInt));
     const available_size = std.mem.alignForward(u32, create_info.count, @bitSizeOf(u32)) / 8;
     const needed_size = available_start + available_size;
 
@@ -46,7 +46,7 @@ pub fn deinit(pool: *QueryPool, gpa: std.mem.Allocator) void {
         // .performance_counter => @panic("TODO"),
     };
 
-    const available_start = std.mem.alignForward(u32, pool.query_storage.len, @alignOf(std.bit_set.DynamicBitSetUnmanaged.MaskInt));
+    const available_start = std.mem.alignForward(u32, pool.query_storage.len, @alignOf(std.bit_set.Dynamic.MaskInt));
     const available_size = std.mem.alignForward(u32, pool.available.bit_length, @bitSizeOf(u32)) / 8;
     const needed_size = available_start + available_size;
     const all = pool.query_storage.ptr[0..needed_size];

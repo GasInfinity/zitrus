@@ -229,17 +229,17 @@ pub const Integral = packed union(u4) {
 };
 
 comptime {
-    std.debug.assert(@typeInfo(AddressComponent).@"enum".is_exhaustive);
-    std.debug.assert(@typeInfo(Source).@"enum".is_exhaustive);
-    std.debug.assert(@typeInfo(Destination).@"enum".is_exhaustive);
-    std.debug.assert(@typeInfo(Integral.Boolean).@"enum".is_exhaustive);
-    std.debug.assert(@typeInfo(Integral.Integer).@"enum".is_exhaustive);
+    std.debug.assert(@typeInfo(AddressComponent).@"enum".mode == .exhaustive);
+    std.debug.assert(@typeInfo(Source).@"enum".mode == .exhaustive);
+    std.debug.assert(@typeInfo(Destination).@"enum".mode == .exhaustive);
+    std.debug.assert(@typeInfo(Integral.Boolean).@"enum".mode == .exhaustive);
+    std.debug.assert(@typeInfo(Integral.Integer).@"enum".mode == .exhaustive);
 
-    std.debug.assert(@typeInfo(Source.Input).@"enum".fields.len == 16);
-    std.debug.assert(@typeInfo(Temporary).@"enum".fields.len == 16);
-    std.debug.assert(@typeInfo(Source.Constant).@"enum".fields.len == 96);
+    std.debug.assert(@typeInfo(Source.Input).@"enum".field_names.len == 16);
+    std.debug.assert(@typeInfo(Temporary).@"enum".field_names.len == 16);
+    std.debug.assert(@typeInfo(Source.Constant).@"enum".field_names.len == 96);
 
-    std.debug.assert(@typeInfo(Destination.Output).@"enum".fields.len == 16);
+    std.debug.assert(@typeInfo(Destination.Output).@"enum".field_names.len == 16);
 }
 
 const std = @import("std");

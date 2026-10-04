@@ -2,28 +2,28 @@
     .name = .zitrus,
     .version = "0.0.0",
     .fingerprint = 0xa735bcf8f4b10813, // Changing this has security and trust implications.
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
         .zsflt = .{
-            .url = "git+https://codeberg.org/GasInfinity/zsflt#c56aaff640b93a7eab9024e37ea35c3549512bd9",
-            .hash = "zsflt-0.0.1-_pCibYQ5AACrcZqdbOuwZndPywPWurg1v8PH4nuSHPU0",
+            .url = "git+https://codeberg.org/GasInfinity/zsflt.git#6153bfec12f5bdcfab5c23757c416aeb760e1cbd",
+            .hash = "zsflt-0.0.1-_pCibUQ5AABKO6EW9hMZk6rfW6EL8Vf1PvH7vHc_1Alc",
         },
         .zigimg = .{
-            .url = "git+https://github.com/zigimg/zigimg.git#c7e81a13bff1cf4c5b7f085a8360f9d551143d40",
-            .hash = "zigimg-0.1.0-8_eo2uScFwCnpzB1Y2n_jf3euDfMEeCLxJE_E5_W5BNe",
+            .url = "git+https://github.com/GasInfinity-Forks/zigimg.git?ref=0.17.x#8e2de871c96cd8141c041c4a283161ab04b714b2",
+            .hash = "zigimg-0.1.0-8_eo2uRQGADxyzY0Z-iR4EOTNMscsXDYj5iNwCUOS9OJ",
         },
         .plz = .{
-            .url = "git+https://codeberg.org/GasInfinity/plz.git#80ae56fce4a7ed72201457a023496308b0186aff",
-            .hash = "plz-0.0.1-_2WTq-zrAAAXt77b_rHrJqTleqWhBxZoFsxv-oljGKoz",
+            .url = "git+https://codeberg.org/GasInfinity/plz.git#e4a9c6db4bf209ab32e5c96c5813c7807bd2c4be",
+            .hash = "plz-0.0.1-_2WTq7PuAADuRc_VPtguvQjoNsVvzSARoC1NvNcrWwZ7",
         },
         .etz = .{
-            .url = "git+https://codeberg.org/GasInfinity/etz#fadbb7a1c5f410a0ebc087f4db7813e32ec8d51e",
-            .hash = "etz-0.0.1-wMlc0CzAAACMm7jLFn5qpLLPVDudXQZo7X617nTd-1_X",
+            .url = "git+https://codeberg.org/GasInfinity/etz.git#d1443f64fa65ab1fb362015c37dde10d5f0e132f",
+            .hash = "etz-0.0.1-wMlc0Fa_AAAd3ZR-0Aw7NCgYekFp8q-v67fqcqiwETr0",
         },
         // Yes, we need our own fork of zig `lib/` until upstream merges it (if they merge it).
         .@"zig-lib" = .{
-            .url = "git+https://codeberg.org/GasInfinity/zig.git?ref=the-os-independence-day-lib-only-0.16.x#06cf4f208f171c42fd188adae5dcad0d80b9001f",
-            .hash = "N-V-__8AAJI-0AtIn8kW19Nbgv_RXVtzd66Bo4UAm3pv6uk1",
+            .url = "git+https://codeberg.org/GasInfinity/zig.git?ref=the-os-independence-day-0.17.x-lib-only#84782d0678f4fddee82d2586c782154274f2bb44",
+            .hash = "N-V-__8AAAfnAQx5DJGQ2ypUYjLmr4AQJm55qi8x0VRw2hfi",
         },
     },
     .paths = .{

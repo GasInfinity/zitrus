@@ -65,7 +65,7 @@ pub const Interrupt = enum(u8) {
         }
 
         pub fn popBackAll(queue: *Queue) Set {
-            var interrupts = Interrupt.Set.initEmpty();
+            var interrupts = Interrupt.Set.empty;
 
             while (queue.popBack()) |int| {
                 interrupts.setPresent(int, true);

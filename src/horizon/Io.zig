@@ -91,6 +91,7 @@ pub const Operation = struct {
 
 pub const net = struct {
     pub const has_unix_sockets = false;
+    pub const cmsg_align = 1;
 
     pub const Socket = struct {
         pub const Handle = Storage.Descriptor;
@@ -544,7 +545,7 @@ pub const VTable = enum(u0) {
         };
     }
 
-    pub fn dirCreateFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.File.CreateFlags) Io.File.OpenError!Io.File {
+    pub fn dirCreateFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.CreateFileOptions) Io.File.OpenError!Io.File {
         if (opts.lock == .exclusive) return error.FileLocksUnsupported;
 
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
@@ -576,7 +577,7 @@ pub const VTable = enum(u0) {
         return try Storage.createFileAtomic(hio.io(), dir, sub_path, opts);
     }
 
-    pub fn dirOpenFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.File.OpenFlags) Io.File.OpenError!Io.File {
+    pub fn dirOpenFile(_: VTable, ud: ?*anyopaque, dir: Io.Dir, path: []const u8, opts: Io.Dir.OpenFileOptions) Io.File.OpenError!Io.File {
         if (opts.lock == .exclusive) return error.FileLocksUnsupported;
 
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
@@ -860,7 +861,7 @@ pub const VTable = enum(u0) {
         try mm.file.writePositionalAll(hio.io(), mm.memory, mm.offset);
     }
 
-    pub fn processExecutableOpen(_: VTable, _: ?*anyopaque, _: Io.File.OpenFlags) std.process.OpenExecutableError!Io.File {
+    pub fn processExecutableOpen(_: VTable, _: ?*anyopaque, _: Io.Dir.OpenFileOptions) std.process.OpenExecutableError!Io.File {
         return error.OperationUnsupported; // XXX: This could be supported but useless as we're either in a NCCH or 3dsx.
     }
 
@@ -1085,10 +1086,10 @@ pub const VTable = enum(u0) {
         @panic("TODO");
     }
 
-    pub fn netClose(_: VTable, ud: ?*anyopaque, sockets: []const Io.net.Socket.Handle) void {
+    pub fn netClose(_: VTable, ud: ?*anyopaque, sockets: []const Io.net.Socket) void {
         const hio: *HIo = @ptrCast(@alignCast(ud.?));
 
-        for (sockets) |handle| hio.storage.close(hio.io(), hio.gpa, handle);
+        for (sockets) |socket| hio.storage.close(hio.io(), hio.gpa, socket.handle);
     }
 
     pub fn netShutdown(_: VTable, ud: ?*anyopaque, handle: Io.net.Socket.Handle, how: Io.net.ShutdownHow) Io.net.ShutdownError!void {

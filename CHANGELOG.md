@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Updated to zig 0.17.x
+
+## [2026-09-23 -> 2026-10-03 (0.0.0-pre2)] 
+
 - Added `hardware.config.@"11"` for config registers available from both arm11/arm9 cpus
 - Added support for mapping address ranges in the ncch maker/dumper (and now we can encode/decode all descriptors!)
 - Added `lzrev.DecompressionState` for diagnostics when the compressed data is invalid in `lzrev.bufDecompress`.

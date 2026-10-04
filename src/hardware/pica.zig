@@ -85,9 +85,9 @@ pub const F7_16x4 = extern struct {
 
 pub const morton = struct {
     /// Returns the morton/z-order coordinates for `value`
-    pub fn toDimensions(comptime T: type, comptime dimensions: usize, value: T) [dimensions]std.meta.Int(.unsigned, @divExact(@bitSizeOf(T), dimensions)) {
+    pub fn toDimensions(comptime T: type, comptime dimensions: usize, value: T) [dimensions]@Int(.unsigned, @divExact(@bitSizeOf(T), dimensions)) {
         std.debug.assert(@typeInfo(T) == .int);
-        const DecomposedInt = std.meta.Int(.unsigned, @divExact(@bitSizeOf(T), dimensions));
+        const DecomposedInt = @Int(.unsigned, @divExact(@bitSizeOf(T), dimensions));
 
         // Basically bits are interleaved
         // 2-dimensional 8-bits example: yxyxyxyx
@@ -112,10 +112,10 @@ pub const morton = struct {
     }
 
     /// Returns the morton linear index for the coordinates.
-    pub fn toIndex(comptime T: type, comptime dimensions: usize, value: [dimensions]T) std.meta.Int(.unsigned, dimensions * @bitSizeOf(T)) {
+    pub fn toIndex(comptime T: type, comptime dimensions: usize, value: [dimensions]T) @Int(.unsigned, dimensions * @bitSizeOf(T)) {
         std.debug.assert(@typeInfo(T) == .int);
 
-        const IndexType = std.meta.Int(.unsigned, dimensions * @bitSizeOf(T));
+        const IndexType = @Int(.unsigned, dimensions * @bitSizeOf(T));
         const max_index = dimensions * @bitSizeOf(T);
         var index: IndexType = 0;
 

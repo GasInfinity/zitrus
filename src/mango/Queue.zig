@@ -57,19 +57,10 @@ pub const Fill = extern struct {
             const clear_scale: usize, const clear_value: u32, const clear_size: Fill.Size = switch (b_image.info.format) {
                 .a8b8g8r8_unorm => .{
                     @sizeOf(u32),
-                    @bitCast(pica.ColorFormat.Abgr8888{
-                        .r = color[0],
-                        .g = color[1],
-                        .b = color[2],
-                        .a = color[3],
-                    }),
+                    @byteSwap(@as(u32, @bitCast(color[0..4].*))),
                     .@"32",
                 },
-                .b8g8r8_unorm => .{ 3, @as(u24, @bitCast(pica.ColorFormat.Bgr888{
-                    .r = color[0],
-                    .g = color[1],
-                    .b = color[2],
-                })), .@"24" },
+                .b8g8r8_unorm => .{ 3, @byteSwap(@as(u24, @bitCast(color[0..3].*))), .@"24" },
                 .r5g6b5_unorm_pack16, .r5g5b5a1_unorm_pack16, .r4g4b4a4_unorm_pack16, .g8r8_unorm => .{
                     @sizeOf(u16),
                     @as(u16, switch (b_image.info.format) {
@@ -90,10 +81,7 @@ pub const Fill = extern struct {
                             .b = @intCast((@as(usize, color[2]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
                             .a = @intCast((@as(usize, color[3]) * std.math.maxInt(u4)) / std.math.maxInt(u8)),
                         }),
-                        .g8r8_unorm => @bitCast(pica.TextureUnitFormat.Hilo88{
-                            .r = color[0],
-                            .g = color[1],
-                        }),
+                        .g8r8_unorm => @byteSwap(@as(u16, @bitCast(color[0..2].*))),
                         else => unreachable,
                     }),
                     .@"16",

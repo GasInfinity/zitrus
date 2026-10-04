@@ -1,7 +1,7 @@
 ![Zitrus Logo](https://codeberg.org/GasInfinity/zitrus/raw/branch/main/assets/zitrus-logo.png)
 
 ---
-![Zig support](https://img.shields.io/badge/Zig-0.16.x-color?logo=zig&color=%23f3ab20)
+![Zig support](https://img.shields.io/badge/Zig-0.17.x-color?logo=zig&color=%23f3ab20)
   
 3DS homebrew sdk written entirely in zig.
 

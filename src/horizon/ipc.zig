@@ -242,21 +242,21 @@ pub const Codec = union(enum) {
                         if (comptime !isValidHandleArrayType(T.Wrapped)) @compileError("a `HandleArray` must be wrapping a struct / tuple of handles");
                         const wrapped_ty = @typeInfo(T.Wrapped).@"struct";
 
-                        comptime var flds: [wrapped_ty.fields.len]u6 = undefined;
+                        comptime var flds: [wrapped_ty.field_types.len]u6 = undefined;
 
-                        inline for (wrapped_ty.fields, 0..) |f, i| {
-                            flds[i] = @divExact(@sizeOf(f.type), 4); // No need to check as HandleArray already does.
+                        inline for (wrapped_ty.field_types, 0..) |Type, i| {
+                            flds[i] = @divExact(@sizeOf(Type), 4); // No need to check as HandleArray already does.
                         }
 
                         const runtime_flds = comptime flds; // NOTE: required to not get "runtime value contains reference to comptime var"
                         break :blk .{ .handle_array = &runtime_flds };
                     }
 
-                    comptime var flds: [st.fields.len]Codec = undefined;
+                    comptime var flds: [st.field_types.len]Codec = undefined;
                     comptime var params: Buffer.PackedCommand.Parameters = .parameters(0, 0);
 
-                    inline for (st.fields, 0..) |f, i| {
-                        flds[i] = comptime .of(f.type);
+                    inline for (st.field_types, 0..) |Type, i| {
+                        flds[i] = comptime .of(Type);
 
                         const fld_params = comptime flds[i].parameters();
 
@@ -321,19 +321,20 @@ pub const Codec = union(enum) {
                 buffer[0] = @bitCast(Buffer.TranslationDescriptor.Handle.init((sz - 1), codec == .move_handle_array));
 
                 var curr: usize = 1;
-                inline for (flds, @typeInfo(WrappedType).@"struct".fields) |fld, info| {
+                inline for (flds, @typeInfo(WrappedType).@"struct".field_names) |fld, name| {
                     // NOTE: We don't do a @bitCast to avoid having to check if its an enum and having to do @intFromEnum :p
-                    buffer[curr..][0..fld].* = @as(*const [fld]u32, @ptrCast(&@field(value.wrapped, info.name))).*;
+                    buffer[curr..][0..fld].* = @as(*const [fld]u32, @ptrCast(&@field(value.wrapped, name))).*;
                     curr += fld;
                 }
             },
             .fields => |flds| {
+                const st = @typeInfo(T).@"struct";
                 var i: usize = 0;
-                inline for (flds, @typeInfo(T).@"struct".fields) |fld, info| {
+                inline for (flds, st.field_names, st.field_types) |fld, name, Type| {
                     const sz = comptime fld.size();
                     defer i += sz;
 
-                    fld.bufWrite(info.type, &@field(value, info.name), buffer[i..]);
+                    fld.bufWrite(Type, &@field(value, name), buffer[i..]);
                 }
             },
         }
@@ -422,22 +423,23 @@ pub const Codec = union(enum) {
                 var result: WrappedType = undefined;
 
                 var i: usize = 1;
-                inline for (flds, @typeInfo(WrappedType).@"struct".fields) |fld, info| {
+                inline for (flds, @typeInfo(WrappedType).@"struct".field_names) |fld, name| {
                     defer i += fld;
 
-                    @as(*[fld]u32, @ptrCast(&@field(result, info.name))).* = buffer[i..][0..fld].*;
+                    @as(*[fld]u32, @ptrCast(&@field(result, name))).* = buffer[i..][0..fld].*;
                 }
 
                 break :blk .array(result);
             },
             .fields => |flds| blk: {
+                const st = @typeInfo(T).@"struct";
                 var result: T = undefined;
 
                 var i: usize = 0;
-                inline for (flds, @typeInfo(T).@"struct".fields) |fld, info| {
+                inline for (flds, st.field_names, st.field_types) |fld, name, Type| {
                     defer i += comptime fld.size();
 
-                    @field(result, info.name) = try fld.bufRead(info.type, buffer[i..]);
+                    @field(result, name) = try fld.bufRead(Type, buffer[i..]);
                 }
 
                 break :blk result;
@@ -665,13 +667,14 @@ pub fn Command(comptime CommandId: type, comptime command_id: CommandId, comptim
 
         if (@typeInfo(StaticOutput) != .@"struct") @compileError("StaticOutput must be a struct containing mutable pointers or slices.");
 
-        for (@typeInfo(StaticOutput).@"struct".fields) |f| {
-            const f_ty = @typeInfo(f.type);
+        const st_ty = @typeInfo(StaticOutput).@"struct";
+        for (st_ty.field_names, st_ty.field_types) |name, Type| {
+            const f_ty = @typeInfo(Type);
 
-            if (f_ty != .pointer) @compileError("StaticOutput field '" ++ f.name ++ "' must be a slice or pointer to one item");
+            if (f_ty != .pointer) @compileError("StaticOutput field '" ++ name ++ "' must be a slice or pointer to one item");
 
             switch (f_ty.pointer.size) {
-                .c, .many => @compileError("StaticOutput field '" ++ f.name ++ "' must be a slice or pointer to one item"),
+                .c, .many => @compileError("StaticOutput field '" ++ name ++ "' must be a slice or pointer to one item"),
                 .slice, .one => {},
             }
         }
@@ -890,8 +893,9 @@ pub const Buffer = extern struct {
         comptime std.debug.assert(DefinedCommand.request.size() <= buffer.packed_command.parameters.len);
         DefinedCommand.request.bufWrite(DefinedCommand.Request, request, &buffer.packed_command.parameters);
 
-        inline for (@typeInfo(DefinedCommand.RequestStaticOutput).@"struct".fields, 0..) |f, i| {
-            const static_buffer: []u8 = @ptrCast(@field(static_output, f.name));
+        const so_ty = @typeInfo(DefinedCommand.RequestStaticOutput).@"struct";
+        inline for (so_ty.field_names, 0..) |name, i| {
+            const static_buffer: []u8 = @ptrCast(@field(static_output, name));
 
             buffer.static.buffers[i] = .{
                 .header = .init(@intCast(static_buffer.len), @intCast(i)),
@@ -1063,8 +1067,8 @@ fn isHandleArray(comptime T: type) bool {
 
 fn isValidHandleArrayType(comptime T: type) bool {
     return switch (@typeInfo(T)) {
-        .@"struct" => |st| for (st.fields) |f| switch (@typeInfo(f.type)) {
-            .@"struct" => if (!isWrappedHandle(f.type)) return false,
+        .@"struct" => |st| for (st.field_types) |Type| switch (@typeInfo(Type)) {
+            .@"struct" => if (!isWrappedHandle(Type)) return false,
             .array => |arr| if (!isWrappedHandle(arr.child)) return false,
             else => return false,
         } else true,
@@ -1117,7 +1121,7 @@ fn isEmbedded(comptime T: type) bool {
 
 fn isWrappedHandle(comptime T: type) bool {
     return switch (@typeInfo(T)) {
-        .@"struct" => |s| s.layout == .@"packed" and s.fields.len == 1 and (T == horizon.Object or isWrappedHandle(s.fields[0].type)),
+        .@"struct" => |s| s.layout == .@"packed" and s.field_types.len == 1 and (T == horizon.Object or isWrappedHandle(s.field_types[0])),
         else => false,
     };
 }
@@ -1128,7 +1132,7 @@ comptime {
 
 const testing = std.testing;
 
-const is_debug = builtin.mode == .Debug;
+const is_debug = builtin.mode == .debug;
 const builtin = @import("builtin");
 const std = @import("std");
 

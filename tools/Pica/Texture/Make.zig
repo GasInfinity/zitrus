@@ -101,7 +101,10 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
 
             pica.morton.convert(.tile, 8, @ptrCast(pixels), @ptrCast(img.pixels.rgba32), .full(img.width, img.height, @sizeOf(OutputFormat.Abgr8888)));
 
-            for (pixels) |*pixel| pixel.* = @bitCast(@byteSwap(@as(u32, @bitCast(pixel.*))));
+            for (pixels) |*pixel| {
+                const px_u32: *align(1) u32 = @ptrCast(pixel);
+                px_u32.* = @byteSwap(px_u32.*);
+            }
             try out.writeAll(@ptrCast(pixels));
         },
         .etc1 => {

@@ -47,17 +47,20 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
     };
     defer arena.free(settings_code);
 
-    var diagnostic: std.zon.parse.Diagnostics = .{};
-    defer diagnostic.deinit(arena);
-
-    const app_settings = std.zon.parse.fromSliceAlloc(Settings, arena, settings_code, &diagnostic, .{}) catch |err| switch (err) {
+    var diagnostics: std.zon.parse.Diagnostics = undefined;
+    const app_settings = std.zon.parse.fromSlice(Settings, .{
+        .gpa = arena,
+        .arena = arena,
+        .source = settings_code,
+        .diagnostics = &diagnostics,
+        .ignore_unknown_fields = false,
+    }) catch |err| switch (err) {
         error.ParseZon => {
-            log.err("error parsing '{s}':\n{f}", .{ args.@"--".settings, diagnostic });
+            log.err("{f}", .{ diagnostics.fmt(args.@"--".settings) });
             return 1;
         },
         else => return err,
     };
-    defer std.zon.parse.free(arena, app_settings);
 
     const output_file, const output_should_close = if (args.output) |out|
         .{ cwd.createFile(io, out, .{}) catch |err| {

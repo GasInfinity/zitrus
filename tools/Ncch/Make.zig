@@ -77,11 +77,17 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
             return 1;
         };
 
-        var diag: std.zon.parse.Diagnostics = .{};
+        var diagnostics: std.zon.parse.Diagnostics = undefined;
         @setEvalBranchQuota(2000);
-        const settings = std.zon.parse.fromSliceAlloc(Settings, arena, zon, &diag, .{}) catch |err| switch (err) {
+        const settings = std.zon.parse.fromSlice(Settings, .{
+            .gpa = gpa,
+            .arena = arena,
+            .source = zon,
+            .diagnostics = &diagnostics,
+            .ignore_unknown_fields = false,
+        }) catch |err| switch (err) {
             error.ParseZon => {
-                log.err("could not parse settings:\n {f}", .{diag});
+                log.err("{f}", .{ diagnostics.fmt(sett) });
                 return 1;
             },
             else => return err,
@@ -89,7 +95,6 @@ pub fn run(args: Make, io: std.Io, arena: std.mem.Allocator) !u8 {
 
         break :set settings;
     } else null;
-    defer if (settings) |set| std.zon.parse.free(gpa, set);
 
     if (settings) |set| {
         if (set.title.len > 8) {

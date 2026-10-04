@@ -655,7 +655,7 @@ const Driver = struct {
                             .traffic = if (stats.anyTraffic()) drv.readTrafficStatistics() else undefined,
                         };
                         const all_slice: []const u32 = @ptrCast(&all);
-                        const set: std.bit_set.IntegerBitSet(32) = @bitCast(stats);
+                        const set: std.bit_set.Integer(32) = @bitCast(stats);
 
                         var i: u32 = 0;
                         var it = set.iterator(.{});

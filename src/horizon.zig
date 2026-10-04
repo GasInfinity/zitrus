@@ -2512,6 +2512,6 @@ pub const ErrorDisplayManager = @import("horizon/ErrorDisplayManager.zig");
 pub const module = @import("horizon/module.zig");
 pub const services = @import("horizon/services.zig");
 
-const is_debug = @import("builtin").mode == .Debug;
+const is_debug = @import("builtin").mode == .debug;
 const std = @import("std");
 const zitrus = @import("zitrus");

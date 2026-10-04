@@ -83,7 +83,7 @@ pub fn LsbRegister(comptime T: type) type {
         const Lsb = @This();
 
         value: T,
-        _: std.meta.Int(.unsigned, @bitSizeOf(u32) - @bitSizeOf(T)) = 0,
+        _: @Int(.unsigned, @bitSizeOf(u32) - @bitSizeOf(T)) = 0,
 
         pub inline fn init(value: T) Lsb {
             return .{ .value = value };
@@ -102,7 +102,7 @@ pub fn MsbRegister(comptime T: type) type {
     return packed struct(u32) {
         const Msb = @This();
 
-        _: std.meta.Int(.unsigned, @bitSizeOf(u32) - @bitSizeOf(T)) = 0,
+        _: @Int(.unsigned, @bitSizeOf(u32) - @bitSizeOf(T)) = 0,
         value: T,
 
         pub inline fn init(value: T) Msb {
@@ -177,7 +177,7 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
 
         pub fn set(bt: anytype, index: usize, value: T) void {
             comptime std.debug.assert(@typeInfo(@TypeOf(bt)) == .pointer);
-            comptime std.debug.assert(!@typeInfo(@TypeOf(bt)).pointer.is_const);
+            comptime std.debug.assert(!@typeInfo(@TypeOf(bt)).pointer.attrs.@"const");
             comptime std.debug.assert(@typeInfo(@TypeOf(bt)).pointer.child == Self);
             std.debug.assert(index < n);
 
