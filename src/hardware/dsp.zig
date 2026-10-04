@@ -7,8 +7,13 @@
 //! Based on the documentation found in GBATEK and 3dbrew:
 //! - https://problemkaputt.de/gbatek.htm#3dssoundandmicrophone
 
+/// An address in DSP units (Each DSP address is a 16-bit value)
 pub const Address = enum(u16) {
     _,
+
+    pub fn byteUnits(addr: Address) u32 {
+        return @as(u32, @intFromEnum(addr)) << 1;
+    }
 
     pub fn init(address: u16) Address {
         return @enumFromInt(address);

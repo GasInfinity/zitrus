@@ -9,13 +9,13 @@ pub const Sink = CdcDsp.Sink;
 pub const IirBiquad = CdcDsp.IirBiquad;
 pub const Biquad = CdcDsp.Biquad;
 pub const TransferFlags = packed struct(u32) {
-    increment_source: bool,
-    increment_destination: bool,
-    _: u30,
+    increment_source: bool = true,
+    increment_destination: bool = true,
+    _: u30 = 0,
 };
 
 pub const Channel = enum(u8) {
-    pub const Direction = enum(u8) { dsp, arm };
+    pub const Direction = enum(u8) { incoming, outgoing, _ };
     _,
 };
 
@@ -29,7 +29,7 @@ pub const command = struct {
     pub const Recv = ipc.Command(Id, .recv, u2, u16);
     pub const IsRecvReady = ipc.Command(Id, .is_recv_ready, u2, bool);
     pub const Send = ipc.Command(Id, .send, struct {
-        stream: u2,
+        pipe: u2,
         value: u16,
     }, void);
     pub const IsSendEmpty = ipc.Command(Id, .is_send_empty, u2, bool);
@@ -70,7 +70,7 @@ pub const command = struct {
         len: u16,
     }, ipc.Static(u8, 0));
     /// Cannot fail
-    pub const GetChannelUnusedCapacity = ipc.Command(Id, .get_channel_unused_capacity, struct {
+    pub const GetChannelWritten = ipc.Command(Id, .get_channel_written, struct {
         channel: Channel,
         direction: Channel.Direction,
     }, u16);
@@ -84,6 +84,10 @@ pub const command = struct {
     }, struct {
         actual_read: u16,
         buffer: ipc.Static(u8, 0),
+
+        pub fn init(actual_read: u16, buffer: []const u8) @This() {
+            return .{ .actual_read = actual_read, .buffer = .static(buffer) };
+        }
     });
 
     pub const LoadComponent = ipc.Command(Id, .load_component, struct {
@@ -159,7 +163,7 @@ pub const command = struct {
 
         write_channel = 0x000d,
         read_channel = 0x000e,
-        get_channel_unused_capacity = 0x000f,
+        get_channel_written = 0x000f,
         try_read_channel = 0x0010,
 
         load_component = 0x0011,

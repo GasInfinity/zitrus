@@ -39,4 +39,3 @@ jobs:
           prerelease: ${{ contains(forge.ref_name, '-') }}
           direction: upload
           release-dir: zig-out/
-          release-notes-assistant: true
