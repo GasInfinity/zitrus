@@ -2,7 +2,7 @@ pub const version: std.SemanticVersion = .{
     .major = 0,
     .minor = 0,
     .patch = 0,
-    .pre = "pre2",
+    .pre = "pre3",
 };
 
 pub const MakeFirm = @import("build/MakeFirm.zig");
