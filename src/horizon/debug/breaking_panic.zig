@@ -5,33 +5,41 @@ pub fn call(_: []const u8, _: ?usize) noreturn {
     horizon.breakExecution(.panic);
 }
 
-pub fn sentinelMismatch(_: anytype, _: anytype) noreturn {
+pub fn sentinelMismatch(expected: anytype, found: @TypeOf(expected)) noreturn {
     @branchHint(.cold);
+    _ = found;
     horizon.breakExecution(.panic);
 }
 
-pub fn unwrapError(_: anyerror) noreturn {
+pub fn unwrapError(err: anyerror) noreturn {
     @branchHint(.cold);
+    _ = &err;
     horizon.breakExecution(.panic);
 }
 
-pub fn outOfBounds(_: usize, _: usize) noreturn {
+pub fn outOfBounds(index: usize, len: usize) noreturn {
     @branchHint(.cold);
+    _ = index;
+    _ = len;
     horizon.breakExecution(.panic);
 }
 
-pub fn startGreaterThanEnd(_: usize, _: usize) noreturn {
+pub fn startGreaterThanEnd(start: usize, end: usize) noreturn {
     @branchHint(.cold);
+    _ = start;
+    _ = end;
     horizon.breakExecution(.panic);
 }
 
-pub fn inactiveUnionField(_: anytype, _: anytype) noreturn {
+pub fn inactiveUnionField(active: anytype, accessed: @TypeOf(active)) noreturn {
     @branchHint(.cold);
+    _ = accessed;
     horizon.breakExecution(.panic);
 }
 
-pub fn sliceCastLenRemainder(_: usize) noreturn {
+pub fn sliceCastLenRemainder(src_len: usize) noreturn {
     @branchHint(.cold);
+    _ = src_len;
     horizon.breakExecution(.panic);
 }
 
@@ -57,6 +65,12 @@ pub fn incorrectAlignment() noreturn {
 
 pub fn invalidErrorCode() noreturn {
     @branchHint(.cold);
+    horizon.breakExecution(.panic);
+}
+
+pub fn unexpectedErrorCode(err: anyerror) noreturn {
+    @branchHint(.cold);
+    _ = &err;
     horizon.breakExecution(.panic);
 }
 
@@ -127,6 +141,10 @@ pub fn memcpyAlias() noreturn {
 
 pub fn noreturnReturned() noreturn {
     @branchHint(.cold);
+    horizon.breakExecution(.panic);
+}
+
+pub fn loadUninstantiableType() noreturn {
     horizon.breakExecution(.panic);
 }
 
