@@ -156,6 +156,7 @@ fn queryBuildVersion(b: *Build) ![]const u8 {
                 b.dependOnFileMetadata(b.path(".git/logs/HEAD"));
                 break :git;
             },
+            error.FileNotFound => return b.fmt("{f}", .{version}),
             else => |e| return e,
         };
         defer git_file.close(io);
