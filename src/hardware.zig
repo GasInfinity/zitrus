@@ -155,23 +155,13 @@ pub fn BitpackedArray(comptime T: type, comptime n: usize) type {
 
         pub fn get(bt: Self, index: usize) T {
             std.debug.assert(index < n);
-            // TODO: @fromBackingInt 0.17.0
             const value: ElementInt = @truncate((@as(ArrayInt, @bitCast(bt)) >> @intCast(index * @bitSizeOf(T))) & elem_mask);
-
-            return switch (@typeInfo(T)) {
-                .@"enum" => @enumFromInt(value),
-                else => @bitCast(value),
-            };
+            return @bitCast(value);
         }
 
         pub fn copyWith(bt: Self, index: usize, value: T) Self {
             std.debug.assert(index < n);
-            // TODO: @fromBackingInt 0.17.0
-            const int: ElementInt = switch (@typeInfo(T)) {
-                .@"enum" => @intFromEnum(value),
-                else => @bitCast(value),
-            };
-
+            const int: ElementInt = @bitCast(value);
             return @bitCast((@as(ArrayInt, @bitCast(bt)) & ~(elem_mask << @intCast(index * @bitSizeOf(T)))) | (@as(ArrayInt, int) << @intCast(index * @bitSizeOf(T))));
         }
 

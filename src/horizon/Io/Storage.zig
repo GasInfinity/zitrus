@@ -419,19 +419,34 @@ pub fn operate(storage: *Storage, io: std.Io, operation: Io.Operation) Io.Cancel
             },
         },
         .net_read => |op| .{
-            .net_read = nr: {
+            .net_read = blk: {
                 const stored, const flags = storage.getDescriptionStoredFlags(io, op.socket_handle);
-                if (flags.kind != .socket) break :nr error.Unexpected;
+                if (flags.kind != .socket) break :blk error.Unexpected;
 
-                break :nr storage.netRead(stored.socket, op.data[0]);
+                const buf = buf: for (op.data) |buf| {
+                    if (buf.len == 0) continue;
+                    break :buf buf;
+                } else break :blk .{ .data_len = 0 };
+
+                break :blk storage.netRead(stored.socket, buf);
             },
         },
         .net_write => |op| .{
-            .net_write = nr: {
+            .net_write = blk: {
                 const stored, const flags = storage.getDescriptionStoredFlags(io, op.socket_handle);
-                if (flags.kind != .socket) break :nr error.Unexpected;
+                if (flags.kind != .socket) break :blk error.Unexpected;
 
-                break :nr storage.netWrite(stored.socket, op.data[0]);
+                const buf = if (op.header.len != 0)
+                    op.header
+                else buf: for (op.data[0 .. op.data.len - 1]) |buf| {
+                    if (buf.len == 0) continue;
+                    break :buf buf;
+                } else if (op.data[op.data.len - 1].len > 0 and op.splat > 0)
+                    op.data[op.data.len - 1]
+                else
+                    break :blk 0;
+
+                break :blk storage.netWrite(stored.socket, buf);
             },
         },
         .device_io_control => unreachable,
@@ -621,13 +636,13 @@ fn batchAwait(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, b: *Io.Batc
             else => if (concurrency) return error.ConcurrencyUnavailable else blk: {
                 // HACK: when not concurrent just say that the first fd completed, we'll block on that later with `operate`.
                 polls.buf[0].events = @bitCast(@as(u32, std.math.maxInt(u32)));
-                break :blk @enumFromInt(1);
+                break :blk @fromBackingInt(1);
             },
         };
 
         poll_result: switch (maybe_polled.errno()) {
             .SUCCESS => {
-                const polled = @intFromEnum(maybe_polled);
+                const polled = @backingInt(maybe_polled);
 
                 if (polled == 0) {
                     if (b.completed.head != .none) return;
@@ -674,7 +689,7 @@ fn batchAwait(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, b: *Io.Batc
             },
             else => if (concurrency) return error.ConcurrencyUnavailable else {
                 polls.buf[0].events = @bitCast(@as(u32, std.math.maxInt(u32)));
-                maybe_polled = @enumFromInt(1); // see above
+                maybe_polled = @fromBackingInt(1); // see above
                 continue :poll_result .SUCCESS;
             },
         }
@@ -2106,7 +2121,7 @@ pub fn netWrite(storage: *Storage, sock: SocketUser.Descriptor, buffer: []const 
         };
 
         switch (maybe_sent.errno()) {
-            .SUCCESS => return @intCast(@intFromEnum(maybe_sent)),
+            .SUCCESS => return @intCast(@backingInt(maybe_sent)),
             .AGAIN => horizon.sleepThread(socket_busy_loop_workaround_ns),
             .NOMEM => return error.SystemResources,
             .CONNRESET => return error.ConnectionResetByPeer,

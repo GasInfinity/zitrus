@@ -661,7 +661,7 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
         &p3d.primitive_engine.attributes.index_buffer,
         &p3d.primitive_engine.draw_vertex_count,
     }, .{
-        .init(@intCast(dynamic_rendering_state.index_buffer_offset + first_draw.first_index), dynamic_rendering_state.misc.index_format),
+        .init(@intCast(dynamic_rendering_state.index_buffer_offset + (first_draw.first_index << @backingInt(dynamic_rendering_state.misc.index_format))), dynamic_rendering_state.misc.index_format),
         first_draw.index_count,
     });
 
@@ -697,7 +697,7 @@ pub fn drawMultiIndexed(cmd: *CommandBuffer, draw_count: u32, index_info: [*]con
         }
 
         if (current_index_info.first_index != last_index_info.first_index) {
-            queue.add(p3d, &p3d.primitive_engine.attributes.index_buffer, .init(@intCast(dynamic_rendering_state.index_buffer_offset + current_index_info.first_index), dynamic_rendering_state.misc.index_format));
+            queue.add(p3d, &p3d.primitive_engine.attributes.index_buffer, .init(@intCast(dynamic_rendering_state.index_buffer_offset + (current_index_info.first_index << @backingInt(dynamic_rendering_state.misc.index_format))), dynamic_rendering_state.misc.index_format));
         }
 
         if (current_index_info.vertex_offset != last_index_info.vertex_offset) {
