@@ -11,7 +11,7 @@ pub const Block = extern struct {
 
             /// Use an arbitrary stack top.
             pub fn top(stack: [*]u8) Stack {
-                return @enumFromInt(@intFromPtr(stack));
+                return @fromBackingInt(@intCast(@intFromPtr(stack)));
             }
         };
 
@@ -24,7 +24,7 @@ pub const Block = extern struct {
 
             /// Use an arbitrary memory location to store the context.
             pub fn at(memory: [*]u8) Context {
-                return @enumFromInt(@intFromPtr(memory));
+                return @fromBackingInt(@intCast(@intFromPtr(memory)));
             }
         };
 

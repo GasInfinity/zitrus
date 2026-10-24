@@ -62,7 +62,7 @@ pub const SystemProcessorTimeSlice = enum(u32) {
     /// Asserts the range is between 5 and 89 (inclusive)
     pub fn slice(value: u32) SystemProcessorTimeSlice {
         std.debug.assert(value >= 5 and value <= 89);
-        return @enumFromInt(value);
+        return @fromBackingInt(@intCast(value));
     }
 };
 
@@ -201,12 +201,12 @@ pub const CaptureBuffer = extern struct {
             .top = .{
                 .left_offset = 0,
                 .right_offset = top_framebuffer_size * (top_framebuffers - 1),
-                .format = @enumFromInt(@intFromEnum(capture.top.format.pixel_format)),
+                .format = @fromBackingInt(@intCast(@backingInt(capture.top.format.pixel_format))),
             },
             .bottom = .{
                 .left_offset = top_size,
                 .right_offset = top_size,
-                .format = @enumFromInt(@intFromEnum(capture.bottom.format.pixel_format)),
+                .format = @fromBackingInt(@intCast(@backingInt(capture.bottom.format.pixel_format))),
             },
         };
     }
@@ -418,8 +418,8 @@ pub const JumpToHomeParameters = union(JumpToHomeCommand) {
 
 pub fn sendJumpToHomeMenu(apt: Applet, service: Service, srv: ServiceManager, params: JumpToHomeParameters) !void {
     const parameters: []const u8 = &(switch (params) {
-        .download_theme => |theme| .{ 'A', 'S', 'H', 'P', @intFromEnum(JumpToHomeCommand.download_theme), 0x00, 0x00, 0x00 } ++ std.mem.asBytes(&theme).*,
-        else => .{ 'A', 'S', 'H', 'P', @intFromEnum(params) },
+        .download_theme => |theme| .{ 'A', 'S', 'H', 'P', @backingInt(JumpToHomeCommand.download_theme), 0x00, 0x00, 0x00 } ++ std.mem.asBytes(&theme).*,
+        else => .{ 'A', 'S', 'H', 'P', @backingInt(params) },
     });
 
     return switch ((try apt.lockSendCommand(service, srv, command.JumpToHomeMenu, .{ .parameters_size = parameters.len, .parameter_handle = .none, .parameters = .static(parameters) }, .{})).cases()) {

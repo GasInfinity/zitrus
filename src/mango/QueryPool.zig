@@ -107,11 +107,11 @@ pub fn getResults(pool: *QueryPool, first: u32, count: u32, data: []u8, stride: 
 }
 
 pub fn toHandle(image: *QueryPool) Handle {
-    return @enumFromInt(@intFromPtr(image));
+    return @fromBackingInt(@intCast(@intFromPtr(image)));
 }
 
 pub fn fromHandleMutable(handle: Handle) *QueryPool {
-    return @as(*QueryPool, @ptrFromInt(@intFromEnum(handle)));
+    return @as(*QueryPool, @ptrFromInt(@backingInt(handle)));
 }
 
 const QueryPool = @This();

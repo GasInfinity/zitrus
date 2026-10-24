@@ -50,12 +50,12 @@ pub fn main(init: horizon.Init.Application.Software) !void {
     const region = try cfg.sendGetRegion();
 
     try w.print("3DSX? {}\n", .{environment.program_meta.is3dsx()});
-    try w.print("Model: {t} ({s})\n", .{model, model.description()});
+    try w.print("Model: {t} ({s})\n", .{ model, model.description() });
     try w.print("Region: {t}\n", .{region});
-    try w.print("Name: {f}\n", .{std.unicode.fmtUtf16Le(name_info.name[0..std.mem.findScalar(u16, &name_info.name, 0) orelse name_info.name.len])});
+    try w.print("Name: {f}\n", .{std.unicode.fmtUtf16Le(name_info.name[0 .. std.mem.findScalar(u16, &name_info.name, 0) orelse name_info.name.len])});
     try w.print("Language: {t}\n", .{language});
-    try w.print("Birthday: {}/{}\n", .{birthday.day, birthday.month});
-    try w.print("Country: {}/{}\n", .{country_info.province_code, country_info.country_code});
+    try w.print("Birthday: {}/{}\n", .{ birthday.day, birthday.month });
+    try w.print("Country: {}/{}\n", .{ country_info.province_code, country_info.country_code });
     try w.print("Base: {} | Total: {!}\n", .{ std.process.getBaseAddress(), std.process.totalSystemMemory() });
 
     try w.writeAll("Arguments: ");

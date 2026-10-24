@@ -180,7 +180,7 @@ pub const meta = struct {
     };
 
     pub const FileOffset = enum(u32) {
-        pub const first: FileOffset = @enumFromInt(0);
+        pub const first: FileOffset = @fromBackingInt(@intCast(0));
 
         none = 0xFFFFFFFF,
         _,
@@ -253,7 +253,7 @@ pub const meta = struct {
                 const last = name.encode(entry_name);
                 @memset(entry_name[last..], 0x00);
 
-                return @enumFromInt(offset);
+                return @fromBackingInt(@intCast(offset));
             }
 
             pub inline fn get(builder: Self, offset: TOffset) *T {
@@ -289,8 +289,8 @@ pub const meta = struct {
             }
 
             pub fn get(table: Self, offset: TOffset) *const T {
-                std.debug.assert(std.mem.isAligned(@intFromEnum(offset), @alignOf(u32)));
-                const aligned_offset = @divExact(@intFromEnum(offset), @sizeOf(u32));
+                std.debug.assert(std.mem.isAligned(@backingInt(offset), @alignOf(u32)));
+                const aligned_offset = @divExact(@backingInt(offset), @sizeOf(u32));
 
                 std.debug.assert(aligned_offset < table.data.len);
                 return std.mem.bytesAsValue(T, std.mem.sliceAsBytes(table.data[aligned_offset..]));
@@ -298,7 +298,7 @@ pub const meta = struct {
 
             pub fn getName(table: Self, offset: TOffset) []const u16 {
                 const hdr = table.get(offset);
-                const name_bytes = std.mem.sliceAsBytes(table.data[@divExact(@intFromEnum(offset) + @sizeOf(T), @sizeOf(u32))..])[0..hdr.name_byte_len];
+                const name_bytes = std.mem.sliceAsBytes(table.data[@divExact(@backingInt(offset) + @sizeOf(T), @sizeOf(u32))..])[0..hdr.name_byte_len];
 
                 return @alignCast(std.mem.bytesAsSlice(u16, name_bytes));
             }
@@ -325,10 +325,10 @@ pub const meta = struct {
                     return switch (it.offset) {
                         .none => unreachable,
                         else => |entry| blk: {
-                            if (@divExact(@intFromEnum(entry), 4) >= it.table.data.len) return null;
+                            if (@divExact(@backingInt(entry), 4) >= it.table.data.len) return null;
                             const hdr = it.table.get(entry);
 
-                            defer it.offset = @enumFromInt(@intFromEnum(it.offset) + @sizeOf(T) + std.mem.alignForward(u32, hdr.name_byte_len, @sizeOf(u32)));
+                            defer it.offset = @fromBackingInt(@intCast(@backingInt(it.offset) + @sizeOf(T) + std.mem.alignForward(u32, hdr.name_byte_len, @sizeOf(u32))));
                             break :blk it.offset;
                         },
                     };
@@ -345,7 +345,7 @@ pub const meta = struct {
     pub const FileView = meta.View(FileHeader, FileOffset);
 
     pub fn hash(name: []const u16, parent: DirectoryOffset) u32 {
-        var ohash: u32 = @intFromEnum(parent) ^ 123456789;
+        var ohash: u32 = @backingInt(parent) ^ 123456789;
 
         for (name) |c| {
             ohash = std.math.rotr(u32, ohash, 5) ^ c;
@@ -536,7 +536,7 @@ pub const View = struct {
         _,
 
         pub fn name(directory: Directory, view: View) []const u16 {
-            return view.directories.getName(@enumFromInt(@intFromEnum(directory)));
+            return view.directories.getName(@fromBackingInt(@intCast(@backingInt(directory))));
         }
 
         pub fn iterator(directory: Directory, view: View) Iterator {
@@ -555,11 +555,11 @@ pub const View = struct {
         _,
 
         pub fn name(file: File, view: View) []const u16 {
-            return view.files.getName(@enumFromInt(@intFromEnum(file)));
+            return view.files.getName(@fromBackingInt(@intCast(@backingInt(file))));
         }
 
         pub fn stat(file: File, view: View) Stat {
-            const file_meta = view.files.get(@enumFromInt(@intFromEnum(file)));
+            const file_meta = view.files.get(@fromBackingInt(@intCast(@backingInt(file))));
 
             return .{
                 .offset = file_meta.data_offset,
@@ -581,27 +581,27 @@ pub const View = struct {
         pub fn initDirectory(directory: Directory) Entry {
             return .{
                 .kind = .directory,
-                .shifted_handle = @enumFromInt(@intFromEnum(directory) >> 2),
+                .shifted_handle = @fromBackingInt(@intCast(@backingInt(directory) >> 2)),
             };
         }
 
         pub fn initFile(file: File) Entry {
             return .{
                 .kind = .file,
-                .shifted_handle = @enumFromInt(@intFromEnum(file) >> 2),
+                .shifted_handle = @fromBackingInt(@intCast(@backingInt(file) >> 2)),
             };
         }
 
         pub fn name(entry: Entry, view: View) []const u16 {
             return switch (entry.kind) {
-                .directory => view.directories.getName(@enumFromInt(@intFromEnum(entry.asDirectory()))),
-                .file => view.files.getName(@enumFromInt(@intFromEnum(entry.asFile()))),
+                .directory => view.directories.getName(@fromBackingInt(@intCast(@backingInt(entry.asDirectory())))),
+                .file => view.files.getName(@fromBackingInt(@intCast(@backingInt(entry.asFile())))),
             };
         }
 
         pub fn asDirectory(entry: Entry) Directory {
             return switch (entry.kind) {
-                .directory => @enumFromInt(@intFromEnum(entry.shifted_handle) << 2),
+                .directory => @fromBackingInt(@intCast(@backingInt(entry.shifted_handle) << 2)),
                 .file => unreachable,
             };
         }
@@ -609,7 +609,7 @@ pub const View = struct {
         pub fn asFile(entry: Entry) File {
             return switch (entry.kind) {
                 .directory => unreachable,
-                .file => @enumFromInt(@intFromEnum(entry.shifted_handle) << 2),
+                .file => @fromBackingInt(@intCast(@backingInt(entry.shifted_handle) << 2)),
             };
         }
     };
@@ -748,7 +748,7 @@ pub const View = struct {
             last_parent = if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral(".")))
                 last_parent
             else if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral("..")))
-                @enumFromInt(@intFromEnum(view.directories.get(@enumFromInt(@intFromEnum(last_parent))).parent))
+                @fromBackingInt(@intCast(@backingInt(view.directories.get(@fromBackingInt(@intCast(@backingInt(last_parent)))).parent)))
             else
                 view.findDirectory(last_parent, last) orelse return error.FileNotFound;
 
@@ -760,7 +760,7 @@ pub const View = struct {
         return if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral(".")))
             .initDirectory(last_parent)
         else if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral("..")))
-            .initDirectory(@enumFromInt(@intFromEnum(view.directories.get(@enumFromInt(@intFromEnum(last_parent))).parent)))
+            .initDirectory(@fromBackingInt(@intCast(@backingInt(view.directories.get(@fromBackingInt(@intCast(@backingInt(last_parent)))).parent))))
         else if (view.findFile(last_parent, last)) |file|
             .initFile(file)
         else if (view.findDirectory(last_parent, last)) |dir|
@@ -772,7 +772,7 @@ pub const View = struct {
     pub fn findFile(view: View, parent: Directory, name: []const u16) ?File {
         if (view.directories.data.len == 0) return null;
 
-        const name_hash = meta.hash(name, @enumFromInt(@intFromEnum(parent)));
+        const name_hash = meta.hash(name, @fromBackingInt(@intCast(@backingInt(parent))));
         const first_offset: meta.FileOffset = view.file_hashes[name_hash % view.file_hashes.len];
 
         return find: switch (first_offset) {
@@ -781,11 +781,11 @@ pub const View = struct {
                 const file = view.files.get(offset);
                 const file_name = view.files.getName(offset);
 
-                if (parent != @as(Directory, @enumFromInt(@intFromEnum(file.parent))) or !std.mem.eql(u16, file_name, name)) {
+                if (parent != @as(Directory, @fromBackingInt(@intCast(@backingInt(file.parent)))) or !std.mem.eql(u16, file_name, name)) {
                     continue :find file.next_hash_collision;
                 }
 
-                break :find @enumFromInt(@intFromEnum(offset));
+                break :find @fromBackingInt(@intCast(@backingInt(offset)));
             },
         };
     }
@@ -793,7 +793,7 @@ pub const View = struct {
     pub fn findDirectory(view: View, parent: Directory, name: []const u16) ?Directory {
         if (view.directories.data.len == 0) return null;
 
-        const name_hash = meta.hash(name, @enumFromInt(@intFromEnum(parent)));
+        const name_hash = meta.hash(name, @fromBackingInt(@intCast(@backingInt(parent))));
         const first_offset: meta.DirectoryOffset = view.directory_hashes[name_hash % view.directory_hashes.len];
 
         return find: switch (first_offset) {
@@ -804,11 +804,11 @@ pub const View = struct {
                 const directory = view.directories.get(offset);
                 const directory_name = view.directories.getName(offset);
 
-                if (parent != @as(Directory, @enumFromInt(@intFromEnum(directory.parent))) or !std.mem.eql(u16, directory_name, name)) {
+                if (parent != @as(Directory, @fromBackingInt(@intCast(@backingInt(directory.parent)))) or !std.mem.eql(u16, directory_name, name)) {
                     continue :find directory.next_hash_collision;
                 }
 
-                break :find @enumFromInt(@intFromEnum(offset));
+                break :find @fromBackingInt(@intCast(@backingInt(offset)));
             },
         };
     }
@@ -853,10 +853,10 @@ pub const View = struct {
         current: meta.FileOffset,
 
         pub fn init(view: View, parent: Directory) FileIterator {
-            const directory = view.directories.get(@enumFromInt(@intFromEnum(parent)));
+            const directory = view.directories.get(@fromBackingInt(@intCast(@backingInt(parent))));
 
             return .{
-                .current = @enumFromInt(@intFromEnum(directory.first_file)),
+                .current = @fromBackingInt(@intCast(@backingInt(directory.first_file))),
             };
         }
 
@@ -865,7 +865,7 @@ pub const View = struct {
                 .none => null,
                 _ => |offset| blk: {
                     defer it.current = view.files.get(offset).next_sibling;
-                    break :blk @enumFromInt(@intFromEnum(offset));
+                    break :blk @fromBackingInt(@intCast(@backingInt(offset)));
                 },
             };
         }
@@ -875,10 +875,10 @@ pub const View = struct {
         current: meta.DirectoryOffset,
 
         pub fn init(view: View, parent: Directory) DirectoryIterator {
-            const directory = view.directories.get(@enumFromInt(@intFromEnum(parent)));
+            const directory = view.directories.get(@fromBackingInt(@intCast(@backingInt(parent))));
 
             return .{
-                .current = @enumFromInt(@intFromEnum(directory.first_directory)),
+                .current = @fromBackingInt(@intCast(@backingInt(directory.first_directory))),
             };
         }
 
@@ -889,7 +889,7 @@ pub const View = struct {
                 .root => unreachable,
                 _ => |offset| blk: {
                     defer it.current = view.directories.get(offset).next_sibling;
-                    break :blk @enumFromInt(@intFromEnum(offset));
+                    break :blk @fromBackingInt(@intCast(@backingInt(offset)));
                 },
             };
         }

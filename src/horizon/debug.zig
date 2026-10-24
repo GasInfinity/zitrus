@@ -56,7 +56,7 @@ pub fn defaultPanic(msg: []const u8, first_trace_addr: ?usize) noreturn {
                     fixed.print("panic: ", .{}) catch break :trace;
                 } else {
                     const current_thread_id = horizon.getThreadId(.current).value;
-                    fixed.print("thread {d} panic: ", .{@intFromEnum(current_thread_id)}) catch break :trace;
+                    fixed.print("thread {d} panic: ", .{@backingInt(current_thread_id)}) catch break :trace;
                 }
 
                 fixed.print("{s}\n", .{msg}) catch break :trace;
@@ -88,7 +88,7 @@ pub fn defaultPanic(msg: []const u8, first_trace_addr: ?usize) noreturn {
                 .revision_low = 0x00,
                 .result_code = .ztr_panic,
                 .pc_address = unwind_first_trace_addr,
-                .process_id = @intFromEnum(horizon.getProcessId(.current).value), // NOTE: cannot fail as current is always valid.
+                .process_id = @backingInt(horizon.getProcessId(.current).value), // NOTE: cannot fail as current is always valid.
                 .title_id = 0x0,
                 .applet_title_id = 0x0,
                 .data = .{
@@ -214,7 +214,7 @@ pub fn defaultHandleSegfault(addr: ?usize, name: []const u8, opt_ctx: ?std.debug
                 .revision_low = 0x00,
                 .result_code = .ztr_panic,
                 .pc_address = if (opt_ctx) |ctx| ctx.r[15] else 0xDEADBEEF,
-                .process_id = @intFromEnum(horizon.getProcessId(.current).value), // NOTE: cannot fail as current is always valid.
+                .process_id = @backingInt(horizon.getProcessId(.current).value), // NOTE: cannot fail as current is always valid.
                 .title_id = 0x0,
                 .applet_title_id = 0x0,
                 .data = .{

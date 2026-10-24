@@ -31,11 +31,11 @@ pub fn signal(sema: *Semaphore, value: u64) bool {
 }
 
 pub fn toHandle(image: *Semaphore) Handle {
-    return @enumFromInt(@intFromPtr(image));
+    return @fromBackingInt(@intCast(@intFromPtr(image)));
 }
 
 pub fn fromHandleMutable(handle: Handle) *Semaphore {
-    return @as(*Semaphore, @ptrFromInt(@intFromEnum(handle)));
+    return @as(*Semaphore, @ptrFromInt(@backingInt(handle)));
 }
 
 const Semaphore = @This();

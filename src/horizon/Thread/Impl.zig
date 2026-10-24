@@ -11,7 +11,7 @@ threadlocal var tls_id: ?u32 = null;
 
 pub fn getCurrentId() u32 {
     return tls_id orelse {
-        const tid = @intFromEnum(horizon.Thread.current.id());
+        const tid = @backingInt(horizon.Thread.current.id());
         tls_id = tid;
         return tid;
     };

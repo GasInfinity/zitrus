@@ -8,7 +8,7 @@ const position_vtx = &position_vtx_storage;
 pub const std_os_options: std.Options.OperatingSystem = horizon.default_std_os_options;
 
 const Vertex = extern struct { pos: [2]f32 };
-const indices: []const u8 = &.{0,1,2};
+const indices: []const u8 = &.{ 0, 1, 2 };
 const vertices: []const Vertex = &.{
     .{ .pos = .{ -0.5, -0.5 } },
     .{ .pos = .{ 0.5, 0 } },
@@ -36,7 +36,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         .image_format = .b8g8r8_unorm,
         .image_array_layers = .@"1",
         .image_count = 2,
-        .image_memory = &.{ top_presentable_image_memory_gpu, top_presentable_image_memory_gpu.openSlice(400*240*3) },
+        .image_memory = &.{ top_presentable_image_memory_gpu, top_presentable_image_memory_gpu.openSlice(400 * 240 * 3) },
     });
     defer {
         device.waitIdle();
@@ -49,7 +49,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         .image_format = .b8g8r8_unorm,
         .image_array_layers = .@"1",
         .image_count = 2,
-        .image_memory = &.{ bottom_presentable_image_memory_gpu, bottom_presentable_image_memory_gpu.openSlice(320*240*3) },
+        .image_memory = &.{ bottom_presentable_image_memory_gpu, bottom_presentable_image_memory_gpu.openSlice(320 * 240 * 3) },
     });
     defer {
         device.waitIdle();
@@ -61,7 +61,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
 
     var bottom_images: [2]mango.Image = undefined;
     _ = try device.getDisplayImages(.bottom, &bottom_images);
-    
+
     const buffer = try fcram.alloc(u8, @sizeOf(Vertex) * 3 + 3 * @sizeOf(u8));
     const gpu_buffer = try device.hostToDevice(buffer);
     defer fcram.free(buffer);
@@ -69,7 +69,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
     {
         const vtx_data: *[3]Vertex = @alignCast(std.mem.bytesAsValue([3]Vertex, buffer));
         @memcpy(vtx_data, vertices);
-        const idx_data: *[3]u8 = std.mem.bytesAsValue([3]u8, buffer[@sizeOf(Vertex) * 3..]);
+        const idx_data: *[3]u8 = std.mem.bytesAsValue([3]u8, buffer[@sizeOf(Vertex) * 3 ..]);
         @memcpy(idx_data, indices);
         try device.flushCachedMemoryRanges(&.{buffer});
     }

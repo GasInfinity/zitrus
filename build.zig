@@ -16,7 +16,7 @@ pub const AssemblePsm = @import("build/AssemblePsm.zig");
 pub const MakePtx = @import("build/MakePtx.zig");
 
 pub const target = struct {
-    /// Freestanding target query, use `arm-3ds` to target the horizon (a.k.a the 3DS OS) userland instead 
+    /// Freestanding target query, use `arm-3ds` to target the horizon (a.k.a the 3DS OS) userland instead
     pub const arm11: std.Target.Query = .{
         .cpu_arch = .arm,
         .cpu_model = .{ .explicit = &std.Target.arm.cpu.mpcore },
@@ -47,7 +47,7 @@ pub fn build(b: *Build) !void {
     const plz = plz_dep.module("plz");
 
     const etz_dep = b.dependency("etz", .{});
-    const etz  = etz_dep.module("etz");
+    const etz = etz_dep.module("etz");
 
     const zsflt_dep = b.dependency("zsflt", .{});
     const zsflt = zsflt_dep.module("zsflt");

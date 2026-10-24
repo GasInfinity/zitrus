@@ -17,9 +17,9 @@ const Model = extern struct {
 const model_data: Model = .{
     .vertices = .{
         .{ .pos = .{ -0.5, -0.5 }, .uv = .{ 0, 0 } },
-        .{ .pos = .{ 0.5, -0.5 }, .uv = .{ 1, 0 }  },
-        .{ .pos = .{ -0.5, 0.5 }, .uv = .{ 0, 1 }  },
-        .{ .pos = .{ 0.5, 0.5 }, .uv = .{ 1, 1 }  },
+        .{ .pos = .{ 0.5, -0.5 }, .uv = .{ 1, 0 } },
+        .{ .pos = .{ -0.5, 0.5 }, .uv = .{ 0, 1 } },
+        .{ .pos = .{ 0.5, 0.5 }, .uv = .{ 1, 1 } },
     },
     .indices = .{ 0, 1, 2, 2, 1, 3 },
 };
@@ -109,11 +109,11 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         const texture_file = try std.Io.Dir.cwd().openFile(io, "romfs:/test.bgr", .{});
         defer texture_file.close(io);
 
-        const staging = try state.fcram.alloc(u8, 64*64*3);
+        const staging = try state.fcram.alloc(u8, 64 * 64 * 3);
         defer state.fcram.free(staging);
         const staging_gpu = try device.hostToDevice(staging);
 
-        if(try texture_file.readPositionalAll(io, staging, 0) != staging.len) return error.ImageTooShort;
+        if (try texture_file.readPositionalAll(io, staging, 0) != staging.len) return error.ImageTooShort;
 
         try device.flushCachedMemoryRanges(&.{staging});
         try device.copyBufferToImage(&.init(state.sema, state.sync), &.init(state.sema, state.sync + 1), &.{
@@ -169,7 +169,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         });
         cmd.setTextureCombinersEffect(.none);
         cmd.setTextureCombiners(5, &.{.{
-            .color_src = .{.primary_color, .texture_0, .primary_color},
+            .color_src = .{ .primary_color, .texture_0, .primary_color },
             .alpha_src = @splat(.primary_color),
             .color_factor = @splat(.src_color),
             .alpha_factor = @splat(.src_alpha),
@@ -188,12 +188,10 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
 
         cmd.bindIndexBuffer(model_gpu.slice(@offsetOf(Model, "indices"), 6), .u8);
         cmd.bindVertexBuffers(0, &.{model_gpu});
-        cmd.bindCombinedImageSamplers(0, &.{
-            .{
-                .image = texture_view,
-                .sampler = linear_sampler,
-            }
-        });
+        cmd.bindCombinedImageSamplers(0, &.{.{
+            .image = texture_view,
+            .sampler = linear_sampler,
+        }});
 
         {
             cmd.beginRendering(.{
@@ -206,7 +204,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         }
 
         try cmd.end();
-        
+
         const top_idx = try device.acquireNextImage(.top, std.math.maxInt(u64));
         const bottom_idx = try device.acquireNextImage(.bottom, std.math.maxInt(u64));
 

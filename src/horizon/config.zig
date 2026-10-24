@@ -83,18 +83,18 @@ pub const NetworkState = enum(u8) {
     _,
 
     pub fn isInternet(state: NetworkState) bool {
-        return @as(u8, @intFromEnum(state)) == 2;
+        return @as(u8, @backingInt(state)) == 2;
     }
 
     pub fn isLocal(state: NetworkState) bool {
-        return switch (@as(u8, @intFromEnum(state))) {
+        return switch (@as(u8, @backingInt(state))) {
             3, 4, 6 => true,
             else => false,
         };
     }
 
     pub fn isDisabled(state: NetworkState) bool {
-        return @as(u8, @intFromEnum(state)) == 7;
+        return @as(u8, @backingInt(state)) == 7;
     }
 
     pub fn isEnabled(state: NetworkState) bool {

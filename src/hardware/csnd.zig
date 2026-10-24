@@ -14,7 +14,7 @@ pub const Volume = enum(u16) {
     _,
 
     pub fn volume(value: u16) Volume {
-        return @enumFromInt(@min(value, 0x8000));
+        return @fromBackingInt(@intCast(@min(value, 0x8000)));
     }
 };
 
@@ -25,12 +25,12 @@ pub const SampleRate = enum(u16) {
     _,
 
     pub fn rate(value: u16) SampleRate {
-        return @enumFromInt(@as(u32, 67_027_964) / value);
+        return @fromBackingInt(@intCast(@as(u32, 67_027_964) / value));
     }
 
     pub fn raw(value: u16) SampleRate {
         std.debug.assert(value <= 0xFFBE);
-        return @enumFromInt(value);
+        return @fromBackingInt(@intCast(value));
     }
 };
 
@@ -67,7 +67,7 @@ pub const Channel = extern struct {
         _,
 
         pub fn duty(value: u3) WaveDuty {
-            return @enumFromInt(value);
+            return @fromBackingInt(@intCast(value));
         }
     };
     pub const Format = enum(u2) { pcm8, pcm16, ima_adpcm, psg };
@@ -100,8 +100,8 @@ pub const Channel = extern struct {
 
         pub fn init(volume: u15, pan: i16) Channel.Volume {
             return .{
-                .left = @enumFromInt(std.math.clamp(@as(i32, volume) - @max(0, pan), 0, @intFromEnum(csnd.Volume.max))),
-                .right = @enumFromInt(std.math.clamp(@as(i32, volume) + @min(pan, 0), 0, @intFromEnum(csnd.Volume.max))),
+                .left = @fromBackingInt(@intCast(std.math.clamp(@as(i32, volume) - @max(0, pan), 0, @backingInt(csnd.Volume.max)))),
+                .right = @fromBackingInt(@intCast(std.math.clamp(@as(i32, volume) + @min(pan, 0), 0, @backingInt(csnd.Volume.max)))),
             };
         }
     };

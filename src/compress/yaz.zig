@@ -43,7 +43,7 @@ pub const Match = packed struct(u16) {
         const offset = (@as(u13, hdr.offset_hi) << 8 | hdr.offset_lo) + 1;
         const len = switch (hdr.len) {
             .extra => @as(u9, try in.takeByte()) + 18,
-            else => @as(u8, @intFromEnum(hdr.len)) + 2,
+            else => @as(u8, @backingInt(hdr.len)) + 2,
         };
 
         return .{ .offset = offset, .len = len };
@@ -63,7 +63,7 @@ pub const Match = packed struct(u16) {
             try writer.writeByte(@intCast(match.len - 18));
         } else {
             const encoded: Match = .{
-                .len = @enumFromInt(match.len - 2),
+                .len = @fromBackingInt(@intCast(match.len - 2)),
                 .offset_hi = @intCast(encoded_offset >> 8),
                 .offset_lo = @intCast(encoded_offset & 0xFF),
             };

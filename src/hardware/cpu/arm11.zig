@@ -207,13 +207,13 @@ pub const Fault = packed struct(u32) {
     _reserved1: u19,
 
     pub fn status(fault: Fault) Status {
-        return @enumFromInt(fault.status_lo | (@as(u5, fault.status_hi) << 4));
+        return @fromBackingInt(@intCast(fault.status_lo | (@as(u5, fault.status_hi) << 4)));
     }
 
     pub inline fn read(comptime kind: Kind) Fault {
         return asm volatile ("mrc p15, 0, %[st], c5, c0, %[kind]"
             : [st] "=r" (-> DomainAccess),
-            : [kind] "i" (@intFromEnum(kind)),
+            : [kind] "i" (@backingInt(kind)),
         );
     }
 
@@ -221,7 +221,7 @@ pub const Fault = packed struct(u32) {
         return asm volatile ("mcr p15, 0, %[st], c5, c0, %[kind]"
             :
             : [st] "r" (st),
-              [kind] "i" (@intFromEnum(kind)),
+              [kind] "i" (@backingInt(kind)),
         );
     }
 
@@ -233,7 +233,7 @@ pub const Fault = packed struct(u32) {
         pub inline fn read(comptime kind: Address.Kind) u32 {
             return asm volatile ("mrc p15, 0, %[addr], c6, c0, %[kind]"
                 : [addr] "=r" (-> Address),
-                : [kind] "i" (@intFromEnum(kind)),
+                : [kind] "i" (@backingInt(kind)),
             );
         }
 
@@ -241,7 +241,7 @@ pub const Fault = packed struct(u32) {
             return asm volatile ("mcr p15, 0, %[addr], c6, c0, %[kind]"
                 :
                 : [addr] "r" (addr),
-                  [kind] "i" (@intFromEnum(kind)),
+                  [kind] "i" (@backingInt(kind)),
             );
         }
     };

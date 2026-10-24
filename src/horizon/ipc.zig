@@ -10,7 +10,7 @@ pub const ReplaceByProcessId = enum(u32) {
     _,
 
     pub fn id(replace: ReplaceByProcessId) horizon.Process.Id {
-        return @enumFromInt(@intFromEnum(replace));
+        return @fromBackingInt(@intCast(@backingInt(replace)));
     }
 };
 
@@ -393,7 +393,7 @@ pub const Codec = union(enum) {
 
                 if (header != expected) return error.BadTranslationHeader;
 
-                break :blk @enumFromInt(buffer[1]);
+                break :blk @fromBackingInt(@intCast(buffer[1]));
             },
             .handles, .move_handles => |amount| blk: {
                 const header: Buffer.TranslationDescriptor.Handle = @bitCast(buffer[0]);
@@ -834,7 +834,7 @@ pub const Buffer = extern struct {
             command_id: u16,
 
             pub fn header(comptime Id: type, id: Id, parameters: Parameters) Header {
-                return .{ .command_id = @intFromEnum(id), .parameters = parameters };
+                return .{ .command_id = @backingInt(id), .parameters = parameters };
             }
         };
 
@@ -886,7 +886,7 @@ pub const Buffer = extern struct {
 
     pub fn writeRequest(buffer: *Buffer, comptime DefinedCommand: type, request: *const DefinedCommand.Request, static_output: DefinedCommand.RequestStaticOutput) void {
         buffer.packed_command.header = .{
-            .command_id = @intFromEnum(DefinedCommand.id),
+            .command_id = @backingInt(DefinedCommand.id),
             .parameters = DefinedCommand.request_parameters,
         };
 
@@ -906,7 +906,7 @@ pub const Buffer = extern struct {
 
     pub fn writeResponse(buffer: *Buffer, comptime DefinedCommand: type, result: Result(DefinedCommand.Response)) void {
         buffer.packed_command.header = .{
-            .command_id = @intFromEnum(DefinedCommand.id),
+            .command_id = @backingInt(DefinedCommand.id),
             .parameters = .parameters(DefinedCommand.response_parameters.normal + 1, DefinedCommand.response_parameters.translate),
         };
 
@@ -920,7 +920,7 @@ pub const Buffer = extern struct {
 
     pub fn checkResponse(buffer: *Buffer, comptime DefinedCommand: type) CheckError!Code {
         const expected_header: PackedCommand.Header = .{
-            .command_id = @intFromEnum(DefinedCommand.id),
+            .command_id = @backingInt(DefinedCommand.id),
             .parameters = .parameters(DefinedCommand.response_parameters.normal + 1, DefinedCommand.response_parameters.translate),
         };
 
@@ -960,10 +960,10 @@ pub const Buffer = extern struct {
     ///
     /// Asserts the command being read has it's expected `id`
     pub fn readRequest(buffer: *Buffer, comptime DefinedCommand: type) ?DefinedCommand.Request {
-        std.debug.assert(buffer.packed_command.header.command_id == @intFromEnum(DefinedCommand.id)); // This is user error, as you must have checked the id before.
+        std.debug.assert(buffer.packed_command.header.command_id == @backingInt(DefinedCommand.id)); // This is user error, as you must have checked the id before.
 
         const expected_header: PackedCommand.Header = .{
-            .command_id = @intFromEnum(DefinedCommand.id),
+            .command_id = @backingInt(DefinedCommand.id),
             .parameters = DefinedCommand.request_parameters,
         };
 
@@ -1022,7 +1022,7 @@ test Buffer {
     const request: command_testing.Foo.Request = .{ .size = 20 };
     buf.writeRequest(command_testing.Foo, &request, .{});
 
-    try testing.expectEqual(@intFromEnum(command_testing.Id.foo), buf.packed_command.header.command_id);
+    try testing.expectEqual(@backingInt(command_testing.Id.foo), buf.packed_command.header.command_id);
     try testing.expectEqual(command_testing.Foo.request_parameters, buf.packed_command.header.parameters);
 
     try testing.expectEqualSlices(u32, &.{20}, buf.packed_command.parameters[0..1]);

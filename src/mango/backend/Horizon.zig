@@ -310,7 +310,7 @@ pub fn allocatePrivate(dev: *Device, index: mango.PrivateMemoryIndex, len: u32) 
     const h_dev: *Horizon = @alignCast(@fieldParentPtr("device", dev));
     return switch (index) {
         .a, .b => {
-            const bank: zitrus.memory.VRamBank = @enumFromInt(@intFromEnum(index));
+            const bank: zitrus.memory.VRamBank = @fromBackingInt(@intCast(@backingInt(index)));
             return h_dev.vram_gpas.getPtr(bank).alloc(len);
         },
     };
@@ -392,7 +392,7 @@ fn waitSemaphores(dev: *Device, wait_info: mango.SemaphoreWaitInfo, timeout: u64
         const b_sema: *backend.Semaphore = .fromHandleMutable(sema);
 
         while (b_sema.counterValue() < value) {
-            if (@intFromEnum(real_timeout) == 0) return error.Timeout;
+            if (@backingInt(real_timeout) == 0) return error.Timeout;
 
             arbiter.decrementWaitTimeout(i32, &b_sema.wake.raw, 1, real_timeout) catch {
                 // XXX: Azahar does not have the same behavior as ofw, this somehow becomes a timeout even if timeout == -1
@@ -408,10 +408,10 @@ fn waitSemaphores(dev: *Device, wait_info: mango.SemaphoreWaitInfo, timeout: u64
                     const elapsed = now - last;
                     last = now;
 
-                    real_timeout = if (elapsed >= @intFromEnum(real_timeout))
+                    real_timeout = if (elapsed >= @backingInt(real_timeout))
                         .fromNanoseconds(0)
                     else
-                        @enumFromInt(@intFromEnum(real_timeout) - @as(u63, @intCast(elapsed)));
+                        @fromBackingInt(@intCast(@backingInt(real_timeout) - @as(u63, @intCast(elapsed))));
                 },
             }
         }
@@ -578,7 +578,7 @@ const Driver = struct {
                             .fill => {
                                 const op: *CommandBuffer.operation.Fill = @alignCast(@fieldParentPtr("node", node));
                                 const fill = op.operation;
-                                const data: []align(8) u8 = @alignCast(h_dev.deviceToHost(@intFromEnum(fill.ptr))[0..fill.extra.len]);
+                                const data: []align(8) u8 = @alignCast(h_dev.deviceToHost(@backingInt(fill.ptr))[0..fill.extra.len]);
 
                                 gx.pushFrontAssumeCapacity(.initMemoryFill(.{ .init(data, switch (fill.extra.size) {
                                     inline .@"16", .@"24", .@"32" => |t| @unionInit(Gpu.GxCommand.MemoryFill.Unit.Value, @tagName(t), @truncate(fill.value)),
@@ -591,16 +591,16 @@ const Driver = struct {
 
                                 switch (transfer.flags.kind) {
                                     .copy => gx.pushFrontAssumeCapacity(.initTextureCopy(
-                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.src))),
-                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.dst))),
+                                        @alignCast(h_dev.deviceToHost(@backingInt(transfer.src))),
+                                        @alignCast(h_dev.deviceToHost(@backingInt(transfer.dst))),
                                         transfer.flags.extra.copy,
                                         transfer.src_gap_line,
                                         transfer.dst_gap_line,
                                         .none,
                                     )),
                                     .linear_tiled, .tiled_linear, .tiled_tiled => gx.pushFrontAssumeCapacity(.initDisplayTransfer(
-                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.src))),
-                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.dst))),
+                                        @alignCast(h_dev.deviceToHost(@backingInt(transfer.src))),
+                                        @alignCast(h_dev.deviceToHost(@backingInt(transfer.dst))),
                                         transfer.flags.extra.transfer.src_fmt,
                                         transfer.src_gap_line,
                                         transfer.flags.extra.transfer.dst_fmt,
@@ -749,7 +749,7 @@ const Driver = struct {
                         const signal = signal: switch (kind) {
                             .fill => {
                                 const fill, const signal = queue.popBackAssumeReady(Queue.Fill);
-                                const data: []align(8) u8 = @alignCast(h_dev.deviceToHost(@intFromEnum(fill.ptr))[0..fill.extra.len]);
+                                const data: []align(8) u8 = @alignCast(h_dev.deviceToHost(@backingInt(fill.ptr))[0..fill.extra.len]);
 
                                 gx.pushFrontAssumeCapacity(.initMemoryFill(.{ .init(data, switch (fill.extra.size) {
                                     inline .@"16", .@"24", .@"32" => |t| @unionInit(Gpu.GxCommand.MemoryFill.Unit.Value, @tagName(t), @truncate(fill.value)),
@@ -761,16 +761,16 @@ const Driver = struct {
                                 const transfer, const signal = queue.popBackAssumeReady(Queue.Transfer);
                                 switch (transfer.flags.kind) {
                                     .copy => gx.pushFrontAssumeCapacity(.initTextureCopy(
-                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.src))),
-                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.dst))),
+                                        @alignCast(h_dev.deviceToHost(@backingInt(transfer.src))),
+                                        @alignCast(h_dev.deviceToHost(@backingInt(transfer.dst))),
                                         transfer.flags.extra.copy,
                                         transfer.src_gap_line,
                                         transfer.dst_gap_line,
                                         .none,
                                     )),
                                     .linear_tiled, .tiled_linear, .tiled_tiled => gx.pushFrontAssumeCapacity(.initDisplayTransfer(
-                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.src))),
-                                        @alignCast(h_dev.deviceToHost(@intFromEnum(transfer.dst))),
+                                        @alignCast(h_dev.deviceToHost(@backingInt(transfer.src))),
+                                        @alignCast(h_dev.deviceToHost(@backingInt(transfer.dst))),
                                         transfer.flags.extra.transfer.src_fmt,
                                         transfer.src_gap_line,
                                         transfer.flags.extra.transfer.dst_fmt,

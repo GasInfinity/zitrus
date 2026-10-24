@@ -12,11 +12,11 @@ pub const Address = enum(u16) {
     _,
 
     pub fn byteUnits(addr: Address) u32 {
-        return @as(u32, @intFromEnum(addr)) << 1;
+        return @as(u32, @backingInt(addr)) << 1;
     }
 
     pub fn init(address: u16) Address {
-        return @enumFromInt(address);
+        return @fromBackingInt(@intCast(address));
     }
 };
 

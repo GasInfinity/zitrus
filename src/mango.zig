@@ -27,12 +27,12 @@ pub const DeviceSlice = packed struct(u64) {
 
     pub fn slice(sl: DeviceSlice, offset: u32, len: u32) DeviceSlice {
         std.debug.assert(offset + len <= sl.len);
-        return .{ .address = .fromAddress(@intFromEnum(sl.address) + offset), .len = len };
+        return .{ .address = .fromAddress(@backingInt(sl.address) + offset), .len = len };
     }
 
     pub fn openSlice(sl: DeviceSlice, offset: u32) DeviceSlice {
         std.debug.assert(offset <= sl.len);
-        return .{ .address = .fromAddress(@intFromEnum(sl.address) + offset), .len = sl.len - offset };
+        return .{ .address = .fromAddress(@backingInt(sl.address) + offset), .len = sl.len - offset };
     }
 };
 
@@ -55,7 +55,7 @@ pub const ImageArrayLayer = enum(u8) {
     // zig fmt: on
 
     pub fn layer(index: u3) ImageArrayLayer {
-        return @enumFromInt(index);
+        return @fromBackingInt(@intCast(index));
     }
 };
 
@@ -66,7 +66,7 @@ pub const ImageArrayLayers = enum(u8) {
     // zig fmt: on
 
     pub fn layers(amount: u3) ImageArrayLayers {
-        return @enumFromInt(amount);
+        return @fromBackingInt(@intCast(amount));
     }
 };
 
@@ -76,7 +76,7 @@ pub const ImageMipLevel = enum(u8) {
     // zig fmt: on
 
     pub fn level(index: u3) ImageMipLevel {
-        return @enumFromInt(index);
+        return @fromBackingInt(@intCast(index));
     }
 };
 
@@ -87,7 +87,7 @@ pub const ImageMipLevels = enum(u8) {
     // zig fmt: on
 
     pub fn levels(amount: u3) ImageArrayLayers {
-        return @enumFromInt(amount);
+        return @fromBackingInt(@intCast(amount));
     }
 };
 
@@ -287,7 +287,7 @@ pub const Format = enum(u8) {
     }
 
     comptime {
-        std.debug.assert(@intFromEnum(Format.undefined) == 0);
+        std.debug.assert(@backingInt(Format.undefined) == 0);
     }
 };
 
@@ -1470,7 +1470,7 @@ pub const LightGeometricFactor = enum(u8) {
     both,
 
     pub fn native(factor: LightGeometricFactor) zitrus.hardware.BitpackedArray(bool, 2) {
-        return @bitCast(@as(u2, @intCast(@intFromEnum(factor))));
+        return @bitCast(@as(u2, @intCast(@backingInt(factor))));
     }
 };
 

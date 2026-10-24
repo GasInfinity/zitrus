@@ -20,7 +20,7 @@ pub fn call(message: []const u8, return_address: ?usize) noreturn {
         .revision_low = 0x00,
         .result_code = .ztr_panic,
         .pc_address = return_address orelse @returnAddress(),
-        .process_id = @intFromEnum(horizon.getProcessId(.current).value), // NOTE: cannot fail as current is always valid.
+        .process_id = @backingInt(horizon.getProcessId(.current).value), // NOTE: cannot fail as current is always valid.
         .title_id = 0x0,
         .applet_title_id = 0x0,
         .data = undefined,

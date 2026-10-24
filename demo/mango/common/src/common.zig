@@ -29,13 +29,13 @@ pub fn Batcher(comptime Vertex: type) type {
             // XXX: This will overflow eventually but demos won't fill it too much.
             // We'll have to add a separate draw call ArrayList for this (as we support vertex offsets in drawcalls :D!)
             const first: u16 = @intCast(bat.vertices.items.len);
-            bat.indices.appendSliceAssumeCapacity(&.{first, first + 1, first + 2, first + 2, first + 3, first});
+            bat.indices.appendSliceAssumeCapacity(&.{ first, first + 1, first + 2, first + 2, first + 3, first });
             return bat.vertices.addManyAsSliceAssumeCapacity(4);
         }
 
         pub fn ensureQuads(bat: *Batch, linear_gpa: std.mem.Allocator, n: usize) !void {
             try bat.vertices.ensureUnusedCapacity(linear_gpa, 4 * n);
-            try bat.indices.ensureUnusedCapacity(linear_gpa, 6 * n); 
+            try bat.indices.ensureUnusedCapacity(linear_gpa, 6 * n);
         }
 
         pub fn addQuad(bat: *Batch, linear_gpa: std.mem.Allocator) ![]Vertex {

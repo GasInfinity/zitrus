@@ -19,7 +19,7 @@ pub const Command = extern struct {
         _,
 
         pub fn offset(value: u16) Offset {
-            return @enumFromInt(value);
+            return @fromBackingInt(@intCast(value));
         }
     };
 
@@ -391,7 +391,7 @@ pub const Channel = extern struct {
         _,
 
         pub fn channel(value: u5) Id {
-            return @enumFromInt(value);
+            return @fromBackingInt(@intCast(value));
         }
     };
 
@@ -422,7 +422,7 @@ pub const DirectSound = extern struct {
         _,
 
         pub fn id(value: u2) Id {
-            return @enumFromInt(value);
+            return @fromBackingInt(@intCast(value));
         }
     };
 
@@ -432,7 +432,7 @@ pub const DirectSound = extern struct {
         _,
 
         pub fn priority(value: u8) Priority {
-            return @enumFromInt(value);
+            return @fromBackingInt(@intCast(value));
         }
     };
 

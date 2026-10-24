@@ -62,12 +62,12 @@ pub fn isFullyLinear(address: u32, size: u32) bool {
 }
 
 pub fn toPhysical(ptr: u32) zitrus.hardware.PhysicalAddress {
-    return @enumFromInt(switch (ptr) {
+    return @fromBackingInt(@intCast(switch (ptr) {
         old_linear_heap_begin...old_linear_heap_end => (ptr - old_linear_heap_begin) + memory.fcram_begin,
         linear_heap_begin...linear_heap_end => (ptr - linear_heap_begin) + memory.fcram_begin,
         vram_begin...vram_end => (ptr - vram_begin) + memory.vram_begin,
         else => 0,
-    });
+    }));
 }
 
 pub fn toVirtual(ptr: u32, fcram_base_offset: u32) ?[*]u8 {

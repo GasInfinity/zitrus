@@ -243,7 +243,7 @@ const ReverseReader = struct {
         const rr: *ReverseReader = @alignCast(@fieldParentPtr("reader", r));
         if (rr.index == 0) return error.EndOfStream;
 
-        var remaining: usize = @intFromEnum(limit);
+        var remaining: usize = @backingInt(limit);
         while (remaining > 0) {
             if (rr.index == 0) break;
 
@@ -251,7 +251,7 @@ const ReverseReader = struct {
             rr.index -= 1;
             try w.writeByte(rr.data[rr.index]);
         }
-        return @intFromEnum(limit) - remaining;
+        return @backingInt(limit) - remaining;
     }
 };
 

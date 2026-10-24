@@ -94,13 +94,13 @@ pub const Builder = struct {
                 },
                 .info = .{
                     .directory = .{
-                        .parent = @enumFromInt(@intFromEnum(builder.current)),
+                        .parent = @fromBackingInt(@intCast(@backingInt(builder.current))),
                         .end = undefined, // NOTE: To be filled by `Directory.end`
                     },
                 },
             });
 
-            builder.current = @enumFromInt(builder.entries.items.len - 1);
+            builder.current = @fromBackingInt(@intCast(builder.entries.items.len - 1));
             return builder.current;
         }
 
@@ -138,10 +138,10 @@ pub const Builder = struct {
 
         pub fn end(dir: *Directory, builder: *Builder) void {
             std.debug.assert(dir.* == builder.current);
-            const entry = &builder.entries.items[@intFromEnum(dir.*)];
+            const entry = &builder.entries.items[@backingInt(dir.*)];
 
-            entry.info.directory.end = @enumFromInt(builder.entries.items.len);
-            builder.current = @enumFromInt(@intFromEnum(entry.info.directory.parent));
+            entry.info.directory.end = @fromBackingInt(@intCast(builder.entries.items.len));
+            builder.current = @fromBackingInt(@intCast(@backingInt(entry.info.directory.parent)));
             dir.* = undefined;
         }
     };
@@ -150,7 +150,7 @@ pub const Builder = struct {
         .entries = .empty,
         .name_table = .empty,
         .file_data = .empty,
-        .current = @enumFromInt(0),
+        .current = @fromBackingInt(@intCast(0)),
     };
 
     entries: std.ArrayList(MetaEntry),
@@ -250,7 +250,7 @@ pub const View = struct {
         _,
 
         pub fn name(directory: Directory, view: View) [:0]const u16 {
-            return view.entries[@intFromEnum(directory)].name(view.name_table);
+            return view.entries[@backingInt(directory)].name(view.name_table);
         }
     };
 
@@ -265,11 +265,11 @@ pub const View = struct {
         _,
 
         pub fn name(file: File, view: View) [:0]const u16 {
-            return view.entries[@intFromEnum(file)].name(view.name_table);
+            return view.entries[@backingInt(file)].name(view.name_table);
         }
 
         pub fn stat(file: File, view: View) Stat {
-            const file_meta = view.entries[@intFromEnum(file)];
+            const file_meta = view.entries[@backingInt(file)];
 
             return .{
                 .offset = file_meta.info.file.offset - view.data_offset,
@@ -287,25 +287,25 @@ pub const View = struct {
         pub fn initDirectory(directory: Directory) Entry {
             return .{
                 .kind = .directory,
-                .handle = @enumFromInt(@intFromEnum(directory)),
+                .handle = @fromBackingInt(@intCast(@backingInt(directory))),
             };
         }
 
         pub fn initFile(file: File) Entry {
             return .{
                 .kind = .file,
-                .handle = @enumFromInt(@intFromEnum(file)),
+                .handle = @fromBackingInt(@intCast(@backingInt(file))),
             };
         }
 
         pub fn name(entry: Entry, view: View) []const u16 {
-            const table_entry = view.entries[@intFromEnum(entry.handle)];
+            const table_entry = view.entries[@backingInt(entry.handle)];
             return table_entry.name(view.name_table);
         }
 
         pub fn asDirectory(entry: Entry) Directory {
             return switch (entry.kind) {
-                .directory => @enumFromInt(@intFromEnum(entry.handle)),
+                .directory => @fromBackingInt(@intCast(@backingInt(entry.handle))),
                 .file => unreachable,
             };
         }
@@ -313,7 +313,7 @@ pub const View = struct {
         pub fn asFile(entry: Entry) File {
             return switch (entry.kind) {
                 .directory => unreachable,
-                .file => @enumFromInt(@intFromEnum(entry.handle)),
+                .file => @fromBackingInt(@intCast(@backingInt(entry.handle))),
             };
         }
     };
@@ -352,7 +352,7 @@ pub const View = struct {
 
         if (root.attributes.kind != .directory) return error.RootNotDir;
 
-        const entries = try reader.readSliceEndianAlloc(gpa, MetaEntry, @intFromEnum(root.info.directory.end), .little);
+        const entries = try reader.readSliceEndianAlloc(gpa, MetaEntry, @backingInt(root.info.directory.end), .little);
         errdefer gpa.free(entries);
 
         const name_table = try reader.readSliceEndianAlloc(gpa, u16, @divExact(hdr.meta_size - (entries.len * @sizeOf(MetaEntry)), @sizeOf(u16)), .little);
@@ -379,7 +379,7 @@ pub const View = struct {
         const opened = try view.openAny(parent, path);
 
         return switch (opened.kind) {
-            .file => @enumFromInt(@intFromEnum(opened.handle)),
+            .file => @fromBackingInt(@intCast(@backingInt(opened.handle))),
             .directory => error.IsDir,
         };
     }
@@ -389,7 +389,7 @@ pub const View = struct {
 
         return switch (opened.kind) {
             .file => error.NotDir,
-            .directory => @enumFromInt(@intFromEnum(opened.handle)),
+            .directory => @fromBackingInt(@intCast(@backingInt(opened.handle))),
         };
     }
 
@@ -403,7 +403,7 @@ pub const View = struct {
 
         while (it.next()) |current| {
             last_parent = if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral("..")))
-                @enumFromInt(@intFromEnum(view.entries[@intFromEnum(last_parent)].info.directory.parent))
+                @fromBackingInt(@intCast(@backingInt(view.entries[@backingInt(last_parent)].info.directory.parent)))
             else if (view.find(last_parent, last)) |e| switch (e.kind) {
                 .directory => e.asDirectory(),
                 .file => return error.FileNotFound,
@@ -418,7 +418,7 @@ pub const View = struct {
         } else error.FileNotFound;
 
         return if (std.mem.eql(u16, last, std.unicode.utf8ToUtf16LeStringLiteral("..")))
-            .initDirectory(@enumFromInt(@intFromEnum(view.entries[@intFromEnum(last_parent)].info.directory.parent)))
+            .initDirectory(@fromBackingInt(@intCast(@backingInt(view.entries[@backingInt(last_parent)].info.directory.parent))))
         else if (view.find(last_parent, last)) |entry|
             return entry
         else
@@ -445,8 +445,8 @@ pub const View = struct {
 
         pub fn init(view: View, parent: Directory) Iterator {
             return .{
-                .current = @intFromEnum(parent) + 1,
-                .end = @intFromEnum(view.entries[@intFromEnum(parent)].info.directory.end),
+                .current = @backingInt(parent) + 1,
+                .end = @backingInt(view.entries[@backingInt(parent)].info.directory.end),
             };
         }
 
@@ -457,13 +457,13 @@ pub const View = struct {
             const child = view.entries[current];
 
             defer switch (child.attributes.kind) {
-                .directory => it.current = @intFromEnum(child.info.directory.end),
+                .directory => it.current = @backingInt(child.info.directory.end),
                 .file => it.current += 1,
             };
 
             return .{
                 .kind = child.attributes.kind,
-                .handle = @enumFromInt(it.current),
+                .handle = @fromBackingInt(@intCast(it.current)),
             };
         }
     };

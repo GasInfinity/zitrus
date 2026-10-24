@@ -221,11 +221,11 @@ fn recycle(pool: *CommandPool, cmd_buffer: *CommandBuffer) void {
 }
 
 pub fn toHandle(image: *CommandPool) Handle {
-    return @enumFromInt(@intFromPtr(image));
+    return @fromBackingInt(@intCast(@intFromPtr(image)));
 }
 
 pub fn fromHandleMutable(handle: Handle) *CommandPool {
-    return @as(*CommandPool, @ptrFromInt(@intFromEnum(handle)));
+    return @as(*CommandPool, @ptrFromInt(@backingInt(handle)));
 }
 
 const CommandPool = @This();

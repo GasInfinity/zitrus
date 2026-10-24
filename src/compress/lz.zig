@@ -134,7 +134,7 @@ pub fn Decompress(comptime context: type) type {
                 error.WriteFailed => unreachable,
                 else => |e| return e,
             };
-            std.debug.assert(n <= @intFromEnum(limit));
+            std.debug.assert(n <= @backingInt(limit));
             return n;
         }
 
@@ -186,7 +186,7 @@ pub fn Decompress(comptime context: type) type {
 
         fn streamInner(d: *DecompressSelf, w: *Writer, limit: std.Io.Limit) (Error || Reader.StreamError)!usize {
             const in = d.input;
-            var remaining: usize = @intFromEnum(limit);
+            var remaining: usize = @backingInt(limit);
 
             st: switch (d.state) {
                 .header => {
@@ -211,7 +211,7 @@ pub fn Decompress(comptime context: type) type {
                                 if (match.len > remaining) {
                                     @branchHint(.unlikely);
                                     d.state = .{ .match = match };
-                                    return @intFromEnum(limit) - remaining;
+                                    return @backingInt(limit) - remaining;
                                 }
 
                                 try writeMatch(w, match);
@@ -222,7 +222,7 @@ pub fn Decompress(comptime context: type) type {
                     }
 
                     if (d.remaining_uncompressed == 0) d.state = .end;
-                    return @intFromEnum(limit) - remaining;
+                    return @backingInt(limit) - remaining;
                 },
                 .match => |match| {
                     try writeMatch(w, match);

@@ -46,12 +46,12 @@ pub fn compile(bindings: []const mango.VertexInputBindingDescription, attributes
 
     for (attributes, 0..) |attribute, i| {
         const native_format = attribute.format.nativeVertexFormat();
-        const binding_index = @intFromEnum(attribute.binding);
+        const binding_index = @backingInt(attribute.binding);
         const offset = attribute.offset;
 
-        layout.permutation.setAttribute(@enumFromInt(i), @enumFromInt(@intFromEnum(attribute.location)));
-        layout.config.setAttribute(@enumFromInt(i), native_format);
-        layout.config.setFlag(@enumFromInt(i), .array);
+        layout.permutation.setAttribute(@fromBackingInt(@intCast(i)), @fromBackingInt(@intCast(@backingInt(attribute.location))));
+        layout.config.setAttribute(@fromBackingInt(@intCast(i)), native_format);
+        layout.config.setFlag(@fromBackingInt(@intCast(i)), .array);
 
         const end = &binding_attributes_end[binding_index];
 
@@ -67,8 +67,8 @@ pub fn compile(bindings: []const mango.VertexInputBindingDescription, attributes
     }
 
     for (fixed_attributes, attributes.len..) |attribute, i| {
-        layout.config.setFlag(@enumFromInt(i), .fixed);
-        layout.permutation.setAttribute(@enumFromInt(i), @enumFromInt(@intFromEnum(attribute.location)));
+        layout.config.setFlag(@fromBackingInt(@intCast(i)), .fixed);
+        layout.permutation.setAttribute(@fromBackingInt(@intCast(i)), @fromBackingInt(@intCast(@backingInt(attribute.location))));
     }
 
     if (fixed_attributes.len > 0) @panic("TODO: fixed attributes");
@@ -103,10 +103,10 @@ pub fn compile(bindings: []const mango.VertexInputBindingDescription, attributes
         );
 
         var current_alignment: usize = first_format.type.byteSize();
-        var current_offset: usize = first_format.type.byteSize() * (@as(usize, @intFromEnum(first_format.size)) + 1);
+        var current_offset: usize = first_format.type.byteSize() * (@as(usize, @backingInt(first_format.size)) + 1);
         var current_attribute: u4 = 1;
 
-        binding.setComponent(.@"0", @enumFromInt(sorted_attributes[0].index_format.index));
+        binding.setComponent(.@"0", @fromBackingInt(@intCast(sorted_attributes[0].index_format.index)));
 
         for (sorted_attributes[1..], sorted_attributes[0 .. sorted_attributes.len - 1]) |attribute, last_attribute| {
             const last_attribute_i = last_attribute.index_format.index;
@@ -114,14 +114,14 @@ pub fn compile(bindings: []const mango.VertexInputBindingDescription, attributes
             const attribute_i = attribute.index_format.index;
             const format = attribute.index_format.format;
             const format_type_size = format.type.byteSize();
-            const format_size = format_type_size * (@as(usize, @intFromEnum(format.size)) + 1);
+            const format_size = format_type_size * (@as(usize, @backingInt(format.size)) + 1);
             const assigned_offset = attribute.offset;
             const next_natural_offset = std.mem.alignForward(usize, current_offset, format_type_size);
 
             try validation.assert(
                 std.mem.isAligned(assigned_offset, format_type_size),
                 validation.vertex_input_layout.unaligned_offset,
-                .{ attribute_i, layout.permutation.getAttribute(@enumFromInt(attribute_i)), binding_i, format_type_size, assigned_offset },
+                .{ attribute_i, layout.permutation.getAttribute(@fromBackingInt(@intCast(attribute_i))), binding_i, format_type_size, assigned_offset },
             );
 
             try validation.assert(
@@ -129,9 +129,9 @@ pub fn compile(bindings: []const mango.VertexInputBindingDescription, attributes
                 validation.vertex_input_layout.not_sequential,
                 .{
                     last_attribute_i,
-                    layout.permutation.getAttribute(@enumFromInt(last_attribute_i)),
+                    layout.permutation.getAttribute(@fromBackingInt(@intCast(last_attribute_i))),
                     attribute_i,
-                    layout.permutation.getAttribute(@enumFromInt(attribute_i)),
+                    layout.permutation.getAttribute(@fromBackingInt(@intCast(attribute_i))),
                     binding_i,
                     last_attribute.offset,
                     last_attribute.offset + last_attribute.index_format.format.byteSize(),
@@ -148,7 +148,7 @@ pub fn compile(bindings: []const mango.VertexInputBindingDescription, attributes
                 try validation.assert(
                     std.mem.isAligned(padding, @sizeOf(f32)),
                     validation.vertex_input_layout.attribute_gap,
-                    .{ attribute_i, layout.permutation.getAttribute(@enumFromInt(attribute_i)), binding_i, current_offset, assigned_offset, padding },
+                    .{ attribute_i, layout.permutation.getAttribute(@fromBackingInt(@intCast(attribute_i))), binding_i, current_offset, assigned_offset, padding },
                 );
 
                 var remaining_padding = padding;
@@ -157,7 +157,7 @@ pub fn compile(bindings: []const mango.VertexInputBindingDescription, attributes
                 }
             }
 
-            binding.setComponent(@enumFromInt(current_attribute), @enumFromInt(attribute.index_format.index));
+            binding.setComponent(@fromBackingInt(@intCast(current_attribute)), @fromBackingInt(@intCast(attribute.index_format.index)));
             current_attribute += 1;
             current_offset = assigned_offset + format_size;
             current_alignment = @max(current_alignment, format_type_size);
@@ -197,21 +197,21 @@ pub fn compile(bindings: []const mango.VertexInputBindingDescription, attributes
 }
 
 fn appendPadAttributes(current_binding: *GpuAttributeBufferConfig, current_binding_attribute: *u4, remaining_padding: *usize, padding: GpuArrayComponent) void {
-    std.debug.assert(@intFromEnum(padding) >= @intFromEnum(GpuArrayComponent.padding_4));
+    std.debug.assert(@backingInt(padding) >= @backingInt(GpuArrayComponent.padding_4));
 
-    const components: usize = (@intFromEnum(padding) - @intFromEnum(GpuArrayComponent.padding_4)) + 1;
+    const components: usize = (@backingInt(padding) - @backingInt(GpuArrayComponent.padding_4)) + 1;
     while (remaining_padding.* >= @sizeOf(f32) * components) : (remaining_padding.* -= @sizeOf(f32) * components) {
-        current_binding.setComponent(@enumFromInt(current_binding_attribute.*), padding);
+        current_binding.setComponent(@fromBackingInt(@intCast(current_binding_attribute.*)), padding);
         current_binding_attribute.* += 1;
     }
 }
 
 pub fn toHandle(layout: *VertexInputLayout) Handle {
-    return @enumFromInt(@intFromPtr(layout));
+    return @fromBackingInt(@intCast(@intFromPtr(layout)));
 }
 
 pub fn fromHandleMutable(handle: Handle) *VertexInputLayout {
-    return @as(*VertexInputLayout, @ptrFromInt(@intFromEnum(handle)));
+    return @as(*VertexInputLayout, @ptrFromInt(@backingInt(handle)));
 }
 
 test "smoke test" {

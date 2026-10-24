@@ -86,11 +86,11 @@ pub const View = struct {
         _,
 
         pub fn name(file: File, view: View) [:0]const u8 {
-            return view.entries[@intFromEnum(file)].name(view.name_table);
+            return view.entries[@backingInt(file)].name(view.name_table);
         }
 
         pub fn stat(file: File, view: View) Stat {
-            const file_entry = view.entries[@intFromEnum(file)];
+            const file_entry = view.entries[@backingInt(file)];
 
             return .{
                 .hash = file_entry.hash,
@@ -176,7 +176,7 @@ pub const View = struct {
             .hash = hash,
         };
 
-        return @enumFromInt(std.sort.binarySearch(FileAllocationTable.Entry, view.entries, search_ctx, PathSearchContext.compareEntries) orelse return error.FileNotFound);
+        return @fromBackingInt(@intCast(std.sort.binarySearch(FileAllocationTable.Entry, view.entries, search_ctx, PathSearchContext.compareEntries) orelse return error.FileNotFound));
     }
 
     pub const Iterator = struct {
@@ -187,7 +187,7 @@ pub const View = struct {
             if (it.current >= it.view.entries.len) return null;
 
             defer it.current += 1;
-            return @enumFromInt(it.current);
+            return @fromBackingInt(@intCast(it.current));
         }
     };
 

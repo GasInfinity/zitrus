@@ -93,7 +93,7 @@ pub const Fill = extern struct {
             const cleared_layers = b_image.info.layersByAmount(info.subresource_range.layer_count, info.subresource_range.base_array_layer);
 
             std.debug.assert(b_image.address != .zero);
-            const phys_start = @intFromEnum(b_image.address);
+            const phys_start = @backingInt(b_image.address);
             const full_layer_size = clear_scale * b_image.info.layer_size;
 
             // We can fully clear all the layers! This common case must be optimized!
@@ -101,7 +101,7 @@ pub const Fill = extern struct {
                 const len: u32 = @intCast(full_layer_size * cleared_layers);
 
                 return .{
-                    .current = phys_start + (full_layer_size * @intFromEnum(info.subresource_range.base_array_layer)),
+                    .current = phys_start + (full_layer_size * @backingInt(info.subresource_range.base_array_layer)),
                     .clear_len = @intCast(len), // Impossible, if a safety panic hits here; you have bigger problems
                     .next_len = len,
                     .remaining = 1,
@@ -114,14 +114,14 @@ pub const Fill = extern struct {
             const width: usize = b_image.info.width();
             const height: usize = b_image.info.height();
 
-            const mip_width = backend.imageLevelDimension(width, @intFromEnum(info.subresource_range.base_mip_level));
-            const mip_height = backend.imageLevelDimension(height, @intFromEnum(info.subresource_range.base_mip_level));
+            const mip_width = backend.imageLevelDimension(width, @backingInt(info.subresource_range.base_mip_level));
+            const mip_height = backend.imageLevelDimension(height, @backingInt(info.subresource_range.base_mip_level));
 
             const mip_offset = clear_scale * backend.imageLevelOffset(width * mip_height, mip_width * mip_height);
             const full_cleared_size = clear_scale * backend.imageLayerSize(mip_width * mip_height, cleared_levels);
 
             return .{
-                .current = phys_start + full_layer_size * @intFromEnum(info.subresource_range.base_array_layer) + mip_offset,
+                .current = phys_start + full_layer_size * @backingInt(info.subresource_range.base_array_layer) + mip_offset,
                 .clear_len = @intCast(full_cleared_size), // Impossible, if a safety panic hits here; you have bigger problems
                 .next_len = full_layer_size,
                 .remaining = cleared_layers,
@@ -162,7 +162,7 @@ pub const Fill = extern struct {
             const cleared_levels = b_image.info.levelsByAmount(info.subresource_range.level_count, info.subresource_range.base_mip_level);
             const cleared_layers = b_image.info.layersByAmount(info.subresource_range.layer_count, info.subresource_range.base_array_layer);
 
-            const phys_start = @intFromEnum(b_image.address);
+            const phys_start = @backingInt(b_image.address);
             const full_layer_size = clear_scale * b_image.info.layer_size;
 
             // We can fully clear all the layers! This common case must be optimized!
@@ -170,7 +170,7 @@ pub const Fill = extern struct {
                 const len: u32 = @intCast(full_layer_size * cleared_layers);
 
                 return .{
-                    .current = phys_start + (full_layer_size * @intFromEnum(info.subresource_range.base_array_layer)),
+                    .current = phys_start + (full_layer_size * @backingInt(info.subresource_range.base_array_layer)),
                     .clear_len = @intCast(len), // Impossible, if a safety panic hits here; you have bigger problems
                     .next_len = len,
                     .remaining = 1,
@@ -183,14 +183,14 @@ pub const Fill = extern struct {
             const width: usize = b_image.info.width();
             const height: usize = b_image.info.height();
 
-            const mip_width = backend.imageLevelDimension(width, @intFromEnum(info.subresource_range.base_mip_level));
-            const mip_height = backend.imageLevelDimension(height, @intFromEnum(info.subresource_range.base_mip_level));
+            const mip_width = backend.imageLevelDimension(width, @backingInt(info.subresource_range.base_mip_level));
+            const mip_height = backend.imageLevelDimension(height, @backingInt(info.subresource_range.base_mip_level));
 
             const mip_offset = clear_scale * backend.imageLevelOffset(width * mip_height, mip_width * mip_height);
             const full_cleared_size = clear_scale * backend.imageLayerSize(mip_width * mip_height, cleared_levels);
 
             return .{
-                .current = phys_start + full_layer_size * @intFromEnum(info.subresource_range.base_array_layer) + mip_offset,
+                .current = phys_start + full_layer_size * @backingInt(info.subresource_range.base_array_layer) + mip_offset,
                 .clear_len = @intCast(full_cleared_size), // Impossible, if a safety panic hits here; you have bigger problems
                 .next_len = full_layer_size,
                 .remaining = cleared_layers,
@@ -263,8 +263,8 @@ pub const Transfer = extern struct {
             std.debug.assert(info.src_buffer.len == info.dst_buffer.len);
 
             return .{
-                .current_src = @intFromEnum(info.src_buffer.address),
-                .current_dst = @intFromEnum(info.dst_buffer.address),
+                .current_src = @backingInt(info.src_buffer.address),
+                .current_dst = @backingInt(info.dst_buffer.address),
                 .src_next_len = 0,
                 .dst_next_len = 0,
                 .remaining = 1,
@@ -300,14 +300,14 @@ pub const Transfer = extern struct {
             const src_width: usize = b_src_image.info.width();
             const src_height: usize = b_src_image.info.height();
 
-            const src_mip_width = backend.imageLevelDimension(src_width, @intFromEnum(info.src_subresource.mip_level));
-            const src_mip_height = backend.imageLevelDimension(src_height, @intFromEnum(info.src_subresource.mip_level));
+            const src_mip_width = backend.imageLevelDimension(src_width, @backingInt(info.src_subresource.mip_level));
+            const src_mip_height = backend.imageLevelDimension(src_height, @backingInt(info.src_subresource.mip_level));
 
             const dst_width: usize = b_dst_image.info.width();
             const dst_height: usize = b_dst_image.info.height();
 
-            const dst_mip_width = backend.imageLevelDimension(dst_width, @intFromEnum(info.src_subresource.mip_level));
-            const dst_mip_height = backend.imageLevelDimension(dst_height, @intFromEnum(info.src_subresource.mip_level));
+            const dst_mip_width = backend.imageLevelDimension(dst_width, @backingInt(info.src_subresource.mip_level));
+            const dst_mip_height = backend.imageLevelDimension(dst_height, @backingInt(info.src_subresource.mip_level));
 
             std.debug.assert(src_mip_width >= dst_mip_width and src_mip_height >= dst_mip_height); // Output must not be bigger than input.
 
@@ -349,8 +349,8 @@ pub const Transfer = extern struct {
             const dst_image_full_layer_size: usize = @as(usize, b_dst_image.info.layer_size) * dst_bpp;
 
             std.debug.assert(b_src_image.address != .zero and b_dst_image.address != .zero);
-            const src = @intFromEnum(b_src_image.address);
-            const dst = @intFromEnum(b_dst_image.address);
+            const src = @backingInt(b_src_image.address);
+            const dst = @backingInt(b_dst_image.address);
 
             const src_mip_offset = src_bpp * backend.imageLevelOffset(src_width * src_height, src_mip_width * src_mip_height);
             const dst_mip_offset = dst_bpp * backend.imageLevelOffset(dst_width * dst_height, dst_mip_width * dst_mip_height);
@@ -358,8 +358,8 @@ pub const Transfer = extern struct {
             const gap_line: [2]u16 = .{ @intCast(src_mip_width), @intCast(src_mip_height) };
 
             return .{
-                .current_src = src + src_image_full_layer_size * @intFromEnum(info.src_subresource.base_array_layer) + src_mip_offset,
-                .current_dst = dst + dst_image_full_layer_size * @intFromEnum(info.dst_subresource.base_array_layer) + dst_mip_offset,
+                .current_src = src + src_image_full_layer_size * @backingInt(info.src_subresource.base_array_layer) + src_mip_offset,
+                .current_dst = dst + dst_image_full_layer_size * @backingInt(info.dst_subresource.base_array_layer) + dst_mip_offset,
                 .src_next_len = src_image_full_layer_size,
                 .dst_next_len = dst_image_full_layer_size,
                 .remaining = dst_blitting_layers,
@@ -388,8 +388,8 @@ pub const Transfer = extern struct {
             const dst_width: usize = b_dst_image.info.width();
             const dst_height: usize = b_dst_image.info.height();
 
-            const dst_mip_width = backend.imageLevelDimension(dst_width, @intFromEnum(info.dst_subresource.mip_level));
-            const dst_mip_height = backend.imageLevelDimension(dst_height, @intFromEnum(info.dst_subresource.mip_level));
+            const dst_mip_width = backend.imageLevelDimension(dst_width, @backingInt(info.dst_subresource.mip_level));
+            const dst_mip_height = backend.imageLevelDimension(dst_height, @backingInt(info.dst_subresource.mip_level));
 
             std.debug.assert(dst_mip_width >= 64 and dst_mip_height >= 16);
 
@@ -399,15 +399,15 @@ pub const Transfer = extern struct {
             const dst_image_full_layer_size = @as(usize, b_dst_image.info.layer_size) * pixel_size;
 
             std.debug.assert(b_dst_image.address != .zero);
-            const dst = @intFromEnum(b_dst_image.address);
+            const dst = @backingInt(b_dst_image.address);
 
             const dst_blitting_layers = b_dst_image.info.layersByAmount(info.dst_subresource.layer_count, info.dst_subresource.base_array_layer);
 
             const gap_line: [2]u16 = .{ @intCast(dst_mip_width), @intCast(dst_mip_height) };
 
             return .{
-                .current_src = @intFromEnum(info.src_buffer.address),
-                .current_dst = dst + dst_image_full_layer_size * @intFromEnum(info.dst_subresource.base_array_layer) + dst_mip_offset,
+                .current_src = @backingInt(info.src_buffer.address),
+                .current_dst = dst + dst_image_full_layer_size * @backingInt(info.dst_subresource.base_array_layer) + dst_mip_offset,
                 .src_next_len = dst_mip_size,
                 .dst_next_len = dst_image_full_layer_size,
                 .remaining = dst_blitting_layers,

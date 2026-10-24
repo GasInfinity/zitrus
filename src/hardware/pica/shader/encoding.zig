@@ -444,7 +444,7 @@ pub const Component = enum(u2) {
                 const component = @field(other, std.mem.asBytes(&f));
 
                 @field(new_selector, std.mem.asBytes(&f)) = switch (component) {
-                    inline else => |v| @field(selector, std.mem.asBytes(&indexes[@intFromEnum(v)])),
+                    inline else => |v| @field(selector, std.mem.asBytes(&indexes[@backingInt(v)])),
                 };
             }
             return new_selector;
@@ -470,7 +470,7 @@ pub const Component = enum(u2) {
                 const component: Component = if (i >= expression.len)
                     last
                 else
-                    @enumFromInt(std.mem.indexOf(u8, span, &.{expression[i]}) orelse return error.InvalidComponent);
+                    @fromBackingInt(@intCast(std.mem.indexOf(u8, span, &.{expression[i]}) orelse return error.InvalidComponent));
 
                 @field(selector, std.mem.asBytes(&f)) = component;
                 last = component;
@@ -685,16 +685,16 @@ pub const Instruction = packed union(u32) {
         }
 
         pub fn toComparison(opcode: Opcode) ?Opcode.Comparison {
-            return switch (@intFromEnum(opcode)) {
-                @intFromEnum(Opcode.cmp0)...@intFromEnum(Opcode.cmp1) => @enumFromInt(@intFromEnum(Opcode.cmp0) >> 1),
+            return switch (@backingInt(opcode)) {
+                @backingInt(Opcode.cmp0)...@backingInt(Opcode.cmp1) => @fromBackingInt(@intCast(@backingInt(Opcode.cmp0) >> 1)),
                 else => null,
             };
         }
 
         pub fn toMad(opcode: Opcode) ?Opcode.Mad {
-            return switch (@intFromEnum(opcode)) {
-                0x30...0x37 => @enumFromInt(@intFromEnum(Opcode.madi0) >> 3),
-                0x38...0x3F => @enumFromInt(@intFromEnum(Opcode.mad0) >> 3),
+            return switch (@backingInt(opcode)) {
+                0x30...0x37 => @fromBackingInt(@intCast(@backingInt(Opcode.madi0) >> 3)),
+                0x38...0x3F => @fromBackingInt(@intCast(@backingInt(Opcode.mad0) >> 3)),
                 else => null,
             };
         }
@@ -794,22 +794,22 @@ pub const Instruction = packed union(u32) {
             const inst = fmt.inst;
             const descriptors = fmt.descriptors;
 
-            return switch (@intFromEnum(inst.unparametized.opcode)) {
-                @intFromEnum(Opcode.@"break"),
-                @intFromEnum(Opcode.nop),
-                @intFromEnum(Opcode.end),
-                @intFromEnum(Opcode.emit),
+            return switch (@backingInt(inst.unparametized.opcode)) {
+                @backingInt(Opcode.@"break"),
+                @backingInt(Opcode.nop),
+                @backingInt(Opcode.end),
+                @backingInt(Opcode.emit),
                 => try writer.print("{t}", .{inst.unparametized.opcode}),
-                @intFromEnum(Opcode.add),
-                @intFromEnum(Opcode.dp3),
-                @intFromEnum(Opcode.dp4),
-                @intFromEnum(Opcode.dph),
-                @intFromEnum(Opcode.dst),
-                @intFromEnum(Opcode.mul),
-                @intFromEnum(Opcode.sge),
-                @intFromEnum(Opcode.slt),
-                @intFromEnum(Opcode.max),
-                @intFromEnum(Opcode.min),
+                @backingInt(Opcode.add),
+                @backingInt(Opcode.dp3),
+                @backingInt(Opcode.dp4),
+                @backingInt(Opcode.dph),
+                @backingInt(Opcode.dst),
+                @backingInt(Opcode.mul),
+                @backingInt(Opcode.sge),
+                @backingInt(Opcode.slt),
+                @backingInt(Opcode.max),
+                @backingInt(Opcode.min),
                 => {
                     const binary = inst.register;
 
@@ -819,10 +819,10 @@ pub const Instruction = packed union(u32) {
                         try writer.print("{t} {t}.{f}, {f}{t}{f}.{f}, {f}{t}.{f}", .{ binary.opcode, binary.dst, desc.dst_mask, desc.src1_neg, binary.src1, binary.address_component, desc.src1_selector, desc.src2_neg, binary.src2, desc.src2_selector });
                     } else try writer.print("{t} {t}.????, ?{t}{f}.????, ?{t}.???? ; opdesc {d}", .{ binary.opcode, binary.dst, binary.src1, binary.address_component, binary.src2, binary.operand_descriptor_id });
                 },
-                @intFromEnum(Opcode.dphi),
-                @intFromEnum(Opcode.dsti),
-                @intFromEnum(Opcode.sgei),
-                @intFromEnum(Opcode.slti),
+                @backingInt(Opcode.dphi),
+                @backingInt(Opcode.dsti),
+                @backingInt(Opcode.sgei),
+                @backingInt(Opcode.slti),
                 => {
                     const binary = inst.register;
 
@@ -833,14 +833,14 @@ pub const Instruction = packed union(u32) {
                         try writer.print("{s} {t}.{f}, {f}{t}.{f}, {f}{t}{f}.{f}", .{ @tagName(binary.opcode)[0..3], binary.dst, desc.dst_mask, desc.src1_neg, binary.src1, desc.src1_selector, desc.src2_neg, binary.src2, binary.address_component, desc.src2_selector });
                     } else try writer.print("{s} {t}.????, ?{t}.????, ?{t}{f}.???? ; opdesc {d}", .{ @tagName(binary.opcode)[0..3], binary.dst, binary.src1, binary.src2, binary.address_component, binary.operand_descriptor_id });
                 },
-                @intFromEnum(Opcode.ex2),
-                @intFromEnum(Opcode.lg2),
-                @intFromEnum(Opcode.litp),
-                @intFromEnum(Opcode.flr),
-                @intFromEnum(Opcode.rcp),
-                @intFromEnum(Opcode.rsq),
-                @intFromEnum(Opcode.mova),
-                @intFromEnum(Opcode.mov),
+                @backingInt(Opcode.ex2),
+                @backingInt(Opcode.lg2),
+                @backingInt(Opcode.litp),
+                @backingInt(Opcode.flr),
+                @backingInt(Opcode.rcp),
+                @backingInt(Opcode.rsq),
+                @backingInt(Opcode.mova),
+                @backingInt(Opcode.mov),
                 => {
                     const unary = inst.register;
 
@@ -850,26 +850,26 @@ pub const Instruction = packed union(u32) {
                         try writer.print("{t} {t}.{f}, {f}{t}{f}.{f}", .{ unary.opcode, unary.dst, desc.dst_mask, desc.src1_neg, unary.src1, unary.address_component, desc.src1_selector });
                     } else try writer.print("{t} {t}.????, ?{t}{f}.???? ; opdesc {d}", .{ unary.opcode, unary.dst, unary.src1, unary.address_component, unary.operand_descriptor_id });
                 },
-                @intFromEnum(Opcode.breakc),
+                @backingInt(Opcode.breakc),
                 => try writer.print("breakc {t}, {}, {}", .{ inst.control_flow.condition, inst.control_flow.ref_x, inst.control_flow.ref_y }),
-                @intFromEnum(Opcode.jmpc),
+                @backingInt(Opcode.jmpc),
                 => try writer.print("jmpc {t}, {}, {}, L_{X:0>3}", .{ inst.control_flow.condition, inst.control_flow.ref_x, inst.control_flow.ref_y, inst.control_flow.dst }),
-                @intFromEnum(Opcode.call),
+                @backingInt(Opcode.call),
                 => try writer.print("call L_{X:0>3}, L_{X:0>3}", .{ inst.control_flow.dst, inst.control_flow.dst + inst.control_flow.num }),
-                @intFromEnum(Opcode.callc),
-                @intFromEnum(Opcode.ifc),
+                @backingInt(Opcode.callc),
+                @backingInt(Opcode.ifc),
                 => try writer.print("{t} {t}, {}, {}, L_{X:0>3}, L_{X:0>3}", .{ inst.control_flow.opcode, inst.control_flow.condition, inst.control_flow.ref_x, inst.control_flow.ref_y, inst.control_flow.dst, inst.control_flow.dst + inst.control_flow.num }),
-                @intFromEnum(Opcode.callu),
-                @intFromEnum(Opcode.ifu),
+                @backingInt(Opcode.callu),
+                @backingInt(Opcode.ifu),
                 => try writer.print("{t} {t}, L_{X:0>3}, L_{X:0>3}", .{ inst.constant_control_flow.opcode, inst.constant_control_flow.src.bool, inst.constant_control_flow.dst, inst.constant_control_flow.dst + inst.constant_control_flow.num }),
-                @intFromEnum(Opcode.jmpu),
+                @backingInt(Opcode.jmpu),
                 => try writer.print("jmpu {t}, {}, L_{X:0>3}", .{ inst.constant_control_flow.src.bool, inst.constant_control_flow.num == 0, inst.constant_control_flow.dst }),
-                @intFromEnum(Opcode.loop),
+                @backingInt(Opcode.loop),
                 => try writer.print("loop {t}, L_{X:0>3}", .{ inst.constant_control_flow.src.int.used, inst.constant_control_flow.dst + @sizeOf(Instruction) }),
-                @intFromEnum(Opcode.setemit),
+                @backingInt(Opcode.setemit),
                 => try writer.print("setemit {}, {t}, {t}", .{ inst.set_emit.vertex_id, inst.set_emit.primitive_emit, inst.set_emit.winding }),
-                @intFromEnum(Opcode.cmp0),
-                @intFromEnum(Opcode.cmp1),
+                @backingInt(Opcode.cmp0),
+                @backingInt(Opcode.cmp1),
                 => {
                     const cmp = inst.comparison;
 
@@ -879,7 +879,7 @@ pub const Instruction = packed union(u32) {
                         try writer.print("cmp {f}{t}{f}.{f}, {t}, {t}, {f}{t}.{f}", .{ desc.src1_neg, cmp.src1, cmp.address_component, desc.src1_selector, cmp.x_operation, cmp.y_operation, desc.src2_neg, cmp.src2, desc.src2_selector });
                     } else try writer.print("cmp ?{t}{f}.????, {t}, {t}, ?{t}.???? ; opdesc {d}", .{ cmp.src1, cmp.address_component, cmp.x_operation, cmp.y_operation, cmp.src2, cmp.operand_descriptor_id });
                 },
-                @intFromEnum(Opcode.mad0)...@intFromEnum(Opcode.mad7) => {
+                @backingInt(Opcode.mad0)...@backingInt(Opcode.mad7) => {
                     const mad = inst.mad;
 
                     if (mad.operand_descriptor_id < descriptors.len) {
@@ -888,7 +888,7 @@ pub const Instruction = packed union(u32) {
                         try writer.print("mad {t}.{f}, {f}{t}.{f}, {f}{t}{f}.{f}, {f}{t}.{f}", .{ mad.dst, desc.dst_mask, desc.src1_neg, mad.src1, desc.src1_selector, desc.src2_neg, mad.src2, mad.address_component, desc.src2_selector, desc.src3_neg, mad.src3, desc.src3_selector });
                     } else try writer.print("mad {t}.????, ?{t}.????, ?{t}{f}.????, ?{t}.???? ; opdesc {d}", .{ mad.dst, mad.src1, mad.src2, mad.address_component, mad.src3, mad.operand_descriptor_id });
                 },
-                @intFromEnum(Opcode.madi0)...@intFromEnum(Opcode.madi7) => {
+                @backingInt(Opcode.madi0)...@backingInt(Opcode.madi7) => {
                     const mad = inst.mad_inverted;
 
                     if (mad.operand_descriptor_id < descriptors.len) {

@@ -144,9 +144,9 @@ pub fn State(
             switch (idx) {
                 ports_start...ports_end => {
                     const session = assertResult(horizon.acceptSession(@bitCast(state.handles[idx])));
-                    const port: Ports = @enumFromInt(idx - ports_start);
+                    const port: Ports = @fromBackingInt(@intCast(idx - ports_start));
 
-                    switch (behaviors[@intFromEnum(port)]) {
+                    switch (behaviors[@backingInt(port)]) {
                         .handled => {
                             if (handled_remote_storage_len == 0) unreachable;
                             const session_idx = state.remotes;

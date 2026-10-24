@@ -139,7 +139,7 @@ pub fn decodeWordArray(reader: SpvReader, slice: []u32) struct { []const u32, u1
 }
 
 pub fn decodeEnum(reader: SpvReader, comptime T: type, slice: []u32) T {
-    return @enumFromInt(std.mem.readInt(@typeInfo(T).@"enum".tag_type, @ptrCast(&slice[0]), reader.endian));
+    return @fromBackingInt(@intCast(std.mem.readInt(@typeInfo(T).@"enum".tag_type, @ptrCast(&slice[0]), reader.endian)));
 }
 
 pub fn decodeString(reader: SpvReader, slice: []u32) !struct { []const u8, u16 } {

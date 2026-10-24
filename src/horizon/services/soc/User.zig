@@ -11,7 +11,7 @@ pub const E = enum(u32) {
         _,
 
         pub fn errno(maybe: Maybe) E {
-            return if (@intFromEnum(maybe) < 0) @enumFromInt(@abs(@intFromEnum(maybe))) else .SUCCESS;
+            return if (@backingInt(maybe) < 0) @fromBackingInt(@intCast(@abs(@backingInt(maybe)))) else .SUCCESS;
         }
     };
 

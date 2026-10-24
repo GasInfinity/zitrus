@@ -26,7 +26,7 @@ pub const Reference = extern struct {
         _,
 
         pub inline fn offset(value: u32) Offset {
-            return @enumFromInt(value);
+            return @fromBackingInt(@intCast(value));
         }
     };
 

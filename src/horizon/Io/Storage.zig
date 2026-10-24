@@ -840,7 +840,7 @@ pub fn openPath(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, parent_di
                 const stored_path: []const u16 = gpa.dupe(u16, path_z) catch return error.SystemResources;
                 errdefer gpa.free(stored_path);
 
-                storage.paths.list.items[@intFromEnum(stored_path_idx)] = .{ .value = stored_path };
+                storage.paths.list.items[@backingInt(stored_path_idx)] = .{ .value = stored_path };
 
                 break :des .{
                     .ref = .init(1),
@@ -1135,7 +1135,7 @@ pub fn createDirPath(storage: *Storage, io: std.Io, parent_dir: Descriptor, sub_
                 Builder.root
             else switch (maybe_dir_stored.?.path) { // We already return NoDevice above
                 .invalid => Builder.root,
-                _ => |open| storage.paths.list.items[@intFromEnum(open)].value,
+                _ => |open| storage.paths.list.items[@backingInt(open)].value,
             };
 
             // + 1 for the NUL-terminator
@@ -1213,7 +1213,7 @@ pub fn netListen(storage: *Storage, io: std.Io, gpa: Allocator, address: *const 
         });
 
         break :sock switch (maybe_sock.errno()) {
-            .SUCCESS => @enumFromInt(@intFromEnum(maybe_sock)),
+            .SUCCESS => @fromBackingInt(@intCast(@backingInt(maybe_sock))),
             .NOMEM => return error.SystemResources,
             else => |e| return unexpectedSocErrno(e),
         };
@@ -1302,7 +1302,7 @@ pub fn netBind(storage: *Storage, io: std.Io, gpa: Allocator, address: *const Io
         });
 
         break :sock switch (maybe_sock.errno()) {
-            .SUCCESS => @enumFromInt(@intFromEnum(maybe_sock)),
+            .SUCCESS => @fromBackingInt(@intCast(@backingInt(maybe_sock))),
             .NOMEM => return error.SystemResources,
             else => |e| return unexpectedSocErrno(e),
         };
@@ -1361,7 +1361,7 @@ pub fn netAccept(storage: *Storage, io: std.Io, gpa: Allocator, handle: Descript
         };
 
         switch (maybe_accepted_sock.errno()) {
-            .SUCCESS => break :blk @enumFromInt(@intFromEnum(maybe_accepted_sock)),
+            .SUCCESS => break :blk @fromBackingInt(@intCast(@backingInt(maybe_accepted_sock))),
             .AGAIN => horizon.sleepThread(socket_busy_loop_workaround_ns),
             .NOMEM => return error.SystemResources,
             else => |e| return unexpectedSocErrno(e),
@@ -1411,7 +1411,7 @@ pub fn netConnect(storage: *Storage, io: std.Io, gpa: Allocator, address: *const
         });
 
         break :sock switch (maybe_sock.errno()) {
-            .SUCCESS => @enumFromInt(@intFromEnum(maybe_sock)),
+            .SUCCESS => @fromBackingInt(@intCast(@backingInt(maybe_sock))),
             .NOMEM => return error.SystemResources,
             else => |e| return unexpectedSocErrno(e),
         };
@@ -1459,7 +1459,7 @@ pub fn netConnect(storage: *Storage, io: std.Io, gpa: Allocator, address: *const
 
             switch (maybe_poll.errno()) {
                 .SUCCESS => {
-                    const polled: u32 = @intCast(@intFromEnum(maybe_poll));
+                    const polled: u32 = @intCast(@backingInt(maybe_poll));
 
                     if (polled == 0) continue;
                     if (poll_fd.events.out) break; // gtg
@@ -1502,7 +1502,7 @@ fn setSocketNonBlocking(soc: SocketUser, sock: SocketUser.Descriptor, non_blocki
     };
 
     const flags: SocketUser.Descriptor.Flags = switch (maybe_flags.errno()) {
-        .SUCCESS => @bitCast(@intFromEnum(maybe_flags)),
+        .SUCCESS => @bitCast(@backingInt(maybe_flags)),
         else => |e| return unexpectedSocErrno(e),
     };
 
@@ -1714,7 +1714,7 @@ pub fn readDir(storage: *Storage, io: std.Io, r: *Io.Dir.Reader, entries: []Io.D
                     const desc = storage.getDescription(handle);
                     break :blk .{ switch (desc.stored.path) {
                         .invalid => Builder.root,
-                        _ => |idx| storage.paths.list.items[@intFromEnum(idx)].value,
+                        _ => |idx| storage.paths.list.items[@backingInt(idx)].value,
                     }, @atomicLoad(FilesystemSrv.Directory, &desc.extra.dir.archive, .monotonic) };
                 };
 
@@ -2088,7 +2088,7 @@ fn netReceiveOne(storage: *Storage, sock: SocketUser.Descriptor, msg: *Io.net.In
 
         switch (maybe_recvd.errno()) {
             .SUCCESS => {
-                const recvd: u32 = @intCast(@intFromEnum(maybe_recvd));
+                const recvd: u32 = @intCast(@backingInt(maybe_recvd));
                 const recvd_written = @min(data.len, recvd);
 
                 msg.* = .{
@@ -2141,7 +2141,7 @@ pub fn netSend(storage: *Storage, sock: SocketUser.Descriptor, messages: []Io.ne
                     continue :sent;
                 },
                 else => |e| return .{ e, i },
-            }; 
+            };
 
             break;
         }
@@ -2221,9 +2221,9 @@ pub fn close(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, handle: Desc
         _ => blk: {
             storage.lock.lockUncancelable(io);
             defer storage.lock.unlock(io);
-            defer storage.fds.items[@intFromEnum(handle)] = .invalid;
+            defer storage.fds.items[@backingInt(handle)] = .invalid;
 
-            break :blk storage.fds.items[@intFromEnum(handle)];
+            break :blk storage.fds.items[@backingInt(handle)];
         },
     };
 
@@ -2238,10 +2238,10 @@ pub fn setCurrentDir(storage: *Storage, io: std.Io, gpa: std.mem.Allocator, hand
 
         const index = switch (handle) {
             .invalid, .cwd => return programmerBug("invalid fd"), // cwd is only valid in open
-            _ => storage.fds.items[@intFromEnum(handle)],
+            _ => storage.fds.items[@backingInt(handle)],
         };
 
-        const desc = &storage.descriptions.list.items[@intFromEnum(index)].value;
+        const desc = &storage.descriptions.list.items[@backingInt(index)].value;
         std.debug.assert(desc.flags.kind == .directory);
         std.debug.assert(desc.ref.fetchAdd(1, .monotonic) > 0);
 
@@ -2311,7 +2311,7 @@ fn buildPath(storage: *Storage, builder: *Builder, io: std.Io, device_path: []co
             storage.lock.lockSharedUncancelable(io);
             defer storage.lock.unlockShared(io);
 
-            break :blk storage.paths.list.items[@intFromEnum(open)].value;
+            break :blk storage.paths.list.items[@backingInt(open)].value;
         },
     };
 
@@ -2330,14 +2330,14 @@ fn allocateDescription(storage: *Storage, io: std.Io, gpa: Allocator) error{Syst
     defer storage.lock.unlock(io);
 
     const fd = storage.allocateLowestDescriptor(gpa) catch return error.SystemResources;
-    errdefer storage.fds.items[@intFromEnum(fd)] = .invalid;
+    errdefer storage.fds.items[@backingInt(fd)] = .invalid;
 
     const free_desc = storage.descriptions.allocateOne(gpa) catch return error.SystemResources;
     errdefer storage.descriptions.free(free_desc);
 
-    storage.fds.items[@intFromEnum(fd)] = free_desc;
+    storage.fds.items[@backingInt(fd)] = free_desc;
 
-    const desc = &storage.descriptions.list.items[@intFromEnum(free_desc)];
+    const desc = &storage.descriptions.list.items[@backingInt(free_desc)];
     desc.* = .{ .value = undefined };
 
     return fd;
@@ -2348,7 +2348,7 @@ fn closeUninitialized(storage: *Storage, io: std.Io, handle: Descriptor) void {
     storage.lock.lockUncancelable(io);
     defer storage.lock.unlock(io);
 
-    const fd = &storage.fds.items[@intFromEnum(handle)];
+    const fd = &storage.fds.items[@backingInt(handle)];
 
     storage.descriptions.free(fd.*);
     fd.* = .invalid;
@@ -2367,9 +2367,9 @@ fn getDescriptionStoredFlags(storage: *Storage, io: std.Io, handle: Descriptor) 
 fn getDescription(storage: *Storage, handle: Descriptor) *Description {
     return switch (handle) {
         .invalid, .cwd => unreachable, // cwd is only valid in open
-        _ => switch (storage.fds.items[@intFromEnum(handle)]) {
+        _ => switch (storage.fds.items[@backingInt(handle)]) {
             .invalid => unreachable,
-            else => |idx| &storage.descriptions.list.items[@intFromEnum(idx)].value,
+            else => |idx| &storage.descriptions.list.items[@backingInt(idx)].value,
         },
     };
 }
@@ -2385,14 +2385,14 @@ fn getDirectoryDescription(storage: *Storage, io: std.Io, handle: Descriptor) Io
         _ => |opened| blk: {
             // Only cwd is allowed to be invalid (only at the start, after setting it it is always available as you can't close it)
             std.debug.assert(opened != .invalid);
-            break :blk storage.fds.items[@intFromEnum(opened)];
+            break :blk storage.fds.items[@backingInt(opened)];
         },
     };
 
     return switch (dir_index) {
         .invalid => null,
         _ => blk: {
-            const desc = &storage.descriptions.list.items[@intFromEnum(dir_index)].value;
+            const desc = &storage.descriptions.list.items[@backingInt(dir_index)].value;
             if (desc.flags.kind != .directory) return programmerBug("non-dir fd");
             break :blk .{ desc.stored, desc.flags.mount };
         },
@@ -2406,7 +2406,7 @@ fn closeDescription(storage: *Storage, io: std.Io, gpa: Allocator, index: Descri
         storage.lock.lockSharedUncancelable(io);
         defer storage.lock.unlockShared(io);
 
-        const desc = &storage.descriptions.list.items[@intFromEnum(index)].value;
+        const desc = &storage.descriptions.list.items[@backingInt(index)].value;
         std.debug.assert(desc.ref.load(.monotonic) > 0);
 
         break :blk .{
@@ -2438,7 +2438,7 @@ fn closeDescription(storage: *Storage, io: std.Io, gpa: Allocator, index: Descri
                             };
                             defer storage.paths.free(idx);
 
-                            break :blk storage.paths.list.items[@intFromEnum(idx)].value;
+                            break :blk storage.paths.list.items[@backingInt(idx)].value;
                         };
 
                         gpa.free(path);
@@ -2454,18 +2454,18 @@ fn closeDescription(storage: *Storage, io: std.Io, gpa: Allocator, index: Descri
             storage.descriptions.free(index);
         }
 
-        log.debug("description {d} closed ({}, {})", .{ @intFromEnum(index), flags.mount, flags.kind });
+        log.debug("description {d} closed ({}, {})", .{ @backingInt(index), flags.mount, flags.kind });
     }
 }
 
 /// Assumes `lock` is held as non-shareable.
 fn allocateLowestDescriptor(storage: *Storage, gpa: Allocator) Allocator.Error!Descriptor {
     for (storage.fds.items, 0..) |item, i| if (item == .invalid) {
-        return @enumFromInt(i);
+        return @fromBackingInt(@intCast(i));
     };
 
     _ = try storage.fds.addOne(gpa);
-    return @enumFromInt(storage.fds.items.len - 1);
+    return @fromBackingInt(@intCast(storage.fds.items.len - 1));
 }
 
 fn Table(comptime T: type) type {
@@ -2505,10 +2505,10 @@ fn Table(comptime T: type) type {
                 .invalid => blk: {
                     std.debug.assert(table.last_free == .invalid);
                     _ = table.list.addOneAssumeCapacity();
-                    break :blk @enumFromInt(table.list.items.len - 1);
+                    break :blk @fromBackingInt(@intCast(table.list.items.len - 1));
                 },
                 _ => |one_free| blk: {
-                    const freed = &table.list.items[@intFromEnum(one_free)];
+                    const freed = &table.list.items[@backingInt(one_free)];
 
                     switch (freed.next) {
                         .invalid => {
@@ -2527,7 +2527,7 @@ fn Table(comptime T: type) type {
 
         pub fn free(table: *TableSelf, index: Index) void {
             std.debug.assert(index != .invalid);
-            table.list.items[@intFromEnum(index)] = .{ .next = .invalid };
+            table.list.items[@backingInt(index)] = .{ .next = .invalid };
 
             switch (table.last_free) {
                 .invalid => {
@@ -2537,7 +2537,7 @@ fn Table(comptime T: type) type {
                     table.last_free = index;
                 },
                 _ => {
-                    table.list.items[@intFromEnum(table.last_free)].next = index;
+                    table.list.items[@backingInt(table.last_free)].next = index;
                     table.last_free = index;
                 },
             }

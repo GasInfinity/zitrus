@@ -1122,11 +1122,11 @@ pub fn fmtDump(cmd: *CommandBuffer, mark: ?*operation.Node) Dumper {
 }
 
 pub fn toHandle(image: *CommandBuffer) Handle {
-    return @enumFromInt(@intFromPtr(image));
+    return @fromBackingInt(@intCast(@intFromPtr(image)));
 }
 
 pub fn fromHandleMutable(handle: Handle) *CommandBuffer {
-    return @as(*CommandBuffer, @ptrFromInt(@intFromEnum(handle)));
+    return @as(*CommandBuffer, @ptrFromInt(@backingInt(handle)));
 }
 
 const StreamContext = struct {
@@ -1166,7 +1166,7 @@ const Dumper = struct {
                     try writer.print(
                         \\  with address 0x{X:0>8} (device/physical), length (in bytes) {d} and pattern 0x{X:0>8} ({t} bits)
                         \\
-                    , .{ @intFromEnum(fill.ptr), fill.extra.len, fill.value, fill.extra.size });
+                    , .{ @backingInt(fill.ptr), fill.extra.len, fill.value, fill.extra.size });
                 },
                 .transfer => {
                     const op: *CommandBuffer.operation.Transfer = @alignCast(@fieldParentPtr("node", node));
@@ -1176,7 +1176,7 @@ const Dumper = struct {
                         .copy => try writer.print(
                             \\ copy src 0x{X:0>8} (device/physical) to dst 0x{X:0>8} (device/physical), length (in bytes) {d}
                             \\
-                        , .{ @intFromEnum(transfer.src), @intFromEnum(transfer.dst), transfer.flags.extra.copy }),
+                        , .{ @backingInt(transfer.src), @backingInt(transfer.dst), transfer.flags.extra.copy }),
                         .linear_tiled, .tiled_linear, .tiled_tiled => try writer.print(
                             \\ {t} (32x32: {}, downscale: {t}) src 0x{X:0>8} (device/physical) {d}x{d}@{t} to dst 0x{X:0>8} (device/physical) {d}x{d}@{t} 
                             \\
@@ -1184,11 +1184,11 @@ const Dumper = struct {
                             transfer.flags.kind,
                             transfer.flags.extra.transfer.use_32x32,
                             transfer.flags.extra.transfer.downscale,
-                            @intFromEnum(transfer.src),
+                            @backingInt(transfer.src),
                             transfer.src_gap_line[0],
                             transfer.src_gap_line[1],
                             transfer.flags.extra.transfer.src_fmt,
-                            @intFromEnum(transfer.dst),
+                            @backingInt(transfer.dst),
                             transfer.dst_gap_line[0],
                             transfer.dst_gap_line[1],
                             transfer.flags.extra.transfer.dst_fmt,

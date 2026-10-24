@@ -486,7 +486,7 @@ pub const SystemInfo = union(Type) {
         const info_type, const param: u32 = switch (info) {
             .used_kernel_memory, .loaded_kernel_processes => |_, tag| .{ tag, 0 },
             .used_memory => |v, tag| .{ tag, @bitCast(v) },
-            .emulator_information => |v, tag| .{ tag, @intFromEnum(v) },
+            .emulator_information => |v, tag| .{ tag, @backingInt(v) },
         };
 
         return switch (getSystemInfo(info_type, param).cases()) {
@@ -507,7 +507,7 @@ pub const Timeout = enum(i64) {
     _,
 
     pub fn fromNanoseconds(ns: u63) Timeout {
-        return @enumFromInt(ns);
+        return @fromBackingInt(@intCast(ns));
     }
 };
 
@@ -828,7 +828,7 @@ pub const AddressArbiter = packed struct(u32) {
         return arbiter.arbitrate(@ptrCast(address), .{
             .wait_if_less_than = switch (@typeInfo(T)) {
                 .int => @bitCast(value),
-                .@"enum" => @bitCast(@intFromEnum(value)),
+                .@"enum" => @bitCast(@backingInt(value)),
                 else => comptime unreachable,
             },
         }) catch unreachable;
@@ -841,7 +841,7 @@ pub const AddressArbiter = packed struct(u32) {
         return arbiter.arbitrate(@ptrCast(address), .{
             .decrement_and_wait_if_less_than = switch (@typeInfo(T)) {
                 .int => @bitCast(value),
-                .@"enum" => @bitCast(@intFromEnum(value)),
+                .@"enum" => @bitCast(@backingInt(value)),
                 else => comptime unreachable,
             },
         }) catch unreachable;
@@ -854,7 +854,7 @@ pub const AddressArbiter = packed struct(u32) {
         return try arbiter.arbitrate(@ptrCast(address), .{ .wait_if_less_than_timeout = .{
             .value = switch (@typeInfo(T)) {
                 .int => @bitCast(value),
-                .@"enum" => @bitCast(@intFromEnum(value)),
+                .@"enum" => @bitCast(@backingInt(value)),
                 else => comptime unreachable,
             },
             .timeout = timeout,
@@ -869,7 +869,7 @@ pub const AddressArbiter = packed struct(u32) {
             .decrement_and_wait_if_less_than_timeout = .{
                 .value = switch (@typeInfo(T)) {
                     .int => @bitCast(value),
-                    .@"enum" => @bitCast(@intFromEnum(value)),
+                    .@"enum" => @bitCast(@backingInt(value)),
                     else => comptime unreachable,
                 },
                 .timeout = timeout,
@@ -1329,7 +1329,7 @@ pub const Thread = packed struct(u32) {
         _,
 
         pub fn priority(value: u6) Priority {
-            return @enumFromInt(value);
+            return @fromBackingInt(@intCast(value));
         }
     };
 
@@ -1684,11 +1684,11 @@ pub fn createThread(entry: *const fn (ctx: ?*anyopaque) callconv(.c) noreturn, c
     const code = asm volatile ("svc 0x08"
         : [code] "={r0}" (-> result.Code),
           [handle] "={r1}" (handle),
-        : [priority] "{r0}" (@as(u32, @intFromEnum(priority))),
+        : [priority] "{r0}" (@as(u32, @backingInt(priority))),
           [entry] "{r1}" (entry),
           [ctx] "{r2}" (ctx),
           [stack_top] "{r3}" (stack_top),
-          [processor_id] "{r4}" (@as(i32, @intFromEnum(processor_id))),
+          [processor_id] "{r4}" (@as(i32, @backingInt(processor_id))),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, handle);
@@ -1945,7 +1945,7 @@ pub fn createAddressArbiter() Result(AddressArbiter) {
 }
 
 pub fn arbitrateAddress(arbiter: AddressArbiter, address: *i32, arbitration_type: AddressArbiter.Arbitration.Type, value: i32, timeout: Timeout) result.Code {
-    const timeout_u: u64 = @bitCast(@intFromEnum(timeout));
+    const timeout_u: u64 = @bitCast(@backingInt(timeout));
 
     return asm volatile ("svc 0x22"
         : [code] "={r0}" (-> result.Code),
@@ -1966,7 +1966,7 @@ pub fn closeHandle(handle: Object) result.Code {
 }
 
 pub fn waitSynchronization(sync: Synchronization, timeout: Timeout) result.Code {
-    const timeout_u: u64 = @bitCast(@intFromEnum(timeout));
+    const timeout_u: u64 = @bitCast(@backingInt(timeout));
 
     return asm volatile ("svc 0x24"
         : [code] "={r0}" (-> result.Code),
@@ -1977,7 +1977,7 @@ pub fn waitSynchronization(sync: Synchronization, timeout: Timeout) result.Code 
 }
 
 pub fn waitSynchronizationMultiple(handles: []const Synchronization, wait_all: bool, timeout: Timeout) Result(usize) {
-    const timeout_u: u64 = @bitCast(@intFromEnum(timeout));
+    const timeout_u: u64 = @bitCast(@backingInt(timeout));
     var id: usize = 0;
 
     const code = asm volatile ("svc 0x25"
@@ -2085,7 +2085,7 @@ pub fn openProcess(id: Process.Id) Result(Process) {
     const code = asm volatile ("svc 0x33"
         : [code] "={r0}" (-> result.Code),
           [process] "={r1}" (prc),
-        : [id] "{r1}" (@intFromEnum(id)),
+        : [id] "{r1}" (@backingInt(id)),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, prc);
@@ -2098,7 +2098,7 @@ pub fn openThread(prc: Process, id: Thread.Id) Result(Thread) {
         : [code] "={r0}" (-> result.Code),
           [thread] "={r1}" (thread),
         : [process] "{r1}" (prc),
-          [id] "{r2}" (@intFromEnum(id)),
+          [id] "{r2}" (@backingInt(id)),
         : .{ .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 
     return .of(code, thread);
@@ -2284,7 +2284,7 @@ pub fn replyAndReceive(port_sessions: []const Synchronization, reply_target: Ses
 pub fn bindInterrupt(id: Interrupt, int: Interruptable, priority: i32, level_sensitive: bool) result.Code {
     return asm volatile ("svc 0x50"
         : [code] "={r0}" (-> result.Code),
-        : [id] "{r0}" (@as(u32, @intFromEnum(id))),
+        : [id] "{r0}" (@as(u32, @backingInt(id))),
           [int] "{r1}" (int),
           [priority] "{r2}" (priority),
           [level_sensitive] "{r3}" (level_sensitive),
@@ -2294,7 +2294,7 @@ pub fn bindInterrupt(id: Interrupt, int: Interruptable, priority: i32, level_sen
 pub fn unbindInterrupt(id: Interrupt, int: Interruptable) result.Code {
     return asm volatile ("svc 0x51"
         : [code] "={r0}" (-> result.Code),
-        : [id] "{r0}" (@as(u32, @intFromEnum(id))),
+        : [id] "{r0}" (@as(u32, @backingInt(id))),
           [int] "{r1}" (int),
         : .{ .r1 = true, .r2 = true, .r3 = true, .r12 = true, .cpsr = true, .memory = true });
 }

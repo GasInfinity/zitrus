@@ -23,7 +23,7 @@ pub const Id = enum(u16) {
 
         std.debug.assert((offset % @alignOf(u32)) == 0); // invalid internal register, it must be aligned to 4 bytes
 
-        return @enumFromInt(@divExact(offset, @alignOf(u32)));
+        return @fromBackingInt(@intCast(@divExact(offset, @alignOf(u32))));
     }
 };
 
@@ -55,7 +55,7 @@ pub const Dump = struct {
             type: type,
 
             pub fn findName(id: Id) []const u8 {
-                return switch (@intFromEnum(id)) {
+                return switch (@backingInt(id)) {
                     (@sizeOf(pica.Graphics) / @sizeOf(u32))...0xFFFF => "<not found>",
                     inline else => |word_offset| find(word_offset * @sizeOf(u32)).name,
                 };
@@ -119,7 +119,7 @@ pub const Dump = struct {
         raw: u32,
 
         pub fn format(single: Single, w: *std.Io.Writer) std.Io.Writer.Error!void {
-            switch (@intFromEnum(single.id)) {
+            switch (@backingInt(single.id)) {
                 (@sizeOf(pica.Graphics) / @sizeOf(u32))...0xFFFF => try w.print("{X:0>8}", .{single.raw}),
                 inline else => |word_offset| {
                     const info: Info = .find(word_offset * @sizeOf(u32));
@@ -137,7 +137,7 @@ pub const Dump = struct {
 
         pub fn printValue(comptime T: type, raw: u32, w: *std.Io.Writer) std.Io.Writer.Error!void {
             const typed: T = switch (@typeInfo(T)) {
-                .@"enum" => @enumFromInt(raw),
+                .@"enum" => @fromBackingInt(@intCast(raw)),
                 else => @bitCast(raw),
             };
 
@@ -174,7 +174,7 @@ pub const Dump = struct {
                 .raw = dump.words[2 + i],
                 .id = switch (hdr.mode) {
                     .consecutive => single.id,
-                    .incremental => @enumFromInt(@intFromEnum(single.id) + 1),
+                    .incremental => @fromBackingInt(@intCast(@backingInt(single.id) + 1)),
                 },
             };
             i += 1;
@@ -221,7 +221,7 @@ pub const Queue = struct {
 
         switch (comptime std.math.order(@sizeOf(Child), @sizeOf(u32))) {
             .eq => queue.addMaskedBuffer(id, &.{switch (child_info) {
-                .@"enum" => @intFromEnum(value),
+                .@"enum" => @backingInt(value),
                 else => @bitCast(value),
             }}, mask, .consecutive),
             .gt => {
@@ -266,8 +266,8 @@ pub const Queue = struct {
             if (i > 0) {
                 const last_id: Id = .fromRegister(base, registers[i - 1]);
 
-                comptime std.debug.assert(std.math.order(@intFromEnum(current_id), @intFromEnum(last_id)) == .gt);
-                comptime std.debug.assert((@intFromEnum(current_id) - @intFromEnum(last_id)) == 1);
+                comptime std.debug.assert(std.math.order(@backingInt(current_id), @backingInt(last_id)) == .gt);
+                comptime std.debug.assert((@backingInt(current_id) - @backingInt(last_id)) == 1);
             }
 
             needed_field_types[i] = f_ty.child;
@@ -288,7 +288,7 @@ pub const Queue = struct {
 
         var u32_values: [values.len]u32 = undefined;
         inline for (&u32_values, 0..) |*v, i| v.* = switch (@typeInfo(@TypeOf(values[i]))) {
-            .@"enum" => @intFromEnum(values[i]),
+            .@"enum" => @backingInt(values[i]),
             else => @bitCast(values[i]),
         };
 
@@ -337,7 +337,7 @@ pub const Queue = struct {
 
             @memcpy(queue.buffer[queue.end..][0..(len - 1)], remaining_slice[1..len]);
             queue.end += std.mem.alignForward(usize, len - 1, 2); // commands must be aligned to 8 bytes
-            if (mode == .incremental) current_id = @enumFromInt(@intFromEnum(current_id) + len);
+            if (mode == .incremental) current_id = @fromBackingInt(@intCast(@backingInt(current_id) + len));
         }
     }
 

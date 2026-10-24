@@ -135,7 +135,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
         }
 
         try cmd.end();
-        
+
         const top_idx = try device.acquireNextImage(.top, std.math.maxInt(u64));
         const bottom_idx = try device.acquireNextImage(.bottom, std.math.maxInt(u64));
 
@@ -151,7 +151,7 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
             .color = @splat(0x22),
         });
         state.sync += 1;
-        
+
         try device.submit(&.init(state.sema, state.sync), &.init(state.sema, state.sync + 1), &.{ .command_buffer = state.cmd[state.current] });
         state.sync += 1;
 
@@ -180,9 +180,9 @@ pub fn main(init: horizon.Init.Application.Mango) !void {
 fn drawRect(bat: *Batcher, pos: [2]f32, size: [2]f32, color: [4]u8) void {
     const vertices = bat.addQuadAssumeCapacity();
     vertices[0] = .{ .pos = pos, .col = color };
-    vertices[1] = .{ .pos = .{pos[0], pos[1]+size[1]}, .col = color };
-    vertices[2] = .{ .pos = .{pos[0]+size[0], pos[1]+size[1]}, .col = color };
-    vertices[3] = .{ .pos = .{pos[0]+size[0], pos[1]}, .col = color };
+    vertices[1] = .{ .pos = .{ pos[0], pos[1] + size[1] }, .col = color };
+    vertices[2] = .{ .pos = .{ pos[0] + size[0], pos[1] + size[1] }, .col = color };
+    vertices[3] = .{ .pos = .{ pos[0] + size[0], pos[1] }, .col = color };
 }
 
 const full_pipe_width = 40;
@@ -251,7 +251,7 @@ const AppState = struct {
                         const pipe_down_x1: f32 = pipe.x;
                         const pipe_down_x2: f32 = pipe_down_x1 + pipe_width;
                         const pipe_down_y1: f32 = pipe.upper_pipe_size + pipe_gap;
-                        const pipe_down_y2: f32 = 240-ground_total_height;
+                        const pipe_down_y2: f32 = 240 - ground_total_height;
 
                         const pipe_up_x1: f32 = pipe.x;
                         const pipe_up_x2: f32 = pipe_up_x1 + pipe_width;
@@ -322,21 +322,21 @@ const AppState = struct {
     }
 
     fn drawGround(_: *const AppState, bat: *Batcher) void {
-        drawRect(bat, .{0, 240-ground_total_height}, .{400, ground_total_height}, @splat(255));
+        drawRect(bat, .{ 0, 240 - ground_total_height }, .{ 400, ground_total_height }, @splat(255));
     }
 
     fn drawPipes(app: *const AppState, bat: *Batcher) void {
         for (app.pipe_storage[0..app.pipes]) |pipe| {
             const x = pipe.x;
 
-            drawRect(bat, .{x,0}, .{pipe_width, pipe.upper_pipe_size}, @splat(255));
-            drawRect(bat, .{x,pipe.upper_pipe_size+pipe_gap}, .{pipe_width, 240-pipe.upper_pipe_size-pipe_gap}, @splat(255));
+            drawRect(bat, .{ x, 0 }, .{ pipe_width, pipe.upper_pipe_size }, @splat(255));
+            drawRect(bat, .{ x, pipe.upper_pipe_size + pipe_gap }, .{ pipe_width, 240 - pipe.upper_pipe_size - pipe_gap }, @splat(255));
         }
     }
 
     fn drawBird(app: *const AppState, bat: *Batcher) void {
         const half_size = bird_size / 2.0;
-        drawRect(bat, .{bird_x-half_size, app.bird_y-half_size}, @splat(bird_size), .{0,255,0,255});
+        drawRect(bat, .{ bird_x - half_size, app.bird_y - half_size }, @splat(bird_size), .{ 0, 255, 0, 255 });
     }
 };
 

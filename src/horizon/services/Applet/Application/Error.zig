@@ -23,7 +23,7 @@ pub const State = extern struct {
         raw: u16,
 
         pub fn lang(language: services.Config.Language) Language {
-            return .{ .raw = @intFromEnum(language) + 1 };
+            return .{ .raw = @backingInt(language) + 1 };
         }
     };
 

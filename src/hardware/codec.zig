@@ -180,7 +180,7 @@ pub const i2s = struct {
 
         /// Range -127 (?dB) to 0? (?dB), other values are not used.
         pub fn gain(value: i8) Gain {
-            return @enumFromInt(value);
+            return @fromBackingInt(@intCast(value));
         }
     };
 
@@ -264,7 +264,7 @@ pub const dac = struct {
 
         /// Range -127 (-63.5dB) to 48 (24dB), other values are reserved.
         pub fn gain(value: i8) Gain {
-            return @enumFromInt(value);
+            return @fromBackingInt(@intCast(value));
         }
     };
 
@@ -274,7 +274,7 @@ pub const dac = struct {
             _,
 
             pub fn divisor(val: u7) Divisor {
-                return @enumFromInt(val);
+                return @fromBackingInt(@intCast(val));
             }
         };
 
@@ -355,7 +355,7 @@ pub const mic = struct {
             _,
 
             pub fn gain(value: u7) Gain {
-                return @enumFromInt(value);
+                return @fromBackingInt(@intCast(value));
             }
         };
 

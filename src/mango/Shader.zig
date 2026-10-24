@@ -95,11 +95,11 @@ pub fn deinit(shader: *Shader, gpa: std.mem.Allocator) void {
 }
 
 pub fn toHandle(shader: *Shader) Handle {
-    return @enumFromInt(@intFromPtr(shader));
+    return @fromBackingInt(@intCast(@intFromPtr(shader)));
 }
 
 pub fn fromHandleMutable(handle: Handle) ?*Shader {
-    return @as(?*Shader, @ptrFromInt(@intFromEnum(handle)));
+    return @as(?*Shader, @ptrFromInt(@backingInt(handle)));
 }
 
 const Shader = @This();

@@ -12,8 +12,8 @@ pub const Target = enum(u8) {
 
 pub const Brightness = enum(u8) {
     pub const Level = enum(u8) { @"1" = 0, @"2", @"3", @"4", @"5" };
-    pub const min: Brightness = @enumFromInt(0x10);
-    pub const max: Brightness = @enumFromInt(0xAC);
+    pub const min: Brightness = @fromBackingInt(@intCast(0x10));
+    pub const max: Brightness = @fromBackingInt(@intCast(0xAC));
 
     _,
 };

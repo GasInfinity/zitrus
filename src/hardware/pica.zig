@@ -1133,11 +1133,11 @@ pub const Graphics = extern struct {
             pub const BufferIndex = enum(u3) { @"1", @"2", @"3", @"4" };
 
             pub fn setColorBufferSource(update_buffer: *Config, index: BufferIndex, buffer_src: BufferSource) void {
-                std.mem.writePackedIntNative(u1, std.mem.asBytes(update_buffer), @as(usize, @bitOffsetOf(Config, "combiner_color_buffer_src")) + @intFromEnum(index), @intFromEnum(buffer_src));
+                std.mem.writePackedIntNative(u1, std.mem.asBytes(update_buffer), @as(usize, @bitOffsetOf(Config, "combiner_color_buffer_src")) + @backingInt(index), @backingInt(buffer_src));
             }
 
             pub fn setAlphaBufferSource(update_buffer: *Config, index: BufferIndex, buffer_src: BufferSource) void {
-                std.mem.writePackedIntNative(u1, std.mem.asBytes(update_buffer), @as(usize, @bitOffsetOf(Config, "combiner_alpha_buffer_src")) + @intFromEnum(index), @intFromEnum(buffer_src));
+                std.mem.writePackedIntNative(u1, std.mem.asBytes(update_buffer), @as(usize, @bitOffsetOf(Config, "combiner_alpha_buffer_src")) + @backingInt(index), @backingInt(buffer_src));
             }
 
             pub fn format(cfg: Config, w: *std.Io.Writer) std.Io.Writer.Error!void {
@@ -1773,7 +1773,7 @@ pub const Graphics = extern struct {
                 _,
 
                 pub fn init(value: u3) Id {
-                    return @enumFromInt(value);
+                    return @fromBackingInt(@intCast(value));
                 }
             };
 
@@ -1954,7 +1954,7 @@ pub const Graphics = extern struct {
                 size: Size = .x,
 
                 pub fn byteSize(fmt: Format) usize {
-                    return fmt.type.byteSize() * (@as(usize, @intFromEnum(fmt.size)) + 1);
+                    return fmt.type.byteSize() * (@as(usize, @backingInt(fmt.size)) + 1);
                 }
             };
 
@@ -1972,19 +1972,19 @@ pub const Graphics = extern struct {
                 high: High,
 
                 pub fn setAttribute(config: *Config, index: AttributeIndex, value: Format) void {
-                    std.mem.writePackedInt(u4, std.mem.asBytes(config), @as(usize, @intFromEnum(index)) * @bitSizeOf(Format), @bitCast(value), .little);
+                    std.mem.writePackedInt(u4, std.mem.asBytes(config), @as(usize, @backingInt(index)) * @bitSizeOf(Format), @bitCast(value), .little);
                 }
 
                 pub fn getAttribute(config: *const Config, index: AttributeIndex) Format {
-                    return @bitCast(std.mem.readPackedInt(u4, std.mem.asBytes(config), @as(usize, @intFromEnum(index)) * @bitSizeOf(Format), .little));
+                    return @bitCast(std.mem.readPackedInt(u4, std.mem.asBytes(config), @as(usize, @backingInt(index)) * @bitSizeOf(Format), .little));
                 }
 
                 pub fn setFlag(config: *Config, index: AttributeIndex, value: Flags) void {
-                    std.mem.writePackedInt(u1, std.mem.asBytes(config), (@as(usize, 12) * @bitSizeOf(Format)) + @intFromEnum(index) * @bitSizeOf(Flags), @intFromEnum(value), .little);
+                    std.mem.writePackedInt(u1, std.mem.asBytes(config), (@as(usize, 12) * @bitSizeOf(Format)) + @backingInt(index) * @bitSizeOf(Flags), @backingInt(value), .little);
                 }
 
                 pub fn getFlag(config: *const Config, index: AttributeIndex) Flags {
-                    return @enumFromInt(std.mem.readPackedInt(u1, std.mem.asBytes(config), (@as(usize, 12) * @bitSizeOf(Format)) + @intFromEnum(index) * @bitSizeOf(Flags), .little));
+                    return @fromBackingInt(@intCast(std.mem.readPackedInt(u1, std.mem.asBytes(config), (@as(usize, 12) * @bitSizeOf(Format)) + @backingInt(index) * @bitSizeOf(Flags), .little)));
                 }
             };
 
@@ -2040,11 +2040,11 @@ pub const Graphics = extern struct {
                     high: High,
 
                     pub fn setComponent(config: *VertexBuffer.Config, index: ArrayComponentIndex, value: ArrayComponent) void {
-                        std.mem.writePackedInt(u4, std.mem.asBytes(config), @as(usize, @intFromEnum(index)) * @bitSizeOf(ArrayComponent), @intFromEnum(value), .little);
+                        std.mem.writePackedInt(u4, std.mem.asBytes(config), @as(usize, @backingInt(index)) * @bitSizeOf(ArrayComponent), @backingInt(value), .little);
                     }
 
                     pub fn getComponent(config: *const VertexBuffer.Config, index: ArrayComponentIndex) ArrayComponent {
-                        return @enumFromInt(std.mem.readPackedInt(u4, std.mem.asBytes(config), @as(usize, @intFromEnum(index)) * @bitSizeOf(ArrayComponent), .little));
+                        return @fromBackingInt(@intCast(std.mem.readPackedInt(u4, std.mem.asBytes(config), @as(usize, @backingInt(index)) * @bitSizeOf(ArrayComponent), .little)));
                     }
                 };
 
@@ -2203,11 +2203,11 @@ pub const Graphics = extern struct {
             high: High = .{},
 
             pub fn setAttribute(config: *AttributePermutation, index: AttributeIndex, value: InputRegister) void {
-                std.mem.writePackedInt(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(InputRegister), @intFromEnum(value), .little);
+                std.mem.writePackedInt(u4, std.mem.asBytes(config), @backingInt(index) * @bitSizeOf(InputRegister), @backingInt(value), .little);
             }
 
             pub fn getAttribute(config: *AttributePermutation, index: AttributeIndex) InputRegister {
-                return @enumFromInt(std.mem.readPackedInt(u4, std.mem.asBytes(config), @intFromEnum(index) * @bitSizeOf(InputRegister), .little));
+                return @fromBackingInt(@intCast(std.mem.readPackedInt(u4, std.mem.asBytes(config), @backingInt(index) * @bitSizeOf(InputRegister), .little)));
             }
         };
 

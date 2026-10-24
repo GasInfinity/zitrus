@@ -151,7 +151,7 @@ pub fn lookAt(position: @Vector(3, f32), forward: @Vector(3, f32), up: @Vector(3
 }
 
 pub fn ortho(comptime handedness: Handedness, l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
-    const handedness_factor: comptime_float = @floatFromInt(@intFromEnum(handedness));
+    const handedness_factor: comptime_float = @floatFromInt(@backingInt(handedness));
     const x_scale = r - l;
     const y_scale = b - t;
     const z_scale = f - n;
@@ -165,7 +165,7 @@ pub fn ortho(comptime handedness: Handedness, l: f32, t: f32, r: f32, b: f32, n:
 }
 
 pub fn orthoRotate90Cw(comptime handedness: Handedness, l: f32, t: f32, r: f32, b: f32, n: f32, f: f32) @"4x4" {
-    const handedness_factor: comptime_float = @floatFromInt(@intFromEnum(handedness));
+    const handedness_factor: comptime_float = @floatFromInt(@backingInt(handedness));
     const x_scale = r - l;
     const y_scale = b - t;
     const z_scale = f - n;
@@ -179,7 +179,7 @@ pub fn orthoRotate90Cw(comptime handedness: Handedness, l: f32, t: f32, r: f32, 
 }
 
 pub fn persp(comptime handedness: Handedness, fov_y: f32, aspect_ratio: f32, n: f32, f: f32) @"4x4" {
-    const handedness_factor: comptime_float = @floatFromInt(@intFromEnum(handedness));
+    const handedness_factor: comptime_float = @floatFromInt(@backingInt(handedness));
     const fov_y_tan = @tan(fov_y / 2.0);
     const f_range = f - n;
 
@@ -192,7 +192,7 @@ pub fn persp(comptime handedness: Handedness, fov_y: f32, aspect_ratio: f32, n: 
 }
 
 pub fn perspRotate90Cw(comptime handedness: Handedness, fov_y: f32, aspect_ratio: f32, n: f32, f: f32) @"4x4" {
-    const handedness_factor: comptime_float = @floatFromInt(@intFromEnum(handedness));
+    const handedness_factor: comptime_float = @floatFromInt(@backingInt(handedness));
     const fov_y_tan = @tan(fov_y / 2.0);
     const f_range = f - n;
 

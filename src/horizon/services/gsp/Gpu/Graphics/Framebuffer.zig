@@ -44,7 +44,7 @@ pub fn deinit(fb: *Framebuffer, physical_linear_allocator: std.mem.Allocator) vo
 pub fn current(fb: *Framebuffer, side: Side) []u8 {
     std.debug.assert((fb.config.mode != .@"3d" and side != .right) or fb.config.mode == .@"3d");
 
-    return fb.allocation[(fb.framebuffer_bytes * fb.current_framebuffer) + (@intFromEnum(side) * (fb.framebuffer_bytes >> 1)) ..][0..(fb.framebuffer_bytes >> @intFromBool(fb.config.mode == .@"3d"))];
+    return fb.allocation[(fb.framebuffer_bytes * fb.current_framebuffer) + (@backingInt(side) * (fb.framebuffer_bytes >> 1)) ..][0..(fb.framebuffer_bytes >> @intFromBool(fb.config.mode == .@"3d"))];
 }
 
 pub fn flush(fb: *Framebuffer) void {
@@ -58,8 +58,8 @@ pub fn swap(fb: *Framebuffer, gfx: *Graphics, ignore_stereo: IgnoreStereo) void 
 }
 
 pub fn present(fb: *Framebuffer, gfx: *Graphics, ignore_stereo: IgnoreStereo) void {
-    _ = gfx.shared_memory.framebuffers[gfx.thread_index][@intFromEnum(fb.config.screen)].update(.{
-        .active = @enumFromInt(fb.current_framebuffer),
+    _ = gfx.shared_memory.framebuffers[gfx.thread_index][@backingInt(fb.config.screen)].update(.{
+        .active = @fromBackingInt(@intCast(fb.current_framebuffer)),
         .left_vaddr = fb.current(.left).ptr,
         .right_vaddr = (if (fb.config.mode == .@"3d" and (ignore_stereo == .none)) fb.current(.right) else fb.current(.left)).ptr,
         .stride = (fb.config.pixel_format.bytesPerPixel() * fb.config.screen.width()) << @intFromBool(fb.config.mode == .full),

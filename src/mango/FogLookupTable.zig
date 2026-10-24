@@ -29,11 +29,11 @@ pub fn init(create_info: mango.FogLookupTableCreateInfo) FogLookupTable {
 }
 
 pub fn toHandle(lut: *FogLookupTable) Handle {
-    return @enumFromInt(@intFromPtr(lut));
+    return @fromBackingInt(@intCast(@intFromPtr(lut)));
 }
 
 pub fn fromHandleMutable(handle: Handle) *FogLookupTable {
-    return @as(*FogLookupTable, @ptrFromInt(@intFromEnum(handle)));
+    return @as(*FogLookupTable, @ptrFromInt(@backingInt(handle)));
 }
 
 const FogLookupTable = @This();

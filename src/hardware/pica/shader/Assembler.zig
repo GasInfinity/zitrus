@@ -457,32 +457,32 @@ const Alias = packed struct(u16) {
     pub const SourceSwizzlePair = struct { register.Source, Component.Selector };
 
     pub fn toSourceRegister(aliased: Alias) ?SourceSwizzlePair {
-        return switch (@intFromEnum(aliased.register)) {
-            @intFromEnum(Register.v0)...@intFromEnum(Register.v15) => .{ .initInput(@enumFromInt(@intFromEnum(aliased.register) - @intFromEnum(Register.v0))), aliased.swizzle },
-            @intFromEnum(Register.r0)...@intFromEnum(Register.r15) => .{ .initTemporary(@enumFromInt(@intFromEnum(aliased.register) - @intFromEnum(Register.r0))), aliased.swizzle },
-            @intFromEnum(Register.f0)...@intFromEnum(Register.f95) => .{ .initConstant(@enumFromInt(@intFromEnum(aliased.register) - @intFromEnum(Register.f0))), aliased.swizzle },
+        return switch (@backingInt(aliased.register)) {
+            @backingInt(Register.v0)...@backingInt(Register.v15) => .{ .initInput(@fromBackingInt(@intCast(@backingInt(aliased.register) - @backingInt(Register.v0)))), aliased.swizzle },
+            @backingInt(Register.r0)...@backingInt(Register.r15) => .{ .initTemporary(@fromBackingInt(@intCast(@backingInt(aliased.register) - @backingInt(Register.r0)))), aliased.swizzle },
+            @backingInt(Register.f0)...@backingInt(Register.f95) => .{ .initConstant(@fromBackingInt(@intCast(@backingInt(aliased.register) - @backingInt(Register.f0)))), aliased.swizzle },
             else => null,
         };
     }
 
     pub fn toDestinationRegister(aliased: Alias) ?register.Destination {
-        return switch (@intFromEnum(aliased.register)) {
-            @intFromEnum(Register.o0)...@intFromEnum(Register.o15) => .initOutput(@enumFromInt(@intFromEnum(aliased.register) - @intFromEnum(Register.o0))),
-            @intFromEnum(Register.r0)...@intFromEnum(Register.r15) => if (aliased.swizzle != Component.Selector.xyzw) null else .initTemporary(@enumFromInt(@intFromEnum(aliased.register) - @intFromEnum(Register.r0))),
+        return switch (@backingInt(aliased.register)) {
+            @backingInt(Register.o0)...@backingInt(Register.o15) => .initOutput(@fromBackingInt(@intCast(@backingInt(aliased.register) - @backingInt(Register.o0)))),
+            @backingInt(Register.r0)...@backingInt(Register.r15) => if (aliased.swizzle != Component.Selector.xyzw) null else .initTemporary(@fromBackingInt(@intCast(@backingInt(aliased.register) - @backingInt(Register.r0)))),
             else => null,
         };
     }
 
     pub fn toIntegerRegister(aliased: Alias) ?register.Integral.Integer {
-        return switch (@intFromEnum(aliased.register)) {
-            @intFromEnum(Register.i0)...@intFromEnum(Register.i3) => @enumFromInt(@intFromEnum(aliased.register) - @intFromEnum(Register.i0)),
+        return switch (@backingInt(aliased.register)) {
+            @backingInt(Register.i0)...@backingInt(Register.i3) => @fromBackingInt(@intCast(@backingInt(aliased.register) - @backingInt(Register.i0))),
             else => null,
         };
     }
 
     pub fn toBooleanRegister(aliased: Alias) ?register.Integral.Boolean {
-        return switch (@intFromEnum(aliased.register)) {
-            @intFromEnum(Register.b0)...@intFromEnum(Register.b15) => @enumFromInt(@intFromEnum(aliased.register) - @intFromEnum(Register.b0)),
+        return switch (@backingInt(aliased.register)) {
+            @backingInt(Register.b0)...@backingInt(Register.b15) => @fromBackingInt(@intCast(@backingInt(aliased.register) - @backingInt(Register.b0))),
             else => null,
         };
     }
@@ -917,7 +917,7 @@ fn processDirective(a: *Assembler) !void {
                     var sw: [4]pica.OutputMap.Semantic = undefined;
 
                     inline for (&.{ semantic_swizzled.swizzle.@"0", semantic_swizzled.swizzle.@"1", semantic_swizzled.swizzle.@"2", semantic_swizzled.swizzle.@"3" }, 0..) |f, i| {
-                        sw[i] = native_semantics[@intFromEnum(f)];
+                        sw[i] = native_semantics[@backingInt(f)];
                     }
 
                     break :sw sw;
@@ -971,8 +971,8 @@ fn processDirective(a: *Assembler) !void {
 
                 const uniform_reg = try a.parseEnum(UniformRegister, .expected_uniform_register);
 
-                switch (@intFromEnum(uniform_reg)) {
-                    @intFromEnum(UniformRegister.f0)...@intFromEnum(UniformRegister.f95) => {
+                switch (@backingInt(uniform_reg)) {
+                    @backingInt(UniformRegister.f0)...@backingInt(UniformRegister.f95) => {
                         _ = try a.expectToken(.l_paren);
                         const x = try a.parseFloat();
                         _ = try a.expectToken(.comma);
@@ -983,10 +983,10 @@ fn processDirective(a: *Assembler) !void {
                         const w = try a.parseFloat();
                         _ = try a.expectToken(.r_paren);
 
-                        const f_reg: register.Source.Constant = @enumFromInt(@intFromEnum(uniform_reg) - @intFromEnum(UniformRegister.f0));
+                        const f_reg: register.Source.Constant = @fromBackingInt(@intCast(@backingInt(uniform_reg) - @backingInt(UniformRegister.f0)));
                         entry.constants.float.put(f_reg, .pack(.of(x), .of(y), .of(z), .of(w)));
                     },
-                    @intFromEnum(UniformRegister.i0)...@intFromEnum(UniformRegister.i3) => {
+                    @backingInt(UniformRegister.i0)...@backingInt(UniformRegister.i3) => {
                         _ = try a.expectToken(.l_paren);
                         const x = try a.parseInt(u8, std.math.maxInt(u8));
                         _ = try a.expectToken(.comma);
@@ -997,11 +997,11 @@ fn processDirective(a: *Assembler) !void {
                         const w = try a.parseInt(u8, std.math.maxInt(u8));
                         _ = try a.expectToken(.r_paren);
 
-                        const i_reg: register.Integral.Integer = @enumFromInt(@intFromEnum(uniform_reg) - @intFromEnum(UniformRegister.i0));
+                        const i_reg: register.Integral.Integer = @fromBackingInt(@intCast(@backingInt(uniform_reg) - @backingInt(UniformRegister.i0)));
                         entry.constants.int.put(i_reg, .{ x, y, z, w });
                     },
-                    @intFromEnum(UniformRegister.b0)...@intFromEnum(UniformRegister.b15) => {
-                        const b_reg: register.Integral.Boolean = @enumFromInt(@intFromEnum(uniform_reg) - @intFromEnum(UniformRegister.b0));
+                    @backingInt(UniformRegister.b0)...@backingInt(UniformRegister.b15) => {
+                        const b_reg: register.Integral.Boolean = @fromBackingInt(@intCast(@backingInt(uniform_reg) - @backingInt(UniformRegister.b0)));
                         const b_value = try a.parseBoolean();
 
                         entry.constants.bool.setPresent(b_reg, b_value);
@@ -1025,8 +1025,8 @@ fn processDirective(a: *Assembler) !void {
                     return a.eatUntil(.newline);
                 };
 
-                if (swizzled_identifier.swizzle != Component.Selector.xyzw) switch (@intFromEnum(aliased_reg)) {
-                    @intFromEnum(Alias.Register.o0)...@intFromEnum(Alias.Register.o15), @intFromEnum(Alias.Register.i0)...@intFromEnum(Alias.Register.i3), @intFromEnum(Alias.Register.b0)...@intFromEnum(Alias.Register.b15) => {
+                if (swizzled_identifier.swizzle != Component.Selector.xyzw) switch (@backingInt(aliased_reg)) {
+                    @backingInt(Alias.Register.o0)...@backingInt(Alias.Register.o15), @backingInt(Alias.Register.i0)...@backingInt(Alias.Register.i3), @backingInt(Alias.Register.b0)...@backingInt(Alias.Register.b15) => {
                         try a.warnMsg(.{
                             .tag = .cannot_swizzle,
                             .tok_i = swizzled_identifier.identifier_tok_i,

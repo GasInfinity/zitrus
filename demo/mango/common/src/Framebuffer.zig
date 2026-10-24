@@ -36,7 +36,7 @@ pub const Attachment = struct {
     view: mango.ImageView,
 
     pub fn init(dev: mango.Device, w: u16, h: u16, fmt: mango.Format, bank: mango.PrivateMemoryIndex, usage: mango.ImageCreateInfo.Usage) !Attachment {
-        const mem = try dev.allocatePrivate(bank, fmt.scale(@as(usize, w) * h)); 
+        const mem = try dev.allocatePrivate(bank, fmt.scale(@as(usize, w) * h));
         errdefer dev.freePrivate(mem);
 
         const img = try dev.createImage(.{
@@ -71,7 +71,7 @@ pub const Attachment = struct {
             dev.destroyImageView(att.view);
             dev.destroyImage(att.image);
             dev.freePrivate(att.mem);
-        } 
+        }
     }
 };
 

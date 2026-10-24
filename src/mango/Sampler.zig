@@ -50,11 +50,11 @@ pub const Data = packed struct(u64) {
 data: Data,
 
 pub fn toHandle(sampler: Sampler) Handle {
-    return @enumFromInt(@as(u64, @bitCast(sampler.data)));
+    return @fromBackingInt(@intCast(@as(u64, @bitCast(sampler.data))));
 }
 
 pub fn fromHandle(handle: Handle) Sampler {
-    return .{ .data = @bitCast(@intFromEnum(handle)) };
+    return .{ .data = @bitCast(@backingInt(handle)) };
 }
 
 const Sampler = @This();

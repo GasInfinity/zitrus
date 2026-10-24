@@ -261,7 +261,7 @@ pub const Description = enum(u10) {
     _,
 
     pub fn desc(value: u10) Description {
-        return @enumFromInt(value);
+        return @fromBackingInt(@intCast(value));
     }
 };
 
@@ -428,7 +428,7 @@ pub const Code = packed struct(i32) {
     }
 
     pub fn specificResult(level: Level, summary: Summary, comptime module: Module, description: module.SpecificDescription()) Code {
-        return .result(level, summary, module, @enumFromInt(@intFromEnum(description)));
+        return .result(level, summary, module, @fromBackingInt(@intCast(@backingInt(description))));
     }
 
     pub fn isSuccess(code: Code) bool {
@@ -439,27 +439,27 @@ pub const Code = packed struct(i32) {
         const known_description = if (std.enums.tagName(Description, code.description)) |common|
             common
         else switch (code.module) {
-            inline else => |mod| std.enums.tagName(mod.SpecificDescription(), @enumFromInt(@intFromEnum(code.description))),
+            inline else => |mod| std.enums.tagName(mod.SpecificDescription(), @fromBackingInt(@intCast(@backingInt(code.description)))),
             _ => std.enums.tagName(Description, code.description),
         };
 
         if (std.enums.tagName(Level, code.level)) |tag| {
             try writer.writeAll(tag);
-        } else try writer.print("{d}", .{@intFromEnum(code.level)});
+        } else try writer.print("{d}", .{@backingInt(code.level)});
         try writer.writeByte('(');
         if (std.enums.tagName(Module, code.module)) |tag| {
             try writer.writeAll(tag);
-        } else try writer.print("{d}", .{@intFromEnum(code.module)});
+        } else try writer.print("{d}", .{@backingInt(code.module)});
         try writer.writeByte(')');
         if (!code.isSuccess()) try writer.writeByte('!');
         try writer.writeAll(": ");
         if (known_description) |tag| {
             try writer.writeAll(tag);
-        } else try writer.print("{d}", .{@intFromEnum(code.description)});
+        } else try writer.print("{d}", .{@backingInt(code.description)});
         try writer.writeAll(" (");
         if (std.enums.tagName(Summary, code.summary)) |tag| {
             try writer.writeAll(tag);
-        } else try writer.print("{d}", .{@intFromEnum(code.summary)});
+        } else try writer.print("{d}", .{@backingInt(code.summary)});
         try writer.writeByte(')');
     }
 };

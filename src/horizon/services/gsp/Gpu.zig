@@ -684,7 +684,7 @@ pub const RegisterInterruptRelayQueueResponse = struct {
 pub fn sendRegisterInterruptRelayQueue(gsp: Gpu, unknown_flags: u8, event: Event) !RegisterInterruptRelayQueueResponse {
     return switch ((try gsp.send(.RegisterInterruptRelayQueue, .{ .flags = unknown_flags, .ev = event }, .{})).cases()) {
         .success => |s| .{
-            .first_initialization = s.code.description == @as(horizon.result.Description, @enumFromInt(0x207)),
+            .first_initialization = s.code.description == @as(horizon.result.Description, @fromBackingInt(@intCast(0x207))),
             .response = s.value,
         },
         .failure => |code| horizon.unexpectedResult(code),

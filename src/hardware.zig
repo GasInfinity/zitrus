@@ -26,7 +26,7 @@ pub const ResetLow = enum(u1) {
     enabled = 1,
 
     pub fn reset(value: bool) ResetLow {
-        return @enumFromInt(@intFromBool(!value));
+        return @fromBackingInt(@intCast(@intFromBool(!value)));
     }
 };
 
@@ -49,7 +49,7 @@ pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, com
         pub const shift = address_shift;
 
         pub inline fn fromAddress(address: u32) AlignedPhysAddr {
-            return .fromPhysical(@as(PhysicalAddress, @enumFromInt(address)));
+            return .fromPhysical(@as(PhysicalAddress, @fromBackingInt(@intCast(address))));
         }
 
         pub fn fromPhysical(aligned_address: anytype) AlignedPhysAddr {
@@ -64,13 +64,13 @@ pub fn AlignedPhysicalAddress(comptime address_alignment: std.mem.Alignment, com
             if (@TypeOf(other_alignment) != std.mem.Alignment or @TypeOf(other_shift) != std.mem.Alignment or OtherAlignedPhysAddr != AlignedPhysicalAddress(other_alignment, other_shift))
                 @compileError("please provide a valid AlignedPhysicalAddress to .of()");
 
-            const address = @intFromEnum(aligned_address) << @intCast(std.math.log2(other_shift.toByteUnits()));
+            const address = @backingInt(aligned_address) << @intCast(std.math.log2(other_shift.toByteUnits()));
 
             if (alignment.order(other_alignment) != .lt) {
                 std.debug.assert(alignment.check(address));
             }
 
-            return @enumFromInt(address >> @intCast(std.math.log2(shift.toByteUnits())));
+            return @fromBackingInt(@intCast(address >> @intCast(std.math.log2(shift.toByteUnits()))));
         }
     };
 }

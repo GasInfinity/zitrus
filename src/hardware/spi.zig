@@ -11,7 +11,7 @@ pub const Device = enum(u2) {
     @"3",
 
     pub fn device(dev: u2) Device {
-        return @enumFromInt(dev);
+        return @fromBackingInt(@intCast(dev));
     }
 };
 

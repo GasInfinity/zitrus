@@ -29,11 +29,11 @@ pub fn init(create_info: mango.LightLookupTableCreateInfo) LightLookupTable {
 }
 
 pub fn toHandle(lut: *LightLookupTable) Handle {
-    return @enumFromInt(@intFromPtr(lut));
+    return @fromBackingInt(@intCast(@intFromPtr(lut)));
 }
 
 pub fn fromHandleMutable(handle: Handle) *LightLookupTable {
-    return @as(*LightLookupTable, @ptrFromInt(@intFromEnum(handle)));
+    return @as(*LightLookupTable, @ptrFromInt(@backingInt(handle)));
 }
 
 const LightLookupTable = @This();

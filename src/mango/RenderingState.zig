@@ -22,23 +22,23 @@ pub const Dirty = packed struct(u32) {
     _: u14 = 0,
 
     pub fn setUniformsDirty(dirty: *Dirty, stage: mango.ShaderStage, location: UniformLocation) void {
-        dirty.uniforms |= (@as(u6, 1) << @intCast(@intFromEnum(stage) * std.enums.values(UniformLocation).len + @intFromEnum(location)));
+        dirty.uniforms |= (@as(u6, 1) << @intCast(@backingInt(stage) * std.enums.values(UniformLocation).len + @backingInt(location)));
     }
 
     pub fn setStageUniformsDirty(dirty: *Dirty, stage: mango.ShaderStage) void {
-        dirty.uniforms |= (@as(u6, 0b111) << @intCast(@intFromEnum(stage) * std.enums.values(UniformLocation).len));
+        dirty.uniforms |= (@as(u6, 0b111) << @intCast(@backingInt(stage) * std.enums.values(UniformLocation).len));
     }
 
     pub fn clearDirtyStageUniforms(dirty: *Dirty, stage: mango.ShaderStage) void {
-        dirty.uniforms &= ~(@as(u6, 0b111) << @intCast(@intFromEnum(stage) * std.enums.values(UniformLocation).len));
+        dirty.uniforms &= ~(@as(u6, 0b111) << @intCast(@backingInt(stage) * std.enums.values(UniformLocation).len));
     }
 
     pub fn isUniformsDirty(dirty: Dirty, stage: mango.ShaderStage, location: UniformLocation) bool {
-        return (dirty.uniforms & (@as(u6, 1) << @intCast(@intFromEnum(stage) * std.enums.values(UniformLocation).len + @intFromEnum(location)))) != 0;
+        return (dirty.uniforms & (@as(u6, 1) << @intCast(@backingInt(stage) * std.enums.values(UniformLocation).len + @backingInt(location)))) != 0;
     }
 
     pub fn isStageUniformsDirty(dirty: Dirty, stage: mango.ShaderStage) bool {
-        return (dirty.uniforms & (@as(u6, 0b111) << @intCast(@intFromEnum(stage) * std.enums.values(UniformLocation).len))) != 0;
+        return (dirty.uniforms & (@as(u6, 0b111) << @intCast(@backingInt(stage) * std.enums.values(UniformLocation).len))) != 0;
     }
 
     pub fn isAnyUniformsDirty(dirty: Dirty) bool {
@@ -215,7 +215,7 @@ pub fn bindVertexBuffers(rnd: *RenderingState, first_binding: u32, buffers: []co
 
     for (0..buffers.len) |i| {
         const current_binding = first_binding + i;
-        const bound_vertex_offset = (@intFromEnum(buffers[i].address) - @intFromEnum(backend.global_attribute_buffer_base));
+        const bound_vertex_offset = (@backingInt(buffers[i].address) - @backingInt(backend.global_attribute_buffer_base));
 
         rnd.vertex_buffers_offset[current_binding] = @intCast(bound_vertex_offset);
     }
@@ -230,7 +230,7 @@ pub fn bindVertexBuffers(rnd: *RenderingState, first_binding: u32, buffers: []co
 
 pub fn bindIndexBuffer(rnd: *RenderingState, buffer: mango.DeviceSlice, index_type: mango.IndexType) void {
     rnd.misc.index_format = index_type.native();
-    rnd.index_buffer_offset = @intCast(@intFromEnum(buffer.address) - @intFromEnum(backend.global_attribute_buffer_base));
+    rnd.index_buffer_offset = @intCast(@backingInt(buffer.address) - @backingInt(backend.global_attribute_buffer_base));
 }
 
 pub fn bindFloatUniforms(rnd: *RenderingState, stage: mango.ShaderStage, first_uniform: u32, uniforms: []const [4]f32) void {
@@ -409,7 +409,7 @@ pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
             if (table[i] == .null) continue;
 
             const b_table: *backend.LightLookupTable = .fromHandleMutable(table[i]);
-            const selector: Graphics.FragmentLighting.LookupTable = @enumFromInt(@intFromEnum(first) + i);
+            const selector: Graphics.FragmentLighting.LookupTable = @fromBackingInt(@intCast(@backingInt(first) + i));
 
             queue.add(p3d, &p3d.fragment_lighting.lut_index, .init(selector, 0));
             queue.addConsecutive(p3d, &p3d.fragment_lighting.lut_data[0], &b_table.data);
@@ -482,10 +482,10 @@ pub fn emitDirty(rnd: *RenderingState, queue: *command.Queue) void {
         const lights_enabled = rnd.lighting_state.light_enabled;
 
         var enabled: u4 = 0;
-        var permutation: BitpackedArray(Graphics.FragmentLighting.Light.Id, 8) = .splat(@enumFromInt(0));
+        var permutation: BitpackedArray(Graphics.FragmentLighting.Light.Id, 8) = .splat(@fromBackingInt(@intCast(0)));
 
         for (0..8) |i| if (lights_enabled.get(i)) {
-            permutation.set(enabled, @enumFromInt(i));
+            permutation.set(enabled, @fromBackingInt(@intCast(i)));
             enabled += 1;
         };
 
@@ -594,7 +594,7 @@ fn emitDirtyTextureUnits(rnd: *RenderingState, queue: *command.Queue) void {
         const format = image_view.data.format().nativeTextureUnitFormat();
 
         const total_layer_size = image_format.scale(image.info.layer_size);
-        const base_address = @intFromEnum(address) + (total_layer_size * image_view.data.base_array_layer);
+        const base_address = @backingInt(address) + (total_layer_size * image_view.data.base_array_layer);
 
         queue.addIncremental(p3d, .{
             &p3d.texture_units.@"0".border_color,
@@ -734,7 +734,7 @@ fn emitShaderUniforms(shader: *backend.Shader, p3d_shader: *volatile pica.Graphi
             current = it.next();
 
             const next = current orelse break;
-            if ((@intFromEnum(next) - @intFromEnum(initial)) != 1) break;
+            if ((@backingInt(next) - @backingInt(initial)) != 1) break;
         }
 
         queue.add(p3d, &p3d_shader.float_uniform_index, .{ .index = initial, .mode = .f7_16 });
@@ -755,12 +755,12 @@ fn emitFloatUniforms(flt_dirty: *std.EnumSet(pica.shader.register.Source.Constan
             current = it.next();
 
             const next = current orelse break;
-            if ((@intFromEnum(next) - @intFromEnum(initial)) != 1) break;
+            if ((@backingInt(next) - @backingInt(initial)) != 1) break;
             std.mem.reverse(f32, flt_constants.getPtr(next));
         }
 
         queue.add(p3d, &p3d_shader.float_uniform_index, .{ .index = initial, .mode = .f8_23 });
-        queue.addConsecutive(p3d, &p3d_shader.float_uniform_data[0], @ptrCast(flt_constants.values[@intFromEnum(initial)..][0..seq_constants]));
+        queue.addConsecutive(p3d, &p3d_shader.float_uniform_data[0], @ptrCast(flt_constants.values[@backingInt(initial)..][0..seq_constants]));
     }
 
     flt_dirty.* = .empty;

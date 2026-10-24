@@ -200,7 +200,7 @@ pub fn setDepthMode(state: *GraphicsState, mode: mango.DepthMode) void {
 pub fn setCullMode(state: *GraphicsState, cull_mode: mango.CullMode) void {
     if (validation.enabled) state.check.set.cull_mode = true;
 
-    state.misc.cull_mode = @enumFromInt(@intFromEnum(cull_mode));
+    state.misc.cull_mode = @fromBackingInt(@intCast(@backingInt(cull_mode)));
     state.dirty.cull_mode = true;
 }
 
@@ -278,8 +278,8 @@ pub fn setTextureCombinersBufferSources(state: *GraphicsState, first: u32, buffe
     std.debug.assert(first + buffer_sources.len <= 4);
 
     for (buffer_sources, 0..) |sources, index| {
-        state.combiners_config.setColorBufferSource(@enumFromInt(first + index), sources.color_buffer_src.native());
-        state.combiners_config.setAlphaBufferSource(@enumFromInt(first + index), sources.alpha_buffer_src.native());
+        state.combiners_config.setColorBufferSource(@fromBackingInt(@intCast(first + index)), sources.color_buffer_src.native());
+        state.combiners_config.setAlphaBufferSource(@fromBackingInt(@intCast(first + index)), sources.alpha_buffer_src.native());
     }
 
     state.dirty.combiners_config = true;
@@ -534,11 +534,11 @@ pub fn setLightEnvironmentScale(state: *GraphicsState, scale: mango.LightEnviron
 }
 
 pub fn bindLightEnvironmentTable(state: *GraphicsState, slot: mango.LightEnvironmentLookupSlot, table: mango.LightLookupTable) void {
-    state.light_environment.luts[@intFromEnum(slot)] = table;
+    state.light_environment.luts[@backingInt(slot)] = table;
 
     // NOTE: we have to do this because we get a bit-pointer here
     var luts = state.dirty.light_luts;
-    luts.set(@intFromEnum(slot), true);
+    luts.set(@backingInt(slot), true);
     state.dirty.light_luts = luts;
 }
 
@@ -779,7 +779,7 @@ pub fn emitDirty(state: *GraphicsState, queue: *command.Queue) void {
             while (out_it.next()) |o| {
                 const map = outputs[semantic_outputs];
 
-                if (@intFromEnum(o) >= @intFromEnum(pica.shader.register.Destination.Output.o7)) {
+                if (@backingInt(o) >= @backingInt(pica.shader.register.Destination.Output.o7)) {
                     std.debug.assert(map.x == .unused and map.y == .unused and map.z == .unused and map.w == .unused);
                     continue;
                 }

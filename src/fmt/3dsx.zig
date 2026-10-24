@@ -198,7 +198,7 @@ fn processRelocations(info: code.Info, rodata_file_size: u32, data_file_size: u3
             last_relocation_address = base_addresses[current_base];
         }
 
-        const current_processed: *std.ArrayList(Relocation) = processed.getPtr(@enumFromInt(current_base));
+        const current_processed: *std.ArrayList(Relocation) = processed.getPtr(@fromBackingInt(@intCast(current_base)));
         var skipped_words: usize = @divExact(relocs[current_absolute] - last_relocation_address, @sizeOf(u32));
 
         while (skipped_words > std.math.maxInt(u16)) : (skipped_words -= std.math.maxInt(u16)) {

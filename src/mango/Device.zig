@@ -11,227 +11,227 @@ pub const Handle = enum(u32) {
     _,
 
     pub fn destroy(device: Handle) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         b_device.destroy();
     }
 
     pub fn reacquire(device: Handle) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return try b_device.reacquire();
     }
 
     pub fn release(device: Handle) !Gpu.ScreenCapture {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return try b_device.release();
     }
 
     pub fn hostAllocator(device: Handle) std.mem.Allocator {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.hostAllocator();
     }
 
     pub fn allocatePrivate(device: Handle, bank: mango.PrivateMemoryIndex, len: u32) mango.PrivateAllocationError![]const u8 {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.allocatePrivate(bank, len);
     }
 
     pub fn freePrivate(device: Handle, buffer: []const u8) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.freePrivate(buffer);
     }
 
     pub fn hostToDevice(device: Handle, buffer: []const u8) mango.HostToDeviceError!mango.DeviceSlice {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.hostToDevice(buffer);
     }
 
     pub fn flushCachedMemoryRanges(device: Handle, ranges: []const []const u8) mango.FlushMemoryError!void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.flushCachedMemoryRanges(ranges);
     }
 
     pub fn invalidateCachedMemoryRanges(device: Handle, ranges: []const []const u8) mango.InvalidateMemoryError!void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.invalidateCachedMemoryRanges(ranges);
     }
 
     pub fn createSemaphore(device: Handle, create_info: mango.SemaphoreCreateInfo) !mango.Semaphore {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.createSemaphore(create_info);
     }
 
     pub fn destroySemaphore(device: Handle, semaphore: mango.Semaphore) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.destroySemaphore(semaphore);
     }
 
     pub fn createQueryPool(device: Handle, create_info: mango.QueryPoolCreateInfo) mango.ObjectCreationError!mango.QueryPool {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.createQueryPool(create_info);
     }
 
     pub fn destroyQueryPool(device: Handle, query_pool: mango.QueryPool) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.destroyQueryPool(query_pool);
     }
 
     pub fn resetQueryPool(device: Handle, query_pool: mango.QueryPool, first: u32, count: u32) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.resetQueryPool(query_pool, first, count);
     }
 
     pub fn getQueryPoolResults(device: Handle, query_pool: mango.QueryPool, first: u32, count: u32, data: []u8, stride: u32, flags: mango.QueryResultFlags) mango.GetQueryResultsError!void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.getQueryPoolResults(query_pool, first, count, data, stride, flags);
     }
 
     pub fn createCommandPool(device: Handle, create_info: mango.CommandPoolCreateInfo) !mango.CommandPool {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.createCommandPool(create_info);
     }
 
     pub fn destroyCommandPool(device: Handle, command_pool: mango.CommandPool) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.destroyCommandPool(command_pool);
     }
 
     pub fn resetCommandPool(device: Handle, command_pool: mango.CommandPool) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.resetCommandPool(command_pool);
     }
 
     pub fn trimCommandPool(device: Handle, command_pool: mango.CommandPool) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.trimCommandPool(command_pool);
     }
 
     pub fn allocateCommandBuffers(device: Handle, allocate_info: mango.CommandBufferAllocateInfo, buffers: []mango.CommandBuffer) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.allocateCommandBuffers(allocate_info, buffers);
     }
 
     pub fn freeCommandBuffers(device: Handle, command_pool: mango.CommandPool, buffers: []const mango.CommandBuffer) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.freeCommandBuffers(command_pool, buffers);
     }
 
     pub fn createImage(device: Handle, create_info: mango.ImageCreateInfo) !mango.Image {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.createImage(create_info);
     }
 
     pub fn destroyImage(device: Handle, image: mango.Image) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.destroyImage(image);
     }
 
     pub fn bindImageMemory(device: Handle, image: mango.Image, buffer: mango.DeviceSlice) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.bindImageMemory(image, buffer);
     }
 
     pub fn createImageView(device: Handle, create_info: mango.ImageViewCreateInfo) !mango.ImageView {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.createImageView(create_info);
     }
 
     pub fn destroyImageView(device: Handle, image_view: mango.ImageView) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.destroyImageView(image_view);
     }
 
     pub fn createSampler(device: Handle, create_info: mango.SamplerCreateInfo) !mango.Sampler {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.createSampler(create_info);
     }
 
     pub fn destroySampler(device: Handle, sampler: mango.Sampler) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.destroySampler(sampler);
     }
 
     pub fn createShader(device: Handle, create_info: mango.ShaderCreateInfo) mango.ObjectCreationError!mango.Shader {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.createShader(create_info);
     }
 
     pub fn destroyShader(device: Handle, shader: mango.Shader) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         b_device.destroyShader(shader);
     }
 
     pub fn createVertexInputLayout(device: Handle, create_info: mango.VertexInputLayoutCreateInfo) mango.ObjectCreationError!mango.VertexInputLayout {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.createVertexInputLayout(create_info);
     }
 
     pub fn destroyVertexInputLayout(device: Handle, layout: mango.VertexInputLayout) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.destroyVertexInputLayout(layout);
     }
 
     pub fn createLightLookupTable(device: Handle, create_info: mango.LightLookupTableCreateInfo) !mango.LightLookupTable {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.createLightLookupTable(create_info);
     }
 
     pub fn recreateLightLookupTable(device: *Device, lut: mango.LightLookupTable, create_info: mango.LightLookupTableCreateInfo) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.recreateLightLookupTable(lut, create_info);
     }
 
     pub fn destroyLightLookupTable(device: Handle, lut: mango.LightLookupTable) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.destroyLightLookupTable(lut);
     }
 
     pub fn createFogLookupTable(device: Handle, create_info: mango.FogLookupTableCreateInfo) mango.ObjectCreationError!mango.FogLookupTable {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.createFogLookupTable(create_info);
     }
 
     pub fn recreateFogLookupTable(device: Handle, lut: mango.FogLookupTable, create_info: mango.FogLookupTableCreateInfo) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.recreateFogLookupTable(lut, create_info);
     }
 
     pub fn destroyFogLookupTable(device: Handle, lut: mango.FogLookupTable) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.destroyFogLookupTable(lut);
     }
 
     pub fn configureDisplay(device: Handle, display: mango.Display, configure_info: *const mango.DisplayConfigureInfo) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.configureDisplay(display, configure_info);
     }
 
     pub fn resetDisplay(device: Handle, display: mango.Display) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.resetDisplay(display);
     }
 
     pub fn getDisplayImages(device: Handle, display: mango.Display, images: []mango.Image) !u8 {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.getDisplayImages(display, images);
     }
 
     pub fn acquireNextImage(device: Handle, display: mango.Display, timeout: u64) !u8 {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.acquireNextImage(display, timeout);
     }
 
     pub fn signalSemaphore(device: Handle, signal_info: mango.SemaphoreSignalInfo) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.signalSemaphore(signal_info);
     }
 
     pub fn waitSemaphores(device: Handle, wait_info: mango.SemaphoreWaitInfo, timeout: u64) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.waitSemaphores(wait_info, timeout);
     }
 
     pub fn waitIdle(device: Handle) void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.waitIdle();
     }
 
@@ -240,12 +240,12 @@ pub const Handle = enum(u32) {
     /// Valid Usage:
     /// - Slices must be aligned to 8 bytes.
     pub fn copyBuffer(device: Handle, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.CopyBufferInfo) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.copyBuffer(wait, signal, info);
     }
 
     pub fn copyBufferToImage(device: Handle, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.CopyBufferToImageInfo) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.copyBufferToImage(wait, signal, info);
     }
 
@@ -261,32 +261,32 @@ pub const Handle = enum(u32) {
     /// - The width of the destination is half the width of the source.
     /// - The width and height of the destination is half the width of the source.
     pub fn blitImage(device: Handle, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.BlitImageInfo) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.blitImage(wait, signal, info);
     }
 
     pub fn fillBuffer(device: Handle, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.FillBufferInfo) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.fillBuffer(wait, signal, info);
     }
 
     pub fn clearColorImage(device: Handle, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.ClearColorInfo) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.clearColorImage(wait, signal, info);
     }
 
     pub fn clearDepthStencilImage(device: Handle, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.ClearDepthStencilInfo) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.clearDepthStencilImage(wait, signal, info);
     }
 
     pub fn submit(device: Handle, wait: ?*const mango.SemaphoreOperation, signal: ?*const mango.SemaphoreOperation, info: *const mango.SubmitInfo) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.submit(wait, signal, info);
     }
 
     pub fn present(device: Handle, wait: ?*const mango.SemaphoreOperation, info: *const mango.PresentInfo) !void {
-        const b_device: *Device = @ptrFromInt(@intFromEnum(device));
+        const b_device: *Device = @ptrFromInt(@backingInt(device));
         return b_device.present(wait, info);
     }
 };
@@ -755,7 +755,7 @@ pub fn submit(device: *Device, wait: ?*const mango.SemaphoreOperation, signal: ?
 
 pub fn present(device: *Device, wait: ?*const mango.SemaphoreOperation, info: *const mango.PresentInfo) !void {
     const queue = device.queues.getPtr(.present);
-    const screen: pica.Screen = @enumFromInt(@intFromEnum(info.display));
+    const screen: pica.Screen = @fromBackingInt(@intCast(@backingInt(info.display)));
 
     return try queue.pushFrontBounded(Queue.Presentation, .{
         .misc = .{
@@ -767,11 +767,11 @@ pub fn present(device: *Device, wait: ?*const mango.SemaphoreOperation, info: *c
 }
 
 pub fn toHandle(device: *Device) Handle {
-    return @enumFromInt(@intFromPtr(device));
+    return @fromBackingInt(@intCast(@intFromPtr(device)));
 }
 
 pub fn fromHandleMutable(handle: Handle) *Device {
-    return @as(*Device, @ptrFromInt(@intFromEnum(handle)));
+    return @as(*Device, @ptrFromInt(@backingInt(handle)));
 }
 
 const Device = @This();

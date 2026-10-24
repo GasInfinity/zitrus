@@ -16,22 +16,22 @@ pub fn init(fcram_base_offset: u32) PresentationEngine {
 }
 
 pub fn configureDisplay(pe: *PresentationEngine, display: mango.Display, configure_info: *const mango.DisplayConfigureInfo) mango.ConfigureDisplayError!void {
-    const screen: pica.Screen = @enumFromInt(@intFromEnum(display));
+    const screen: pica.Screen = @fromBackingInt(@intCast(@backingInt(display)));
     const display_data = pe.displays.getPtr(screen);
 
     std.debug.assert(!pe.display_configured.getPtr(screen).load(.monotonic));
 
-    if (configure_info.image_count == 0 or @intFromEnum(configure_info.image_array_layers) == 0) return error.ValidationFailed;
+    if (configure_info.image_count == 0 or @backingInt(configure_info.image_array_layers) == 0) return error.ValidationFailed;
     if (configure_info.image_count > 3) return error.Unsupported;
     if (configure_info.extent.width != 240) return error.Unsupported;
 
     switch (display) {
         .top => {
-            if (configure_info.extent.height == 400 and @intFromEnum(configure_info.image_array_layers) > 2) return error.Unsupported;
-            if (configure_info.extent.height == 800 and @intFromEnum(configure_info.image_array_layers) > 1) return error.Unsupported;
+            if (configure_info.extent.height == 400 and @backingInt(configure_info.image_array_layers) > 2) return error.Unsupported;
+            if (configure_info.extent.height == 800 and @backingInt(configure_info.image_array_layers) > 1) return error.Unsupported;
             if (configure_info.extent.height != 400 and configure_info.extent.height != 800) return error.Unsupported;
         },
-        .bottom => if (configure_info.extent.height != 320 or @intFromEnum(configure_info.image_array_layers) > 1)
+        .bottom => if (configure_info.extent.height != 320 or @backingInt(configure_info.image_array_layers) > 1)
             return error.Unsupported,
     }
 
@@ -70,14 +70,14 @@ pub fn configureDisplay(pe: *PresentationEngine, display: mango.Display, configu
                 .optimally_tiled = false,
                 .mutable_format = false,
                 .cube_compatible = false,
-                .layers_minus_one = @intCast(@intFromEnum(configure_info.image_array_layers) - 1),
+                .layers_minus_one = @intCast(@backingInt(configure_info.image_array_layers) - 1),
                 .layer_size = configure_info.extent.width * @as(u22, configure_info.extent.height),
                 .levels_minus_one = 0,
             },
         };
 
         // Panic? The pointer 100% didn't come from `hostToDevice`!;
-        display_data.image_virt[i] = horizon.memory.toVirtual(@intFromEnum(memory_info.address), pe.fcram_base_offset).?;
+        display_data.image_virt[i] = horizon.memory.toVirtual(@backingInt(memory_info.address), pe.fcram_base_offset).?;
         display_data.available.pushFrontAssumeCapacity(@intCast(i));
     }
 
@@ -85,7 +85,7 @@ pub fn configureDisplay(pe: *PresentationEngine, display: mango.Display, configu
 }
 
 pub fn resetDisplay(pe: *PresentationEngine, gsp: Gpu, gsp_owned: bool, display: mango.Display) void {
-    const screen: pica.Screen = @enumFromInt(@intFromEnum(display));
+    const screen: pica.Screen = @fromBackingInt(@intCast(@backingInt(display)));
 
     if (!pe.display_configured.getPtr(screen).load(.monotonic)) return;
 
@@ -107,7 +107,7 @@ pub fn reacquire(pe: *PresentationEngine, gsp: Gpu) mango.ReacquireDeviceError!v
 }
 
 pub fn getDisplayImages(pe: *PresentationEngine, display: mango.Display, images: []mango.Image) u8 {
-    const screen: pica.Screen = @enumFromInt(@intFromEnum(display));
+    const screen: pica.Screen = @fromBackingInt(@intCast(@backingInt(display)));
     std.debug.assert(pe.display_configured.getPtr(screen).load(.monotonic));
 
     const chain = pe.displays.getPtr(screen);
@@ -121,7 +121,7 @@ pub fn getDisplayImages(pe: *PresentationEngine, display: mango.Display, images:
 }
 
 pub fn acquireNextImage(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, display: mango.Display, timeout: u64) !u8 {
-    const screen: pica.Screen = @enumFromInt(@intFromEnum(display));
+    const screen: pica.Screen = @fromBackingInt(@intCast(@backingInt(display)));
     std.debug.assert(pe.display_configured.getPtr(screen).load(.monotonic));
 
     const display_data = pe.displays.getPtr(screen);
@@ -148,7 +148,7 @@ pub fn present(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp_fra
 
     if (is_next_present) {
         // NOTE: The GSP DOES process presents at vblank but we MUST present BEFORE vblank!
-        updateNextPresent(&gsp_framebuffers[@intFromEnum(screen)], screen, chain, slot);
+        updateNextPresent(&gsp_framebuffers[@backingInt(screen)], screen, chain, slot);
     }
 }
 
@@ -173,7 +173,7 @@ pub fn refresh(pe: *PresentationEngine, arbiter: horizon.AddressArbiter, gsp: Gp
     // This must be done as if, e.g: we're using a fifo with 3 images (triple buffering),
     // we must present the next queued present if available.
     if (chain.peekNextPresent()) |next_queued| {
-        updateNextPresent(&gsp_framebuffers[@intFromEnum(screen)], screen, chain, next_queued);
+        updateNextPresent(&gsp_framebuffers[@backingInt(screen)], screen, chain, next_queued);
     }
 
     if (!was_available) {
@@ -208,7 +208,7 @@ fn updateNextPresent(gsp_framebuffer: *Gpu.FramebufferInfo, screen: pica.Screen,
 
     // OK, GSP may tell us that the FB was dirty even when it wasn't. We don't care
     _ = gsp_framebuffer.update(.{
-        .active = @enumFromInt(chain.misc.id),
+        .active = @fromBackingInt(@intCast(chain.misc.id)),
         .left_vaddr = left,
         .right_vaddr = right,
         .stride = stride,

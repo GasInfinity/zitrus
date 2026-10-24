@@ -88,7 +88,7 @@ pub const State = extern struct {
         raw: u16,
 
         pub fn lang(language: services.Config.Language) Language {
-            return .{ .raw = @intFromEnum(language) + 1 };
+            return .{ .raw = @backingInt(language) + 1 };
         }
     };
 
@@ -348,7 +348,7 @@ pub fn normal(config: Config, allocator: std.mem.Allocator) !SoftwareKeyboard {
                 .normal => .normal,
                 .western_only => .western,
             },
-            .buttons = @enumFromInt(config.buttons.len - 1),
+            .buttons = @fromBackingInt(@intCast(config.buttons.len - 1)),
             .valid_input = config.valid_input,
             .password_mode = config.password_mode,
             .is_parental = 0,
@@ -392,7 +392,7 @@ pub fn numpad(config: NumpadConfig, allocator: std.mem.Allocator) !SoftwareKeybo
     return .{
         .state = .{
             .type = .numeric_pad,
-            .buttons = @enumFromInt(config.buttons.len - 1),
+            .buttons = @fromBackingInt(@intCast(config.buttons.len - 1)),
             .valid_input = config.valid_input,
             .password_mode = config.password_mode,
             .is_parental = 0,

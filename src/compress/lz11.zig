@@ -49,7 +49,7 @@ pub const Match = packed struct(u8) {
                 const extra = try in.takeArray(3);
                 break :blk .{ ((@as(u17, hdr.extra) << 12) | (@as(u17, extra[0]) << 4) | (extra[1] >> 4)) + 273, ((@as(u13, extra[1] & 0xF) << 8) | extra[2]) + 1 };
             },
-            else => .{ @as(u5, @intFromEnum(hdr.len)) + 1, ((@as(u13, hdr.extra) << 8) | try in.takeByte()) + 1 },
+            else => .{ @as(u5, @backingInt(hdr.len)) + 1, ((@as(u13, hdr.extra) << 8) | try in.takeByte()) + 1 },
         };
 
         return .{ .offset = offset, .len = len };
@@ -83,7 +83,7 @@ pub const Match = packed struct(u8) {
         } else {
             const encoded: Match = .{
                 .extra = @intCast(encoded_offset >> 8),
-                .len = @enumFromInt(match.len - 1),
+                .len = @fromBackingInt(@intCast(match.len - 1)),
             };
 
             try writer.writeStruct(encoded, .little);

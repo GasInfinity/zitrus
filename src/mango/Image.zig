@@ -39,9 +39,9 @@ pub const Info = packed struct(u64) {
             },
             .mutable_format = create_info.flags.mutable_format,
             .cube_compatible = create_info.flags.cube_compatible,
-            .layer_size = @intCast(backend.imageLayerSize(@as(usize, create_info.extent.width) * create_info.extent.height, @intFromEnum(create_info.mip_levels))),
-            .layers_minus_one = @intCast(@intFromEnum(create_info.array_layers) - 1),
-            .levels_minus_one = @intCast(@intFromEnum(create_info.mip_levels) - 1),
+            .layer_size = @intCast(backend.imageLayerSize(@as(usize, create_info.extent.width) * create_info.extent.height, @backingInt(create_info.mip_levels))),
+            .layers_minus_one = @intCast(@backingInt(create_info.array_layers) - 1),
+            .levels_minus_one = @intCast(@backingInt(create_info.mip_levels) - 1),
         };
     }
 
@@ -67,15 +67,15 @@ pub const Info = packed struct(u64) {
 
     pub fn levelsByAmount(info: Info, amount: mango.ImageMipLevels, base: mango.ImageMipLevel) usize {
         return switch (amount) {
-            .remaining => info.levels() - @intFromEnum(base),
-            else => @intFromEnum(amount),
+            .remaining => info.levels() - @backingInt(base),
+            else => @backingInt(amount),
         };
     }
 
     pub fn layersByAmount(info: Info, amount: mango.ImageArrayLayers, base: mango.ImageArrayLayer) usize {
         return switch (amount) {
-            .remaining => info.layers() - @intFromEnum(base),
-            else => @intFromEnum(amount),
+            .remaining => info.layers() - @backingInt(base),
+            else => @backingInt(amount),
         };
     }
 };
@@ -116,11 +116,11 @@ info: Info,
 address: zitrus.hardware.PhysicalAddress,
 
 pub fn toHandle(image: *Image) Handle {
-    return @enumFromInt(@intFromPtr(image));
+    return @fromBackingInt(@intCast(@intFromPtr(image)));
 }
 
 pub fn fromHandleMutable(handle: Handle) *Image {
-    return @as(*Image, @ptrFromInt(@intFromEnum(handle)));
+    return @as(*Image, @ptrFromInt(@backingInt(handle)));
 }
 
 pub fn fromHandle(handle: Handle) Image {

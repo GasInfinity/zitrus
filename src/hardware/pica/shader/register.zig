@@ -71,39 +71,39 @@ pub const Source = enum(u7) {
     // zig fmt: on
 
     pub fn initLimited(limited: Limited) Source {
-        return @enumFromInt(@intFromEnum(limited));
+        return @fromBackingInt(@intCast(@backingInt(limited)));
     }
 
     pub fn initInput(register: Input) Source {
-        return @enumFromInt(@intFromEnum(register));
+        return @fromBackingInt(@intCast(@backingInt(register)));
     }
 
     pub fn initTemporary(register: Temporary) Source {
-        return @enumFromInt(@as(u5, 1 << 4) | @intFromEnum(register));
+        return @fromBackingInt(@intCast(@as(u5, 1 << 4) | @backingInt(register)));
     }
 
     pub fn initConstant(register: Constant) Source {
-        return @enumFromInt(@intFromEnum(register) + 0x20);
+        return @fromBackingInt(@intCast(@backingInt(register) + 0x20));
     }
 
     pub fn initKind(k: Kind, index: u7) Source {
         return switch (k) {
-            .input => .initInput(@enumFromInt(index)),
-            .temporary => .initTemporary(@enumFromInt(index)),
-            .constant => .initConstant(@enumFromInt(index)),
+            .input => .initInput(@fromBackingInt(@intCast(index))),
+            .temporary => .initTemporary(@fromBackingInt(@intCast(index))),
+            .constant => .initConstant(@fromBackingInt(@intCast(index))),
         };
     }
 
     pub fn isLimited(register: Source) bool {
-        return @as(u7, @intFromEnum(register)) < 32;
+        return @as(u7, @backingInt(register)) < 32;
     }
 
     pub fn toLimited(register: Source) ?Limited {
-        return if (register.isLimited()) @enumFromInt(@as(u5, @intCast(@intFromEnum(register)))) else null;
+        return if (register.isLimited()) @fromBackingInt(@intCast(@as(u5, @intCast(@backingInt(register))))) else null;
     }
 
     pub fn kind(register: Source) Kind {
-        return switch (@intFromEnum(register)) {
+        return switch (@backingInt(register)) {
             else => |r| if (r > 0x1F) .constant else (if ((r & (1 << 4)) != 0) .temporary else .input),
         };
     }
@@ -119,7 +119,7 @@ pub const Source = enum(u7) {
             return error.Syntax;
         }
 
-        const k: Kind = @enumFromInt(std.mem.indexOf(u8, "vrf", &.{value[0]}) orelse return error.InvalidRegister);
+        const k: Kind = @fromBackingInt(@intCast(std.mem.indexOf(u8, "vrf", &.{value[0]}) orelse return error.InvalidRegister));
 
         const index = std.fmt.parseUnsigned(u7, value[1..], 10) catch |err| switch (err) {
             error.Overflow => return error.InvalidIndex,
@@ -163,22 +163,22 @@ pub const Destination = enum(u5) {
     // zig fmt: on
 
     pub fn initOutput(register: Output) Destination {
-        return @enumFromInt(@intFromEnum(register));
+        return @fromBackingInt(@intCast(@backingInt(register)));
     }
 
     pub fn initTemporary(register: Temporary) Destination {
-        return @enumFromInt(@as(u5, 1 << 4) | @intFromEnum(register));
+        return @fromBackingInt(@intCast(@as(u5, 1 << 4) | @backingInt(register)));
     }
 
     pub fn initKind(k: Kind, register: u4) Destination {
         return switch (k) {
-            .output => .initOutput(@enumFromInt(register)),
-            .temporary => .initTemporary(@enumFromInt(register)),
+            .output => .initOutput(@fromBackingInt(@intCast(register))),
+            .temporary => .initTemporary(@fromBackingInt(@intCast(register))),
         };
     }
 
     pub fn kind(register: Destination) Kind {
-        return if ((@intFromEnum(register) & (1 << 4)) != 0) .temporary else .output;
+        return if ((@backingInt(register) & (1 << 4)) != 0) .temporary else .output;
     }
 
     pub const ParseError = error{
@@ -192,7 +192,7 @@ pub const Destination = enum(u5) {
             return error.Syntax;
         }
 
-        const k: Kind = @enumFromInt(std.mem.indexOf(u8, "or", &.{value[0]}) orelse return error.InvalidRegister);
+        const k: Kind = @fromBackingInt(@intCast(std.mem.indexOf(u8, "or", &.{value[0]}) orelse return error.InvalidRegister));
 
         const index = std.fmt.parseUnsigned(u4, value[1..], 10) catch |err| switch (err) {
             error.Overflow => return error.InvalidIndex,

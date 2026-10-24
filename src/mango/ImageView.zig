@@ -35,16 +35,16 @@ pub const Data = packed struct(u64) {
 
         return .{
             .image = info.image,
-            .packed_format = @intCast(@intFromEnum(info.format) - 1),
+            .packed_format = @intCast(@backingInt(info.format) - 1),
             .is_cube = info.type == .cube,
-            .base_array_layer = @intCast(@intFromEnum(info.subresource_range.base_array_layer)),
-            .base_mip_level = @intCast(@intFromEnum(info.subresource_range.base_mip_level)),
+            .base_array_layer = @intCast(@backingInt(info.subresource_range.base_array_layer)),
+            .base_mip_level = @intCast(@backingInt(info.subresource_range.base_mip_level)),
             .levels_minus_one = @intCast(mip_levels - 1),
         };
     }
 
     pub fn format(data: Data) mango.Format {
-        return @enumFromInt(@as(u8, data.packed_format) + 1);
+        return @fromBackingInt(@intCast(@as(u8, data.packed_format) + 1));
     }
 
     pub fn levels(data: Data) usize {
@@ -78,18 +78,18 @@ pub fn getRenderingInfo(view: ImageView) RenderingInfo {
     return .{
         .width = @intCast(view_width),
         .height = @intCast(view_height),
-        .address = .fromAddress(@intFromEnum(image.address) + img_offset),
+        .address = .fromAddress(@backingInt(image.address) + img_offset),
     };
 }
 
 pub fn toHandle(view: ImageView) Handle {
-    return @enumFromInt(@as(u64, @bitCast(view.data)));
+    return @fromBackingInt(@intCast(@as(u64, @bitCast(view.data))));
 }
 
 pub fn fromHandle(handle: Handle) ImageView {
     // TODO: With runtime safety the handle is a real pointer with some metadata
     return .{
-        .data = @bitCast(@intFromEnum(handle)),
+        .data = @bitCast(@backingInt(handle)),
     };
 }
 

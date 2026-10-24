@@ -19,19 +19,19 @@ pub fn init(dev: mango.Device, stereo: bool) !State {
     const swapchain_memory = try fcram.alloc(u8, 400 * 240 * 3 * stereo_factor * 2 + 320 * 240 * 3 * 2);
     errdefer fcram.free(swapchain_memory);
     const swapchain_memory_gpu = try dev.hostToDevice(swapchain_memory);
-    
+
     {
-        @memset(swapchain_memory[400*240*3*2*stereo_factor..], 0x22);
-        try dev.flushCachedMemoryRanges(&.{swapchain_memory[400*240*3*stereo_factor*2..]});
+        @memset(swapchain_memory[400 * 240 * 3 * 2 * stereo_factor ..], 0x22);
+        try dev.flushCachedMemoryRanges(&.{swapchain_memory[400 * 240 * 3 * stereo_factor * 2 ..]});
     }
 
     try dev.configureDisplay(.top, &.{
         .extent = .{ .width = 240, .height = 400 },
         .present_mode = .fifo,
         .image_format = .b8g8r8_unorm,
-        .image_array_layers = @enumFromInt(stereo_factor),
+        .image_array_layers = @fromBackingInt(@intCast(stereo_factor)),
         .image_count = 2,
-        .image_memory = &.{ swapchain_memory_gpu, swapchain_memory_gpu.openSlice(400*240*3*stereo_factor) },
+        .image_memory = &.{ swapchain_memory_gpu, swapchain_memory_gpu.openSlice(400 * 240 * 3 * stereo_factor) },
     });
 
     try dev.configureDisplay(.bottom, &.{
@@ -40,7 +40,7 @@ pub fn init(dev: mango.Device, stereo: bool) !State {
         .image_format = .b8g8r8_unorm,
         .image_array_layers = .@"1",
         .image_count = 2,
-        .image_memory = &.{ swapchain_memory_gpu.openSlice(400*240*3*stereo_factor*2), swapchain_memory_gpu.openSlice(400*240*3*stereo_factor*2+320*240*3) },
+        .image_memory = &.{ swapchain_memory_gpu.openSlice(400 * 240 * 3 * stereo_factor * 2), swapchain_memory_gpu.openSlice(400 * 240 * 3 * stereo_factor * 2 + 320 * 240 * 3) },
     });
 
     var top_images: [2]mango.Image = undefined;
@@ -58,7 +58,7 @@ pub fn init(dev: mango.Device, stereo: bool) !State {
     var cmd: [2]mango.CommandBuffer = undefined;
     try dev.allocateCommandBuffers(.{
         .pool = pool,
-        .command_buffer_count = 2, 
+        .command_buffer_count = 2,
     }, &cmd);
     errdefer dev.freeCommandBuffers(pool, &cmd);
 
