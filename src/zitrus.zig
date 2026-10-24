@@ -17,8 +17,16 @@
 
 // TODO: Remove this somehow, the kernel COULD be able to provide us with a stack of X size if we could ask somehow in the 3dsx to luma/azahar
 pub const Options = struct {
+    pub const Mango = struct {
+        validate_usage: bool = switch (builtin.mode) {
+            .debug, .safe => true,
+            .small, .fast => false,
+        },
+    };
+
     /// When null, zitrus won't switch stacks and will use the kernel-provided stacksize.
     stack_size: ?u32 = 128 * 1024,
+    mango: Mango = .{},
 };
 
 comptime {

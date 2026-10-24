@@ -1,9 +1,6 @@
 pub const Error = error{ValidationFailed};
 
-pub const enabled = switch (builtin.mode) {
-    .Debug, .ReleaseSafe => true,
-    .ReleaseSmall, .ReleaseFast => false,
-};
+pub const enabled = zitrus.options.mango.validate_usage;
 
 pub const image = struct {
     pub const must_be_correct =
@@ -204,3 +201,5 @@ pub const log = blk: {
 
 const builtin = @import("builtin");
 const std = @import("std");
+
+const zitrus = @import("zitrus");
